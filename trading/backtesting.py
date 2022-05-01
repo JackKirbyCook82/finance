@@ -9,18 +9,21 @@ Created on Weds Apr 27 2022
 import warnings
 import logging
 import numpy as np
+from abc import ABC, abstractmethod
 from datetime import datetime as Datetime
 from datetime import date as Date
 from pyalgotrade.bar import BasicBar
 from pyalgotrade.barfeed.membf import BarFeed
 from pyalgotrade.utils import collections
 from pyalgotrade.dataseries import SequenceDataSeries
+from pyalgotrade.strategy import BacktestingStrategy
+from pyalgotrade.bar import Frequency
 
 from utilities.files import ZIPCSVFile
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["Feed", "Volatility", "SMA", "Total", "Value"]
+__all__ = ["Feed", "Strategy", "Volatility", "SMA", "Total", "Value", "Frequency"]
 __copyright__ = "Copyright 2022, Jack Kirby Cook"
 __license__ = ""
 
@@ -101,8 +104,8 @@ class EventBasedFilter(SequenceDataSeries):
         self.__dataseries = dataseries
         self.__dataseries.getNewValueEvent().subscribe(self.onNewValue)
 
-    def __int__(self): return np.int(self[-1])
-    def __float__(self): return np.float(self[-1])
+    def __int__(self): return np.int(self[-1]) if self[-1] is not None else None
+    def __float__(self): return np.float(self[-1]) if self[-1] is not None else None
 
     def onNewValue(self, dataseries, key, value):
         self.__eventWindow.onNewValue(key, value)
@@ -123,8 +126,8 @@ class EventBasedSeries(SequenceDataSeries):
         self.__dataseries = dataseries
         self.__dataseries.getNewValueEvent().subscribe(self.onNewValue)
 
-    def __int__(self): return np.int(self[-1])
-    def __float__(self): return np.float(self[-1])
+    def __int__(self): return np.int(self[-1]) if self[-1] is not None else None
+    def __float__(self): return np.float(self[-1]) if self[-1] is not None else None
 
     def onNewValue(self, dataseries, key, value):
         newvalue = self.__class__.function(value)
@@ -137,6 +140,42 @@ class Volatility(EventBasedFilter, reduction=stdev, function=pctdiff): pass
 class SMA(EventBasedFilter, reduction=average): pass
 class Total(EventBasedFilter, reduction=total): pass
 class Value(EventBasedSeries): pass
+
+
+class Strategy(BacktestingStrategy, ABC):
+    def __init__(self, feed, cash):
+        super().__init__(feed, cash)
+        self.setUseAdjustedValues(False)
+        self.__arguments = tuple()
+        self.__parameters = dict()
+
+    def __call__(self, *args, **kwargs):
+        self.__arguments = args
+        self.__parameters = kwargs
+
+    def start(self): self.run()
+    def stop(self): super().stop()
+
+    def onBars(self, bars):
+        self.execute(*self.__arguments, **self.__parameters)
+
+    @abstractmethod
+    def execute(self, *args, **kwargs): pass
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
