@@ -29,9 +29,6 @@ warnings.filterwarnings("ignore")
 
 
 continuous_rate = lambda apy: math.log(apy + 1)
-days_per_year = lambda year: None
-weekdays_per_year = lambda year: None
-trading_per_year = lambda year: None
 
 
 class OptionType(Enum):
