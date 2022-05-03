@@ -9,7 +9,6 @@ Created on Weds Apr 27 2022
 import warnings
 import logging
 import math
-import calendar
 from enum import Enum
 from scipy.stats import norm
 from datetime import datetime as Datetime
@@ -29,6 +28,12 @@ LOGGER = logging.getLogger(__name__)
 warnings.filterwarnings("ignore")
 
 
+continuous_rate = lambda apy: math.log(apy + 1)
+days_per_year = lambda year: None
+weekdays_per_year = lambda year: None
+trading_per_year = lambda year: None
+
+
 class OptionType(Enum):
     CALL = 0
     PUT = 1
@@ -44,12 +49,12 @@ class Days(Enum):
     SUNDAY = 6
 
 
-def days(year, month, day):
-    assert isinstance(year, int) and isinstance(month, int)
-    assert day in Days.__members__
-    x = calendar.Calendar(firstweekday=calendar.SUNDAY)(year, month)
-    y = [d for w in x for d in w if d.weekday() == day and d.month == month]
-    return y
+# def days(year, month, day):
+#     assert isinstance(year, int) and isinstance(month, int)
+#     assert day in Days.__members__
+#     x = calendar.Calendar(firstweekday=calendar.SUNDAY)(year, month)
+#     y = [d for w in x for d in w if d.weekday() == day and d.month == month]
+#     return y
 
 
 class OptionMeta(RegistryMeta, ABCMeta):
@@ -58,18 +63,17 @@ class OptionMeta(RegistryMeta, ABCMeta):
         cls.__datetimeformat = kwargs.get("datetimeformat", getattr(cls, "datetimeformat", "%Y/%m/%d %H:%M:%S"))
 
     def __call__(cls, tk, k, r, q):
-        r = cls.continuous(r)
-        q = cls.continuous(q)
-        instance = super(OptionMeta, cls).__call__(tk, k, r, q)
+        instance = super(OptionMeta, cls).__call__(tk, k, continuous_rate(r), continuous_rate(q))
         return instance
 
-    def days(cls, ti, tk):
-        ti = cls.parsers[type(ti)](ti)
-        tk = cls.parsers[type(tk)](tk)
-        return (tk - ti).days
+#     def trading_days(cls, ti, tk):
+#         ti = cls.parsers[type(ti)](ti)
+#         tk = cls.parsers[type(tk)](tk)
+#         return (tk - ti).days
 
-    @staticmethod
-    def continuous(apy): return math.log(apy + 1)
+#     def trading_days_yearly(cls):
+#         pass
+
     @property
     def parsers(cls): return {str: lambda x: Datetime.strptime(x, cls.dateformat).date(), Date: lambda x: x, Datetime: lambda x: x.date()}
     @property
@@ -83,10 +87,6 @@ class OptionMeta(RegistryMeta, ABCMeta):
 
 
 class Option(ABC, metaclass=OptionMeta):
-    # Continuous Interest Rate
-    # Continuous Dividend Rate
-    # Annual Volatility
-
     def __init__(self, tk, k, r, q):
         self.__tk = tk
         self.__k = k
@@ -106,6 +106,14 @@ class Option(ABC, metaclass=OptionMeta):
     def intrinsic(self, ti, si, vi): pass
     @abstractmethod
     def value(self, ti, si, vi): pass
+
+    def tau(self, ti, *args):
+        pass
+
+#     def tau(self, ti, *args):
+#         assert ti < self.tk
+#         return self.__class__.tradingdays(ti, self.tk) / self.__class__.yeartradingdays
+
     @abstractmethod
     def delta(self, ti, si, vi): pass
     @abstractmethod
@@ -114,10 +122,6 @@ class Option(ABC, metaclass=OptionMeta):
     def rho(self, ti, si, vi): pass
     @abstractmethod
     def theta(self, ti, si, vi): pass
-
-    def tau(self, ti, *args):
-        assert ti < self.tk
-        return self.__class__.days(ti, self.tk) / 365.0
 
     def vega(self, ti, si, vi):
         t = self.tau(ti)
