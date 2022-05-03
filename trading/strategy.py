@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Created on Weds Apr 27 2022
-@name:   Trading Backtesting Application
+@name:   Trading Strategy Objects
 @author: Jack Kirby Cook
 
 """
@@ -10,20 +10,13 @@ import warnings
 import logging
 import numpy as np
 from abc import ABC, abstractmethod
-from datetime import datetime as Datetime
-from datetime import date as Date
-from pyalgotrade.bar import BasicBar
-from pyalgotrade.barfeed.membf import BarFeed
 from pyalgotrade.utils import collections
 from pyalgotrade.dataseries import SequenceDataSeries
 from pyalgotrade.strategy import BacktestingStrategy
-from pyalgotrade.bar import Frequency
-
-from utilities.files import ZIPCSVFile
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["Feed", "Strategy", "Volatility", "SMA", "Total", "Value", "Frequency"]
+__all__ = ["Strategy", "Volatility", "SMA", "Total", "Value"]
 __copyright__ = "Copyright 2022, Jack Kirby Cook"
 __license__ = ""
 
@@ -42,38 +35,6 @@ minimum = lambda x: np.min(x)
 first = lambda x: x[0]
 last = lambda x: x[-1]
 stdev = lambda x: np.std(x)
-
-
-class Feed(BarFeed):
-    fields = ["date", "datetime", "ticker", "open", "close", "high", "low", "adjusted"]
-    order = ["open", "high", "low", "close", "volume", "adjusted"]
-    parsers = {"ticker": str, "date": lambda x: Date.strptime(x, "%Y/%m/%d"), "datetime": lambda x: Datetime.strptime(x, "%Y/%m/%d %H:%M:%S")}
-    parser = float
-
-    def __init_subclass__(cls, *args, dateformat="%Y/%m/%d", datetimeformat="%Y/%m/%d %H:%M:%S", **kwargs):
-        cls.parsers.update({"date": lambda x: Date.strptime(x, dateformat), "datetime": lambda x: Datetime.strptime(x, datetimeformat)})
-
-    def __init__(self, directory, filename, frequency, length=None):
-        super().__init__(frequency, length)
-        bars = {}
-        for key, values in self.generator(directory, filename):
-            if key not in bars.keys():
-                bars[key] = []
-            bars[key].append(values)
-        for key, values in bars.items():
-            self.addBarsFromSequence(key, BasicBar(*values, frequency))
-
-    def load(self, directory, filename):
-        with ZIPCSVFile(directory, filename, mode="r") as zfile:
-            reader = zfile(fields=self.__class__.fields, parsers=self.__class__.parsers, parser=self.__class__.parser)
-            for row in reader:
-                row = {key: value for key, value in row.items() if value is not None}
-                key = row["ticker"]
-                index = row["datetime"] if "datetime" in row.keys() else Datetime.combine(row["date"], Datetime.min.time())
-                values = [index] + [row[field] for field in self.__class__.order]
-                yield key, values
-
-    def barsHaveAdjClose(self): return True
 
 
 class EventWindow(object):
@@ -161,18 +122,6 @@ class Strategy(BacktestingStrategy, ABC):
 
     @abstractmethod
     def execute(self, *args, **kwargs): pass
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

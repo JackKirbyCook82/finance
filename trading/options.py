@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
 """
 Created on Weds Apr 27 2022
-@name:   Trading Options
+@name:   Trading Options Objects
 @author: Jack Kirby Cook
 
 """
 
-
+import warnings
+import logging
 import math
 import calendar
 from enum import Enum
@@ -22,6 +23,10 @@ __author__ = "Jack Kirby Cook"
 __all__ = ["OptionType", "Option", "Call", "Put"]
 __copyright__ = "Copyright 2022, Jack Kirby Cook"
 __license__ = ""
+
+
+LOGGER = logging.getLogger(__name__)
+warnings.filterwarnings("ignore")
 
 
 class OptionType(Enum):
@@ -62,9 +67,6 @@ class Option(ABC, metaclass=OptionMeta):
         self.__r = r
         self.__q = q
 
-    def __call__(self, si, ti, vi):
-        return self.value(si, ti, vi)
-
     @property
     def k(self): return self.__k
     @property
@@ -76,6 +78,8 @@ class Option(ABC, metaclass=OptionMeta):
 
     @abstractmethod
     def value(self, ti, si, vi): pass
+    @abstractmethod
+    def intrinsic(self, ti, si, vi): pass
     @abstractmethod
     def delta(self, ti, si, vi): pass
     @abstractmethod
@@ -131,6 +135,11 @@ class Option(ABC, metaclass=OptionMeta):
 
 
 class Call(Option, key=OptionType.CALL):
+    def intrinsic(self, ti, si, vi):
+        rpv = self.pv(ti, self.r)
+        fv = max(0, si - self.k)
+        return rpv * fv
+
     def value(self, ti, si, vi):
         rpv = self.pv(ti, self.r)
         qpv = self.pv(ti, self.q)
@@ -169,6 +178,11 @@ class Call(Option, key=OptionType.CALL):
 
 
 class Put(Option, key=OptionType.PUT):
+    def intrinsic(self, ti, si, vi):
+        rpv = self.pv(ti, self.r)
+        fv = max(0, self.k - si)
+        return rpv * fv
+
     def value(self, ti, si, vi):
         rpv = self.pv(ti, self.r)
         qpv = self.pv(ti, self.q)
