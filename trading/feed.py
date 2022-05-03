@@ -66,16 +66,18 @@ class BarFeed(BarFeedBase):
     datetime_parser = lambda x: Datetime.strptime(x, "%Y/%m/%d %H:%M:%S")
 
     def __init_subclass__(cls, *args, dateformat="%Y/%m/%d", datetimeformat="%Y/%m/%d %H:%M:%S", **kwargs):
-        cls.date_parser = lambda x: Datetime.combine(Date.strptime(x, dateformat), Datetime.min.time())
-        cls.datetime_parser = lambda x: Datetime.strptime(x, datetimeformat)
+        str_parser = lambda x: Datetime.strptime(x, datetimeformat)
+        date_parser = lambda x: Datetime.combine(x, Datetime.min.time())
+        datetime_parser = lambda x: x
+        cls.parsers = {str: str_parser, Date: date_parser, Datetime: datetime_parser}
 
     def __init__(self, feed, *args, starttime, stoptime, frequency, length=None, **kwargs):
         assert isinstance(feed, Feed)
         assert frequency in Frequency.__members__
         super().__init__(frequency, length)
         bars = {}
-        starttime = self.__class__.parser(starttime)
-        stoptime = self.__class__.parser(stoptime)
+        starttime = self.__class__.parsers[type(starttime)](starttime)
+        stoptime = self.__class__.parsers[type(stoptime)](stoptime)
         for content in feed(starttime=starttime, stoptime=stoptime):
             key = content["ticker"]
             index = content["datetime"]
@@ -86,19 +88,13 @@ class BarFeed(BarFeedBase):
         for key, values in bars.items():
             self.addBarsFromSequence(key, BasicBar(*values, frequency))
 
-    @classmethod
-    def parser(cls, x):
-        if isinstance(x, Datetime):
-            return x
-        elif isinstance(x, Date):
-            return Datetime.combine(x, Datetime.min.time())
-        elif isinstance(x, str):
-            try:
-                return cls.datetime_parser(x)
-            except ValueError:
-                return cls.date_parser(x)
-        else:
-            raise TypeError(type(x).__name__)
+    def price(self, ticker): return self[ticker].getPriceDataSeries()
+    def open(self, ticker): return self[ticker].getOpenDataSeries()
+    def close(self, ticker): return self[ticker].getOpenDataSeries()
+    def high(self, ticker): return self[ticker].getHighDataSeries()
+    def low(self, ticker): return self[ticker].getLowDataSeries()
+    def volume(self, ticker): return self[ticker].getVolumeDataSeries()
+    def adjusted(self, ticker): return self[ticker].getAdjCloseDataSeries()
 
     def barsHaveAdjClose(self):
         return True

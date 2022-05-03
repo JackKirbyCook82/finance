@@ -104,15 +104,20 @@ class Value(EventBasedSeries): pass
 
 
 class Strategy(BacktestingStrategy, ABC):
-    def __init__(self, feed, cash):
+    def __init__(self, feed, cash, *args, **kwargs):
         super().__init__(feed, cash)
         self.setUseAdjustedValues(False)
         self.__arguments = tuple()
         self.__parameters = dict()
+        self.__dataseries = dict()
+        self.setup(feed, *args, **kwargs)
 
     def __call__(self, *args, **kwargs):
         self.__arguments = args
         self.__parameters = kwargs
+
+    def __getitem__(self, key): return self.__dataseries[key]
+    def __setitem__(self, key, value): self.__dataseries[key] = value
 
     def start(self): self.run()
     def stop(self): super().stop()
@@ -120,6 +125,8 @@ class Strategy(BacktestingStrategy, ABC):
     def onBars(self, bars):
         self.execute(*self.__arguments, **self.__parameters)
 
+    @abstractmethod
+    def setup(self, feed, *args, **kwargs): pass
     @abstractmethod
     def execute(self, *args, **kwargs): pass
 
