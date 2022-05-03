@@ -8,6 +8,7 @@ Created on Weds Apr 27 2022
 
 import warnings
 import logging
+from abc import ABCMeta
 from datetime import datetime as Datetime
 from datetime import date as Date
 from pyalgotrade.bar import BasicBar, Frequency
@@ -60,24 +61,36 @@ class Feed(object):
                 yield row
 
 
-class BarFeed(BarFeedBase):
-    fields = ["open", "high", "low", "close", "volume", "adjusted"]
-    date_parser = lambda x: Date.strptime(x, "%Y/%m/%d")
-    datetime_parser = lambda x: Datetime.strptime(x, "%Y/%m/%d %H:%M:%S")
+class BarFeedMeta(ABCMeta):
+    def __init__(cls, *args, **kwargs):
+        cls.__dateformat = kwargs.get("dateformat", getattr(cls, "dateformat", "%Y/%m/%d"))
+        cls.__datetimeformat = kwargs.get("datetimeformat", getattr(cls, "datetimeformat", "%Y/%m/%d %H:%M:%S"))
 
-    def __init_subclass__(cls, *args, dateformat="%Y/%m/%d", datetimeformat="%Y/%m/%d %H:%M:%S", **kwargs):
-        str_parser = lambda x: Datetime.strptime(x, datetimeformat)
-        date_parser = lambda x: Datetime.combine(x, Datetime.min.time())
-        datetime_parser = lambda x: x
-        cls.parsers = {str: str_parser, Date: date_parser, Datetime: datetime_parser}
+    def __call__(cls, *args, starttime, stoptime, **kwargs):
+        starttime, stoptime = cls.parsers[type(starttime)](starttime), cls.parsers[type(stoptime)](stoptime)
+        instance = super(BarFeedMeta, cls).__call__(*args, starttime=starttime, stoptime=stoptime, **kwargs)
+        return instance
+
+    @property
+    def parsers(cls): return {str: lambda x: Datetime.strptime(x, cls.datetimeformat), Date: lambda x: Datetime.combine(x, Datetime.min.time()), Datetime: lambda x: x}
+    @property
+    def dateformat(cls): return cls.__dateformat
+    @property
+    def datetimeformat(cls): return cls.__datetimeformat
+    @dateformat.setter
+    def dateformat(cls, dateformat): cls.__dateformat = dateformat
+    @datetimeformat.setter
+    def datetimeformat(cls, datetimeformat): cls.__datetimeformat = datetimeformat
+
+
+class BarFeed(BarFeedBase, metaclass=BarFeedMeta):
+    fields = ["open", "high", "low", "close", "volume", "adjusted"]
 
     def __init__(self, feed, *args, starttime, stoptime, frequency, length=None, **kwargs):
         assert isinstance(feed, Feed)
         assert frequency in Frequency.__members__
         super().__init__(frequency, length)
         bars = {}
-        starttime = self.__class__.parsers[type(starttime)](starttime)
-        stoptime = self.__class__.parsers[type(stoptime)](stoptime)
         for content in feed(starttime=starttime, stoptime=stoptime):
             key = content["ticker"]
             index = content["datetime"]
