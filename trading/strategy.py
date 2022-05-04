@@ -109,8 +109,6 @@ class Strategy(BacktestingStrategy, ABC):
         self.setUseAdjustedValues(False)
         self.__arguments = tuple()
         self.__parameters = dict()
-        self.__dataseries = dict()
-        self.setup(feed, *args, **kwargs)
 
     def __call__(self, *args, **kwargs):
         self.__arguments = args
@@ -125,8 +123,6 @@ class Strategy(BacktestingStrategy, ABC):
     def onBars(self, bars):
         self.execute(*self.__arguments, **self.__parameters)
 
-    @abstractmethod
-    def setup(self, feed, *args, **kwargs): pass
     @abstractmethod
     def execute(self, *args, **kwargs): pass
 

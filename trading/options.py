@@ -9,10 +9,12 @@ Created on Weds Apr 27 2022
 import warnings
 import logging
 import math
+import calendar
 from enum import Enum
 from scipy.stats import norm
 from datetime import datetime as Datetime
 from datetime import date as Date
+from datetime import timedelta as Timedelta
 from abc import ABC, ABCMeta, abstractmethod
 
 from utilities.meta import RegistryMeta
@@ -29,29 +31,25 @@ warnings.filterwarnings("ignore")
 
 
 continuous_rate = lambda apy: math.log(apy + 1)
+first_day = lambda yr, mo: Datetime(yr, mo, 1)
+last_day = lambda yr, mo: Datetime(yr, mo, calendar.monthrange(yr, mo)[1])
+day_generator = lambda to, tf: (to + Timedelta(to + i) for i in range((tf - to).days))
+total_weekdays = lambda to, tf: sum([1 for day in day_generator(to, tf) if day.weekday() < 5])
+total_weekends = lambda to, tf: sum([1 for day in day_generator(to, tf) if day.weekday() > 4])
+third_friday = lambda yr, mo: [day for day in day_generator(first_day(yr, mo), last_day(yr, mo)) if day.weekday() == 4][2]
+
+
+def getmarket():
+    pass
+
+
+def createmarket():
+    pass
 
 
 class OptionType(Enum):
     CALL = 0
     PUT = 1
-
-
-class Days(Enum):
-    MONDAY = 0
-    TUESDAY = 1
-    WEDNESDAY = 2
-    THURSDAY = 3
-    FRIDAY = 4
-    SATURDAY = 5
-    SUNDAY = 6
-
-
-# def days(year, month, day):
-#     assert isinstance(year, int) and isinstance(month, int)
-#     assert day in Days.__members__
-#     x = calendar.Calendar(firstweekday=calendar.SUNDAY)(year, month)
-#     y = [d for w in x for d in w if d.weekday() == day and d.month == month]
-#     return y
 
 
 class OptionMeta(RegistryMeta, ABCMeta):
@@ -60,19 +58,10 @@ class OptionMeta(RegistryMeta, ABCMeta):
         cls.__datetimeformat = kwargs.get("datetimeformat", getattr(cls, "datetimeformat", "%Y/%m/%d %H:%M:%S"))
 
     def __call__(cls, tk, k, r, q):
-        instance = super(OptionMeta, cls).__call__(tk, k, continuous_rate(r), continuous_rate(q))
+        dateparser = {str: lambda x: Datetime.strptime(x, cls.dateformat).date(), Date: lambda x: x, Datetime: lambda x: x.date()}
+        instance = super(OptionMeta, cls).__call__(tk, k, continuous_rate(r), continuous_rate(q), dateparser=dateparser)
         return instance
 
-#     def trading_days(cls, ti, tk):
-#         ti = cls.parsers[type(ti)](ti)
-#         tk = cls.parsers[type(tk)](tk)
-#         return (tk - ti).days
-
-#     def trading_days_yearly(cls):
-#         pass
-
-    @property
-    def parsers(cls): return {str: lambda x: Datetime.strptime(x, cls.dateformat).date(), Date: lambda x: x, Datetime: lambda x: x.date()}
     @property
     def dateformat(cls): return cls.__dateformat
     @property
@@ -84,7 +73,9 @@ class OptionMeta(RegistryMeta, ABCMeta):
 
 
 class Option(ABC, metaclass=OptionMeta):
-    def __init__(self, tk, k, r, q):
+    def __init__(self, tk, k, r, q, *args, dateparser, tradingdays=252, **kwargs):
+        self.__tradingdays = tradingdays
+        self.__dateparser = dateparser
         self.__tk = tk
         self.__k = k
         self.__r = r
@@ -105,11 +96,9 @@ class Option(ABC, metaclass=OptionMeta):
     def value(self, ti, si, vi): pass
 
     def tau(self, ti, *args):
-        pass
-
-#     def tau(self, ti, *args):
-#         assert ti < self.tk
-#         return self.__class__.tradingdays(ti, self.tk) / self.__class__.yeartradingdays
+        ti, tk = self.__dateparser(ti), self.__dateparser(self.tk)
+        assert ti <= self.tk
+        return total_weekdays(ti, tk) / self.__tradingdays
 
     @abstractmethod
     def delta(self, ti, si, vi): pass
@@ -140,11 +129,6 @@ class Option(ABC, metaclass=OptionMeta):
         pdf = self.pdf(d2)
         rpv = self.pv(ti, self.r)
         return (rpv * pdf) / (si * vi * math.sqrt(t))
-
-    def greeks(self, ti, si, vi):
-        greeks = {"delta": self.delta(ti, si, vi), "kappa": self.kappa(ti, si, vi), "rho": self.rho(ti, si, vi), "theta": self.theta(ti, si, vi), "vega": self.vega(ti, si, vi),
-                  "gamma": self.gamma(ti, si, vi), "zeta": self.zeta(ti, si, vi), "tau": self.tau(ti, si, vi)}
-        return greeks
 
     @staticmethod
     def cdf(x): return norm.cdf(x)
@@ -205,7 +189,7 @@ class Call(Option, key=OptionType.CALL):
         a = (si * vi * qpv * pdf) / (2 * math.sqrt(t))
         b = self.r * self.k * rpv * n2
         c = self.q * si * qpv * n1
-        return (-a - b + c) / 365.0
+        return (-a - b + c) / self.__tradingdays
 
 
 class Put(Option, key=OptionType.PUT):
@@ -248,7 +232,7 @@ class Put(Option, key=OptionType.PUT):
         a = (si * vi * qpv * pdf) / (2 * math.sqrt(t))
         b = self.r * self.k * rpv * n2
         c = self.q * si * qpv * n1
-        return (-a + b - c) / 365.0
+        return (-a + b - c) / self.__tradingdays
 
 
 
