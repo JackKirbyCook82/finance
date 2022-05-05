@@ -10,11 +10,13 @@ import warnings
 import logging
 import math
 import calendar
+import numpy as np
 from enum import Enum
 from scipy.stats import norm
 from datetime import datetime as Datetime
 from datetime import date as Date
 from datetime import timedelta as Timedelta
+from dateutil.rrule import rrule, MONTHLY
 from abc import ABC, ABCMeta, abstractmethod
 
 from utilities.meta import RegistryMeta
@@ -29,27 +31,27 @@ __license__ = ""
 LOGGER = logging.getLogger(__name__)
 warnings.filterwarnings("ignore")
 
-
 continuous_rate = lambda apy: math.log(apy + 1)
+daily_volatility = lambda x: np.std(np.diff(x) / x[1:] * 100)
+yearly_volatility = lambda v: v / math.sqrt(252)
 first_day = lambda yr, mo: Datetime(yr, mo, 1)
 last_day = lambda yr, mo: Datetime(yr, mo, calendar.monthrange(yr, mo)[1])
 day_generator = lambda to, tf: (to + Timedelta(to + i) for i in range((tf - to).days))
 total_weekdays = lambda to, tf: sum([1 for day in day_generator(to, tf) if day.weekday() < 5])
 total_weekends = lambda to, tf: sum([1 for day in day_generator(to, tf) if day.weekday() > 4])
 third_friday = lambda yr, mo: [day for day in day_generator(first_day(yr, mo), last_day(yr, mo)) if day.weekday() == 4][2]
+expire_dates = lambda to, tf: [third_friday(t.year, t.month) for t in rrule(MONTHLY, dtstart=to, until=tf) if to <= t <= tf]
+stock_function = lambda r, q, v: lambda s, z, n: s * math.pow(1 + (r / 252) + (r / 252) + (v * math.sqrt(v) * z), n)
+
+OptionType = Enum("OptionType", "CALL PUT", start=0)
 
 
-def getmarket():
-    pass
+def create_market(sx, r, q):
+    v = yearly_volatility(daily_volatility(sx))
+    function = stock_function(r, q, v)
 
-
-def createmarket():
-    pass
-
-
-class OptionType(Enum):
-    CALL = 0
-    PUT = 1
+#    zl, zu = norm.ppf(0.5 - (p / 2)), norm.ppf(0.5 + (p / 2))
+#    tx, tn = expire_dates(to, tf), total_weekdays(to, tf)
 
 
 class OptionMeta(RegistryMeta, ABCMeta):
@@ -73,8 +75,7 @@ class OptionMeta(RegistryMeta, ABCMeta):
 
 
 class Option(ABC, metaclass=OptionMeta):
-    def __init__(self, tk, k, r, q, *args, dateparser, tradingdays=252, **kwargs):
-        self.__tradingdays = tradingdays
+    def __init__(self, tk, k, r, q, *args, dateparser, **kwargs):
         self.__dateparser = dateparser
         self.__tk = tk
         self.__k = k
@@ -98,7 +99,7 @@ class Option(ABC, metaclass=OptionMeta):
     def tau(self, ti, *args):
         ti, tk = self.__dateparser(ti), self.__dateparser(self.tk)
         assert ti <= self.tk
-        return total_weekdays(ti, tk) / self.__tradingdays
+        return total_weekdays(ti, tk) / 252
 
     @abstractmethod
     def delta(self, ti, si, vi): pass
@@ -189,7 +190,7 @@ class Call(Option, key=OptionType.CALL):
         a = (si * vi * qpv * pdf) / (2 * math.sqrt(t))
         b = self.r * self.k * rpv * n2
         c = self.q * si * qpv * n1
-        return (-a - b + c) / self.__tradingdays
+        return (-a - b + c) / 252
 
 
 class Put(Option, key=OptionType.PUT):
@@ -232,7 +233,7 @@ class Put(Option, key=OptionType.PUT):
         a = (si * vi * qpv * pdf) / (2 * math.sqrt(t))
         b = self.r * self.k * rpv * n2
         c = self.q * si * qpv * n1
-        return (-a + b - c) / self.__tradingdays
+        return (-a + b - c) / 252
 
 
 

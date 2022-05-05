@@ -26,7 +26,7 @@ warnings.filterwarnings("ignore")
 
 
 diff = lambda x: np.diff(x)
-pctdiff = lambda x: np.diff(x) / x[1:] * 100
+var = lambda x: np.diff(x) / x[1:] * 100
 
 average = lambda x: np.average(x)
 total = lambda x: np.sum(x)
