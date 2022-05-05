@@ -10,6 +10,8 @@ import warnings
 import logging
 import math
 import calendar
+
+import numpy
 import numpy as np
 from enum import Enum
 from scipy.stats import norm
@@ -31,9 +33,10 @@ __license__ = ""
 LOGGER = logging.getLogger(__name__)
 warnings.filterwarnings("ignore")
 
+
 continuous_rate = lambda apy: math.log(apy + 1)
 daily_volatility = lambda x: np.std(np.diff(x) / x[1:] * 100)
-yearly_volatility = lambda v: v / math.sqrt(252)
+yearly_volatility = lambda v: v * math.sqrt(252)
 first_day = lambda yr, mo: Datetime(yr, mo, 1)
 last_day = lambda yr, mo: Datetime(yr, mo, calendar.monthrange(yr, mo)[1])
 day_generator = lambda to, tf: (to + Timedelta(to + i) for i in range((tf - to).days))
@@ -41,17 +44,25 @@ total_weekdays = lambda to, tf: sum([1 for day in day_generator(to, tf) if day.w
 total_weekends = lambda to, tf: sum([1 for day in day_generator(to, tf) if day.weekday() > 4])
 third_friday = lambda yr, mo: [day for day in day_generator(first_day(yr, mo), last_day(yr, mo)) if day.weekday() == 4][2]
 expire_dates = lambda to, tf: [third_friday(t.year, t.month) for t in rrule(MONTHLY, dtstart=to, until=tf) if to <= t <= tf]
-stock_function = lambda r, q, v: lambda s, z, n: s * math.pow(1 + (r / 252) + (r / 252) + (v * math.sqrt(v) * z), n)
+expire_periods = lambda tx: np.cumsum(np.array([total_weekdays(ti, tj) for ti, tj in zip(tx[:-1], tx[1:])]))
+stdnorm_linespace = lambda p, n: np.linspace(norm.ppf(0.5 - (p / 2)), norm.ppf(0.5 + (p / 2)), num=n)
+stock_function = lambda r, q, v: lambda z, n: math.pow(1 + (r / 252) + (q / 252) + (v * math.sqrt(v) * z), n)
+
 
 OptionType = Enum("OptionType", "CALL PUT", start=0)
 
 
-def create_market(sx, r, q):
-    v = yearly_volatility(daily_volatility(sx))
-    function = stock_function(r, q, v)
-
-#    zl, zu = norm.ppf(0.5 - (p / 2)), norm.ppf(0.5 + (p / 2))
-#    tx, tn = expire_dates(to, tf), total_weekdays(to, tf)
+def create_market(sx, to, tf, p, n, r, q):
+    v = daily_volatility(sx)
+    f = stock_function(continuous_rate(r), continuous_rate(q), yearly_volatility(v))
+    tx = expire_dates(to, tf)
+    nx = expire_periods([to, *tx])
+    zx = stdnorm_linespace(p, n)
+    zxy, nxy = np.meshgrid(zx, nx)
+    kxy = np.vectorize(f)(zxy, nxy) * sx[-1]
+    for t, kx in zip(tx, kxy):
+        for k in list(kx):
+            yield Option[OptionType.CALL](t, k, r, q), Option[OptionType.PUT](t, k, r, q)
 
 
 class OptionMeta(RegistryMeta, ABCMeta):
