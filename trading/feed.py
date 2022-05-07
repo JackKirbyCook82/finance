@@ -86,12 +86,12 @@ class BarFeedMeta(ABCMeta):
 class BarFeed(BarFeedBase, metaclass=BarFeedMeta):
     fields = ["open", "high", "low", "close", "volume", "adjusted"]
 
-    def __init__(self, feed, *args, starttime, stoptime, frequency, length=None, **kwargs):
+    def __init__(self, feed, *args, ticker=None, starttime, stoptime, frequency, length=None, **kwargs):
         assert isinstance(feed, Feed)
         assert frequency in Frequency.__members__
         super().__init__(frequency, length)
         bars = {}
-        for content in feed(starttime=starttime, stoptime=stoptime):
+        for content in feed(ticker=ticker, starttime=starttime, stoptime=stoptime):
             key = content["ticker"]
             index = content["datetime"]
             values = [index] + [content[field] for field in self.__class__.fields]

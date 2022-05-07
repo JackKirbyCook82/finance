@@ -97,7 +97,7 @@ class EventBasedSeries(SequenceDataSeries):
     def getDataSeries(self): return self.__dataseries
 
 
-class Volatility(EventBasedFilter, reduction=stdev, function=pctdiff): pass
+class Volatility(EventBasedFilter, reduction=stdev, function=var): pass
 class SMA(EventBasedFilter, reduction=average): pass
 class Total(EventBasedFilter, reduction=total): pass
 class Value(EventBasedSeries): pass
@@ -109,22 +109,43 @@ class Strategy(BacktestingStrategy, ABC):
         self.setUseAdjustedValues(False)
         self.__arguments = tuple()
         self.__parameters = dict()
+        self.__price = None
+        self.__open = None
+        self.__close = None
+        self.__high = None
+        self.__low = None
+        self.__volume = None
+        self.__adjusted = None
 
     def __call__(self, *args, **kwargs):
         self.__arguments = args
         self.__parameters = kwargs
 
-    def __getitem__(self, key): return self.__dataseries[key]
-    def __setitem__(self, key, value): self.__dataseries[key] = value
-
     def start(self): self.run()
     def stop(self): super().stop()
 
     def onBars(self, bars):
+        self.__price = lambda x: bars[x].getPrice()
+        self.__open = lambda x: bars[x].getOpen()
+        self.__close = lambda x: bars[x].getClose()
+        self.__high = lambda x: bars[x].getHigh()
+        self.__low = lambda x: bars[x].getLow()
+        self.__volume = lambda x: bars[x].getVolume()
+        self.__adjusted = lambda x: bars[x].getAdjClose()
         self.execute(*self.__arguments, **self.__parameters)
+
+    def current(self): return self.getCurrentDateTime()
+    def price(self, ticker): return self.__price(ticker)
+    def open(self, ticker): return self.__open(ticker)
+    def close(self, ticker): return self.__close(ticker)
+    def high(self, ticker): return self.__high(ticker)
+    def low(self, ticker): return self.__low(ticker)
+    def volume(self, ticker): return self.__volume(ticker)
+    def adjusted(self, ticker): return self.__adjusted(ticker)
 
     @abstractmethod
     def execute(self, *args, **kwargs): pass
+
 
 
 
