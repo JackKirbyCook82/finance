@@ -10,8 +10,9 @@ import warnings
 import logging
 import pandas as pd
 from abc import ABCMeta
-from datetime import datetime as Datetime
 from datetime import date as Date
+from datetime import datetime as Datetime
+from collections import OrderedDict as ODict
 from pyalgotrade.bar import BasicBar, Frequency
 from pyalgotrade.barfeed.membf import BarFeed as BarFeedBase
 
@@ -71,24 +72,35 @@ class BarsMeta(ABCMeta):
         assert isinstance(starttime, Datetime) and isinstance(stoptime, Date)
         feed = cls.feed(reader, ticker, starttime, stoptime)
         bars = cls.bars(reader, ticker, starttime, stoptime)
-        instance = super(BarsMeta, cls).__call__(*args, feed=feed, bars=bars, fields=cls.fields, **kwargs)
+        records = cls.records(reader, ticker, starttime, stoptime)
+        instance = super(BarsMeta, cls).__call__(*args, feed=feed, bars=bars, records=records, **kwargs)
         return instance
 
     def feed(cls, reader, ticker, starttime, stoptime):
         for content in reader(ticker=ticker, starttime=starttime, stoptime=stoptime):
             key = content["ticker"]
             index = content["index"]
-            values = [content[field] for field in cls.fields]
-            yield key, index, values
+            contents = ODict([(field, content[field]) for field in cls.fields])
+            yield key, index, contents
 
     def bars(cls, reader, ticker, starttime, stoptime):
         feed = cls.feed(reader, ticker, starttime, stoptime)
         bars = {}
-        for key, index, values in iter(feed):
+        for key, index, contents in iter(feed):
             if key not in bars.keys():
                 bars[key] = []
-            bars[key].append([index] + list(values))
+            bars[key].append([index] + list(contents.values()))
         for key, values in bars.items():
+            yield key, values
+
+    def records(cls, reader, ticker, starttime, stoptime):
+        feed = cls.feed(reader, ticker, starttime, stoptime)
+        records = {}
+        for key, index, contents in iter(feed):
+            if key not in records.keys():
+                records[key] = []
+            records[key].append({"index": index, **contents})
+        for key, values in records.items():
             yield key, values
 
 
@@ -112,13 +124,13 @@ class StrategyBars(BarFeedBase, metaclass=BarsMeta):
         return True
 
 
-class HistoryBars(dict, metaclass=BarsMeta):
-    def __init__(self, *args, bars, fields, **kwargs):
-        super().__init__({key: pd.DataFrame(values, columns=["index", *fields]).set_index("index", inplace=False, drop=True) for key, values in iter(bars)})
+class HistoryBars(object, metaclass=BarsMeta):
+    def __init__(self, *args, records, **kwargs):
+        function = lambda x: pd.DataFrame(x).set_index("index", inplace=False, drop=True)
+        self.__dataframes = {key: function(values) for key, values in records.items()}
 
-    def __contains__(self, ticker): return ticker in self.__bars.keys()
-    def __setitem__(self, ticker, dataframe): self.__bars[ticker].update(dataframe.set_index("index", inplace=False, drop=True), overwrite=True)
-    def __getitem__(self, ticker): return self.__bars[ticker]
+    def __getitem__(self, key):
+        return self.__dataframes[key]
 
     def index(self, ticker): return self[ticker].index.to_series().drop(inplace=False)
     def price(self, ticker): return self[ticker]["adjusted"] if self.barsHaveAdjClose() else self[ticker]["close"]
