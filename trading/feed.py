@@ -129,17 +129,14 @@ class HistoryBars(object, metaclass=BarsMeta):
         function = lambda x: pd.DataFrame(x).set_index("index", inplace=False, drop=True)
         self.__dataframes = {key: function(values) for key, values in records.items()}
 
-    def __getitem__(self, key):
-        return self.__dataframes[key]
-
-    def index(self, ticker): return self[ticker].index.to_series().drop(inplace=False)
-    def price(self, ticker): return self[ticker]["adjusted"] if self.barsHaveAdjClose() else self[ticker]["close"]
-    def open(self, ticker): return self[ticker]["open"]
-    def close(self, ticker): return self[ticker]["close"]
-    def high(self, ticker): return self[ticker]["high"]
-    def low(self, ticker): return self[ticker]["low"]
-    def volume(self, ticker): return self[ticker]["volume"]
-    def adjusted(self, ticker): return self[ticker]["adjusted"]
+    def index(self, ticker): return self.__dataframes[ticker].index.to_series().drop(inplace=False)
+    def price(self, ticker): return self.__dataframes[ticker]["adjusted"] if self.barsHaveAdjClose() else self.__dataframes[ticker]["close"]
+    def open(self, ticker): return self.__dataframes[ticker]["open"]
+    def close(self, ticker): return self.__dataframes[ticker]["close"]
+    def high(self, ticker): return self.__dataframes[ticker]["high"]
+    def low(self, ticker): return self.__dataframes[ticker]["low"]
+    def volume(self, ticker): return self.__dataframes[ticker]["volume"]
+    def adjusted(self, ticker): return self.__dataframes[ticker]["adjusted"]
 
     @staticmethod
     def barsHaveAdjClose():

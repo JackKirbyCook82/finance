@@ -106,6 +106,7 @@ class Strategy(BacktestingStrategy, ABC):
     def __init__(self, feed, cash, *args, **kwargs):
         super().__init__(feed, cash)
         self.setUseAdjustedValues(False)
+        self.__feed = feed
         self.__arguments = tuple()
         self.__parameters = dict()
         self.__price = None
@@ -143,6 +144,8 @@ class Strategy(BacktestingStrategy, ABC):
     def volume(self, ticker): return self.__volume(ticker)
     def adjusted(self, ticker): return self.__adjusted(ticker)
 
+    @property
+    def feed(self): return self.__feed
     @abstractmethod
     def execute(self, *args, **kwargs): pass
 

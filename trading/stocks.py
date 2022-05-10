@@ -64,7 +64,7 @@ class SMA(HistoryBasedFilter, reduction=average): pass
 class Total(HistoryBasedFilter, reduction=total): pass
 
 
-class StockHistory(object):
+class History(object):
     def __init__(self, feed, *args, **kwargs):
         self.__feed = feed
 
@@ -76,6 +76,17 @@ class StockHistory(object):
     def low(self, ticker): return self.__feed.low(ticker)
     def volume(self, ticker): return self.__feed.volume(ticker)
     def adjusted(self, ticker): return self.__feed.adjusted(ticker)
+
+    @property
+    def feed(self): return self.__feed
+
+
+
+
+
+
+
+
 
 
 
