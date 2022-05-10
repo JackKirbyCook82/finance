@@ -16,7 +16,7 @@ from pyalgotrade.strategy import BacktestingStrategy
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["Strategy", "Volatility", "SMA", "Total", "Value"]
+__all__ = ["Strategy", "Volatility", "SMA", "Total"]
 __copyright__ = "Copyright 2022, Jack Kirby Cook"
 __license__ = ""
 
@@ -100,7 +100,6 @@ class EventBasedSeries(SequenceDataSeries):
 class Volatility(EventBasedFilter, reduction=stdev, function=var): pass
 class SMA(EventBasedFilter, reduction=average): pass
 class Total(EventBasedFilter, reduction=total): pass
-class Value(EventBasedSeries): pass
 
 
 class Strategy(BacktestingStrategy, ABC):
@@ -135,6 +134,7 @@ class Strategy(BacktestingStrategy, ABC):
         self.execute(*self.__arguments, **self.__parameters)
 
     def current(self): return self.getCurrentDateTime()
+    def index(self): return self.getCurrentDateTime()
     def price(self, ticker): return self.__price(ticker)
     def open(self, ticker): return self.__open(ticker)
     def close(self, ticker): return self.__close(ticker)
