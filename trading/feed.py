@@ -12,6 +12,9 @@ from abc import ABCMeta
 from datetime import date as Date
 from datetime import datetime as Datetime
 from collections import OrderedDict as ODict
+from collections import namedtuple as ntuple
+
+import pandas as pd
 from pyalgotrade.bar import BasicBar, Frequency
 from pyalgotrade.barfeed.membf import BarFeed as BarFeedBase
 
@@ -81,6 +84,10 @@ class BarFeedMeta(ABCMeta):
             yield ticker, index, contents
 
 
+class BarFeedProxy(ntuple("BarFeedProxy", ["open", "close", "high", "low", "volume", "adjusted"])):
+    pass
+
+
 class StrategyBarFeed(BarFeedBase, metaclass=BarFeedMeta):
     def __init__(self, *args, feed, frequency, length=None, **kwargs):
         assert frequency in Frequency.__members__
@@ -89,22 +96,30 @@ class StrategyBarFeed(BarFeedBase, metaclass=BarFeedMeta):
             bar = BasicBar([index] + list(contents.values()), frequency)
             self.addBarsFromSequence(ticker, bar)
 
+    def __getitem__(self, ticker):
+        attrs = ["getOpenDataSeries", "getCloseDataSeries", "getHighDataSeries", "getLowDataSeries", "getVolumeDataSeries", "getAdjCloseDataSeries"]
+        return BarFeedProxy(*[getattr(super().__getitem__(ticker), attr) for attr in attrs])
+
+    def __contains__(self, ticker):
+        return super().__contains__(ticker)
+
     @staticmethod
     def barsHaveAdjClose():
         return True
 
 
-class HistoryBarFeed(BarFeedBase, metaclass=BarFeedMeta):
+class HistoryBarFeed(dict, metaclass=BarFeedMeta):
     def __init__(self, *args, feed, **kwargs):
-        for ticker, index, contents in iter(feed):
-            pass
-
-            ###
+        records = [{"ticker": ticker, "index": index, **contents} for ticker, index, contents in iter(feed)]
+        groups = pd.DataFrame(records).set_index("index", drop=True, inplace=False).groupby("ticker")
+        super().__init__({ticker: dataframe for ticker, dataframe in iter(groups)})
 
     def __getitem__(self, ticker):
-        pass
+        columns = ["open", "close", "high", "low", "volume", "adjusted"]
+        return BarFeedProxy(*[lambda: super().__getitem__(ticker)[column] for column in columns])
 
-        ###
+    def __contains__(self, ticker):
+        return super().__contains__(ticker)
 
     @staticmethod
     def barsHaveAdjClose():

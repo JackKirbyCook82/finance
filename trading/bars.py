@@ -9,6 +9,7 @@ Created on Weds Apr 27 2022
 import warnings
 import logging
 import numpy as np
+import pandas as pd
 from abc import ABC, abstractmethod
 from pyalgotrade.utils import collections
 from pyalgotrade.dataseries import SequenceDataSeries
@@ -16,7 +17,7 @@ from pyalgotrade.strategy import BacktestingStrategy
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["Strategy", "StrategyIndicators"]
+__all__ = ["Strategy", "History", "Indicators"]
 __copyright__ = "Copyright 2022, Jack Kirby Cook"
 __license__ = ""
 
@@ -97,48 +98,55 @@ class EventBasedSeries(SequenceDataSeries):
     def getDataSeries(self): return self.__dataseries
 
 
-class Volatility(EventBasedFilter, reduction=stdev, function=var): pass
-class SMA(EventBasedFilter, reduction=average): pass
-class Total(EventBasedFilter, reduction=total): pass
+class HistoryBasedFilter(pd.Series):
+    def __init_subclass__(cls, *args, reduction, function=lambda x: x, **kwargs):
+        cls.reduction = reduction
+        cls.function = function
+
+    def __new__(cls, series, period):
+        assert(period > 0)
+        assert(isinstance(period, int))
+        assert isinstance(series, pd.Series)
+        reduction = cls.reduction
+        function = lambda x: cls.function(x) if not pd.isna(x) else x
+        series = series.rolling(period).apply(reduction)
+        return series.apply(function).dropna(inplace=False)
 
 
-class StrategyIndicators(object):
-    VOLATILITY = Volatility
-    SMA = SMA
-    TOTAL = Total
+class EventBasedSeries(pd.Series):
+    def __init_subclass__(cls, *args, function=lambda x: x, **kwargs):
+        cls.function = function
+
+    def __new__(cls, series):
+        assert isinstance(series, pd.Series)
+        function = cls.function
+        return series.apply(function).dropna(inplace=False)
 
 
-class MissingStrategySeriesError(Exception): pass
-class ExistingStrategySeriesError(Exception): pass
+class Indicators:
+    class Strategy:
+        class Volatility(EventBasedFilter, reduction=stdev, function=var): pass
+        class SMA(EventBasedFilter, reduction=average): pass
+        class Total(EventBasedFilter, reduction=total): pass
+
+    class History:
+        class Volatility(HistoryBasedFilter, reduction=stdev, function=var): pass
+        class SMA(HistoryBasedFilter, reduction=average): pass
+        class Total(HistoryBasedFilter, reduction=total): pass
 
 
-class StrategyProxyMeta(type):
+class BarProxyMeta(type):
     fields = ["open", "close", "high", "low", "volume", "adjusted"]
 
     def __call__(cls, ticker, feed):
-        series = {key: getattr(feed[ticker], value)() for key, value in cls.fields.items()}
-        instance = super(StrategyProxyMeta, cls).__call__(ticker, series)
+        contents = {field: getattr(feed[ticker], field)() for field in cls.fields}
+        instance = super(BarProxyMeta, cls).__call__(contents)
         return instance
 
 
-class StrategyProxy(object, metaclass=StrategyProxyMeta):
-    def __init__(self, ticker, series):
-        self.__ticker = ticker
-        self.__series = series
-
-    def __contains__(self, attr):
-        return attr in self.__series.keys()
-
-    def __getattr__(self, attr):
-        if attr not in self:
-            raise MissingStrategySeriesError(attr)
-        return self.__series[attr]
-
-    def __setattr__(self, attr, series):
-        assert isinstance(series, SequenceDataSeries)
-        if attr in self:
-            raise ExistingStrategySeriesError(attr)
-        self.__series[attr] = series
+class BarProxy(dict, metaclass=BarProxyMeta):
+    def __getattr__(self, attr): return self[attr]
+    def __setattr__(self, attr, series): self[attr] = series
 
 
 class Strategy(BacktestingStrategy, ABC):
@@ -152,11 +160,11 @@ class Strategy(BacktestingStrategy, ABC):
         self.setup(*args, **kwargs)
 
     def __getitem__(self, ticker):
-        try:
+        if ticker in self.__proxys.keys():
             return self.__proxys[ticker]
-        except IndexError:
-            self.__proxys[ticker] = StrategyProxy(ticker, self.__feed)
-            return self.__proxys[ticker]
+        proxy = BarProxy(ticker, self.__feed)
+        self.__proxy[ticker] = proxy
+        return proxy
 
     def __call__(self, *args, **kwargs):
         self.__arguments = args
@@ -173,7 +181,27 @@ class Strategy(BacktestingStrategy, ABC):
     def execute(self, *args, **kwargs): pass
 
 
+class History(ABC):
+    def __init__(self, feed, *args, **kwargs):
+        self.__feed = feed
+        self.__proxys = {}
+        self.setup(*args, **kwargs)
 
+    def __getitem__(self, ticker):
+        if ticker in self.__proxys.keys():
+            return self.__proxys[ticker]
+        proxy = BarProxy(ticker, self.__feed)
+        self.__proxy[ticker] = proxy
+        return proxy
+
+    def __call__(self, *args, **kwargs):
+        self.execute(*args, **kwargs)
+        return
+
+    @abstractmethod
+    def setup(self, *args, **kwargs): pass
+    @abstractmethod
+    def execute(self, *args, **kwargs): pass
 
 
 
