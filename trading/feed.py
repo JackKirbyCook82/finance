@@ -8,7 +8,6 @@ Created on Weds Apr 27 2022
 
 import warnings
 import logging
-import pandas as pd
 from abc import ABCMeta
 from datetime import date as Date
 from datetime import datetime as Datetime
@@ -21,7 +20,7 @@ from utilities.files import ZIPCSVFile
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["Feed", "StrategyBars", "HistoryBars", "Frequency"]
+__all__ = ["BarReader", "StrategyBarFeed", "HistoryBarFeed", "Frequency"]
 __copyright__ = "Copyright 2022, Jack Kirby Cook"
 __license__ = ""
 
@@ -30,7 +29,7 @@ LOGGER = logging.getLogger(__name__)
 warnings.filterwarnings("ignore")
 
 
-class Feed(object):
+class BarReader(object):
     fields = ["ticker", "date", "datetime", "open", "close", "high", "low", "volume", "adjusted"]
     parsers = {"ticker": str, "date": lambda x: Date.strptime(x, "%Y/%m/%d"), "datetime": lambda x: Datetime.strptime(x, "%Y/%m/%d %H:%M:%S")}
     parser = float
@@ -64,79 +63,48 @@ class Feed(object):
                 yield row
 
 
-class BarsMeta(ABCMeta):
-    fields = ["open", "high", "low", "close", "volume", "adjusted"]
+class BarFeedMeta(ABCMeta):
+    fields = ["open", "close", "high", "low", "volume", "adjusted"]
 
     def __call__(cls, reader, *args, ticker=None, starttime=None, stoptime=None, **kwargs):
-        assert isinstance(reader, Feed)
+        assert isinstance(reader, BarReader)
         assert isinstance(starttime, Datetime) and isinstance(stoptime, Date)
         feed = cls.feed(reader, ticker, starttime, stoptime)
-        bars = cls.bars(reader, ticker, starttime, stoptime)
-        records = cls.records(reader, ticker, starttime, stoptime)
-        instance = super(BarsMeta, cls).__call__(*args, feed=feed, bars=bars, records=records, **kwargs)
+        instance = super(BarFeedMeta, cls).__call__(*args, feed=feed, **kwargs)
         return instance
 
     def feed(cls, reader, ticker, starttime, stoptime):
         for content in reader(ticker=ticker, starttime=starttime, stoptime=stoptime):
-            key = content["ticker"]
+            ticker = content["ticker"]
             index = content["index"]
             contents = ODict([(field, content[field]) for field in cls.fields])
-            yield key, index, contents
-
-    def bars(cls, reader, ticker, starttime, stoptime):
-        feed = cls.feed(reader, ticker, starttime, stoptime)
-        bars = {}
-        for key, index, contents in iter(feed):
-            if key not in bars.keys():
-                bars[key] = []
-            bars[key].append([index] + list(contents.values()))
-        for key, values in bars.items():
-            yield key, values
-
-    def records(cls, reader, ticker, starttime, stoptime):
-        feed = cls.feed(reader, ticker, starttime, stoptime)
-        records = {}
-        for key, index, contents in iter(feed):
-            if key not in records.keys():
-                records[key] = []
-            records[key].append({"index": index, **contents})
-        for key, values in records.items():
-            yield key, values
+            yield ticker, index, contents
 
 
-class StrategyBars(BarFeedBase, metaclass=BarsMeta):
-    def __init__(self, *args, bars, frequency, length=None, **kwargs):
+class StrategyBarFeed(BarFeedBase, metaclass=BarFeedMeta):
+    def __init__(self, *args, feed, frequency, length=None, **kwargs):
         assert frequency in Frequency.__members__
         super().__init__(frequency, length)
-        for key, values in iter(bars):
-            self.addBarsFromSequence(key, BasicBar(*values, frequency))
-
-    def price(self, ticker): return self[ticker].getPriceDataSeries()
-    def open(self, ticker): return self[ticker].getOpenDataSeries()
-    def close(self, ticker): return self[ticker].getCloseDataSeries()
-    def high(self, ticker): return self[ticker].getHighDataSeries()
-    def low(self, ticker): return self[ticker].getLowDataSeries()
-    def volume(self, ticker): return self[ticker].getVolumeDataSeries()
-    def adjusted(self, ticker): return self[ticker].getAdjCloseDataSeries()
+        for ticker, index, contents in iter(feed):
+            bar = BasicBar([index] + list(contents.values()), frequency)
+            self.addBarsFromSequence(ticker, bar)
 
     @staticmethod
     def barsHaveAdjClose():
         return True
 
 
-class HistoryBars(object, metaclass=BarsMeta):
-    def __init__(self, *args, records, **kwargs):
-        function = lambda x: pd.DataFrame(x).set_index("index", inplace=False, drop=True)
-        self.__dataframes = {key: function(values) for key, values in records.items()}
+class HistoryBarFeed(BarFeedBase, metaclass=BarFeedMeta):
+    def __init__(self, *args, feed, **kwargs):
+        for ticker, index, contents in iter(feed):
+            pass
 
-    def index(self, ticker): return self.__dataframes[ticker].index.to_series().drop(inplace=False)
-    def price(self, ticker): return self.__dataframes[ticker]["adjusted"] if self.barsHaveAdjClose() else self.__dataframes[ticker]["close"]
-    def open(self, ticker): return self.__dataframes[ticker]["open"]
-    def close(self, ticker): return self.__dataframes[ticker]["close"]
-    def high(self, ticker): return self.__dataframes[ticker]["high"]
-    def low(self, ticker): return self.__dataframes[ticker]["low"]
-    def volume(self, ticker): return self.__dataframes[ticker]["volume"]
-    def adjusted(self, ticker): return self.__dataframes[ticker]["adjusted"]
+            ###
+
+    def __getitem__(self, ticker):
+        pass
+
+        ###
 
     @staticmethod
     def barsHaveAdjClose():
