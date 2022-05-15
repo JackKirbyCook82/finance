@@ -48,17 +48,27 @@ expire_periods = lambda tx: np.cumsum(np.array([total_weekdays(ti, tj) for ti, t
 OptionType = Enum("OptionType", "CALL PUT", start=0)
 
 
-# def create_market(sx, to, tf, p, n, r):
-#     v = daily_volatility(sx)
-#     f = stock_function(continuous_rate(r), yearly_volatility(v))
-#     tx = expire_dates(to, tf)
-#     nx = expire_periods([to, *tx])
-#     zx = stdnorm_linespace(p, n)
-#     zxy, nxy = np.meshgrid(zx, nx)
-#     kxy = np.vectorize(f)(zxy, nxy) * sx[-1]
-#     for t, kx in zip(tx, kxy):
-#         for k in list(kx):
-#             yield Option[OptionType.CALL](t, k), Option[OptionType.PUT](t, k)
+def stock_ratio_function(v, r, q):
+    a = lambda zxy, nxy: nxy * (math.pow(v, 2) / 2)
+    b = lambda zxy, nxy: nxy * (r - q)
+    c = lambda zxy, nxy: np.sqrt(nxy) * zxy * v
+    f = lambda zxy, nxy: np.exp(a(nxy, zxy) + b(nxy, zxy) + c(nxy, zxy))
+    return f
+
+
+def create_market(sx, to, tf, r, q, p=[0.1, 1, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 95, 99, 99.9]):
+    px = np.array(list(p))
+    v = daily_volatility(sx)
+    v = yearly_volatility(v)
+    f = stock_ratio_function(v, r, q)
+    tx = expire_dates(to, tf)
+    nx = expire_periods([to, *tx])
+    zx = norm.ppf(px)
+    zxy, nxy = np.meshgrid(zx, nx)
+    kxy = f(zxy, nxy) * sx[-1]
+    for t, kx in zip(tx, kxy):
+        for k in list(kx):
+            yield Option[OptionType.CALL](t, k), Option[OptionType.PUT](t, k)
 
 
 class OptionMeta(RegistryMeta, ABCMeta):
