@@ -23,7 +23,7 @@ from utilities.files import ZIPCSVFile
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["BarReader", "StrategyBarFeed", "HistoryBarFeed", "Frequency"]
+__all__ = ["BarReader", "StrategyFeed", "HistoryFeed", "Frequency"]
 __copyright__ = "Copyright 2022, Jack Kirby Cook"
 __license__ = ""
 
@@ -88,7 +88,7 @@ class BarFeedProxy(ntuple("BarFeedProxy", ["open", "close", "high", "low", "volu
     pass
 
 
-class StrategyBarFeed(BarFeedBase, metaclass=BarFeedMeta):
+class StrategyFeed(BarFeedBase, metaclass=BarFeedMeta):
     def __init__(self, *args, feed, frequency, length=None, **kwargs):
         assert frequency in Frequency.__members__
         super().__init__(frequency, length)
@@ -100,15 +100,12 @@ class StrategyBarFeed(BarFeedBase, metaclass=BarFeedMeta):
         attrs = ["getOpenDataSeries", "getCloseDataSeries", "getHighDataSeries", "getLowDataSeries", "getVolumeDataSeries", "getAdjCloseDataSeries"]
         return BarFeedProxy(*[getattr(super().__getitem__(ticker), attr) for attr in attrs])
 
-    def __contains__(self, ticker):
-        return super().__contains__(ticker)
-
     @staticmethod
     def barsHaveAdjClose():
         return True
 
 
-class HistoryBarFeed(dict, metaclass=BarFeedMeta):
+class HistoryFeed(dict, metaclass=BarFeedMeta):
     def __init__(self, *args, feed, **kwargs):
         records = [{"ticker": ticker, "index": index, **contents} for ticker, index, contents in iter(feed)]
         groups = pd.DataFrame(records).set_index("index", drop=True, inplace=False).groupby("ticker")
@@ -117,9 +114,6 @@ class HistoryBarFeed(dict, metaclass=BarFeedMeta):
     def __getitem__(self, ticker):
         columns = ["open", "close", "high", "low", "volume", "adjusted"]
         return BarFeedProxy(*[lambda: super().__getitem__(ticker)[column] for column in columns])
-
-    def __contains__(self, ticker):
-        return super().__contains__(ticker)
 
     @staticmethod
     def barsHaveAdjClose():

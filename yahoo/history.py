@@ -48,7 +48,7 @@ LOGGER = logging.getLogger(__name__)
 warnings.filterwarnings("ignore")
 
 
-history_xpath = r"//table[./thead/tr[1]/th[1]='Date' and ./thead/tr[1]/th[7]='Volume']"
+history_xpath = r"//table[./thead/tr[1]/th[1]/span/text()='Date' and ./thead/tr[1]/th[7]/span/text()='Volume']"
 history_webloader = WebLoader(xpath=history_xpath)
 filter_parser = lambda x, j: [i for i in x if i is not j]
 date_parser = lambda x: Datetime.strptime(x, "%b %d, %Y").date().strftime("%Y/%m/%d")
@@ -171,7 +171,7 @@ def main(*args, **kwargs):
 
 
 if __name__ == "__main__":
-    sys.argv += ["tickers=TSLA,AAPL,SPY,QQQ", "years=2021,2020"]
+    sys.argv += ["tickers=TSLA,AAPL,SPY,QQQ", "years=2021,2020,2019,2018"]
     logging.basicConfig(level="INFO", format="[%(levelname)s, %(threadName)s]:  %(message)s", handlers=[logging.StreamHandler(sys.stdout)])
     logging.getLogger("seleniumwire").setLevel(logging.ERROR)
     parsers = {"ticker": ticker_parser, "tickers": lambda x: [ticker_parser(i) for i in x.split(",")], "year": int, "years": lambda x: [int(i) for i in x.split(",")]}
