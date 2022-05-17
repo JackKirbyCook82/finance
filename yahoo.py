@@ -16,8 +16,7 @@ from abc import ABC
 from datetime import datetime as Datetime
 
 MAIN_DIR = os.path.dirname(os.path.realpath(__file__))
-MODULE_DIR = os.path.abspath(os.path.join(MAIN_DIR, os.pardir))
-ROOT_DIR = os.path.abspath(os.path.join(MODULE_DIR, os.pardir))
+ROOT_DIR = os.path.abspath(os.path.join(MAIN_DIR, os.pardir))
 RESOURCE_DIR = os.path.join(ROOT_DIR, "resources")
 SAVE_DIR = os.path.join(ROOT_DIR, "save")
 REPOSITORY_DIR = os.path.join(SAVE_DIR, "yahoo")
@@ -39,7 +38,7 @@ from webscraping.webdownloaders import WebDownloader, CacheMixin
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["Yahoo_Finance_WebDelayer", "Yahoo_Finance_WebBrowser", "Yahoo_Finance_WebDownloader", "Yahoo_Finance_WebScheduler"]
+__all__ = ["Yahoo_WebDelayer", "Yahoo_WebBrowser", "Yahoo_WebDownloader", "Yahoo_WebScheduler"]
 __copyright__ = "Copyright 2022, Jack Kirby Cook"
 __license__ = ""
 
@@ -96,14 +95,14 @@ def data_parser(dataframe, *args, **kwargs):
 
 
 class Yahoo_History(WebTable, loader=history_webloader, parsers={"table": table_parser, "data": data_parser}, optional=False): pass
-class Yahoo_Finance_WebDelayer(WebDelayer): pass
-class Yahoo_Finance_WebBrowser(WebBrowser, files={"chrome": DRIVER_EXE}, options={"headless": False, "images": True, "incognito": False}): pass
-class Yahoo_Finance_WebQueue(WebQueue): pass
-class Yahoo_Finance_WebQuery(WebQuery, WebQueueable, fields=["ticker", "date"]): pass
-class Yahoo_Finance_WebDatasets(WebDataset[pd.DataFrame], ABC, fields=["price.csv", "dividend.csv", "split.csv"]): pass
+class Yahoo_WebDelayer(WebDelayer): pass
+class Yahoo_WebBrowser(WebBrowser, files={"chrome": DRIVER_EXE}, options={"headless": False, "images": True, "incognito": False}): pass
+class Yahoo_WebQueue(WebQueue): pass
+class Yahoo_WebQuery(WebQuery, WebQueueable, fields=["ticker", "date"]): pass
+class Yahoo_WebDatasets(WebDataset[pd.DataFrame], ABC, fields=["price.csv", "dividend.csv", "split.csv"]): pass
 
 
-class Yahoo_Finance_WebScheduler(WebScheduler, fields=["ticker", "date"]):
+class Yahoo_WebScheduler(WebScheduler, fields=["ticker", "date"]):
     @staticmethod
     def ticker(*args, ticker=None, tickers=[], **kwargs): return list(set([ticker_parser(x) for x in filter_parser([ticker, *tickers], None)]))
     @staticmethod
@@ -111,12 +110,12 @@ class Yahoo_Finance_WebScheduler(WebScheduler, fields=["ticker", "date"]):
 
     @staticmethod
     def execute(querys, *args, **kwargs):
-        queueables = [Yahoo_Finance_WebQuery(query, name="YahooQuery") for query in querys]
-        queue = Yahoo_Finance_WebQueue(queueables, *args, name="YahooQueue", **kwargs)
+        queueables = [Yahoo_WebQuery(query, name="YahooQuery") for query in querys]
+        queue = Yahoo_WebQueue(queueables, *args, name="YahooQueue", **kwargs)
         return queue
 
 
-class Yahoo_Finance_WebURL(WebURL, protocol="https", domain="finance.yahoo.com"):
+class Yahoo_WebURL(WebURL, protocol="https", domain="finance.yahoo.com"):
     @staticmethod
     def path(*args, ticker, **kwargs): return ["quote", ticker_parser(ticker), "history"]
 
@@ -132,7 +131,7 @@ class Yahoo_WebData(WebData):
     TABLE = Yahoo_History
 
 
-class Yahoo_Finance_WebPage(ContentMixin, DataframeMixin, GeneratorMixin, WebBrowserPage, contents=[Yahoo_WebData]):
+class Yahoo_WebPage(ContentMixin, DataframeMixin, GeneratorMixin, WebBrowserPage, contents=[Yahoo_WebData]):
     def execute(self, *args, ticker, date, **kwargs):
         query = {"ticker": ticker, "date": date}
         data = self[Yahoo_WebData.TABLE].data(*args, ticker=ticker, **kwargs)
@@ -140,26 +139,26 @@ class Yahoo_Finance_WebPage(ContentMixin, DataframeMixin, GeneratorMixin, WebBro
             yield query, dataset, dataframe
 
 
-class Yahoo_Finance_WebDownloader(CacheMixin, WebDownloader):
+class Yahoo_WebDownloader(CacheMixin, WebDownloader):
     def execute(self, *args, scheduler, browser, delayer, **kwargs):
         with browser() as driver:
-            page = Yahoo_Finance_WebPage(driver, name="YahooPage", delayer=delayer)
+            page = Yahoo_WebPage(driver, name="YahooPage", delayer=delayer)
             with scheduler(*args, **kwargs) as queue:
                 with queue:
                     for query in queue:
-                        url = Yahoo_Finance_WebURL(**query.todict())
+                        url = Yahoo_WebURL(**query.todict())
                         page.load(str(url), referer=None)
                         page.setup()
                         for fields, dataset, data in page(**query.todict()):
-                            yield query, Yahoo_Finance_WebDatasets({dataset: data}, name="YahooDataset")
+                            yield query, Yahoo_WebDatasets({dataset: data}, name="YahooDataset")
                         query.success()
 
 
 def main(*args, **kwargs):
-    delayer = Yahoo_Finance_WebDelayer(name="YahooDelayer", method="constant", wait=10)
-    browser = Yahoo_Finance_WebBrowser(name="YahooBrowser", browser="chrome", timeout=60)
-    scheduler = Yahoo_Finance_WebScheduler(name="YahooScheduler", randomize=False, size=None, file=REPORT_FILE)
-    downloader = Yahoo_Finance_WebDownloader(name="YahooDownloader", repository=REPOSITORY_DIR, timeout=60)
+    delayer = Yahoo_WebDelayer(name="YahooDelayer", method="constant", wait=10)
+    browser = Yahoo_WebBrowser(name="YahooBrowser", browser="chrome", timeout=60)
+    scheduler = Yahoo_WebScheduler(name="YahooScheduler", randomize=False, size=None, file=REPORT_FILE)
+    downloader = Yahoo_WebDownloader(name="YahooDownloader", repository=REPOSITORY_DIR, timeout=60)
     downloader(*args, scheduler=scheduler, browser=browser, delayer=delayer, **kwargs)
     downloader.start()
     downloader.join()
