@@ -25,7 +25,7 @@ DRIVER_EXE = os.path.join(RESOURCE_DIR, "chromedriver.exe")
 if ROOT_DIR not in sys.path:
     sys.path.append(ROOT_DIR)
 
-from utilities.iostream import InputParser
+from utilities.inputs import InputParser
 from webscraping.webtimers import WebDelayer
 from webscraping.webloaders import WebLoader
 from webscraping.webdrivers import WebBrowser

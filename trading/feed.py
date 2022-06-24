@@ -18,9 +18,6 @@ import pandas as pd
 from pyalgotrade.bar import BasicBar, Frequency
 from pyalgotrade.barfeed.membf import BarFeed as BarFeedBase
 
-
-from utilities.files import ZIPCSVFile
-
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
 __all__ = ["BarReader", "StrategyFeed", "HistoryFeed", "Frequency"]

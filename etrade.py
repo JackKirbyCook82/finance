@@ -10,7 +10,7 @@ import sys
 import warnings
 import logging
 
-from utilities.iostream import InputParser
+from utilities.inputs import InputParser
 from webscraping.webtimers import WebDelayer
 from webscraping.webreaders import WebReader, Retrys
 from webscraping.weburl import WebURL
