@@ -13,7 +13,11 @@ import logging
 import traceback
 import pandas as pd
 from abc import ABC
+import regex as re
+from datetime import date as Date
 from datetime import datetime as Datetime
+from datetime import timedelta as Timedelta
+from collections import namedtuple as ntuple
 
 MAIN_DIR = os.path.dirname(os.path.realpath(__file__))
 ROOT_DIR = os.path.abspath(os.path.join(MAIN_DIR, os.pardir))
@@ -28,6 +32,7 @@ if ROOT_DIR not in sys.path:
 from utilities.inputs import InputParser
 from utilities.dispatchers import keywordDispatcher as keydispatcher
 from utilities.dispatchers import typeDispatcher as typedispatcher
+from utilities.dispatchers import parmDispatcher as parmdispatcher
 from webscraping.webtimers import WebDelayer
 from webscraping.webloaders import WebLoader
 from webscraping.webdrivers import WebBrowser
@@ -52,6 +57,7 @@ warnings.filterwarnings("ignore")
 QUERYS = ["ticker", "date"]
 DATASETS = ["history.csv", "options.csv", "dividend.csv", "split.csv"]
 INTERVALS = {"day": "1d", "week": "1wk", "month": "1m"}
+DURATIONS = {"day": 1, "week": 7, "month": 365/12, "year": 365}
 FORMATS = {"history": "%b %d, %Y", "dividend": "%b %d, %Y", "split": "%b %d, %Y", "options": "%Y-%m-%d %I:%M%p %Z"}
 
 
@@ -60,51 +66,63 @@ history_webloader = WebLoader(xpath=history_xpath)
 filter_parser = lambda x, j: [i for i in x if i is not j]
 volume_parser = lambda x: int(str(x).replace(",", ""))
 ticker_parser = lambda x: str(x).upper()
+tickers_parsers = lambda x: [ticker_parser(i) for i in x.split(",")]
+Duration = ntuple("Duration", "key value")
 
 
 @typedispatcher
-def datetime_parser(x, *args, **kwargs): raise KeyError(x)
-@datetime_parser.register(Datetime)
-def datetime_parser_fromdatetime(x, *args, **kwargs): return x
-@datetime_parser.register(str)
-def datetime_parser_fromstring(x, *args, dateformat, **kwargs): return Datetime.strptime(x, dateformat)
-@datetime_parser.register(int, float)
-def datetime_parser_fromtimestamp(x, *args, **kwargs): return Datetime.fromtimestamp(x)
+def date_parser(x, *args, **kwargs): raise TypeError(type(x).__name__)
+@date_parser.register(Datetime)
+def date_parser_datetime(x, *args, **kwargs): return x
+@date_parser.register(Date)
+def date_parser_date(x, *args, **kwargs): return Datetime(x.year, x.month, x.day)
+@date_parser.regsiter(str)
+def date_parser_str(x, *args, **kwargs): return Datetime.strptime(x, kwargs.get("format", "%Y/%m/%d %H:%m:%S"))
 
 
-def table_parser(dataframe, *args, ticker, **kwargs):
-    rename = {"Adj Close": "Adjusted", "Last Price": "price", "Open Interest": "interest", "Contract Name": "contract", "last Trade Date": "date"}
-    dataframe.drop(index=dataframe.index[-1], axis=0, inplace=True)
-    dataframe.columns = [str(column).replace("*", "") for column in dataframe.columns]
-    dataframe.rename(columns=rename, inplace=True)
-    dataframe.columns = [column.lower() for column in dataframe.columns]
-    dataframe["ticker"] = ticker_parser(ticker)
-    dataframe["date"] = dataframe["date"].apply(lambda x: Datetime.strptime(x, "%b %d, %Y").strftime("%Y/%m/%d"))
-    return dataframe
+@typedispatcher
+def duration_parser(x, *args, **kwargs): raise TypeError(type(x).__name__)
+@typedispatcher.register(Timedelta)
+def duration_parser(x, *args, **kwargs): return x
+@typedispatcher.register(Duration)
+def duration_parser(x, *args, **kwargs): return Timedelta(**{x.key: int(DURATIONS[x.key]) * int(x.value)})
+@typedispatcher.register(str)
+def duration_parser(x, *args, **kwargs): return Timedelta(**{str(re.findall("[a-rt-z]+", x)[0]): int(re.findall("^-?\d+", x)[0])})
 
 
-def history_parser(dataframe, *args, **kwargs):
-    dataframe["volume"] = dataframe["volume"].apply(volume_parser)
-    for column in ["open", "close", "high", "low", "adjusted"]:
-        dataframe[column] = dataframe[column].apply(float)
-    dataframe = dataframe[["date", "ticker", "open", "close", "high", "low", "adjusted"]]
-    return dataframe if not dataframe.empty else None
+# def table_parser(dataframe, *args, ticker, **kwargs):
+#     rename = {"Adj Close": "Adjusted", "Last Price": "price", "Open Interest": "interest", "Contract Name": "contract", "last Trade Date": "date"}
+#     dataframe.drop(index=dataframe.index[-1], axis=0, inplace=True)
+#     dataframe.columns = [str(column).replace("*", "") for column in dataframe.columns]
+#     dataframe.rename(columns=rename, inplace=True)
+#     dataframe.columns = [column.lower() for column in dataframe.columns]
+#     dataframe["ticker"] = ticker_parser(ticker)
+#     dataframe["date"] = dataframe["date"].apply(lambda x: Datetime.strptime(x, "%b %d, %Y").strftime("%Y/%m/%d"))
+#     return dataframe
 
 
-def dividend_parser(dataframe, *args, **kwargs):
-    dataframe["dividend"] = dataframe["adjusted"].apply(lambda x: float(str(x).split(" ")[0]))
-    dataframe = dataframe[["date", "ticker", "dividend"]]
-    return dataframe if not dataframe.empty else None
+# def history_parser(dataframe, *args, **kwargs):
+#     dataframe["volume"] = dataframe["volume"].apply(volume_parser)
+#     for column in ["open", "close", "high", "low", "adjusted"]:
+#         dataframe[column] = dataframe[column].apply(float)
+#     dataframe = dataframe[["date", "ticker", "open", "close", "high", "low", "adjusted"]]
+#     return dataframe if not dataframe.empty else None
 
 
-def split_parser(dataframe, *args, **kwargs):
-    dataframe["split"] = dataframe["adjusted"].apply(lambda x: str(x).split(" ")[0])
-    dataframe = dataframe[["date", "ticker", "split"]]
-    return dataframe if not dataframe.empty else None
+# def dividend_parser(dataframe, *args, **kwargs):
+#     dataframe["dividend"] = dataframe["adjusted"].apply(lambda x: float(str(x).split(" ")[0]))
+#     dataframe = dataframe[["date", "ticker", "dividend"]]
+#     return dataframe if not dataframe.empty else None
 
 
-def options_parser(dataframe, *args, **kwargs):
-    pass
+# def split_parser(dataframe, *args, **kwargs):
+#     dataframe["split"] = dataframe["adjusted"].apply(lambda x: str(x).split(" ")[0])
+#     dataframe = dataframe[["date", "ticker", "split"]]
+#     return dataframe if not dataframe.empty else None
+
+
+# def options_parser(dataframe, *args, **kwargs):
+#     pass
 
 
 # def data_parser(dataframe, *args, **kwargs):
@@ -116,7 +134,7 @@ def options_parser(dataframe, *args, **kwargs):
 #     return {key: value for key, value in data.items() if value is not None}
 
 
-class Yahoo_History(WebTable, loader=history_webloader, parsers={"table": table_parser, "data": data_parser}, optional=False): pass
+class Yahoo_History(WebTable, loader=history_webloader, parsers={}, optional=False): pass
 class Yahoo_WebDelayer(WebDelayer): pass
 class Yahoo_WebBrowser(WebBrowser, files={"chrome": DRIVER_EXE}, options={"headless": False, "images": True, "incognito": False}): pass
 class Yahoo_WebQueue(WebQueue): pass
@@ -146,16 +164,21 @@ class Yahoo_WebURL(WebURL, protocol="https", domain="www.finance.yahoo.com"):
 
     @staticmethod
     @parm.register("history")
-    def history(*args, date, interval="day", **kwargs):
-        start = datetime_parser(date).timestamp(*args, **kwargs)
-        end =
-        return {"period1": start, "period2": end, "interval": INTERVALS[interval], "filter": "history", "includeAdjustedClose": "true"}
+    @parmdispatcher(date=date_parser, duration=duration_parser)
+    def history(*args, date, interval, duration, **kwargs):
+        try:
+            interval = INTERVALS[interval]
+        except KeyError:
+            raise ValueError(interval)
+        start, end = date.timestamp(), (date + duration.timedelta()).timestamp()
+        start, end = min(start, end), max(start, end)
+        return {"period1": start, "period2": end, "interval": interval, "filter": "history", "includeAdjustedClose": "true"}
 
     @staticmethod
     @parm.regsiter("options")
+    @parmdispatcher(date=date_parser)
     def options(*args, ticker, date, **kwargs):
-        timestamp = datetime_parser(date).timestamp(*args, **kwargs)
-        return {"date": timestamp, "p": ticker_parser(ticker), "includeAdjustedClose": "true"}
+        return {"date": date.timestamp(), "p": ticker_parser(ticker), "includeAdjustedClose": "true"}
 
 
 class Yahoo_WebData(WebData):
@@ -201,10 +224,10 @@ def main(*args, **kwargs):
 
 
 if __name__ == "__main__":
-    sys.argv += ["tickers=TSLA,AAPL,SPY,QQQ", "years=2021,2020,2019,2018"]
+    sys.argv += ["tickers=TSLA,AAPL,SPY,QQQ", "date=07/01/2022", "interval=day", "duration=-10years"]
     logging.basicConfig(level="INFO", format="[%(levelname)s, %(threadName)s]:  %(message)s", handlers=[logging.StreamHandler(sys.stdout)])
     logging.getLogger("seleniumwire").setLevel(logging.ERROR)
-    parsers = {"ticker": ticker_parser, "tickers": lambda x: [ticker_parser(i) for i in x.split(",")], "year": int, "years": lambda x: [int(i) for i in x.split(",")]}
+    parsers = {"ticker": ticker_parser, "tickers": tickers_parsers, "date": date_parser, "interval": interval_parser, "duration": duration_parser}
     inputparser = InputParser(proxys={"assign": "=", "space": "_"}, parsers=parsers, default=str)
     inputparser(*sys.argv[1:])
     main(*inputparser.arguments, **inputparser.parameters)
