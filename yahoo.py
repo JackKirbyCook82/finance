@@ -119,10 +119,16 @@ def table_parser(dataframe, *args, ticker, **kwargs):
     return dataframe
 
 
-class Yahoo_History(WebTable, loader=history_webloader, parsers={}, optional=False): pass
-class Yahoo_Dividend(WebTable, loader=history_webloader, parsers={}, optional=False): pass
-class Yahoo_Split(WebTable, loader=history_webloader, parsers={}, optional=False): pass
-class Yahoo_Option(WebTable, loader=option_webloader, parsers={}, optoinal=False): pass
+def history_parser(dataframe, *args, **kwargs): pass
+def option_parser(dataframe, *args, **kwargs): pass
+def dividend_parser(dataframe, *args, **kwargs): pass
+def split_parser(dataframe, *args, **kwargs): pass
+
+
+class Yahoo_History(WebTable, loader=history_webloader, parsers={"table": table_parser, "data": history_parser}, optional=False): pass
+class Yahoo_Option(WebTable, loader=option_webloader, parsers={"table": table_parser, "data": option_parser}, optoinal=False): pass
+class Yahoo_Dividend(WebTable, loader=history_webloader, parsers={"table": table_parser, "data": dividend_parser}, optional=False): pass
+class Yahoo_Split(WebTable, loader=history_webloader, parsers={"table": table_parser, "data": split_parser}, optional=False): pass
 class Yahoo_WebDelayer(WebDelayer): pass
 class Yahoo_WebBrowser(WebBrowser, files={"chrome": DRIVER_EXE}, options={"headless": False, "images": True, "incognito": False}): pass
 class Yahoo_WebQueue(WebQueue): pass
