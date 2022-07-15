@@ -8,13 +8,12 @@ Created on Weds Apr 27 2022
 
 import warnings
 import logging
+import pandas as pd
 from abc import ABCMeta
 from datetime import date as Date
 from datetime import datetime as Datetime
 from collections import OrderedDict as ODict
 from collections import namedtuple as ntuple
-
-import pandas as pd
 from pyalgotrade.bar import BasicBar, Frequency
 from pyalgotrade.barfeed.membf import BarFeed as BarFeedBase
 

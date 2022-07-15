@@ -40,7 +40,7 @@ from webscraping.webquerys import WebQuery, WebDataset
 from webscraping.webqueues import WebScheduler, WebQueueable, WebQueue
 from webscraping.weburl import WebURL
 from webscraping.webdata import WebTable
-from webscraping.webpages import ContentMixin, WebBrowserPage, DataframeMixin, GeneratorMixin, WebData
+from webscraping.webpages import ContentMixin, WebBrowserPage, DataframeMixin, WebData
 from webscraping.webdownloaders import WebDownloader, CacheMixin
 
 __version__ = "1.0.0"
@@ -62,7 +62,7 @@ FORMATS = ["%Y-%m-%d %I:%M%p %Z", "%Y/%m/%d %H:%m:%S", "%Y/%m/%d", "%b %d, %Y", 
 FILTERS = {"history": "history", "dividend": "div", "split": "split"}
 
 
-history_xpath = r"//table[@data-test='historical-prices']"
+history_xpath = r"//table[@data-test='historical-prices']|"
 option_xpath = r"//table[contains(@class, 'list-options')]"
 history_webloader = WebLoader(xpath=history_xpath)
 option_webloader = WebLoader(xpath=option_xpath)
@@ -119,16 +119,20 @@ def table_parser(dataframe, *args, ticker, **kwargs):
     return dataframe
 
 
-def history_parser(dataframe, *args, **kwargs): pass
-def option_parser(dataframe, *args, **kwargs): pass
-def dividend_parser(dataframe, *args, **kwargs): pass
-def split_parser(dataframe, *args, **kwargs): pass
+def history_parser(*args, **kwargs): return table_parser(*args, **kwargs)[["date", "open", "high", "low", "close", "adjusted", "volume"]]
+def option_parser(*args, **kwargs): return table_parser(*args, **kwargs)[["contract", "date", "strike", "price", "bid", "ask", "volume", "interest"]]
+def dividend_parser(*args, **kwargs): return table_parser(*args, **kwargs)[["date", "dividend"]]
 
 
-class Yahoo_History(WebTable, loader=history_webloader, parsers={"table": table_parser, "data": history_parser}, optional=False): pass
-class Yahoo_Option(WebTable, loader=option_webloader, parsers={"table": table_parser, "data": option_parser}, optoinal=False): pass
-class Yahoo_Dividend(WebTable, loader=history_webloader, parsers={"table": table_parser, "data": dividend_parser}, optional=False): pass
-class Yahoo_Split(WebTable, loader=history_webloader, parsers={"table": table_parser, "data": split_parser}, optional=False): pass
+def split_parser(*args, **kwargs):
+    dataframe = table_parser(*args, **kwargs).iloc[:, :2].rename({}, inplace=False)
+    dataframe.columns = ["date", "split"]
+
+
+class Yahoo_History(WebTable, loader=history_webloader, parsers={"table": history_parser}, optional=False): pass
+class Yahoo_Option(WebTable, loader=option_webloader, parsers={"table": option_parser}, optoinal=False): pass
+class Yahoo_Dividend(WebTable, loader=history_webloader, parsers={"table": dividend_parser}, optional=False): pass
+class Yahoo_Split(WebTable, loader=history_webloader, parsers={"table": split_parser}, optional=False): pass
 class Yahoo_WebDelayer(WebDelayer): pass
 class Yahoo_WebBrowser(WebBrowser, files={"chrome": DRIVER_EXE}, options={"headless": False, "images": True, "incognito": False}): pass
 class Yahoo_WebQueue(WebQueue): pass
@@ -182,11 +186,9 @@ class Yahoo_WebData(WebData):
     OPTION = Yahoo_Option
 
 
-class Yahoo_WebPage(ContentMixin, DataframeMixin, GeneratorMixin, WebBrowserPage, contents=Yahoo_WebData):
-    def execute(self, *args, ticker, date, **kwargs):
-        query = {"ticker": ticker, "date": date}
-#        data = self[Yahoo_WebData.TABLE].table(*args, ticker=ticker, **kwargs)
-#        yield query, "", data
+class Yahoo_WebPage(ContentMixin, DataframeMixin, WebBrowserPage, contents=Yahoo_WebData):
+    def execute(self, *args, dataset, **kwargs):
+        yield self[getattr(Yahoo_WebData, str(dataset).upper())].table(*args, **kwargs)
 
 
 class Yahoo_WebDownloader(CacheMixin, WebDownloader):
@@ -196,10 +198,10 @@ class Yahoo_WebDownloader(CacheMixin, WebDownloader):
             with scheduler(*args, **kwargs) as queue:
                 with queue:
                     for query in queue:
-                        url = Yahoo_WebURL(**query.todict())
-                        page.load(str(url), referer=None)
-                        page.setup()
-                        for fields, dataset, data in page(**query.todict()):
+                        for dataset in ("history", "dividend", "split", "option"):
+                            url = Yahoo_WebURL(dataset=dataset, **query.todict())
+                            page.load(str(url), referer=None)
+                            data = page(dataset=dataset, **query.todict())
                             yield query, Yahoo_WebDatasets({dataset: data}, name="YahooDataset")
                         query.success()
 
