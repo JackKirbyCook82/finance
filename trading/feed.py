@@ -17,6 +17,9 @@ from collections import namedtuple as ntuple
 from pyalgotrade.bar import BasicBar, Frequency
 from pyalgotrade.barfeed.membf import BarFeed as BarFeedBase
 
+from files.csvs import CSVFile
+from utilities.dispatchers import typeDispatcher as typedispatcher
+
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
 __all__ = ["BarReader", "StrategyFeed", "HistoryFeed", "Frequency"]
@@ -28,17 +31,21 @@ LOGGER = logging.getLogger(__name__)
 warnings.filterwarnings("ignore")
 
 
+@typedispatcher
+def timestamp(x): raise TypeError(type(x).__name__)
+@timestamp.register(Datetime)
+def timestamp_fromdatetime(x): return x.timestamp()
+@timestamp.register(Date)
+def timestamp_fromdate(x): return Datetime(x.year, x.month, x.day).timestamp()
+@timestamp.register(int, str)
+def timestamp_fromdate(x): return int(x)
+
+
 class BarReader(object):
-    fields = ["ticker", "date", "datetime", "open", "close", "high", "low", "volume", "adjusted"]
-    parsers = {"ticker": str, "date": lambda x: Date.strptime(x, "%Y/%m/%d"), "datetime": lambda x: Datetime.strptime(x, "%Y/%m/%d %H:%M:%S")}
-    parser = float
-
-    def __init_subclass__(cls, *args, dateformat="%Y/%m/%d", datetimeformat="%Y/%m/%d %H:%M:%S", **kwargs):
-        cls.parsers.update({"date": lambda x: Datetime.combine(Date.strptime(x, dateformat), Datetime.min.time()), "datetime": lambda x: Datetime.strptime(x, datetimeformat)})
-
-    def __init__(self, directory, filename):
+    def __init__(self, directory, file):
+        self.__fields = {"ticker": str, "date": timestamp, "open": float, "close": float, "high": float, "low": float, "volume": int, "adjusted": float}
         self.__directory = directory
-        self.__filename = filename
+        self.__file = file
 
     def __call__(self, ticker=None, starttime=None, stoptime=None):
         assert isinstance(starttime, (Datetime, type(None))) and isinstance(stoptime, (Datetime, type(None)))
@@ -51,15 +58,23 @@ class BarReader(object):
                 yield content
 
     def __iter__(self):
-        with ZIPCSVFile(self.__directory, self.__filename, mode="r") as zfile:
-            reader = zfile(fields=self.__class__.fields, parsers=self.__class__.parsers, parser=self.__class__.parser)
-            for row in reader:
-                row = {key: value for key, value in row.items() if value is not None}
-                row["index"] = row.get("datetime", row.get("date", None))
-                row.pop("date", None)
-                row.pop("datetime", None)
-                assert row["index"] is not None
+        with CSVFile(directory=self.directory, file=self.file, mode="r", fields=self.fields) as reader:
+            for row in iter(reader):
+                row = {key: self.parsers[key](value) for key, value in row.items() if key in self.fields and value is not None}
                 yield row
+
+    @property
+    def directory(self): return self.__directory
+    @property
+    def file(self): return self.__file
+    @property
+    def fields(self): return list(self.__fields.values())
+    @property
+    def parsers(self): return self.__fields
+
+
+class BarFeedProxy(ntuple("BarFeedProxy", ["open", "close", "high", "low", "volume", "adjusted"])):
+    pass
 
 
 class BarFeedMeta(ABCMeta):
@@ -78,10 +93,6 @@ class BarFeedMeta(ABCMeta):
             index = content["index"]
             contents = ODict([(field, content[field]) for field in cls.fields])
             yield ticker, index, contents
-
-
-class BarFeedProxy(ntuple("BarFeedProxy", ["open", "close", "high", "low", "volume", "adjusted"])):
-    pass
 
 
 class StrategyFeed(BarFeedBase, metaclass=BarFeedMeta):

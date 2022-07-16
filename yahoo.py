@@ -87,21 +87,21 @@ def strptime(txt, fmts):
 @typedispatcher
 def date_parser(x): raise TypeError(type(x).__name__)
 @date_parser.register(Datetime)
-def date_parser_datetime(x): return x
+def date_parser_fromdatetime(x): return x
 @date_parser.register(Date)
-def date_parser_date(x): return Datetime(x.year, x.month, x.day)
+def date_parser_fromdate(x): return Datetime(x.year, x.month, x.day)
 @date_parser.regsiter(str)
-def date_parser_str(x): return strptime(x, fmts=FORMATS)
+def date_parser_fromstr(x): return strptime(x, fmts=FORMATS)
 
 
 @typedispatcher
 def duration_parser(x): raise TypeError(type(x).__name__)
 @typedispatcher.register(Timedelta)
-def duration_parser(x): return x
+def duration_parser_fromtimedelta(x): return x
 @typedispatcher.register(Duration)
-def duration_parser(x): return Timedelta(**{x.key: int(DURATIONS[x.key]) * int(x.value)})
+def duration_parser_fromduration(x): return Timedelta(**{x.key: int(DURATIONS[x.key]) * int(x.value)})
 @typedispatcher.register(str)
-def duration_parser(x): return Timedelta(**{str(re.findall("[a-rt-z]+", x)[0]): int(re.findall("^-?\d+", x)[0])})
+def duration_parser_fromstr(x): return Timedelta(**{str(re.findall("[a-rt-z]+", x)[0]): int(re.findall("^-?\d+", x)[0])})
 
 
 def table_parser(dataframe, *args, ticker, **kwargs):
@@ -112,6 +112,7 @@ def table_parser(dataframe, *args, ticker, **kwargs):
     dataframe.rename(columns=rename, inplace=True)
     dataframe.columns = [column.lower() for column in dataframe.columns]
     dataframe["ticker"] = ticker_parser(ticker)
+    dataframe["date"] = dataframe["date"].apply(lambda x: date_parser(x).timestamp())
     for column in common_parser(dataframe.columns, prices):
         dataframe[column] = dataframe[column].apply(price_parser)
     for column in common_parser(dataframe.columns, volumes):
@@ -119,14 +120,14 @@ def table_parser(dataframe, *args, ticker, **kwargs):
     return dataframe
 
 
-def history_parser(*args, **kwargs): return table_parser(*args, **kwargs)[["date", "open", "high", "low", "close", "adjusted", "volume"]]
-def option_parser(*args, **kwargs): return table_parser(*args, **kwargs)[["contract", "date", "strike", "price", "bid", "ask", "volume", "interest"]]
-def dividend_parser(*args, **kwargs): return table_parser(*args, **kwargs)[["date", "dividend"]]
+def history_parser(*args, **kwargs): return table_parser(*args, **kwargs)[["ticker", "date", "open", "high", "low", "close", "adjusted", "volume"]]
+def option_parser(*args, **kwargs): return table_parser(*args, **kwargs)[["ticker", "contract", "date", "strike", "price", "bid", "ask", "volume", "interest"]]
+def dividend_parser(*args, **kwargs): return table_parser(*args, **kwargs)[["ticker", "date", "dividend"]]
 
 
 def split_parser(*args, **kwargs):
     dataframe = table_parser(*args, **kwargs).iloc[:, :2].rename({}, inplace=False)
-    dataframe.columns = ["date", "split"]
+    dataframe.columns = ["ticker", "date", "split"]
 
 
 class Yahoo_History(WebTable, loader=history_webloader, parsers={"table": history_parser}, optional=False): pass
