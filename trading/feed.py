@@ -18,7 +18,6 @@ from pyalgotrade.bar import BasicBar, Frequency
 from pyalgotrade.barfeed.membf import BarFeed as BarFeedBase
 
 from files.csvs import CSVFile
-from utilities.dispatchers import typeDispatcher as typedispatcher
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -31,19 +30,9 @@ LOGGER = logging.getLogger(__name__)
 warnings.filterwarnings("ignore")
 
 
-@typedispatcher
-def timestamp(x): raise TypeError(type(x).__name__)
-@timestamp.register(Datetime)
-def timestamp_fromdatetime(x): return x.timestamp()
-@timestamp.register(Date)
-def timestamp_fromdate(x): return Datetime(x.year, x.month, x.day).timestamp()
-@timestamp.register(int, str)
-def timestamp_fromdate(x): return int(x)
-
-
 class BarReader(object):
     def __init__(self, directory, file):
-        self.__fields = {"ticker": str, "date": timestamp, "open": float, "close": float, "high": float, "low": float, "volume": int, "adjusted": float}
+        self.__fields = {"ticker": str, "date": None, "open": float, "close": float, "high": float, "low": float, "volume": int, "adjusted": float}
         self.__directory = directory
         self.__file = file
 

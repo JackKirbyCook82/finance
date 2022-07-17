@@ -14,12 +14,12 @@ import numpy as np
 from enum import Enum
 from scipy.stats import norm
 from datetime import datetime as Datetime
-from datetime import date as Date
 from datetime import timedelta as Timedelta
 from dateutil.rrule import rrule, MONTHLY
 from abc import ABC, ABCMeta, abstractmethod
 
 from utilities.meta import RegistryMeta
+from utilities.parsers import dateparser
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -72,33 +72,17 @@ def create_market(sx, to, tf, r, q, p=[0.1, 1, 5, 10, 20, 30, 40, 50, 60, 70, 80
 
 
 class OptionMeta(RegistryMeta, ABCMeta):
-    def __init__(cls, *args, key, **kwargs):
-        cls.__dateformat = kwargs.get("dateformat", getattr(cls, "dateformat", "%Y/%m/%d"))
-        cls.__datetimeformat = kwargs.get("datetimeformat", getattr(cls, "datetimeformat", "%Y/%m/%d %H:%M:%S"))
-        cls.__optiontype = key
+    def __init__(cls, *args, **kwargs):
+        cls.__type = kwargs["type"]
+        super(OptionMeta, cls).__init__(*args, **kwargs)
 
-    def __str__(cls): return str(cls.__optiontype)
-    def __int__(cls): return int(cls.__optiontype)
-
-    def __call__(cls, *args, **kwargs):
-        dateparser = {str: lambda x: Datetime.strptime(x, cls.dateformat).date(), Date: lambda x: x, Datetime: lambda x: x.date()}
-        instance = super(OptionMeta, cls).__call__(*args, dateparser=dateparser, **kwargs)
-        return instance
-
-    @property
-    def dateformat(cls): return cls.__dateformat
-    @property
-    def datetimeformat(cls): return cls.__datetimeformat
-    @dateformat.setter
-    def dateformat(cls, dateformat): cls.__dateformat = dateformat
-    @datetimeformat.setter
-    def datetimeformat(cls, datetimeformat): cls.__datetimeformat = datetimeformat
+    def __str__(cls): return str(cls.__type)
+    def __int__(cls): return int(cls.__type)
 
 
 class Option(ABC, metaclass=OptionMeta):
-    def __init__(self, ticker, tk, k, *args, dateparser, **kwargs):
+    def __init__(self, ticker, tk, k, *args, **kwargs):
         self.__ticker = str(ticker).upper()
-        self.__dateparser = dateparser
         self.__tk = tk
         self.__k = k
 
@@ -121,7 +105,7 @@ class Option(ABC, metaclass=OptionMeta):
     def value(self, ti, si, v, r, q): pass
 
     def tau(self, ti, *args):
-        ti, tk = self.__dateparser(ti), self.__dateparser(self.tk)
+        ti, tk = dateparser(ti), dateparser(self.tk)
         assert ti <= self.tk
         return total_weekdays(ti, tk) / 252
 
@@ -177,7 +161,7 @@ class Option(ABC, metaclass=OptionMeta):
         return d1, d2
 
 
-class Call(Option, key=OptionType.CALL):
+class Call(Option, type=OptionType.CALL):
     def intrinsic(self, ti, si, v, r, q):
         rpv = self.pv(ti, r)
         fv = max(0, self.k - si)
@@ -220,7 +204,7 @@ class Call(Option, key=OptionType.CALL):
         return (-a - b + c) / 252
 
 
-class Put(Option, key=OptionType.PUT):
+class Put(Option, type=OptionType.PUT):
     def intrinsic(self, ti, si, v, r, q):
         rpv = self.pv(ti, r)
         fv = max(0, si - self.k)

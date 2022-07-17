@@ -13,11 +13,6 @@ import logging
 import traceback
 import pandas as pd
 from abc import ABC
-import regex as re
-from datetime import date as Date
-from datetime import datetime as Datetime
-from datetime import timedelta as Timedelta
-from collections import namedtuple as ntuple
 
 MAIN_DIR = os.path.dirname(os.path.realpath(__file__))
 ROOT_DIR = os.path.abspath(os.path.join(MAIN_DIR, os.pardir))
@@ -30,9 +25,8 @@ if ROOT_DIR not in sys.path:
     sys.path.append(ROOT_DIR)
 
 from utilities.inputs import InputParser
-from utilities.dispatchers import keywordDispatcher as keydispatcher
-from utilities.dispatchers import typeDispatcher as typedispatcher
-from utilities.parsers import parmParser as parmparser
+from utilities.dispatchers import keyworddispatcher
+from utilities.parsers import parmparser, dateparser, timedeltaparser, timestampparser
 from webscraping.webtimers import WebDelayer
 from webscraping.webloaders import WebLoader
 from webscraping.webdrivers import WebBrowser
@@ -56,10 +50,8 @@ warnings.filterwarnings("ignore")
 
 QUERYS = ["ticker", "date"]
 DATASETS = ["history.csv", "options.csv", "dividend.csv", "split.csv"]
-INTERVALS = {"day": "1d", "week": "1wk", "month": "1m"}
-DURATIONS = {"day": 1, "week": 7, "month": 365/12, "year": 365}
-FORMATS = ["%Y-%m-%d %I:%M%p %Z", "%Y/%m/%d %H:%m:%S", "%Y/%m/%d", "%b %d, %Y", "%m/%d/%Y"]
 FILTERS = {"history": "history", "dividend": "div", "split": "split"}
+INTERVALS = {"day": "1d", "week": "1wk", "month": "1m"}
 
 
 history_xpath = r"//table[@data-test='historical-prices']|"
@@ -72,36 +64,6 @@ price_parser = lambda x: float(x)
 volume_parser = lambda x: int(str(x).replace(",", ""))
 ticker_parser = lambda x: str(x).upper()
 tickers_parsers = lambda x: [ticker_parser(i) for i in x.split(",")]
-Duration = ntuple("Duration", "key value")
-
-
-def strptime(txt, fmts):
-    for fmt in fmts:
-        try:
-            return Datetime.strptime(txt, fmt)
-        except ValueError:
-            pass
-    raise ValueError(txt)
-
-
-@typedispatcher
-def date_parser(x): raise TypeError(type(x).__name__)
-@date_parser.register(Datetime)
-def date_parser_fromdatetime(x): return x
-@date_parser.register(Date)
-def date_parser_fromdate(x): return Datetime(x.year, x.month, x.day)
-@date_parser.regsiter(str)
-def date_parser_fromstr(x): return strptime(x, fmts=FORMATS)
-
-
-@typedispatcher
-def duration_parser(x): raise TypeError(type(x).__name__)
-@typedispatcher.register(Timedelta)
-def duration_parser_fromtimedelta(x): return x
-@typedispatcher.register(Duration)
-def duration_parser_fromduration(x): return Timedelta(**{x.key: int(DURATIONS[x.key]) * int(x.value)})
-@typedispatcher.register(str)
-def duration_parser_fromstr(x): return Timedelta(**{str(re.findall("[a-rt-z]+", x)[0]): int(re.findall("^-?\d+", x)[0])})
 
 
 def table_parser(dataframe, *args, ticker, **kwargs):
@@ -112,7 +74,7 @@ def table_parser(dataframe, *args, ticker, **kwargs):
     dataframe.rename(columns=rename, inplace=True)
     dataframe.columns = [column.lower() for column in dataframe.columns]
     dataframe["ticker"] = ticker_parser(ticker)
-    dataframe["date"] = dataframe["date"].apply(lambda x: date_parser(x).timestamp())
+    dataframe["date"] = dataframe["date"].apply(timestampparser)
     for column in common_parser(dataframe.columns, prices):
         dataframe[column] = dataframe[column].apply(price_parser)
     for column in common_parser(dataframe.columns, volumes):
@@ -158,26 +120,26 @@ class Yahoo_WebURL(WebURL, protocol="https", domain="www.finance.yahoo.com"):
     @staticmethod
     def path(*args, ticker, dataset, **kwargs): return ["quote", ticker_parser(ticker), dataset]
     @staticmethod
-    @keydispatcher("dataset")
+    @keyworddispatcher("dataset")
     def parm(*args, dataset, **kwargs): raise KeyError(dataset)
 
     @staticmethod
     @parm.register("history", "dividend", "split")
-    @parmparser(date=date_parser, duration=duration_parser)
+    @parmparser(date=dateparser, duration=timedeltaparser)
     def history(*args, dataset, date, interval, duration, **kwargs):
         try:
             interval = INTERVALS[interval]
         except KeyError:
             raise ValueError(interval)
-        start, end = date.timestamp(), (date + duration.timedelta()).timestamp()
+        start, end = date.timestamp(), (date + duration).timestamp()
         start, end = min(start, end), max(start, end)
         return {"period1": start, "period2": end, "interval": interval, "filter": FILTERS[dataset], "includeAdjustedClose": "true"}
 
     @staticmethod
     @parm.regsiter("options")
-    @parmparser(date=date_parser)
+    @parmparser(date=timestampparser)
     def options(*args, ticker, date, **kwargs):
-        return {"date": date.timestamp(), "p": ticker_parser(ticker), "includeAdjustedClose": "true"}
+        return {"date": date, "p": ticker_parser(ticker), "includeAdjustedClose": "true"}
 
 
 class Yahoo_WebData(WebData):
@@ -223,10 +185,10 @@ def main(*args, **kwargs):
 
 
 if __name__ == "__main__":
-    sys.argv += ["tickers=TSLA,AAPL,SPY,QQQ", "date=20222/07/01", "interval=day", "duration=-10years"]
+    sys.argv += ["tickers=TSLA,AAPL,SPY,QQQ", "date=20222/07/01", "interval=day", "duration="]
     logging.basicConfig(level="INFO", format="[%(levelname)s, %(threadName)s]:  %(message)s", handlers=[logging.StreamHandler(sys.stdout)])
     logging.getLogger("seleniumwire").setLevel(logging.ERROR)
-    parsers = {"ticker": ticker_parser, "tickers": tickers_parsers, "date": date_parser, "duration": duration_parser}
+    parsers = {"ticker": ticker_parser, "tickers": tickers_parsers, "date": dateparser, "duration": timedeltaparser}
     inputparser = InputParser(proxys={"assign": "=", "space": "_"}, parsers=parsers, default=str)
     inputparser(*sys.argv[1:])
     main(*inputparser.arguments, **inputparser.parameters)
