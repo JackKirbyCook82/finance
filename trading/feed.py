@@ -18,6 +18,7 @@ from pyalgotrade.bar import BasicBar, Frequency
 from pyalgotrade.barfeed.membf import BarFeed as BarFeedBase
 
 from files.csvs import CSVFile
+from utilities.parsers import datetimeparser
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -32,7 +33,7 @@ warnings.filterwarnings("ignore")
 
 class BarReader(object):
     def __init__(self, directory, file):
-        self.__fields = {"ticker": str, "date": None, "open": float, "close": float, "high": float, "low": float, "volume": int, "adjusted": float}
+        self.__parsers = {"ticker": str, "date": datetimeparser, "open": float, "close": float, "high": float, "low": float, "volume": int, "adjusted": float}
         self.__directory = directory
         self.__file = file
 
@@ -43,7 +44,7 @@ class BarReader(object):
         check_stoptime = lambda t: t >= stoptime if t is not None else True
         criteria = lambda x, t: all([check_ticker(x), check_starttime(t), check_stoptime(t)])
         for content in iter(self):
-            if criteria(content["ticker"], content["datetime"]):
+            if criteria(content["ticker"], content["date"]):
                 yield content
 
     def __iter__(self):
@@ -57,9 +58,9 @@ class BarReader(object):
     @property
     def file(self): return self.__file
     @property
-    def fields(self): return list(self.__fields.values())
+    def fields(self): return list(self.__parsers.values())
     @property
-    def parsers(self): return self.__fields
+    def parsers(self): return self.__parsers
 
 
 class BarFeedProxy(ntuple("BarFeedProxy", ["open", "close", "high", "low", "volume", "adjusted"])):
@@ -72,24 +73,25 @@ class BarFeedMeta(ABCMeta):
     def __call__(cls, reader, *args, ticker=None, starttime=None, stoptime=None, **kwargs):
         assert isinstance(reader, BarReader)
         assert isinstance(starttime, Datetime) and isinstance(stoptime, Date)
-        feed = cls.feed(reader, ticker, starttime, stoptime)
+        feed = cls.feed(reader, ticker, starttime, stoptime, fields=cls.fields)
         instance = super(BarFeedMeta, cls).__call__(*args, feed=feed, **kwargs)
         return instance
 
-    def feed(cls, reader, ticker, starttime, stoptime):
+    @staticmethod
+    def feed(reader, ticker, starttime, stoptime, *args, fields=[], **kwargs):
         for content in reader(ticker=ticker, starttime=starttime, stoptime=stoptime):
             ticker = content["ticker"]
-            index = content["index"]
-            contents = ODict([(field, content[field]) for field in cls.fields])
-            yield ticker, index, contents
+            date = content["date"]
+            contents = ODict([(field, content[field]) for field in fields])
+            yield ticker, date, contents
 
 
 class StrategyFeed(BarFeedBase, metaclass=BarFeedMeta):
     def __init__(self, *args, feed, frequency, length=None, **kwargs):
         assert frequency in Frequency.__members__
         super().__init__(frequency, length)
-        for ticker, index, contents in iter(feed):
-            bar = BasicBar([index] + list(contents.values()), frequency)
+        for ticker, date, contents in iter(feed):
+            bar = BasicBar([date] + list(contents.values()), frequency)
             self.addBarsFromSequence(ticker, bar)
 
     def __getitem__(self, ticker):
@@ -103,8 +105,8 @@ class StrategyFeed(BarFeedBase, metaclass=BarFeedMeta):
 
 class HistoryFeed(dict, metaclass=BarFeedMeta):
     def __init__(self, *args, feed, **kwargs):
-        records = [{"ticker": ticker, "index": index, **contents} for ticker, index, contents in iter(feed)]
-        groups = pd.DataFrame(records).set_index("index", drop=True, inplace=False).groupby("ticker")
+        records = [{"ticker": ticker, "date": date, **contents} for ticker, date, contents in iter(feed)]
+        groups = pd.DataFrame(records).set_index("date", drop=True, inplace=False).groupby("ticker")
         super().__init__({ticker: dataframe for ticker, dataframe in iter(groups)})
 
     def __getitem__(self, ticker):
