@@ -99,8 +99,7 @@ class StrategyFeed(BarFeedBase, metaclass=BarFeedMeta):
         return BarFeedProxy(*[getattr(super().__getitem__(ticker), attr) for attr in attrs])
 
     @staticmethod
-    def barsHaveAdjClose():
-        return True
+    def barsHaveAdjClose(): return True
 
 
 class HistoryFeed(dict, metaclass=BarFeedMeta):
@@ -114,8 +113,7 @@ class HistoryFeed(dict, metaclass=BarFeedMeta):
         return BarFeedProxy(*[lambda: super().__getitem__(ticker)[column] for column in columns])
 
     @staticmethod
-    def barsHaveAdjClose():
-        return True
+    def barsHaveAdjClose(): return True
 
 
 

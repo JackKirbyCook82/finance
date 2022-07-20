@@ -90,6 +90,7 @@ def dividend_parser(*args, **kwargs): return table_parser(*args, **kwargs)[["tic
 def split_parser(*args, **kwargs):
     dataframe = table_parser(*args, **kwargs).iloc[:, :2].rename({}, inplace=False)
     dataframe.columns = ["ticker", "date", "split"]
+    return dataframe
 
 
 class Yahoo_History(WebTable, loader=history_webloader, parsers={"table": history_parser}, optional=False): pass
@@ -185,7 +186,7 @@ def main(*args, **kwargs):
 
 
 if __name__ == "__main__":
-    sys.argv += ["tickers=TSLA,AAPL,SPY,QQQ", "date=20222/07/01", "interval=day", "duration="]
+    sys.argv += ["tickers=TSLA,AAPL,SPY,QQQ", "date=2022/07/01", "interval=day", "duration=-1000days"]
     logging.basicConfig(level="INFO", format="[%(levelname)s, %(threadName)s]:  %(message)s", handlers=[logging.StreamHandler(sys.stdout)])
     logging.getLogger("seleniumwire").setLevel(logging.ERROR)
     parsers = {"ticker": ticker_parser, "tickers": tickers_parsers, "date": dateparser, "duration": timedeltaparser}
