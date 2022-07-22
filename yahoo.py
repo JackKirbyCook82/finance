@@ -125,13 +125,13 @@ class Yahoo_WebScheduler(WebScheduler, fields=QUERYS):
 class Yahoo_WebURL(WebURL, protocol="https", domain="www.finance.yahoo.com"):
     @staticmethod
     def path(*args, ticker, dataset, **kwargs): return ["quote", ticker_parser(ticker), dataset]
-    @staticmethod
     @keyworddispatcher("dataset")
-    def parm(*args, dataset, **kwargs): raise KeyError(dataset)
-
     @staticmethod
+    def parm(self, *args, dataset, **kwargs): raise KeyError(dataset)
+
     @parm.register("history", "dividend", "split")
     @parmparser(date=datetimeparser, duration=timedeltaparser)
+    @staticmethod
     def history(*args, dataset, date, interval, duration, **kwargs):
         try:
             interval = INTERVALS[interval]
@@ -141,9 +141,9 @@ class Yahoo_WebURL(WebURL, protocol="https", domain="www.finance.yahoo.com"):
         start, end = min(start, end), max(start, end)
         return {"period1": start, "period2": end, "interval": interval, "filter": FILTERS[dataset], "includeAdjustedClose": "true"}
 
-    @staticmethod
     @parm.register("options")
     @parmparser(date=timestampparser)
+    @staticmethod
     def options(*args, ticker, date, **kwargs):
         return {"date": date, "p": ticker_parser(ticker), "includeAdjustedClose": "true"}
 
