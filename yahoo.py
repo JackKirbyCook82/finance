@@ -11,7 +11,6 @@ import os.path
 import warnings
 import logging
 import traceback
-import pandas as pd
 from abc import ABC
 
 MAIN_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -26,7 +25,7 @@ if ROOT_DIR not in sys.path:
 
 from utilities.inputs import InputParser
 from utilities.dispatchers import keyworddispatcher
-from utilities.parsers import parmparser, dateparser, timedeltaparser, timestampparser
+from utilities.parsers import parmparser, dateparser, datetimeparser, timedeltaparser, timestampparser
 from webscraping.webtimers import WebDelayer
 from webscraping.webloaders import WebLoader
 from webscraping.webdrivers import WebBrowser
@@ -54,7 +53,7 @@ FILTERS = {"history": "history", "dividend": "div", "split": "split"}
 INTERVALS = {"day": "1d", "week": "1wk", "month": "1m"}
 
 
-history_xpath = r"//table[@data-test='historical-prices']|"
+history_xpath = r"//table[@data-test='historical-prices']"
 option_xpath = r"//table[contains(@class, 'list-options')]"
 history_webloader = WebLoader(xpath=history_xpath)
 option_webloader = WebLoader(xpath=option_xpath)
@@ -82,9 +81,15 @@ def table_parser(dataframe, *args, ticker, **kwargs):
     return dataframe
 
 
-def history_parser(*args, **kwargs): return table_parser(*args, **kwargs)[["ticker", "date", "open", "high", "low", "close", "adjusted", "volume"]]
 def option_parser(*args, **kwargs): return table_parser(*args, **kwargs)[["ticker", "contract", "date", "strike", "price", "bid", "ask", "volume", "interest"]]
 def dividend_parser(*args, **kwargs): return table_parser(*args, **kwargs)[["ticker", "date", "dividend"]]
+
+
+def history_parser(*args, **kwargs):
+    drop = lambda df, y, x: not df[y].str.contains(x)
+    dataframe = table_parser(*args, **kwargs)[["ticker", "date", "open", "high", "low", "close", "adjusted", "volume"]]
+    dataframe = dataframe[drop(dataframe, "open", "Dividend") & drop(dataframe, "open", "Split")]
+    return dataframe
 
 
 def split_parser(*args, **kwargs):
@@ -101,7 +106,7 @@ class Yahoo_WebDelayer(WebDelayer): pass
 class Yahoo_WebBrowser(WebBrowser, files={"chrome": DRIVER_EXE}, options={"headless": False, "images": True, "incognito": False}): pass
 class Yahoo_WebQueue(WebQueue): pass
 class Yahoo_WebQuery(WebQuery, WebQueueable, fields=QUERYS): pass
-class Yahoo_WebDatasets(WebDataset[pd.DataFrame], ABC, fields=DATASETS): pass
+class Yahoo_WebDatasets(WebDataset, ABC, fields=DATASETS): pass
 
 
 class Yahoo_WebScheduler(WebScheduler, fields=QUERYS):
@@ -126,18 +131,18 @@ class Yahoo_WebURL(WebURL, protocol="https", domain="www.finance.yahoo.com"):
 
     @staticmethod
     @parm.register("history", "dividend", "split")
-    @parmparser(date=dateparser, duration=timedeltaparser)
+    @parmparser(date=datetimeparser, duration=timedeltaparser)
     def history(*args, dataset, date, interval, duration, **kwargs):
         try:
             interval = INTERVALS[interval]
         except KeyError:
             raise ValueError(interval)
-        start, end = date.timestamp(), (date + duration).timestamp()
+        start, end = int(date.timestamp()), int((date + duration).timestamp())
         start, end = min(start, end), max(start, end)
         return {"period1": start, "period2": end, "interval": interval, "filter": FILTERS[dataset], "includeAdjustedClose": "true"}
 
     @staticmethod
-    @parm.regsiter("options")
+    @parm.register("options")
     @parmparser(date=timestampparser)
     def options(*args, ticker, date, **kwargs):
         return {"date": date, "p": ticker_parser(ticker), "includeAdjustedClose": "true"}
@@ -156,14 +161,14 @@ class Yahoo_WebPage(ContentMixin, DataframeMixin, WebBrowserPage, contents=Yahoo
 
 
 class Yahoo_WebDownloader(CacheMixin, WebDownloader):
-    def execute(self, *args, scheduler, browser, delayer, **kwargs):
+    def execute(self, *args, scheduler, browser, delayer, interval, duration, **kwargs):
         with browser() as driver:
             page = Yahoo_WebPage(driver, name="YahooPage", delayer=delayer)
             with scheduler(*args, **kwargs) as queue:
                 with queue:
                     for query in queue:
                         for dataset in ("history", "dividend", "split", "option"):
-                            url = Yahoo_WebURL(dataset=dataset, **query.todict())
+                            url = Yahoo_WebURL(dataset=dataset, interval=interval, duration=duration, **query.todict())
                             page.load(str(url), referer=None)
                             data = page(dataset=dataset, **query.todict())
                             yield query, Yahoo_WebDatasets({dataset: data}, name="YahooDataset")
