@@ -14,7 +14,7 @@ from datetime import date as Date
 from datetime import datetime as Datetime
 from collections import namedtuple as ntuple
 
-from utilities.pipelines import Saver, Loader
+from support.pipelines import Saver, Loader
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"

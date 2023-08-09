@@ -12,8 +12,8 @@ from enum import IntEnum
 from itertools import product
 from collections import namedtuple as ntuple
 
-from utilities.pipelines import Calculator
-from utilities.calculations import Calculation, feed, equation
+from support.pipelines import Calculator
+from support.calculations import Calculation, feed, equation
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"

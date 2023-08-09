@@ -12,7 +12,7 @@ import xarray as xr
 import pandas as pd
 import dask.dataframe as dk
 
-from utilities.pipelines import Processor, Loader, Saver
+from support.pipelines import Processor, Loader, Saver
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
