@@ -22,18 +22,18 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
 
-Securities = IntEnum("Security", ["STOCK", "PUT", "CALL"], start=1)
+Securities = IntEnum("Security", ["PUT", "CALL", "STOCK"], start=1)
 Options = IntEnum("Option", ["PUT", "CALL"], start=1)
 Positions = IntEnum("Position", ["LONG", "SHORT"], start=1)
 Strategies = IntEnum("Strategy", ["STRANGLE", "COLLAR", "VERTICAL", "CONDOR"], start=1)
 
 
-class Strategy(ntuple("Strategy", "strategy security position")):
-    def __int__(self): return sum([self.strategy * 100, self.security * 10, self.position * 1])
+class Security(ntuple("Security", "option position")):
+    def __int__(self): return sum([self.security * 10, self.position * 1])
     def __str__(self): return "|".join([str(value.name).lower() for value in self if bool(value)])
 
-class Security(ntuple("Security", "security position")):
-    def __int__(self): return sum([self.security * 10, self.position * 1])
+class Strategy(ntuple("Strategy", "strategy option position")):
+    def __int__(self): return sum([self.strategy * 100, self.security * 10, self.position * 1])
     def __str__(self): return "|".join([str(value.name).lower() for value in self if bool(value)])
 
 
@@ -135,27 +135,27 @@ class CondorCalculation(StrategyCalculation, strategy=condor_strategy, securitie
 
 class StrategyCalculator(Calculator, calculations=list(StrategyCalculation.__subclasses__())):
     def execute(self, contents, *args, partition, **kwargs):
-        ticker, expire, content = contents
-        assert isinstance(content, xr.Dataset)
-        parser = lambda security, position: self.parser(content, security, position, partition=partition)
-        options = {Security(security, position): parser(security, position) for security, position in product(Securities, Positions)}
+        ticker, expire, dataset = contents
+        assert isinstance(dataset, xr.Dataset)
+        parser = lambda security, position: self.parser(dataset, security, position, partition=partition)
+        options = {Security(security, position): parser(security, position) for security, position in product(Options, Positions)}
         for calculation in iter(self.calculations):
             strategy = calculation.strategy
             securities = calculation.securities
-            dataset = calculation(options, *args, **kwargs)
-            if dataset is None:
+            strategies = calculation(options, *args, **kwargs)
+            if strategies is None:
                 continue
-            yield ticker, expire, strategy, securities, dataset
+            yield ticker, expire, strategy, securities, strategies
 
     @staticmethod
-    def parser(content, security, position, partition):
+    def parser(dataset, security, position, partition):
         name = " ".join([str(Security(security, position)), "@strike"])
-        content = content.sel({"option": int(security), "position": int(position)})
-        content = content.rename({"strike": name})
-        content["strike"] = content[name]
-        content = content.drop_vars(["option", "position"])
-        content = content.chunk({name: partition}) if bool(partition) else content
-        return content
+        dataset = dataset.sel({"option": int(security), "position": int(position)})
+        dataset = dataset.rename({"strike": name})
+        dataset["strike"] = dataset[name]
+        dataset = dataset.drop_vars(["option", "position"])
+        dataset = dataset.chunk({name: partition}) if bool(partition) else dataset
+        return dataset
 
 
 class ValuationCalculation(Calculation):
@@ -183,10 +183,10 @@ class ValuationCalculation(Calculation):
 
 class ValuationCalculator(Calculator, calculations=[ValuationCalculation]):
     def execute(self, contents, *args, **kwargs):
-        ticker, expire, strategy, securities, content = contents
-        assert isinstance(content, xr.Dataset)
+        ticker, expire, strategy, securities, dataset = contents
+        assert isinstance(dataset, xr.Dataset)
         for calculation in iter(self.calculations):
-            dataset = calculation(content, *args, **kwargs)
-            yield ticker, expire, strategy, securities, dataset
+            valuations = calculation(dataset, *args, **kwargs)
+            yield ticker, expire, strategy, securities, valuations
 
 

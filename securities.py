@@ -39,11 +39,11 @@ class DateRange(ntuple("DateRange", "minimum maximum")):
 
 class HistorySaver(Saver):
     def execute(self, contents, *args, **kwargs):
-        ticker, content = contents
-        assert isinstance(content, pd.DataFrame)
+        ticker, dataframe = contents
+        assert isinstance(dataframe, pd.DataFrame)
         file = str(ticker).upper()
         file = os.path.join(self.repository, str(file) + ".csv")
-        self.write(content, file=file, mode="w")
+        self.write(dataframe, file=file, mode="w")
 
 
 class HistoryLoader(Loader):
@@ -57,14 +57,14 @@ class HistoryLoader(Loader):
 
 class OptionSaver(Saver):
     def execute(self, contents, *args, **kwargs):
-        ticker, expire, content = contents
-        assert isinstance(content, xr.Dataset)
+        ticker, expire, dataset = contents
+        assert isinstance(dataset, xr.Dataset)
         folder = os.path.join(self.repository, str(ticker).upper())
         if not os.path.isdir(folder):
             os.mkdir(folder)
         file = str(expire.strftime("%Y%m%d"))
         file = os.path.join(folder, str(file) + ".nc")
-        self.write(content, file=file, mode="w")
+        self.write(dataset, file=file, mode="w")
 
 
 class OptionLoader(Loader):
