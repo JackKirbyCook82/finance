@@ -26,7 +26,7 @@ __license__ = ""
 
 Securities = IntEnum("Security", ["PUT", "CALL", "STOCK"], start=1)
 Positions = IntEnum("Position", ["LONG", "SHORT"], start=1)
-class Security(ntuple("Security", "option position")):
+class Security(ntuple("Security", "security position")):
     def __int__(self): return sum([self.security * 10, self.position * 1])
     def __str__(self): return "|".join([str(value.name).lower() for value in self if bool(value)])
 

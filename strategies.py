@@ -14,6 +14,7 @@ from collections import namedtuple as ntuple
 
 from support.pipelines import Calculator
 from support.calculations import Calculation, feed, equation
+from support.dispatchers import kwargsdispatcher
 from finance.securities import Security, Securities, Positions
 
 __version__ = "1.0.0"
@@ -127,23 +128,33 @@ class StrategyCalculator(Calculator, calculations=list(StrategyCalculation.__sub
     def execute(self, contents, *args, partition, **kwargs):
         ticker, expire, dataset = contents
         assert isinstance(dataset, xr.Dataset)
-#        parser = lambda security, position: self.parser(dataset, security, position, partition=partition)
-#        securities = {Security(security, position): parser(security, position) for security, position in product(Securities, Positions)}
+        key = lambda security, position: Security(security, position)
+        value = lambda security, position: self.parser(dataset, security=security, position=position, partition=partition)
+        securities = {key(security, position): value(security, position) for security, position in product(Securities, Positions)}
         for calculation in iter(self.calculations):
             strategies = calculation(securities, *args, **kwargs)
             if strategies is None:
                 continue
             yield ticker, expire, calculation.strategy, calculation.securities, strategies
 
-#    @staticmethod
-#    def parser(dataset, security, position, partition):
-#        name = " ".join([str(Security(security, position)), "@strike"])
-#        dataset = dataset.sel({"security": int(security), "position": int(position)})
-#        dataset = dataset.rename({"strike": name})
-#        dataset["strike"] = dataset[name]
-#        dataset = dataset.drop_vars(["security", "position"])
-#        dataset = dataset.chunk({name: partition}) if bool(partition) else dataset
-#        return dataset
+    @kwargsdispatcher("security")
+    def parser(self, dataset, *args, security, position, **kwargs): pass
+
+    @parser.register(Securities.STOCK)
+    def stock(self, dataset, *args, security, position, **kwargs):
+        dataset = dataset.sel({"security": int(security), "position": int(position)})
+        dataset = dataset.drop_vars(["security", "position"])
+        return dataset
+
+    @parser.register(Securities.PUT, Security.CALL)
+    def option(self, dataset, *args, security, position, partition, **kwargs):
+        name = str(Security(security, position))
+        dataset = dataset.sel({"security": int(security), "position": int(position)})
+        dataset = dataset.rename({"strike": name})
+        dataset["strike"] = dataset[name]
+        dataset = dataset.drop_vars(["security", "position"])
+        dataset = dataset.chunk({name: partition}) if bool(partition) else dataset
+        return dataset
 
 
 class ValuationCalculation(Calculation):
