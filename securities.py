@@ -10,6 +10,7 @@ import os.path
 import numpy as np
 import xarray as xr
 import pandas as pd
+from enum import IntEnum
 from datetime import date as Date
 from datetime import datetime as Datetime
 from collections import namedtuple as ntuple
@@ -18,9 +19,16 @@ from support.pipelines import Saver, Loader
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["DateRange", "HistorySaver", "HistoryLoader", "OptionSaver", "OptionLoader"]
+__all__ = ["Security", "Securities", "Positions", "DateRange", "HistorySaver", "HistoryLoader", "SecuritySaver", "SecurityLoader"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
+
+
+Securities = IntEnum("Security", ["PUT", "CALL", "STOCK"], start=1)
+Positions = IntEnum("Position", ["LONG", "SHORT"], start=1)
+class Security(ntuple("Security", "option position")):
+    def __int__(self): return sum([self.security * 10, self.position * 1])
+    def __str__(self): return "|".join([str(value.name).lower() for value in self if bool(value)])
 
 
 class DateRange(ntuple("DateRange", "minimum maximum")):
@@ -55,7 +63,7 @@ class HistoryLoader(Loader):
         yield ticker, dataframe
 
 
-class OptionSaver(Saver):
+class SecuritySaver(Saver):
     def execute(self, contents, *args, **kwargs):
         ticker, expire, dataset = contents
         assert isinstance(dataset, xr.Dataset)
@@ -67,7 +75,7 @@ class OptionSaver(Saver):
         self.write(dataset, file=file, mode="w")
 
 
-class OptionLoader(Loader):
+class SecurityLoader(Loader):
     def execute(self, ticker, *args, **kwargs):
         folder = str(ticker).upper()
         directory = os.path.join(self.repository, folder)
