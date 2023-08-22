@@ -25,7 +25,7 @@ __license__ = ""
 
 
 Strategies = IntEnum("Strategy", ["STRANGLE", "COLLAR", "VERTICAL", "CONDOR"], start=1)
-class Strategy(ntuple("Strategy", "strategy option position")):
+class Strategy(ntuple("Strategy", "strategy security position")):
     def __int__(self): return sum([self.strategy * 100, self.security * 10, self.position * 1])
     def __str__(self): return "|".join([str(value.name).lower() for value in self if bool(value)])
 
