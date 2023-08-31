@@ -7,6 +7,7 @@ Created on Weds Jul 19 2023
 """
 
 import numpy as np
+import pandas as pd
 import xarray as xr
 from enum import IntEnum
 from itertools import product
@@ -15,37 +16,49 @@ from collections import namedtuple as ntuple
 from support.pipelines import Calculator
 from support.calculations import Calculation, feed, equation
 from support.dispatchers import kwargsdispatcher
-from finance.securities import Security, Securities, Positions
+from finance.securities import Securities, Instruments, Positions
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["Strategy", "Strategies", "StrategyCalculator", "ValuationCalculator"]
+__all__ = ["Strategies", "StrategyCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
 
-Strategies = IntEnum("Strategy", ["STRANGLE", "COLLAR", "VERTICAL", "CONDOR"], start=1)
-class Strategy(ntuple("Strategy", "strategy security position")):
-    def __int__(self): return sum([self.strategy * 100, self.security * 10, self.position * 1])
+Spreads = IntEnum("Strategy", ["STRANGLE", "COLLAR", "VERTICAL", "CONDOR"], start=1)
+class Strategy(ntuple("Strategy", "spread instrument position")):
+    def __init__(self, *args, securities, **kwargs): self.__securities = securities
+    def __int__(self): return sum([self.spread * 100, self.instrument * 10, self.position * 1])
     def __str__(self): return "|".join([str(value.name).lower() for value in self if bool(value)])
+
+    @property
+    def securities(self): return self.__securities
+
+
+class Strategies:
+    StrangleLong = Strategy(Spreads.STRANGLE, 0, Positions.LONG, securities=[Securities.Option.Put.Long, Securities.Option.Call.Long])
+    CollarLong = Strategy(Spreads.COLLAR, 0, Positions.LONG, securities=[Securities.Option.Put.Long, Securities.Option.Call.Short, Securities.Stock.Long])
+    CollarShort = Strategy(Spreads.COLLAR, 0, Positions.SHOR, securities=[Securities.Option.Call.Long, Securities.Option.Put.Short, Securities.Stock.Short])
+    VerticalPut = Strategy(Spreads.VERTICAL, Instruments.PUT, 0, securities=[Securities.Option.Put.Long, Securities.Option.Put.Short])
+    VerticalCall = Strategy(Spreads.VERTICAL, Instruments.CALL, 0, securities=[Securities.Option.Call.Long, Securities.Option.Call.Short])
+    Condor = Strategy(Spreads.CONDOR, 0, 0, securities=[Securities.Option.Put.Long, Securities.Option.Call.Long, Securities.Option.Put.Short, Securities.Option.Call.Short])
 
 
 class StrategyCalculation(Calculation):
-    wpα = feed("put|long", np.float32, axes="(i)", key=Security(Securities.PUT, Positions.LONG), variable="price")
-    wpβ = feed("put|short", np.float32, axes="(j)", key=Security(Securities.PUT, Positions.SHORT), variable="price")
-    wcα = feed("call|long", np.float32, axes="(k)", key=Security(Securities.CALL, Positions.LONG), variable="price")
-    wcβ = feed("call|short", np.float32, axes="(l)", key=Security(Securities.CALL, Positions.SHORT), variable="price")
-    wsα = feed("stock|long", np.float32, axes="()", key=Security(Securities.STOCK, Positions.LONG), variable="price")
-    wsβ = feed("stock|short", np.float32, axes="()", key=Security(Securities.STOCK, Positions.SHORT), variable="price")
+    wpα = feed("put|long", np.float32, axes="(i)", key=Securities.Option.Put.Long, variable="price")
+    wpβ = feed("put|short", np.float32, axes="(j)", key=Securities.Option.Put.Short, variable="price")
+    wcα = feed("call|long", np.float32, axes="(k)", key=Securities.Option.Call.Long, variable="price")
+    wcβ = feed("call|short", np.float32, axes="(l)", key=Securities.Option.Call.Short, variable="price")
+    wsα = feed("stock|long", np.float32, axes="()", key=Securities.Stock.Long, variable="price")
+    wsβ = feed("stock|short", np.float32, axes="()", key=Securities.Stock.Short, variable="price")
 
-    kpα = feed("put|long", np.float32, axes="(i)", key=Security(Securities.PUT, Positions.LONG), variable="strike")
-    kpβ = feed("put|short", np.float32, axes="(j)", key=Security(Securities.PUT, Positions.SHORT), variable="strike")
-    kcα = feed("call|long", np.float32, axes="(k)", key=Security(Securities.CALL, Positions.LONG), variable="strike")
-    kcβ = feed("call|short", np.float32, axes="(l)", key=Security(Securities.CALL, Positions.SHORT), variable="strike")
+    kpα = feed("put|long", np.float32, axes="(i)", key=Securities.Option.Put.Long, variable="strike")
+    kpβ = feed("put|short", np.float32, axes="(j)", key=Securities.Option.Put.Short, variable="strike")
+    kcα = feed("call|long", np.float32, axes="(k)", key=Securities.Option.Call.Long, variable="strike")
+    kcβ = feed("call|short", np.float32, axes="(l)", key=Securities.Option.Call.Short, variable="strike")
 
-    def __init_subclass__(cls, *args, strategy, securities, **kwargs):
+    def __init_subclass__(cls, *args, strategy, **kwargs):
         cls.__strategy__ = strategy
-        cls.__securities__ = securities
 
     def __call__(self, securities, *args, **kwargs):
         assert isinstance(securities, dict)
@@ -58,52 +71,35 @@ class StrategyCalculation(Calculation):
     @property
     def strategy(self): return self.__class__.__strategy__
     @property
-    def securities(self): return self.__class__.__securities__
+    def securities(self): return self.__class__.__strategy__.securities
 
 
-strangle_strategy = Strategy(Strategies.STRANGLE, 0, Positions.LONG)
-strangle_securities = [Security(Securities.PUT, Positions.LONG), Security(Securities.CALL, Positions.SHORT)]
-class StrangleLongCalculation(StrategyCalculation, strategy=strangle_strategy, securities=strangle_securities):
+class StrangleLongCalculation(StrategyCalculation, strategy=Strategies.StrangleLong):
     vo = equation("spot", np.float32, axes="(i,k)", function=lambda wpα, wcα: - np.add.outer(wpα, wcα))
     vω = equation("val-", np.float32, axes="(i,k)", function=lambda kpα, kcα: + np.maximum(np.add.outer(kpα, -kcα), 0))
     vγ = equation("val+", np.float32, axes="(i,k)", function=lambda kpα, kcα: + np.ones((kpα.shape, kcα.shape)) * np.inf)
 
-
-collarlong_strategy = Strategy(Strategies.COLLAR, 0, Positions.LONG)
-collarlong_securities = [Security(Securities.PUT, Positions.LONG), Security(Securities.CALL, Positions.SHORT)]
-class CollarLongCalculation(StrategyCalculation, strategy=collarlong_strategy, securities=collarlong_securities):
+class CollarLongCalculation(StrategyCalculation, strategy=Strategies.CollarLong):
     vo = equation("spot", np.float32, axes="(i,l)", function=lambda wpα, wcβ, wsα: - np.add.outer(wpα, -wcβ) - wsα)
     vω = equation("val-", np.float32, axes="(i,l)", function=lambda kpα, kcβ: + np.minimum.outer(kpα, kcβ))
     vγ = equation("val+", np.float32, axes="(i,l)", function=lambda kpα, kcβ: + np.maximum.outer(kpα, kcβ))
 
-
-collarshort_strategy = Strategy(Strategies.COLLAR, 0, Positions.SHORT)
-collarshort_securities = [Security(Securities.PUT, Positions.SHORT), Security(Securities.CALL, Positions.LONG), Security(Securities.STOCK, Positions.LONG)]
-class CollarShortCalculation(StrategyCalculation, strategy=collarshort_strategy, securities=collarshort_securities):
+class CollarShortCalculation(StrategyCalculation, strategy=Strategies.CollarShort):
     vo = equation("spot", np.float32, axes="(j,k)", function=lambda wpβ, wcα, wsβ: - np.add.outer(-wpβ, wcα) + wsβ)
     vω = equation("val-", np.float32, axes="(j,k)", function=lambda kpβ, kcα: + np.minimum.outer(-kpβ, -kcα))
     vγ = equation("val+", np.float32, axes="(j,k)", function=lambda kpβ, kcα: + np.maximum.outer(-kpβ, -kcα))
 
-
-verticalput_strategy = Strategy(Strategies.VERTICAL, Securities.PUT, 0)
-verticalput_securities = [Security(Securities.PUT, Positions.LONG), Security(Securities.PUT, Positions.SHORT), Security(Securities.STOCK, Positions.SHORT)]
-class VerticalPutCalculation(StrategyCalculation, strategy=verticalput_strategy, securities=verticalput_securities):
+class VerticalPutCalculation(StrategyCalculation, strategy=Strategies.VerticalPut):
     vo = equation("spot", np.float32, axes="(i,j)", function=lambda wpα, wpβ: - np.add.outer(wpα, -wpβ))
     vω = equation("val-", np.float32, axes="(i,j)", function=lambda kpα, kpβ: + np.minimum(np.add.outer(kpα, -kpβ), 0))
     vγ = equation("val+", np.float32, axes="(i,j)", function=lambda kpα, kpβ: + np.maximum(np.add.outer(kpα, -kpβ), 0))
 
-
-verticalcall_strategy = Strategy(Strategies.VERTICAL, Securities.CALL, 0)
-verticalcall_securities = [Security(Securities.CALL, Positions.LONG), Security(Securities.CALL, Positions.SHORT)]
-class VerticalCallCalculation(StrategyCalculation, strategy=verticalcall_strategy, securities=verticalcall_securities):
+class VerticalCallCalculation(StrategyCalculation, strategy=Strategies.VerticalCall):
     vo = equation("spot", np.float32, axes="(k,l)", function=lambda wcα, wcβ: - np.add.outer(wcα, -wcβ))
     vω = equation("val-", np.float32, axes="(k,l)", function=lambda kcα, kcβ: + np.minimum(np.add.outer(-kcα, kcβ), 0))
     vγ = equation("val+", np.float32, axes="(k,l)", function=lambda kcα, kcβ: + np.maximum(np.add.outer(-kcα, kcβ), 0))
 
-
-condor_strategy = Strategy(Strategies.CONDOR, 0, 0)
-condor_securities = [Security(Securities.PUT, Positions.LONG), Security(Securities.PUT, Positions.SHORT), Security(Securities.CALL, Positions.LONG), Security(Securities.CALL, Positions.SHORT)]
-class CondorCalculation(StrategyCalculation, strategy=condor_strategy, securities=condor_securities):
+class CondorCalculation(StrategyCalculation, strategy=Strategies.Condor):
     vo = equation("spot", np.float32, axes="(i,j,k,l)", function=lambda vp, vc: + np.add(vp[:, :, np.newaxis, np.newaxis], vc[np.newaxis, np.newaxis, :, :]))
     vω = equation("val-", np.float32, axes="(i,j,k,l)", function=lambda oω, fo: + np.maximum(oω, fo))
     vγ = equation("val+", np.float32, axes="(i,j,k,l)", function=lambda oγ, fo: + np.minimum(oγ, fo))
@@ -126,66 +122,35 @@ class CondorCalculation(StrategyCalculation, strategy=condor_strategy, securitie
 
 class StrategyCalculator(Calculator, calculations=list(StrategyCalculation.__subclasses__())):
     def execute(self, contents, *args, partition, **kwargs):
-        ticker, expire, dataset = contents
-        assert isinstance(dataset, xr.Dataset)
-        key = lambda security, position: Security(security, position)
-        value = lambda security, position: self.parser(dataset, security=security, position=position, partition=partition)
-        securities = {key(security, position): value(security, position) for security, position in product(Securities, Positions)}
+        ticker, expire, securities = contents
+        assert isinstance(securities, dict)
+        assert all([isinstance(security, pd.DataFrame) for security in securities.values()])
+        function = lambda security, dataframe: self.parser(dataframe, *args, instrument=security.instrument, position=security.position, partition=partition, **kwargs)
+        securities = {security: function(security, dataframe) for security, dataframe in securities.items()}
         for calculation in iter(self.calculations):
+            strategy = calculation.strategy
             strategies = calculation(securities, *args, **kwargs)
             if strategies is None:
                 continue
-            yield ticker, expire, calculation.strategy, calculation.securities, strategies
+            yield ticker, expire, strategy, strategies
 
-    @kwargsdispatcher("security")
+    @kwargsdispatcher("instrument")
     def parser(self, dataset, *args, security, position, **kwargs): pass
 
-    @parser.register(Securities.STOCK)
-    def stock(self, dataset, *args, security, position, **kwargs):
-        dataset = dataset.sel({"security": int(security), "position": int(position)})
-        dataset = dataset.drop_vars(["security", "position"])
+    @parser.register(Instruments.STOCK)
+    def stocks(self, dataframe, *args, **kwargs):
+        dataset = xr.Dataset.from_dataframe(dataframe)
+        dataset = dataset.squeeze("ticker").squeeze("date")
         return dataset
 
-    @parser.register(Securities.PUT, Security.CALL)
-    def option(self, dataset, *args, security, position, partition, **kwargs):
-        name = str(Security(security, position))
-        dataset = dataset.sel({"security": int(security), "position": int(position)})
-        dataset = dataset.rename({"strike": name})
-        dataset["strike"] = dataset[name]
-        dataset = dataset.drop_vars(["security", "position"])
-        dataset = dataset.chunk({name: partition}) if bool(partition) else dataset
+    @parser.register(Instruments.PUT, Instruments.CALL)
+    def options(self, dataframe, *args, security, partition, **kwargs):
+        dataset = xr.Dataset.from_dataframe(dataframe)
+        dataset = dataset.squeeze("ticker").squeeze("date")
+        dataset = dataset.rename({"strike": str(security)})
+        dataset["strike"] = dataset[str(security)]
+        dataset = dataset.chunk({str(security): partition}) if bool(partition) else dataset
         return dataset
 
-
-class ValuationCalculation(Calculation):
-    ρ = feed("discount", np.float16, variable="discount")
-    to = feed("date", np.datetime64, variable="date")
-    tτ = feed("expire", np.datetime64, variable="expire")
-    vo = feed("spot", np.float16, variable="spot")
-    vτ = feed("value", np.float16, variable="value")
-
-    τau = equation("τau", np.int16, function=lambda tτ, to: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
-    inc = equation("income", np.float32, function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
-    cost = equation("cost", np.float32, function=lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0))
-    apy = equation("apy", np.float32, function=lambda r, τau: np.power(r + 1, np.power(τau / 365, -1)) - 1)
-    npv = equation("npv", np.float32, function=lambda π, τau, ρ: π * np.power(ρ / 365 + 1, τau))
-    π = equation("profit", np.float32, function=lambda inc, cost: inc - cost)
-    r = equation("return", np.float32, function=lambda π, cost: π / cost)
-
-    def __call__(self, strategies, *args, discount, **kwargs):
-        assert isinstance(strategies, xr.Dataset)
-        strategies["tau"] = self.τau(strategies)
-        strategies["cost"] = self.cost(strategies)
-        strategies["apy"] = self.apy(strategies)
-        return strategies
-
-
-class ValuationCalculator(Calculator, calculations=[ValuationCalculation]):
-    def execute(self, contents, *args, **kwargs):
-        ticker, expire, strategy, securities, dataset = contents
-        assert isinstance(dataset, xr.Dataset)
-        for calculation in iter(self.calculations):
-            valuations = calculation(dataset, *args, **kwargs)
-            yield ticker, expire, strategy, securities, valuations
 
 
