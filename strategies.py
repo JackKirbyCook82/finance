@@ -10,7 +10,6 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 from enum import IntEnum
-from itertools import product
 from collections import namedtuple as ntuple
 
 from support.pipelines import Calculator

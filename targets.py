@@ -12,12 +12,12 @@ from support.pipelines import Processor
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["TargetProcessor"]
+__all__ = ["TargetCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
 
-class TargetProcessor(Processor):
+class TargetCalculator(Processor):
     def execute(self, contents, *args, funds, apy, **kwargs):
         ticker, expire, strategy, valuations = contents
         assert isinstance(valuations, xr.Dataset)
