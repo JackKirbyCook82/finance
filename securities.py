@@ -27,21 +27,25 @@ __license__ = ""
 Instruments = IntEnum("Security", ["PUT", "CALL", "STOCK"], start=1)
 Positions = IntEnum("Position", ["LONG", "SHORT"], start=1)
 class Security(ntuple("Security", "instrument position")):
+    def __init__(self, *args, payoff, **kwargs): self.__payoff = payoff
     def __int__(self): return sum([self.instrument * 10, self.position * 1])
     def __str__(self): return "|".join([str(value.name).lower() for value in self if bool(value)])
+
+    @property
+    def payoff(self): return self.__payoff
 
 
 class Securities:
     class Stock:
-        Long = Security(Instruments.STOCK, Positions.LONG)
-        Short = Security(Instruments.STOCK, Positions.SHORT)
+        Long = Security(Instruments.STOCK, Positions.LONG, payoff=lambda x: np.copy(x))
+        Short = Security(Instruments.STOCK, Positions.SHORT, payoff=lambda x: -np.copy(x))
     class Option:
         class Put:
-            Long = Security(Instruments.PUT, Positions.LONG)
-            Short = Security(Instruments.PUT, Positions.SHORT)
+            Long = Security(Instruments.PUT, Positions.LONG, payoff=lambda x, k: np.maximum(k - x, 0))
+            Short = Security(Instruments.PUT, Positions.SHORT, payoff=lambda x, k: - np.maximum(k - x, 0))
         class Call:
-            Long = Security(Instruments.CALL, Positions.LONG)
-            Short = Security(Instruments.CALL, Positions.SHORT)
+            Long = Security(Instruments.CALL, Positions.LONG, payoff=lambda x, k: np.maximum(x - k, 0))
+            Short = Security(Instruments.CALL, Positions.SHORT, payoff=lambda x, k: - np.maximum(x - k, 0))
 
 
 class DateRange(ntuple("DateRange", "minimum maximum")):
