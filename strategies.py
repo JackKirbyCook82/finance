@@ -26,6 +26,7 @@ __license__ = ""
 
 Spreads = IntEnum("Strategy", ["STRANGLE", "COLLAR", "VERTICAL", "CONDOR"], start=1)
 class Strategy(ntuple("Strategy", "spread instrument position")):
+    def __new__(cls, spread, instrument, position, *args, **kwargs): return super().__new__(cls, spread, instrument, position)
     def __init__(self, *args, securities, **kwargs): self.__securities = securities
     def __int__(self): return sum([self.spread * 100, self.instrument * 10, self.position * 1])
     def __str__(self): return "|".join([str(value.name).lower() for value in self if bool(value)])
@@ -136,13 +137,13 @@ class StrategyCalculator(Calculator, calculations=list(StrategyCalculation.__sub
     @kwargsdispatcher("instrument")
     def parser(self, dataset, *args, security, position, **kwargs): pass
 
-    @parser.register(Instruments.STOCK)
+    @parser.register.value(Instruments.STOCK)
     def stocks(self, dataframe, *args, **kwargs):
         dataset = xr.Dataset.from_dataframe(dataframe)
         dataset = dataset.squeeze("ticker").squeeze("date")
         return dataset
 
-    @parser.register(Instruments.PUT, Instruments.CALL)
+    @parser.register.value(Instruments.PUT, Instruments.CALL)
     def options(self, dataframe, *args, security, partition, **kwargs):
         dataset = xr.Dataset.from_dataframe(dataframe)
         dataset = dataset.squeeze("ticker").squeeze("date")
