@@ -29,7 +29,6 @@ Positions = IntEnum("Position", ["LONG", "SHORT"], start=1)
 class Security(ntuple("Security", "instrument position")):
     def __new__(cls, instrument, position, *args, **kwargs): return super().__new__(cls, instrument, position)
     def __init__(self, *args, payoff, **kwargs): self.__payoff = payoff
-    def __int__(self): return sum([self.instrument * 10, self.position * 1])
     def __str__(self): return "|".join([str(value.name).lower() for value in self if bool(value)])
 
     @property

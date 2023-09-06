@@ -21,32 +21,46 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
 
-class TargetSecurity(ntuple("Security", "instrument position ticker"), ABC, metaclass=SubclassMeta):
-    def __new__(cls, security, *args, ticker, **kwargs):
+class TargetSecurity(ntuple("Security", "instrument position"), ABC, metaclass=SubclassMeta):
+    def __str__(self): return "|".join([str(value.name).lower() for value in self if bool(value)])
+
+    def __new__(cls, security, *args, **kwargs):
         if cls is TargetSecurity:
             subcls = cls[str(security.instrument)]
-            return subcls(security, *args, ticker=ticker, **kwargs)
-        return super().__new__(security.instrument, security.position, ticker)
+            return subcls(security, *args, **kwargs)
+        return super().__new__(security.instrument, security.position)
 
-    def __init__(self, security, *args, **kwargs): self.__payoff = security.payoff
-    def __call__(self, domain, *args, **kwargs): return self.execute(domain, *args, **kwargs)
+    def __init__(self, security, *args, ticker, **kwargs):
+        self.__payoff = security.payoff
+        self.__ticker = ticker
+
+    def __call__(self, domain, *args, **kwargs):
+        return self.execute(domain, *args, **kwargs)
 
     @abstractmethod
     def execute(self, domain, *args, **kwargs): pass
+    @abstractmethod
+    def todict(self): pass
+
+    @property
+    def ticker(self): return self.__ticker
     @property
     def payoff(self): return self.__payoff
 
 
 class TargetStock(TargetSecurity, key="stock"):
+    def todict(self): return dict(ticker=self.ticker)
     def execute(self, domain, *args, **kwargs):
         return self.payoff(domain)
 
 
 class TargetOption(TargetSecurity, keys=["put", "call"]):
     def __init__(self, security, *args, expire, **kwargs):
+        super().__init__(*args, **kwargs)
         self.__strike = kwargs[str(security)]
         self.__expire = expire
 
+    def todict(self): return dict(ticker=self.ticker, strike=self.strike, expire=self.expire)
     def execute(self, domain, *args, **kwargs):
         return self.payoff(domain, self.strike)
 
@@ -63,6 +77,8 @@ class TargetValuation(ntuple("Valuation", "price value cost apy tau")):
 
 
 class TargetStrategy(ntuple("Strategy", "spread security instrument")):
+    def __str__(self): return "|".join([str(value.name).lower() for value in self if bool(value)])
+
     def __new__(cls, strategy, securities, valuation):
         return super().__new__(*strategy)
 

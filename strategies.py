@@ -28,7 +28,6 @@ Spreads = IntEnum("Strategy", ["STRANGLE", "COLLAR", "VERTICAL", "CONDOR"], star
 class Strategy(ntuple("Strategy", "spread instrument position")):
     def __new__(cls, spread, instrument, position, *args, **kwargs): return super().__new__(cls, spread, instrument, position)
     def __init__(self, *args, securities, **kwargs): self.__securities = securities
-    def __int__(self): return sum([self.spread * 100, self.instrument * 10, self.position * 1])
     def __str__(self): return "|".join([str(value.name).lower() for value in self if bool(value)])
 
     @property
