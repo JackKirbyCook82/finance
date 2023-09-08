@@ -44,6 +44,8 @@ class Strategies:
 
 
 class StrategyCalculation(Calculation):
+    wsμ = equation("price", np.float32, function=lambda wsα, wsβ: + np.average(wsα, wsβ))
+
     wpα = feed("put|long", np.float32, axes="(i)", key=Securities.Option.Put.Long, variable="price")
     wpβ = feed("put|short", np.float32, axes="(j)", key=Securities.Option.Put.Short, variable="price")
     wcα = feed("call|long", np.float32, axes="(k)", key=Securities.Option.Call.Long, variable="price")
@@ -63,8 +65,9 @@ class StrategyCalculation(Calculation):
         assert isinstance(securities, dict)
         if not all([security in securities.keys() for security in self.securities]):
             return
-        strategies = self.vo(securities).to_dataset(name="spot")
-        strategies["value"] = self.vω(securities)
+        strategies = self.wsμ(securities).to_dataset(name="price")
+        strategies["spot"] = self.vo(securities)
+        strategies["future"] = self.vω(securities)
         return strategies
 
     @property

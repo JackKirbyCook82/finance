@@ -24,7 +24,7 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
 
-Instruments = IntEnum("Security", ["PUT", "CALL", "STOCK"], start=1)
+Instruments = IntEnum("Instrument", ["PUT", "CALL", "STOCK"], start=1)
 Positions = IntEnum("Position", ["LONG", "SHORT"], start=1)
 class Security(ntuple("Security", "instrument position")):
     def __new__(cls, instrument, position, *args, **kwargs): return super().__new__(cls, instrument, position)

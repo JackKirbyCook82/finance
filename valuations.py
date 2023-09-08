@@ -24,10 +24,11 @@ class ValuationCalculation(Calculation):
     to = feed("date", np.datetime64, variable="date")
     tτ = feed("expire", np.datetime64, variable="expire")
     vo = feed("spot", np.float16, variable="spot")
-    vτ = feed("value", np.float16, variable="value")
+    vτ = feed("future", np.float16, variable="future")
+    p = feed("price", np.float16, variable="price")
 
     τau = equation("τau", np.int16, function=lambda tτ, to: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
-    inc = equation("income", np.float32, function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
+    income = equation("income", np.float32, function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
     cost = equation("cost", np.float32, function=lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0))
     apy = equation("apy", np.float32, function=lambda r, τau: np.power(r + 1, np.power(τau / 365, -1)) - 1)
     npv = equation("npv", np.float32, function=lambda π, τau, ρ: π * np.power(ρ / 365 + 1, τau))
@@ -37,8 +38,10 @@ class ValuationCalculation(Calculation):
     def __call__(self, strategies, *args, discount, fees, **kwargs):
         assert isinstance(strategies, xr.Dataset)
         strategies["tau"] = self.τau(strategies)
+        strategies["income"] = self.income(strategies)
         strategies["cost"] = self.cost(strategies)
         strategies["apy"] = self.apy(strategies)
+        strategies["npv"] = self.npv(strategies)
         return strategies
 
 
