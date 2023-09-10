@@ -44,19 +44,28 @@ class Strategies:
 
 
 class StrategyCalculation(Calculation):
-    wsμ = equation("price", np.float32, function=lambda wsα, wsβ: + np.average(wsα, wsβ))
+    wpμ = equation("put|average|price", np.float32, axes="(i,j)", function=lambda wpα, wpβ: + np.average(wpα, wpβ))
+    wcμ = equation("call|average|price", np.float32, axes="(k,l)", function=lambda wcα, wcβ: + np.average(wcα, wcβ))
+    wsμ = equation("stock|average|price", np.float32, axes="()", function=lambda wsα, wsβ: + np.average(wsα, wsβ))
 
-    wpα = feed("put|long", np.float32, axes="(i)", key=Securities.Option.Put.Long, variable="price")
-    wpβ = feed("put|short", np.float32, axes="(j)", key=Securities.Option.Put.Short, variable="price")
-    wcα = feed("call|long", np.float32, axes="(k)", key=Securities.Option.Call.Long, variable="price")
-    wcβ = feed("call|short", np.float32, axes="(l)", key=Securities.Option.Call.Short, variable="price")
-    wsα = feed("stock|long", np.float32, axes="()", key=Securities.Stock.Long, variable="price")
-    wsβ = feed("stock|short", np.float32, axes="()", key=Securities.Stock.Short, variable="price")
+    tpα = feed("put|long|time", np.float32, axes="(i)", key=Securities.Option.Put.Long, variable="time")
+    tpβ = feed("put|short|time", np.float32, axes="(j)", key=Securities.Option.Put.Short, variable="time")
+    tcα = feed("call|long|time", np.float32, axes="(k)", key=Securities.Option.Call.Long, variable="time")
+    tcβ = feed("call|short|time", np.float32, axes="(l)", key=Securities.Option.Call.Short, variable="time")
+    tsα = feed("stock|long|time", np.float32, axes="()", key=Securities.Stock.Long, variable="time")
+    tsβ = feed("stock|short|time", np.float32, axes="()", key=Securities.Stock.Short, variable="time")
 
-    kpα = feed("put|long", np.float32, axes="(i)", key=Securities.Option.Put.Long, variable="strike")
-    kpβ = feed("put|short", np.float32, axes="(j)", key=Securities.Option.Put.Short, variable="strike")
-    kcα = feed("call|long", np.float32, axes="(k)", key=Securities.Option.Call.Long, variable="strike")
-    kcβ = feed("call|short", np.float32, axes="(l)", key=Securities.Option.Call.Short, variable="strike")
+    wpα = feed("put|long|price", np.float32, axes="(i)", key=Securities.Option.Put.Long, variable="price")
+    wpβ = feed("put|short|price", np.float32, axes="(j)", key=Securities.Option.Put.Short, variable="price")
+    wcα = feed("call|long|price", np.float32, axes="(k)", key=Securities.Option.Call.Long, variable="price")
+    wcβ = feed("call|short|price", np.float32, axes="(l)", key=Securities.Option.Call.Short, variable="price")
+    wsα = feed("stock|long|price", np.float32, axes="()", key=Securities.Stock.Long, variable="price")
+    wsβ = feed("stock|short|price", np.float32, axes="()", key=Securities.Stock.Short, variable="price")
+
+    kpα = feed("put|long|strike", np.float32, axes="(i)", key=Securities.Option.Put.Long, variable="strike")
+    kpβ = feed("put|short|strike", np.float32, axes="(j)", key=Securities.Option.Put.Short, variable="strike")
+    kcα = feed("call|long|strike", np.float32, axes="(k)", key=Securities.Option.Call.Long, variable="strike")
+    kcβ = feed("call|short|strike", np.float32, axes="(l)", key=Securities.Option.Call.Short, variable="strike")
 
     def __init_subclass__(cls, *args, strategy, **kwargs):
         cls.__strategy__ = strategy
@@ -65,7 +74,7 @@ class StrategyCalculation(Calculation):
         assert isinstance(securities, dict)
         if not all([security in securities.keys() for security in self.securities]):
             return
-        strategies = self.wsμ(securities).to_dataset(name="price")
+        strategies = self.to(securities).to_dataset(name="time")
         strategies["spot"] = self.vo(securities)
         strategies["future"] = self.vω(securities)
         return strategies
@@ -77,31 +86,37 @@ class StrategyCalculation(Calculation):
 
 
 class StrangleLongCalculation(StrategyCalculation, strategy=Strategies.StrangleLong):
+    to = equation("time", np.datetime64, axes="(i,k)", function=lambda tpα, tcα: np.maximum.outer(tpα, tcα))
     vo = equation("spot", np.float32, axes="(i,k)", function=lambda wpα, wcα: - np.add.outer(wpα, wcα))
     vω = equation("val-", np.float32, axes="(i,k)", function=lambda kpα, kcα: + np.maximum(np.add.outer(kpα, -kcα), 0))
     vγ = equation("val+", np.float32, axes="(i,k)", function=lambda kpα, kcα: + np.ones((kpα.shape, kcα.shape)) * np.inf)
 
 class CollarLongCalculation(StrategyCalculation, strategy=Strategies.CollarLong):
+    to = equation("time", np.datatime64, axes="(i,l)", function=lambda tpα, tcβ, tsα: np.maximum(np.maximum.outer(tpα, tcβ), tsα))
     vo = equation("spot", np.float32, axes="(i,l)", function=lambda wpα, wcβ, wsα: - np.add.outer(wpα, -wcβ) - wsα)
     vω = equation("val-", np.float32, axes="(i,l)", function=lambda kpα, kcβ: + np.minimum.outer(kpα, kcβ))
     vγ = equation("val+", np.float32, axes="(i,l)", function=lambda kpα, kcβ: + np.maximum.outer(kpα, kcβ))
 
 class CollarShortCalculation(StrategyCalculation, strategy=Strategies.CollarShort):
+    to = equation("time", np.datetime64, axes="(j,k)", function=lambda tpβ, tcα, tsβ: np.maximum(np.maximum.outer(tpβ, tcα), tsβ))
     vo = equation("spot", np.float32, axes="(j,k)", function=lambda wpβ, wcα, wsβ: - np.add.outer(-wpβ, wcα) + wsβ)
     vω = equation("val-", np.float32, axes="(j,k)", function=lambda kpβ, kcα: + np.minimum.outer(-kpβ, -kcα))
     vγ = equation("val+", np.float32, axes="(j,k)", function=lambda kpβ, kcα: + np.maximum.outer(-kpβ, -kcα))
 
 class VerticalPutCalculation(StrategyCalculation, strategy=Strategies.VerticalPut):
+    to = equation("time", np.datetime64, axes="(i,j)", function=lambda tpα, tpβ: np.maximum.outer(tpα, tpβ))
     vo = equation("spot", np.float32, axes="(i,j)", function=lambda wpα, wpβ: - np.add.outer(wpα, -wpβ))
     vω = equation("val-", np.float32, axes="(i,j)", function=lambda kpα, kpβ: + np.minimum(np.add.outer(kpα, -kpβ), 0))
     vγ = equation("val+", np.float32, axes="(i,j)", function=lambda kpα, kpβ: + np.maximum(np.add.outer(kpα, -kpβ), 0))
 
 class VerticalCallCalculation(StrategyCalculation, strategy=Strategies.VerticalCall):
+    to = equation("time", np.datetime64, axes="(k,l)", function=lambda tcα, tcβ: np.maximum.outer(tcα, tcβ))
     vo = equation("spot", np.float32, axes="(k,l)", function=lambda wcα, wcβ: - np.add.outer(wcα, -wcβ))
     vω = equation("val-", np.float32, axes="(k,l)", function=lambda kcα, kcβ: + np.minimum(np.add.outer(-kcα, kcβ), 0))
     vγ = equation("val+", np.float32, axes="(k,l)", function=lambda kcα, kcβ: + np.maximum(np.add.outer(-kcα, kcβ), 0))
 
 class CondorCalculation(StrategyCalculation, strategy=Strategies.Condor):
+    to = equation("time", np.datetime64, axes="(i,j,k,l)", function=lambda tpα, tpβ, tcα, tcβ: np.maximum.outer(np.maximum.outer(tpα, tpβ), np.maximum.outer(tcα, tcβ)))
     vo = equation("spot", np.float32, axes="(i,j,k,l)", function=lambda vp, vc: + np.add(vp[:, :, np.newaxis, np.newaxis], vc[np.newaxis, np.newaxis, :, :]))
     vω = equation("val-", np.float32, axes="(i,j,k,l)", function=lambda oω, fo: + np.maximum(oω, fo))
     vγ = equation("val+", np.float32, axes="(i,j,k,l)", function=lambda oγ, fo: + np.minimum(oγ, fo))
@@ -123,7 +138,7 @@ class CondorCalculation(StrategyCalculation, strategy=Strategies.Condor):
 
 
 class StrategyCalculator(Calculator, calculations=list(StrategyCalculation.__subclasses__())):
-    def execute(self, contents, *args, partition, **kwargs):
+    def execute(self, contents, *args, partition=None, **kwargs):
         ticker, expire, securities = contents
         assert isinstance(securities, dict)
         assert all([isinstance(security, pd.DataFrame) for security in securities.values()])
