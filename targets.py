@@ -24,12 +24,12 @@ __license__ = ""
 
 
 @total_ordering
-class TargetValuation(ntuple("Valuation", "deadline spot future tau")):
-    def __new__(cls, *args, **kwargs):
-        values = args[:len(cls._fields)] if len(args) >= len(cls._fields) else [kwargs[field] for field in cls._fields]
-        return super().__new__(cls, *values)
+class TargetValuation(ntuple("Valuation", "spot future tau phi")):
+    def __new__(cls, *args, spot, future, tau, datetime, lifetime=None, **kwargs):
+        phi = (datetime + lifetime) if bool(lifetime) else None
+        return super().__new__(cls, spot, future, tau, phi)
 
-    def __bool__(self): return Datetime.now() >= self.deadline if bool(self.deadline) else True
+    def __bool__(self): return (self.phi <= self.chi) if self.phi is not None else True
     def __eq__(self, other): return self.apy == other.apy
     def __lt__(self, other): return self.apy < other.apy
 
@@ -48,6 +48,8 @@ class TargetValuation(ntuple("Valuation", "deadline spot future tau")):
     def gains(self): return self.profit / self.cost
     @property
     def profit(self): return self.income - self.cost
+    @property
+    def chi(self): return Datetime.now()
 
 
 class TargetSecurity(ntuple("Security", "instrument position"), ABC, metaclass=SubclassMeta):
@@ -121,20 +123,21 @@ class TargetStrategy(ntuple("Strategy", "spread security instrument")):
         valuation = str(self.valuation)
         return "\n".join([strategy + valuation, *securities])
 
-    @property
-    def securities(self): return self.__securities
-    @property
-    def valuation(self): return self.__valuation
-
     def ceiling(self, domain): return np.max(self.payoff(domain))
     def floor(self, domain): return np.min(self.payoff(domain))
     def payoff(self, domain):
         payoffs = np.array([security.payoff(domain) for security in self.securities])
         return np.sum(payoffs, axis=0)
 
+    @property
+    def securities(self): return self.__securities
+    @property
+    def valuation(self): return self.__valuation
+
 
 class TargetCalculator(Processor):
-    def execute(self, contents, *args, apy=None, funds=None, tenure=None, **kwargs):
+    def execute(self, contents, *args, apy=None, funds=None, **kwargs):
+        pctdiff = lambda value, other: (value - other) / other
         ticker, expire, strategy, valuations = contents
         assert isinstance(valuations, xr.Dataset)
         dataframe = valuations.to_dask_dataframe() if bool(valuations.chunks) else valuations.to_dataframe()
@@ -144,30 +147,14 @@ class TargetCalculator(Processor):
         for partition in self.partitions(dataframe):
             partition = partition.sort_values("apy", axis=1, ascending=False, ignore_index=True, inplace=False)
             for index, record in enumerate(partition.to_dict("records")):
-                deadline = self.deadline(record["time"], tenure)
-                valuation = TargetValuation(deadline=deadline, **record)
-                if not bool(valuation):
+                valuation = TargetValuation(*args, **record, **kwargs)
+                securities = [TargetSecurity(security, *args, **record, **kwargs) for security in strategy.securities]
+                strategy = TargetStrategy(strategy, *args, valuation=valuation, securities=securities, **record, **kwargs)
+                assert pctdiff(record["cost"], valuation.cost) <= 0.01
+                assert pctdiff(record["apy"], valuation.apy) <= 0.01
+                if not bool(strategy.valuation):
                     continue
-                assert self.pctdiff(record["cost"], valuation.cost) <= 0.01
-                assert self.pctdiff(record["apy"], valuation.apy) <= 0.01
-                securities = [TargetSecurity(security, **record) for security in strategy.securities]
-                strategy = TargetStrategy(strategy, valuation=valuation, securities=securities, **record)
-                rigorous = self.rigorous(strategy)
-                assert self.pctdiff(record["cost"], rigorous.cost) <= 0.01
-                assert self.pctdiff(record["apy"], rigorous.apy) <= 0.01
                 yield strategy
-
-    @staticmethod
-    def deadline(recorded, tenure): return (recorded + tenure) if bool(tenure) else None
-    @staticmethod
-    def pctdiff(value, other): return (value - other) / other
-
-    @staticmethod
-    def rigorous(target):
-        valuation = target.valuation
-        domain = np.arange(0, 2000, 0.1)
-        future = target.payoff(domain)
-        return TargetValuation(valuation.time, valuation.spot, future, valuation.tau)
 
     @staticmethod
     def partitions(dataframe):
@@ -177,6 +164,19 @@ class TargetCalculator(Processor):
         for index in dataframe.npartitions:
             partition = dataframe.get_partition(index).compute()
             yield partition
+
+
+#                rigorous = self.rigorous(strategy)
+#                assert self.pctdiff(record["cost"], rigorous.cost) <= 0.01
+#                assert self.pctdiff(record["apy"], rigorous.apy) <= 0.01
+#                yield strategy
+
+#    @staticmethod
+#    def rigorous(target):
+#        valuation = target.valuation
+#        domain = np.arange(0, 2000, 0.1)
+#        future = target.payoff(domain)
+#        return TargetValuation(valuation.time, valuation.spot, future, valuation.tau)
 
 
 
