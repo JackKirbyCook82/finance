@@ -111,11 +111,16 @@ class TargetOption(TargetSecurity, keys=["put", "call"]):
     def expire(self): return self.__expire
 
 
+@total_ordering
 class TargetStrategy(ntuple("Strategy", "spread security instrument")):
     def __new__(cls, strategy, *args, **kwargs): return super().__new__(cls, *strategy)
     def __init__(self, *args, securities, valuation, **kwargs):
         self.__securities = securities
         self.__valuation = valuation
+
+    def __bool__(self): return bool(self.valuation)
+    def __eq__(self, other): return self.valuation.apy == other.valuation.apy
+    def __lt__(self, other): return self.valuation.apy < other.valuation.apy
 
     def __str__(self):
         strategy = "|".join([str(content.name).lower() for content in self]).title()
