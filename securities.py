@@ -18,7 +18,7 @@ from support.pipelines import Processor, Saver, Loader
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["DateRange", "Security", "Securities", "Instruments", "Positions", "HistoryLoader", "HistoryCalculator", "HistorySaver", "SecurityLoader", "SecurityCalculator", "SecuritySaver"]
+__all__ = ["DateRange", "Security", "Securities", "Instruments", "Positions", "HistorySaver", "HistoryLoader", "HistoryCalculator", "SecuritySaver", "SecurityLoader", "SecurityCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
@@ -73,6 +73,14 @@ class DateRange(ntuple("DateRange", "minimum maximum")):
     def __contains__(self, date): return self.minimum <= date <= self.maximum
 
 
+class HistorySaver(Saver):
+    def execute(self, contents, *args, **kwargs):
+        ticker, history = contents
+        assert isinstance(history, pd.DataFrame)
+        file = os.path.join(self.repository, str(ticker) + ".csv")
+        self.write(history, file=file, mode="a")
+
+
 class HistoryLoader(Loader):
     def execute(self, ticker, *args, **kwargs):
         file = os.path.join(self.repository, str(ticker) + ".csv")
@@ -90,12 +98,17 @@ class HistoryCalculator(Processor):
         yield ticker, history
 
 
-class HistorySaver(Saver):
+class SecuritySaver(Saver):
     def execute(self, contents, *args, **kwargs):
-        ticker, history = contents
-        assert isinstance(history, pd.DataFrame)
-        file = os.path.join(self.repository, str(ticker) + ".csv")
-        self.write(history, file=file, mode="a")
+        ticker, expire, securities = contents
+        assert isinstance(securities, dict)
+        assert all([isinstance(security, pd.DataFrame) for security in securities.values()])
+        folder = os.path.join(self.repository, str(ticker), str(expire.strftime("%Y%m%d")))
+        if not os.path.isdir(folder):
+            os.mkdir(folder)
+        for security, dataframe in securities.items():
+            file = str(security) + ".csv"
+            self.write(dataframe, file=file, mode="a")
 
 
 class SecurityLoader(Loader):
@@ -130,22 +143,6 @@ class SecurityCalculator(Processor):
         securities = securities.where(securities["interest"] >= interest) if bool(interest) else securities
         securities = securities.where(securities["volume"] >= volume) if bool(volume) else securities
         return securities
-
-
-class SecuritySaver(Saver):
-    def execute(self, contents, *args, **kwargs):
-        ticker, expire, securities = contents
-        assert isinstance(securities, dict)
-        assert all([isinstance(security, pd.DataFrame) for security in securities.values()])
-        folder = os.path.join(self.repository, str(ticker), str(expire.strftime("%Y%m%d")))
-        if not os.path.isdir(folder):
-            os.mkdir(folder)
-        for security, dataframe in securities.items():
-            file = str(security) + ".csv"
-            self.write(dataframe, file=file, mode="a")
-
-
-
 
 
 

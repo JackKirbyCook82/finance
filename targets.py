@@ -23,7 +23,7 @@ from finance.strategies import Strategies
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["TargetLoader", "TargetCalculator", "TargetSaver"]
+__all__ = ["TargetSaver", "TargetLoader", "TargetCalculator", "TargetAnalysis"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
@@ -145,13 +145,24 @@ class TargetStrategy(ntuple("Strategy", "spread security instrument")):
     def valuation(self): return self.__valuation
 
 
+class TargetSaver(Saver):
+    def execute(self, contents, *args, **kwargs):
+        ticker, expire, strategy, valuations = contents
+        assert isinstance(contents, (pd.DataFrame, dk.DataFrame))
+        folder = os.path.join(self.repository, str(ticker), str(expire.strftime("%Y%m%d")))
+        if not os.path.isdir(folder):
+            os.mkdir(folder)
+        file = str(strategy) + ".csv"
+        self.write(valuations, file=file, mode="a")
+
+
 class TargetLoader(Loader):
     def execute(self, ticker, *args, **kwargs):
         folder = os.path.join(self.repository, str(ticker))
         for foldername in os.listdir(folder):
             expire = Datetime.strptime(os.path.splitext(foldername)[0], "%Y%m%d").date()
-            strategy, strategies = self.strategies(ticker, expire)
-            yield ticker, expire, strategy, strategies
+            strategy, valuations = self.strategies(ticker, expire)
+            yield ticker, expire, strategy, valuations
 
     def strategies(self, ticker, expire):
         datatypes = {}
@@ -159,8 +170,8 @@ class TargetLoader(Loader):
         for filename in os.listdir(folder):
             strategy = Strategies[str(filename).split(".")[0]]
             file = os.path.join(folder, filename)
-            strategies = self.read(file=file, datatypes=datatypes, datetypes=[])
-            return strategy, strategies
+            valuations = self.refer(file=file, datatypes=datatypes, datetypes=[])
+            return strategy, valuations
 
 
 class TargetCalculator(Processor):
@@ -202,16 +213,13 @@ class TargetCalculator(Processor):
             yield partition
 
 
-class TargetSaver(Saver):
+class TargetAnalysis(Processor):
     def execute(self, contents, *args, **kwargs):
-        ticker, expire, strategy, strategies = contents
-        assert isinstance(contents, (pd.DataFrame, dk.DataFrame))
-        folder = os.path.join(self.repository, str(ticker), str(expire.strftime("%Y%m%d")))
-        if not os.path.isdir(folder):
-            os.mkdir(folder)
-        file = str(strategy) + ".csv"
-        dataframe = strategies
-        self.write(dataframe, file=file, mode="a")
+        ticker, expire, strategy, valuations = contents
+        assert isinstance(valuations, xr.Dataset)
+        dataframe = valuations.to_dask_dataframe() if bool(valuations.chunks) else valuations.to_dataframe()
+        dataframe = dataframe.dropna(how="all")
+
 
 
 
