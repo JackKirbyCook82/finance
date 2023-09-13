@@ -6,7 +6,6 @@ Created on Weds Jul 19 2023
 
 """
 
-import h5py
 import os.path
 import numpy as np
 import pandas as pd
@@ -19,7 +18,7 @@ from support.pipelines import Processor, Saver, Loader
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["DateRange", "Securities", "Instruments", "Positions", "HistoryLoader", "HistoryCalculator", "HistorySaver", "SecurityLoader", "SecurityCalculator", "SecuritySaver"]
+__all__ = ["DateRange", "Security", "Securities", "Instruments", "Positions", "HistoryLoader", "HistoryCalculator", "HistorySaver", "SecurityLoader", "SecurityCalculator", "SecuritySaver"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
@@ -35,7 +34,19 @@ class Security(ntuple("Security", "instrument position")):
     def payoff(self): return self.__payoff
 
 
-class Securities:
+class SecuritiesMeta(type):
+    def __getitem__(cls, string):
+        instrument, position = str(string).split("|")
+        instrument, position = str(instrument).title(), str(position).title()
+        try:
+            option = getattr(cls.Option, str(instrument).title())
+            return getattr(option, str(position).title())
+        except AttributeError:
+            stock = getattr(cls, str(instrument).title())
+            return getattr(stock, str(position).title())
+
+
+class Securities(metaclass=SecuritiesMeta):
     class Stock:
         Long = Security(Instruments.STOCK, Positions.LONG, payoff=lambda x: np.copy(x))
         Short = Security(Instruments.STOCK, Positions.SHORT, payoff=lambda x: -np.copy(x))
@@ -90,29 +101,35 @@ class HistorySaver(Saver):
 class SecurityLoader(Loader):
     def execute(self, ticker, *args, **kwargs):
         folder = os.path.join(self.repository, str(ticker))
-        for file in os.listdir(folder):
-            expire = Datetime.strptime(os.path.splitext(file)[0], "%Y%m%d").date()
-            with h5py.File(file, "r") as hdffile:
-                groups = hdffile.keys()
-            securities = dict()
-            for group in groups:
-                instrument, position = str(group).split("|")
-                instrument = Instruments[str(instrument).upper()]
-                position = Positions[str(position).upper()]
-                security = Security(instrument, position)
-                securities[security] = self.read(file=file, group=group)
+        for foldername in os.listdir(folder):
+            expire = Datetime.strptime(os.path.splitext(foldername)[0], "%Y%m%d").date()
+            securities = {key: value for key, value in self.securities(ticker, expire)}
             yield ticker, expire, securities
+
+    def securities(self, ticker, expire):
+        datatypes = {"ticker": str, "strike": np.float32, "price": np.float32, "size": np.float32, "interest": np.int32, "volume": np.int64}
+        folder = os.path.join(self.repository, str(ticker), str(expire.strftime("%Y%m%d")))
+        for filename in os.listdir(folder):
+            security = Securities[str(filename).split(".")[0]]
+            file = os.path.join(folder, filename)
+            securities = self.read(file=file, datatypes=datatypes, datetypes=["date", "datetime", "expire"])
+            yield security, securities
 
 
 class SecurityCalculator(Processor):
-    def execute(self, contents, *args, size=None, interest=None, volume=None, **kwargs):
+    def execute(self, contents, *args, **kwargs):
         ticker, expire, securities = contents
         assert isinstance(securities, dict)
         assert all([isinstance(security, pd.DataFrame) for security in securities.values()])
+        securities = self.parser(securities, *args, **kwargs)
+        return ticker, expire, securities
+
+    @staticmethod
+    def parser(securities, *args, size=None, interest=None, volume=None, **kwargs):
         securities = securities.where(securities["size"] >= size) if bool(size) else securities
         securities = securities.where(securities["interest"] >= interest) if bool(interest) else securities
-        securities = securities.where(securities["volume"] >= volume) if bool(volume) else volume
-        return ticker, expire, securities
+        securities = securities.where(securities["volume"] >= volume) if bool(volume) else securities
+        return securities
 
 
 class SecuritySaver(Saver):
@@ -120,13 +137,15 @@ class SecuritySaver(Saver):
         ticker, expire, securities = contents
         assert isinstance(securities, dict)
         assert all([isinstance(security, pd.DataFrame) for security in securities.values()])
-        folder = os.path.join(self.repository, str(ticker))
+        folder = os.path.join(self.repository, str(ticker), str(expire.strftime("%Y%m%d")))
         if not os.path.isdir(folder):
             os.mkdir(folder)
-        file = os.path.join(self.repository, str(expire.strftime("%Y%m%d")) + ".hdf")
-        for security, dataframe in contents.items():
-            group = "/".join(str(security))
-            self.write(dataframe, file=file, group=group, mode="a")
+        for security, dataframe in securities.items():
+            file = str(security) + ".csv"
+            self.write(dataframe, file=file, mode="a")
+
+
+
 
 
 

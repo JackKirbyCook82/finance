@@ -35,11 +35,11 @@ class ValuationCalculation(Calculation):
     π = equation("profit", np.float32, function=lambda inc, cost: inc - cost)
     r = equation("return", np.float32, function=lambda π, cost: π / cost)
 
-    def __call__(self, strategies, *args, discount=0, fees=0, **kwargs):
+    def __call__(self, strategies, *args, discount=0, **kwargs):
         assert isinstance(strategies, xr.Dataset)
-        strategies["cost"] = self.cost(strategies)
-        strategies["tau"] = self.τau(strategies)
-        strategies["apy"] = self.apy(strategies)
+        strategies["cost"] = self.cost(strategies, discount=discount)
+        strategies["tau"] = self.τau(strategies, discount=discount)
+        strategies["apy"] = self.apy(strategies, discount=discount)
         return strategies
 
 

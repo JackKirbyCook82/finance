@@ -6,19 +6,24 @@ Created on Weds Jul 19 2023
 
 """
 
+import os.path
 import numpy as np
+import pandas as pd
 import xarray as xr
+import dask.dataframe as dk
 from abc import ABC, abstractmethod
 from functools import total_ordering
 from collections import namedtuple as ntuple
 from datetime import datetime as Datetime
 
 from support.meta import SubclassMeta
-from support.pipelines import Processor
+from support.pipelines import Processor, Saver, Loader
+
+from finance.strategies import Strategies
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["TargetCalculator"]
+__all__ = ["TargetLoader", "TargetCalculator", "TargetSaver"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
@@ -140,14 +145,31 @@ class TargetStrategy(ntuple("Strategy", "spread security instrument")):
     def valuation(self): return self.__valuation
 
 
+class TargetLoader(Loader):
+    def execute(self, ticker, *args, **kwargs):
+        folder = os.path.join(self.repository, str(ticker))
+        for foldername in os.listdir(folder):
+            expire = Datetime.strptime(os.path.splitext(foldername)[0], "%Y%m%d").date()
+            strategy, strategies = self.strategies(ticker, expire)
+            yield ticker, expire, strategy, strategies
+
+    def strategies(self, ticker, expire):
+        datatypes = {}
+        folder = os.path.join(self.repository, str(ticker), str(expire.strftime("%Y%m%d")))
+        for filename in os.listdir(folder):
+            strategy = Strategies[str(filename).split(".")[0]]
+            file = os.path.join(folder, filename)
+            strategies = self.read(file=file, datatypes=datatypes, datetypes=[])
+            return strategy, strategies
+
+
 class TargetCalculator(Processor):
-    def execute(self, contents, *args, apy=None, funds=None, **kwargs):
+    def execute(self, contents, *args, **kwargs):
         pctdiff = lambda value, other: (value - other) / other
         ticker, expire, strategy, valuations = contents
         assert isinstance(valuations, xr.Dataset)
         dataframe = valuations.to_dask_dataframe() if bool(valuations.chunks) else valuations.to_dataframe()
-        dataframe = dataframe.where(dataframe["apy"] >= float(apy)) if apy is not None else dataframe
-        dataframe = dataframe.where(dataframe["cost"] <= float(funds)) if funds is not None else dataframe
+        dataframe = self.parser(dataframe, *args, **kwargs)
         dataframe = dataframe.dropna(how="all")
         for partition in self.partitions(dataframe):
             partition = partition.sort_values("apy", axis=1, ascending=False, ignore_index=True, inplace=False)
@@ -162,6 +184,15 @@ class TargetCalculator(Processor):
                 yield strategy
 
     @staticmethod
+    def parser(strategies, *args, apy=None, funds=None, size=None, interest=None, volume=None, **kwargs):
+        strategies = strategies.where(strategies["apy"] >= float(apy)) if apy is not None else strategies
+        strategies = strategies.where(strategies["cost"] <= float(funds)) if funds is not None else strategies
+        strategies = strategies.where(strategies["size"] >= size) if bool(size) else strategies
+        strategies = strategies.where(strategies["interest"] >= interest) if bool(interest) else strategies
+        strategies = strategies.where(strategies["volume"] >= volume) if bool(volume) else strategies
+        return strategies
+
+    @staticmethod
     def partitions(dataframe):
         if not hasattr(dataframe, "npartitions"):
             yield dataframe
@@ -171,17 +202,16 @@ class TargetCalculator(Processor):
             yield partition
 
 
-#                rigorous = self.rigorous(strategy)
-#                assert self.pctdiff(record["cost"], rigorous.cost) <= 0.01
-#                assert self.pctdiff(record["apy"], rigorous.apy) <= 0.01
-#                yield strategy
-
-#    @staticmethod
-#    def rigorous(target):
-#        valuation = target.valuation
-#        domain = np.arange(0, 2000, 0.1)
-#        future = target.payoff(domain)
-#        return TargetValuation(valuation.time, valuation.spot, future, valuation.tau)
+class TargetSaver(Saver):
+    def execute(self, contents, *args, **kwargs):
+        ticker, expire, strategy, strategies = contents
+        assert isinstance(contents, (pd.DataFrame, dk.DataFrame))
+        folder = os.path.join(self.repository, str(ticker), str(expire.strftime("%Y%m%d")))
+        if not os.path.isdir(folder):
+            os.mkdir(folder)
+        file = str(strategy) + ".csv"
+        dataframe = strategies
+        self.write(dataframe, file=file, mode="a")
 
 
 
