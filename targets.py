@@ -147,13 +147,13 @@ class TargetStrategy(ntuple("Strategy", "spread security instrument")):
 
 class TargetSaver(Saver):
     def execute(self, contents, *args, **kwargs):
-        ticker, expire, strategy, valuations = contents
-        assert isinstance(contents, (pd.DataFrame, dk.DataFrame))
+        ticker, expire, strategy, dataframe = contents
+        assert isinstance(dataframe, (pd.DataFrame, dk.DataFrame))
         folder = os.path.join(self.repository, str(ticker), str(expire.strftime("%Y%m%d")))
         if not os.path.isdir(folder):
             os.mkdir(folder)
         file = str(strategy) + ".csv"
-        self.write(valuations, file=file, mode="a")
+        self.write(dataframe, file=file, mode="a")
 
 
 class TargetLoader(Loader):
@@ -170,16 +170,16 @@ class TargetLoader(Loader):
         for filename in os.listdir(folder):
             strategy = Strategies[str(filename).split(".")[0]]
             file = os.path.join(folder, filename)
-            valuations = self.refer(file=file, datatypes=datatypes, datetypes=[])
-            return strategy, valuations
+            dataframe = self.refer(file=file, datatypes=datatypes, datetypes=[])
+            return strategy, dataframe
 
 
 class TargetCalculator(Processor):
     def execute(self, contents, *args, **kwargs):
         pctdiff = lambda value, other: (value - other) / other
-        ticker, expire, strategy, valuations = contents
-        assert isinstance(valuations, xr.Dataset)
-        dataframe = valuations.to_dask_dataframe() if bool(valuations.chunks) else valuations.to_dataframe()
+        ticker, expire, strategy, dataframe = contents
+        assert isinstance(dataframe, xr.Dataset)
+        dataframe = dataframe.to_dask_dataframe() if bool(dataframe.chunks) else dataframe.to_dataframe()
         dataframe = self.parser(dataframe, *args, **kwargs)
         dataframe = dataframe.dropna(how="all")
         for partition in self.partitions(dataframe):
@@ -195,13 +195,13 @@ class TargetCalculator(Processor):
                 yield strategy
 
     @staticmethod
-    def parser(strategies, *args, apy=None, funds=None, size=None, interest=None, volume=None, **kwargs):
-        strategies = strategies.where(strategies["apy"] >= float(apy)) if apy is not None else strategies
-        strategies = strategies.where(strategies["cost"] <= float(funds)) if funds is not None else strategies
-        strategies = strategies.where(strategies["size"] >= size) if bool(size) else strategies
-        strategies = strategies.where(strategies["interest"] >= interest) if bool(interest) else strategies
-        strategies = strategies.where(strategies["volume"] >= volume) if bool(volume) else strategies
-        return strategies
+    def parser(dataframe, *args, apy=None, funds=None, size=None, interest=None, volume=None, **kwargs):
+        dataframe = dataframe.where(dataframe["apy"] >= float(apy)) if apy is not None else dataframe
+        dataframe = dataframe.where(dataframe["cost"] <= float(funds)) if funds is not None else dataframe
+        dataframe = dataframe.where(dataframe["size"] >= size) if bool(size) else dataframe
+        dataframe = dataframe.where(dataframe["interest"] >= interest) if bool(interest) else dataframe
+        dataframe = dataframe.where(dataframe["volume"] >= volume) if bool(volume) else dataframe
+        return dataframe
 
     @staticmethod
     def partitions(dataframe):
@@ -214,10 +214,12 @@ class TargetCalculator(Processor):
 
 
 class TargetAnalysis(Processor):
-    def execute(self, contents, *args, **kwargs):
-        ticker, expire, strategy, valuations = contents
-        assert isinstance(valuations, xr.Dataset)
-        dataframe = valuations.to_dask_dataframe() if bool(valuations.chunks) else valuations.to_dataframe()
+    def execute(self, contents, *args, apy=None, funds=None, **kwargs):
+        ticker, expire, strategy, dataframe = contents
+        assert isinstance(dataframe, xr.Dataset)
+        dataframe = dataframe.where(dataframe["apy"] >= float(apy)) if apy is not None else dataframe
+        dataframe = dataframe.where(dataframe["cost"] <= float(funds)) if funds is not None else dataframe
+        dataframe = dataframe.to_dask_dataframe() if bool(dataframe.chunks) else dataframe.to_dataframe()
         dataframe = dataframe.dropna(how="all")
 
 

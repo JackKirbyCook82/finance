@@ -35,20 +35,20 @@ class ValuationCalculation(Calculation):
     π = equation("profit", np.float32, function=lambda inc, cost: inc - cost)
     r = equation("return", np.float32, function=lambda π, cost: π / cost)
 
-    def __call__(self, strategies, *args, discount=0, **kwargs):
-        assert isinstance(strategies, xr.Dataset)
-        strategies["cost"] = self.cost(strategies, discount=discount)
-        strategies["tau"] = self.τau(strategies, discount=discount)
-        strategies["apy"] = self.apy(strategies, discount=discount)
-        return strategies
+    def __call__(self, dataset, *args, discount=0, **kwargs):
+        assert isinstance(dataset, xr.Dataset)
+        dataset["cost"] = self.cost(dataset, discount=discount)
+        dataset["tau"] = self.τau(dataset, discount=discount)
+        dataset["apy"] = self.apy(dataset, discount=discount)
+        return dataset
 
 
 class ValuationCalculator(Calculator, calculations=[ValuationCalculation]):
     def execute(self, contents, *args, **kwargs):
-        ticker, expire, strategy, strategies = contents
-        assert isinstance(strategies, xr.Dataset)
+        ticker, expire, strategy, dataset = contents
+        assert isinstance(dataset, xr.Dataset)
         for calculation in iter(self.calculations):
-            valuations = calculation(strategies, *args, **kwargs)
+            valuations = calculation(dataset, *args, **kwargs)
             yield ticker, expire, strategy, valuations
 
 

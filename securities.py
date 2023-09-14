@@ -75,38 +75,38 @@ class DateRange(ntuple("DateRange", "minimum maximum")):
 
 class HistorySaver(Saver):
     def execute(self, contents, *args, **kwargs):
-        ticker, history = contents
-        assert isinstance(history, pd.DataFrame)
+        ticker, dataframe = contents
+        assert isinstance(dataframe, pd.DataFrame)
         file = os.path.join(self.repository, str(ticker) + ".csv")
-        self.write(history, file=file, mode="a")
+        self.write(dataframe, file=file, mode="a")
 
 
 class HistoryLoader(Loader):
     def execute(self, ticker, *args, **kwargs):
         file = os.path.join(self.repository, str(ticker) + ".csv")
         datatypes = {"ticker": str, "open": np.float32, "close": np.float32, "high": np.float32, "low": np.float32, "price": np.float32, "volume": np.int64}
-        history = self.read(file=file, datatypes=datatypes, datetypes=["date"])
-        yield ticker, history
+        dataframe = self.read(file=file, datatypes=datatypes, datetypes=["date"])
+        yield ticker, dataframe
 
 
 class HistoryCalculator(Processor):
     def execute(self, contents, *args, dates=None, **kwargs):
-        ticker, history = contents
-        assert isinstance(history, pd.DataFrame)
+        ticker, dataframe = contents
+        assert isinstance(dataframe, pd.DataFrame)
         assert isinstance(dates, (DateRange, type(None)))
-        history = history.where(history["date"] in dates) if bool(dates) else history
-        yield ticker, history
+        dataframe = dataframe.where(dataframe["date"] in dates) if bool(dates) else dataframe
+        yield ticker, dataframe
 
 
 class SecuritySaver(Saver):
     def execute(self, contents, *args, **kwargs):
-        ticker, expire, securities = contents
-        assert isinstance(securities, dict)
-        assert all([isinstance(security, pd.DataFrame) for security in securities.values()])
+        ticker, expire, dataframes = contents
+        assert isinstance(dataframes, dict)
+        assert all([isinstance(security, pd.DataFrame) for security in dataframes.values()])
         folder = os.path.join(self.repository, str(ticker), str(expire.strftime("%Y%m%d")))
         if not os.path.isdir(folder):
             os.mkdir(folder)
-        for security, dataframe in securities.items():
+        for security, dataframe in dataframes.items():
             file = str(security) + ".csv"
             self.write(dataframe, file=file, mode="w")
 
@@ -116,8 +116,8 @@ class SecurityLoader(Loader):
         folder = os.path.join(self.repository, str(ticker))
         for foldername in os.listdir(folder):
             expire = Datetime.strptime(os.path.splitext(foldername)[0], "%Y%m%d").date()
-            securities = {key: value for key, value in self.securities(ticker, expire)}
-            yield ticker, expire, securities
+            dataframes = {key: value for key, value in self.securities(ticker, expire)}
+            yield ticker, expire, dataframes
 
     def securities(self, ticker, expire):
         datatypes = {"ticker": str, "strike": np.float32, "price": np.float32, "size": np.float32, "interest": np.int32, "volume": np.int64}
@@ -125,26 +125,26 @@ class SecurityLoader(Loader):
         for filename in os.listdir(folder):
             security = Securities[str(filename).split(".")[0]]
             file = os.path.join(folder, filename)
-            securities = self.read(file=file, datatypes=datatypes, datetypes=["date", "datetime", "expire"])
-            yield security, securities
+            dataframes = self.read(file=file, datatypes=datatypes, datetypes=["date", "datetime", "expire"])
+            yield security, dataframes
 
 
 class SecurityCalculator(Processor):
     def execute(self, contents, *args, **kwargs):
-        ticker, expire, securities = contents
-        assert isinstance(securities, dict)
-        assert all([isinstance(security, pd.DataFrame) for security in securities.values()])
-        securities = {security: self.parser(dataframe) for security, dataframe in securities.items()}
-        return ticker, expire, securities
+        ticker, expire, dataframes = contents
+        assert isinstance(dataframes, dict)
+        assert all([isinstance(security, pd.DataFrame) for security in dataframes.values()])
+        dataframes = {security: self.parser(dataframe) for security, dataframe in dataframes.items()}
+        return ticker, expire, dataframes
 
     @staticmethod
-    def parser(securities, *args, size=None, interest=None, volume=None, **kwargs):
-        securities = securities.where(securities["size"] >= size) if bool(size) else securities
-        securities = securities.where(securities["interest"] >= interest) if bool(interest) else securities
-        securities = securities.where(securities["volume"] >= volume) if bool(volume) else securities
-        columns = [column for column in ("date", "ticker", "expire", "strike") if column in securities.columns]
-        securities = securities.drop_duplicates(subset=columns, keep="last", inplace=False)
-        return securities
+    def parser(dataframe, *args, size=None, interest=None, volume=None, **kwargs):
+        dataframe = dataframe.where(dataframe["size"] >= size) if bool(size) else dataframe
+        dataframe = dataframe.where(dataframe["interest"] >= interest) if bool(interest) else dataframe
+        dataframe = dataframe.where(dataframe["volume"] >= volume) if bool(volume) else dataframe
+        columns = [column for column in ("date", "ticker", "expire", "strike") if column in dataframe.columns]
+        dataframe = dataframe.drop_duplicates(subset=columns, keep="last", inplace=False)
+        return dataframe
 
 
 

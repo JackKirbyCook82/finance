@@ -182,11 +182,11 @@ class CondorCalculation(StrategyCalculation, strategy=Strategies.Condor):
 
 class StrategyCalculator(Calculator, calculations=list(StrategyCalculation.__subclasses__())):
     def execute(self, contents, *args, partition=None, **kwargs):
-        ticker, expire, securities = contents
-        assert isinstance(securities, dict)
-        assert all([isinstance(security, pd.DataFrame) for security in securities.values()])
+        ticker, expire, dataframes = contents
+        assert isinstance(dataframes, dict)
+        assert all([isinstance(security, pd.DataFrame) for security in dataframes.values()])
         function = lambda security, dataframe: self.parser(dataframe, *args, instrument=security.instrument, position=security.position, partition=partition, **kwargs)
-        securities = {security: function(security, dataframe) for security, dataframe in securities.items()}
+        securities = {security: function(security, dataframe) for security, dataframe in dataframes.items()}
         for calculation in iter(self.calculations):
             strategy = calculation.strategy
             strategies = calculation(securities, *args, **kwargs)
