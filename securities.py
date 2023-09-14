@@ -108,7 +108,7 @@ class SecuritySaver(Saver):
             os.mkdir(folder)
         for security, dataframe in securities.items():
             file = str(security) + ".csv"
-            self.write(dataframe, file=file, mode="a")
+            self.write(dataframe, file=file, mode="w")
 
 
 class SecurityLoader(Loader):
@@ -134,7 +134,7 @@ class SecurityCalculator(Processor):
         ticker, expire, securities = contents
         assert isinstance(securities, dict)
         assert all([isinstance(security, pd.DataFrame) for security in securities.values()])
-        securities = self.parser(securities, *args, **kwargs)
+        securities = {security: self.parser(dataframe) for security, dataframe in securities.items()}
         return ticker, expire, securities
 
     @staticmethod
@@ -142,6 +142,8 @@ class SecurityCalculator(Processor):
         securities = securities.where(securities["size"] >= size) if bool(size) else securities
         securities = securities.where(securities["interest"] >= interest) if bool(interest) else securities
         securities = securities.where(securities["volume"] >= volume) if bool(volume) else securities
+        columns = [column for column in ("date", "ticker", "expire", "strike") if column in securities.columns]
+        securities = securities.drop_duplicates(subset=columns, keep="last", inplace=False)
         return securities
 
 
