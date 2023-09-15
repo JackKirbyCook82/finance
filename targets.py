@@ -214,6 +214,9 @@ class TargetCalculator(Processor):
 
 
 class TargetAnalysis(Processor):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
     def execute(self, contents, *args, apy=None, funds=None, **kwargs):
         ticker, expire, strategy, dataframe = contents
         assert isinstance(dataframe, xr.Dataset)
