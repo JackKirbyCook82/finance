@@ -10,6 +10,7 @@ import os.path
 import numpy as np
 import pandas as pd
 import xarray as xr
+import dask.array as da
 import dask.dataframe as dk
 from abc import ABC, abstractmethod
 from functools import total_ordering
@@ -181,7 +182,6 @@ class TargetCalculator(Processor):
         assert isinstance(dataframe, xr.Dataset)
         dataframe = dataframe.to_dask_dataframe() if bool(dataframe.chunks) else dataframe.to_dataframe()
         dataframe = self.parser(dataframe, *args, **kwargs)
-        dataframe = dataframe.dropna(how="all")
         for partition in self.partitions(dataframe):
             partition = partition.sort_values("apy", axis=1, ascending=False, ignore_index=True, inplace=False)
             for index, record in enumerate(partition.to_dict("records")):
@@ -201,6 +201,7 @@ class TargetCalculator(Processor):
         dataframe = dataframe.where(dataframe["size"] >= size) if bool(size) else dataframe
         dataframe = dataframe.where(dataframe["interest"] >= interest) if bool(interest) else dataframe
         dataframe = dataframe.where(dataframe["volume"] >= volume) if bool(volume) else dataframe
+        dataframe = dataframe.dropna(how="all")
         return dataframe
 
     @staticmethod
@@ -220,11 +221,24 @@ class TargetAnalysis(Processor):
     def execute(self, contents, *args, apy=None, funds=None, **kwargs):
         ticker, expire, strategy, dataframe = contents
         assert isinstance(dataframe, xr.Dataset)
+        dataframe = dataframe.to_dask_dataframe() if bool(dataframe.chunks) else dataframe.to_dataframe()
+        dataframe = self.parser(dataframe, *args, **kwargs)
+        array = dataframe[["tau", "cost", "apy"]].to_dask_array()
+        histogram, edges = da.histogramdd(array, bins=(100, 100, 100))
+        histogram = histogram.compute() if hasattr(histogram, "partitions") else histogram
+        edges = edges.compute() if hasattr(edges, "partitions") else edges
+
+
+
+    @staticmethod
+    def parser(dataframe, *args, apy=None, funds=None, size=None, interest=None, volume=None, **kwargs):
         dataframe = dataframe.where(dataframe["apy"] >= float(apy)) if apy is not None else dataframe
         dataframe = dataframe.where(dataframe["cost"] <= float(funds)) if funds is not None else dataframe
-        dataframe = dataframe.to_dask_dataframe() if bool(dataframe.chunks) else dataframe.to_dataframe()
+        dataframe = dataframe.where(dataframe["size"] >= size) if bool(size) else dataframe
+        dataframe = dataframe.where(dataframe["interest"] >= interest) if bool(interest) else dataframe
+        dataframe = dataframe.where(dataframe["volume"] >= volume) if bool(volume) else dataframe
         dataframe = dataframe.dropna(how="all")
-
+        return dataframe
 
 
 
