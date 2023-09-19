@@ -175,25 +175,7 @@ class TargetLoader(Loader):
             return strategy, dataframe
 
 
-class TargetCalculator(Processor):
-    def execute(self, contents, *args, **kwargs):
-        pctdiff = lambda value, other: (value - other) / other
-        ticker, expire, strategy, dataframe = contents
-        assert isinstance(dataframe, xr.Dataset)
-        dataframe = dataframe.to_dask_dataframe() if bool(dataframe.chunks) else dataframe.to_dataframe()
-        dataframe = self.parser(dataframe, *args, **kwargs)
-        for partition in self.partitions(dataframe):
-            partition = partition.sort_values("apy", axis=1, ascending=False, ignore_index=True, inplace=False)
-            for index, record in enumerate(partition.to_dict("records")):
-                valuation = TargetValuation(*args, **record, **kwargs)
-                securities = [TargetSecurity(security, *args, **record, **kwargs) for security in strategy.securities]
-                strategy = TargetStrategy(strategy, *args, valuation=valuation, securities=securities, **record, **kwargs)
-                assert pctdiff(record["cost"], valuation.cost) <= 0.01
-                assert pctdiff(record["apy"], valuation.apy) <= 0.01
-                if not bool(strategy.valuation):
-                    continue
-                yield strategy
-
+class TargetProcessor(Processor, ABC):
     @staticmethod
     def parser(dataframe, *args, apy=None, funds=None, size=None, interest=None, volume=None, **kwargs):
         dataframe = dataframe.where(dataframe["apy"] >= float(apy)) if apy is not None else dataframe
@@ -214,10 +196,27 @@ class TargetCalculator(Processor):
             yield partition
 
 
-class TargetAnalysis(Processor):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+class TargetCalculator(TargetProcessor):
+    def execute(self, contents, *args, **kwargs):
+        pctdiff = lambda value, other: (value - other) / other
+        ticker, expire, strategy, dataframe = contents
+        assert isinstance(dataframe, xr.Dataset)
+        dataframe = dataframe.to_dask_dataframe() if bool(dataframe.chunks) else dataframe.to_dataframe()
+        dataframe = self.parser(dataframe, *args, **kwargs)
+        for partition in self.partitions(dataframe):
+            partition = partition.sort_values("apy", axis=1, ascending=False, ignore_index=True, inplace=False)
+            for index, record in enumerate(partition.to_dict("records")):
+                valuation = TargetValuation(*args, **record, **kwargs)
+                securities = [TargetSecurity(security, *args, **record, **kwargs) for security in strategy.securities]
+                strategy = TargetStrategy(strategy, *args, valuation=valuation, securities=securities, **record, **kwargs)
+                assert pctdiff(record["cost"], valuation.cost) <= 0.01
+                assert pctdiff(record["apy"], valuation.apy) <= 0.01
+                if not bool(strategy.valuation):
+                    continue
+                yield strategy
 
+
+class TargetAnalysis(TargetProcessor):
     def execute(self, contents, *args, apy=None, funds=None, **kwargs):
         ticker, expire, strategy, dataframe = contents
         assert isinstance(dataframe, xr.Dataset)
@@ -227,18 +226,6 @@ class TargetAnalysis(Processor):
         histogram, edges = da.histogramdd(array, bins=(100, 100, 100))
         histogram = histogram.compute() if hasattr(histogram, "partitions") else histogram
         edges = edges.compute() if hasattr(edges, "partitions") else edges
-
-
-
-    @staticmethod
-    def parser(dataframe, *args, apy=None, funds=None, size=None, interest=None, volume=None, **kwargs):
-        dataframe = dataframe.where(dataframe["apy"] >= float(apy)) if apy is not None else dataframe
-        dataframe = dataframe.where(dataframe["cost"] <= float(funds)) if funds is not None else dataframe
-        dataframe = dataframe.where(dataframe["size"] >= size) if bool(size) else dataframe
-        dataframe = dataframe.where(dataframe["interest"] >= interest) if bool(interest) else dataframe
-        dataframe = dataframe.where(dataframe["volume"] >= volume) if bool(volume) else dataframe
-        dataframe = dataframe.dropna(how="all")
-        return dataframe
 
 
 
