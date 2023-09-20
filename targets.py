@@ -14,8 +14,9 @@ import dask.array as da
 import dask.dataframe as dk
 from abc import ABC, abstractmethod
 from functools import total_ordering
-from collections import namedtuple as ntuple
 from datetime import datetime as Datetime
+from collections import namedtuple as ntuple
+from collections import OrderedDict as ODict
 
 from support.meta import SubclassMeta
 from support.pipelines import Processor, Saver, Loader
@@ -198,11 +199,12 @@ class TargetProcessor(Processor, ABC):
 
 class TargetCalculator(TargetProcessor):
     def execute(self, contents, *args, **kwargs):
-        pctdiff = lambda value, other: (value - other) / other
         ticker, expire, strategy, dataframe = contents
         assert isinstance(dataframe, xr.Dataset)
         dataframe = dataframe.to_dask_dataframe() if bool(dataframe.chunks) else dataframe.to_dataframe()
         dataframe = self.parser(dataframe, *args, **kwargs)
+
+        pctdiff = lambda value, other: (value - other) / other
         for partition in self.partitions(dataframe):
             partition = partition.sort_values("apy", axis=1, ascending=False, ignore_index=True, inplace=False)
             for index, record in enumerate(partition.to_dict("records")):
@@ -222,10 +224,20 @@ class TargetAnalysis(TargetProcessor):
         assert isinstance(dataframe, xr.Dataset)
         dataframe = dataframe.to_dask_dataframe() if bool(dataframe.chunks) else dataframe.to_dataframe()
         dataframe = self.parser(dataframe, *args, **kwargs)
-        array = dataframe[["tau", "cost", "apy"]].to_dask_array()
-        histogram, edges = da.histogramdd(array, bins=(100, 100, 100))
+
+        Column = ntuple("Column", "name bins string scale")
+        columns = [Column("tau", 100, "{:.0f}|{:.0f}", 1), Column("cost", 100, "${:.0f}K|${:.0f}K", 0.001), Column("apy", 100, "{:.0f}%|{:.0f}%"), 100]
+        formatter = lambda column, lower, upper: column.string.format(lower * column.scale, upper * column.scale)
+        function = lambda column, values: [formatter(column, lower, upper) for lower, upper in zip(values[:-1], values[1:])]
+
+        array = dataframe[[column.name for column in columns]].to_dask_array()
+        histogram, edges = da.histogramdd(array, bins=[column.bins for column in columns])
         histogram = histogram.compute() if hasattr(histogram, "partitions") else histogram
         edges = edges.compute() if hasattr(edges, "partitions") else edges
+        grids = np.meshgrid(*[np.arange(column.bins) for column in columns])
+
+        xyz = ODict([(column.name, grid.ravel()) for column, grid in zip(columns, grids)])
+        labels = ODict([(column.name, function(column, values)) for column, values in zip(columns, edges)])
 
 
 
