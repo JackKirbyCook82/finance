@@ -16,10 +16,10 @@ from abc import ABC, abstractmethod
 from functools import total_ordering
 from datetime import datetime as Datetime
 from collections import namedtuple as ntuple
-from collections import OrderedDict as ODict
 
 from support.meta import SubclassMeta
 from support.pipelines import Processor, Saver, Loader
+from support.visualize import Figure, Axes, Coordinate, Plot
 
 from finance.strategies import Strategies
 
@@ -147,6 +147,12 @@ class TargetStrategy(ntuple("Strategy", "spread security instrument")):
     def valuation(self): return self.__valuation
 
 
+class TargetVariable(ntuple("Variable", "variable name size scale string")):
+    def __call__(self, values):
+        for lower, upper in zip(values[:-1], values[1:]):
+            yield self.string.format(lower * self.scale, upper * self.scale)
+
+
 class TargetSaver(Saver):
     def execute(self, contents, *args, **kwargs):
         ticker, expire, strategy, dataframe = contents
@@ -199,12 +205,11 @@ class TargetProcessor(Processor, ABC):
 
 class TargetCalculator(TargetProcessor):
     def execute(self, contents, *args, **kwargs):
+        pctdiff = lambda value, other: (value - other) / other
         ticker, expire, strategy, dataframe = contents
         assert isinstance(dataframe, xr.Dataset)
         dataframe = dataframe.to_dask_dataframe() if bool(dataframe.chunks) else dataframe.to_dataframe()
         dataframe = self.parser(dataframe, *args, **kwargs)
-
-        pctdiff = lambda value, other: (value - other) / other
         for partition in self.partitions(dataframe):
             partition = partition.sort_values("apy", axis=1, ascending=False, ignore_index=True, inplace=False)
             for index, record in enumerate(partition.to_dict("records")):
@@ -219,25 +224,49 @@ class TargetCalculator(TargetProcessor):
 
 
 class TargetAnalysis(TargetProcessor):
-    def execute(self, contents, *args, apy=None, funds=None, **kwargs):
+    def __init__(self, *args, size=25, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.__table = None
+
+    def execute(self, contents, *args, **kwargs):
         ticker, expire, strategy, dataframe = contents
         assert isinstance(dataframe, xr.Dataset)
         dataframe = dataframe.to_dask_dataframe() if bool(dataframe.chunks) else dataframe.to_dataframe()
         dataframe = self.parser(dataframe, *args, **kwargs)
+        self.table = dk.concat(list(filter(None, [self.table, dataframe])))
 
-        Column = ntuple("Column", "name bins string scale")
-        columns = [Column("tau", 100, "{:.0f}|{:.0f}", 1), Column("cost", 100, "${:.0f}K|${:.0f}K", 0.001), Column("apy", 100, "{:.0f}%|{:.0f}%"), 100]
-        formatter = lambda column, lower, upper: column.string.format(lower * column.scale, upper * column.scale)
-        function = lambda column, values: [formatter(column, lower, upper) for lower, upper in zip(values[:-1], values[1:])]
+    def visualize(self, *args, variables, size=25, formats={}, scales={}, **kwargs):
+        assert isinstance(variables, dict) and isinstance(size, int)
+        variables = [TargetVariable(variable, name, size, formats.get(variable, "{:.0f}|{:.0f}"), scales.get(variable, 1)) for variable, name in variables.items()]
+        data = self.table[[column.name for column in variables]].to_dask_array()
+        return self.figure(variables, data)
 
-        array = dataframe[[column.name for column in columns]].to_dask_array()
-        histogram, edges = da.histogramdd(array, bins=[column.bins for column in columns])
+    @staticmethod
+    def figure(variables, data):
+        histogram, edges = da.histogramdd(data, bins=[column.size for column in variables.values()])
         histogram = histogram.compute() if hasattr(histogram, "partitions") else histogram
         edges = edges.compute() if hasattr(edges, "partitions") else edges
-        grids = np.meshgrid(*[np.arange(column.bins) for column in columns])
+        grid = np.meshgrid(*[np.arange(column.size) for column in variables.values()])
+        figure = Figure(size=(8, 8), layout=(1, 1), name=None)
+        axes = Axes.Axes3D(name=None)
+        plot = Plot.Scatter3D(name=None)
+        for (variable, column), values in zip(variables.items(), edges):
+            ticks = np.arange(column.size)
+            labels = list(column(values))
+            coordinate = Coordinate(variable, column.name, ticks, labels, 45)
+            setattr(axes, column.variable, coordinate)
+#        plot.sizes = histogram.ravel()
+#        for column, values in zip(variables, grid):
+#            values = values.ravel()
+#            setattr(plot, column.variable, values.ravel())
+        axes[plot.name] = plot
+        figure[1, 1] = axes
+        return figure
 
-        xyz = ODict([(column.name, grid.ravel()) for column, grid in zip(columns, grids)])
-        labels = ODict([(column.name, function(column, values)) for column, values in zip(columns, edges)])
+    @property
+    def table(self): return self.__table
+    @table.setter
+    def table(self, table): self.__table = table
 
 
 
