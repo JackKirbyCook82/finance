@@ -255,10 +255,10 @@ class TargetAnalysis(TargetProcessor):
             labels = list(column(values))
             coordinate = Coordinate(variable, column.name, ticks, labels, 45)
             setattr(axes, column.variable, coordinate)
-#        plot.sizes = histogram.ravel()
-#        for column, values in zip(variables, grid):
-#            values = values.ravel()
-#            setattr(plot, column.variable, values.ravel())
+        plot.s = histogram.ravel()
+        for column, values in zip(variables, grid):
+            values = values.ravel()
+            setattr(plot, column.variable, values.ravel())
         axes[plot.name] = plot
         figure[1, 1] = axes
         return figure
