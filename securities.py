@@ -103,11 +103,14 @@ class SecuritySaver(Saver):
         ticker, expire, dataframes = contents
         assert isinstance(dataframes, dict)
         assert all([isinstance(security, pd.DataFrame) for security in dataframes.values()])
-        folder = os.path.join(self.repository, str(ticker), str(expire.strftime("%Y%m%d")))
+        folder = os.path.join(self.repository, str(ticker))
+        if not os.path.isdir(folder):
+            os.mkdir(folder)
+        folder = os.path.join(folder, str(expire.strftime("%Y%m%d")))
         if not os.path.isdir(folder):
             os.mkdir(folder)
         for security, dataframe in dataframes.items():
-            file = str(security) + ".csv"
+            file = os.path.join(folder, str(security).replace("|", "_") + ".csv")
             self.write(dataframe, file=file, mode="w")
 
 
@@ -123,7 +126,7 @@ class SecurityLoader(Loader):
         datatypes = {"ticker": str, "strike": np.float32, "price": np.float32, "size": np.float32, "interest": np.int32, "volume": np.int64}
         folder = os.path.join(self.repository, str(ticker), str(expire.strftime("%Y%m%d")))
         for filename in os.listdir(folder):
-            security = Securities[str(filename).split(".")[0]]
+            security = Securities[str(filename).split(".")[0].replace("_", "|")]
             file = os.path.join(folder, filename)
             dataframes = self.read(file=file, datatypes=datatypes, datetypes=["date", "datetime", "expire"])
             yield security, dataframes
