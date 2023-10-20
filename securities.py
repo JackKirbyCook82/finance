@@ -78,6 +78,7 @@ class HistorySaver(Saver):
         ticker, dataframe = contents
         assert isinstance(dataframe, pd.DataFrame)
         file = os.path.join(self.repository, str(ticker) + ".csv")
+        dataframe = dataframe.reset_index(drop=False, inplace=False)
         self.write(dataframe, file=file, mode="a")
 
 
@@ -111,6 +112,7 @@ class SecuritySaver(Saver):
             os.mkdir(folder)
         for security, dataframe in dataframes.items():
             file = os.path.join(folder, str(security).replace("|", "_") + ".csv")
+            dataframe = dataframe.reset_index(drop=False, inplace=False)
             self.write(dataframe, file=file, mode="w")
 
 
@@ -147,6 +149,12 @@ class SecurityCalculator(Processor):
         dataframe = dataframe.where(dataframe["volume"] >= volume) if bool(volume) else dataframe
         columns = [column for column in ("date", "ticker", "expire", "strike") if column in dataframe.columns]
         dataframe = dataframe.drop_duplicates(subset=columns, keep="last", inplace=False)
+        if "expire" in dataframe.columns and "strike" in dataframe.columns:
+            dataframe = dataframe.drop_duplicates(subset=["date", "ticker", "expire", "strike"], keep="last", inplace=False)
+            dataframe = dataframe.set_index(["date", "ticker", "expire", "strike"], inplace=False, drop=True)
+        else:
+            dataframe = dataframe.drop_duplicates(subset=["date", "ticker"], keep="last", inplace=False)
+            dataframe = dataframe.set_index(["date", "ticker"], inplace=False, drop=True)
         return dataframe
 
 

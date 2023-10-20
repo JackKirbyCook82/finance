@@ -25,7 +25,6 @@ class ValuationCalculation(Calculation):
     tτ = feed("expire", np.datetime64, variable="expire")
     vo = feed("spot", np.float16, variable="spot")
     vτ = feed("future", np.float16, variable="future")
-    p = feed("price", np.float16, variable="price")
 
     τau = equation("τau", np.int16, function=lambda tτ, to: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
     income = equation("income", np.float32, function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
