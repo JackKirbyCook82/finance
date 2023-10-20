@@ -117,6 +117,19 @@ class SecuritySaver(Saver):
 
 
 class SecurityLoader(Loader):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        datatypes = {"ticker": str, "price": np.float32, "size": np.float32, "volume": np.int64}, {"strike": np.float32, "interest": np.int32}
+        datetypes = ["date", "time"], ["expire"]
+        self.datatypes = {}
+        self.datetypes = {}
+        for security in (Securities.Stock.Long, Securities.Stock.Short):
+            self.datatypes = {security: datatypes[0]}
+            self.datetypes = {security: datetypes[0]}
+        for security in (Securities.Option.Put.Long, Securities.Option.Put.Short, Securities.Option.Call.Long, Securities.Option.Call.Short):
+            self.datatypes = {security: datatypes[0] | datatypes[1]}
+            self.datetypes = {security: datetypes[0] | datetypes[1]}
+
     def execute(self, ticker, *args, **kwargs):
         folder = os.path.join(self.repository, str(ticker))
         for foldername in os.listdir(folder):
@@ -125,12 +138,11 @@ class SecurityLoader(Loader):
             yield ticker, expire, dataframes
 
     def securities(self, ticker, expire):
-        datatypes = {"ticker": str, "strike": np.float32, "price": np.float32, "size": np.float32, "interest": np.int32, "volume": np.int64}
         folder = os.path.join(self.repository, str(ticker), str(expire.strftime("%Y%m%d")))
         for filename in os.listdir(folder):
             security = Securities[str(filename).split(".")[0].replace("_", "|")]
             file = os.path.join(folder, filename)
-            dataframes = self.read(file=file, datatypes=datatypes, datetypes=["date", "datetime", "expire"])
+            dataframes = self.read(file=file, datatypes=self.datatypes[security], datetypes=self.datetypes[security])
             yield security, dataframes
 
 

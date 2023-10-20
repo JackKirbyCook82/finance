@@ -17,7 +17,7 @@ from functools import total_ordering
 from datetime import datetime as Datetime
 from collections import namedtuple as ntuple
 
-from support.meta import SubclassMeta
+from support.meta import RegistryMeta
 from support.pipelines import Processor, Saver, Loader
 from support.visualize import Figure, Axes, Coordinate, Plot
 
@@ -59,7 +59,7 @@ class TargetValuation(ntuple("Valuation", "spot future tau phi")):
     def chi(self): return Datetime.now()
 
 
-class TargetSecurity(ntuple("Security", "instrument position"), ABC, metaclass=SubclassMeta):
+class TargetSecurity(ntuple("Security", "instrument position"), ABC, metaclass=RegistryMeta):
     def __new__(cls, security, *args, **kwargs):
         assert cls.__formatting__ is not None
         if cls is TargetSecurity:

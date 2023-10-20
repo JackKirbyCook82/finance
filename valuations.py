@@ -27,22 +27,23 @@ class ValuationCalculation(Calculation):
     vτ = feed("future", np.float16, variable="future")
 
     τau = equation("τau", np.int16, function=lambda tτ, to: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
-    income = equation("income", np.float32, function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
-    cost = equation("cost", np.float32, function=lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0))
+    inc = equation("income", np.float32, function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
+    exp = equation("expense", np.float32, function=lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0))
     apy = equation("apy", np.float32, function=lambda r, τau: np.power(r + 1, np.power(τau / 365, -1)) - 1)
     npv = equation("npv", np.float32, function=lambda π, τau, ρ: π * np.power(ρ / 365 + 1, τau))
-    π = equation("profit", np.float32, function=lambda inc, cost: inc - cost)
-    r = equation("return", np.float32, function=lambda π, cost: π / cost)
+    π = equation("profit", np.float32, function=lambda inc, exp: inc - exp)
+    r = equation("return", np.float32, function=lambda π, exp: π / exp)
 
     def __call__(self, dataset, *args, discount=0, **kwargs):
         assert isinstance(dataset, xr.Dataset)
-        dataset["cost"] = self.cost(dataset, discount=discount)
+        dataset["cost"] = self.exp(dataset, discount=discount)
         dataset["tau"] = self.τau(dataset, discount=discount)
         dataset["apy"] = self.apy(dataset, discount=discount)
         return dataset
 
 
-class ValuationCalculator(Calculator, calculations=[ValuationCalculation]):
+calculations = {"valuation": ValuationCalculation}
+class ValuationCalculator(Calculator, calculations=calculations):
     def execute(self, contents, *args, **kwargs):
         ticker, expire, strategy, dataset = contents
         assert isinstance(dataset, xr.Dataset)
