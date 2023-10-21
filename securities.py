@@ -23,6 +23,7 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
 
+Columns = ntuple("Columns", "datetypes datatypes")
 Instruments = IntEnum("Instrument", ["PUT", "CALL", "STOCK"], start=1)
 Positions = IntEnum("Position", ["LONG", "SHORT"], start=1)
 class Security(ntuple("Security", "instrument position")):
@@ -119,16 +120,11 @@ class SecuritySaver(Saver):
 class SecurityLoader(Loader):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        datatypes = {"ticker": str, "price": np.float32, "size": np.float32, "volume": np.int64}, {"strike": np.float32, "interest": np.int32}
-        datetypes = ["date", "time"], ["expire"]
-        self.datatypes = {}
-        self.datetypes = {}
-        for security in (Securities.Stock.Long, Securities.Stock.Short):
-            self.datatypes = {security: datatypes[0]}
-            self.datetypes = {security: datetypes[0]}
-        for security in (Securities.Option.Put.Long, Securities.Option.Put.Short, Securities.Option.Call.Long, Securities.Option.Call.Short):
-            self.datatypes = {security: datatypes[0] | datatypes[1]}
-            self.datetypes = {security: datetypes[0] | datetypes[1]}
+        stock = Columns(["date", "time"], {"ticker": str, "price": np.float32, "size": np.float32, "volume": np.int64})
+        option = Columns[stock.datetypes + ["expire"], stock.datatypes | {"strike": np.float32, "interest": np.int32}]
+        self.columns = {Securities.Stock.Long: stock, Securities.Stock.Short: stock}
+        self.columns.update({Securities.Option.Put.Long: option, Securities.Option.Put.Short: option})
+        self.columns.update({Securities.Option.Call.Long: option, Securities.Option.Call.Short: option})
 
     def execute(self, ticker, *args, **kwargs):
         folder = os.path.join(self.repository, str(ticker))
@@ -142,7 +138,7 @@ class SecurityLoader(Loader):
         for filename in os.listdir(folder):
             security = Securities[str(filename).split(".")[0].replace("_", "|")]
             file = os.path.join(folder, filename)
-            dataframes = self.read(file=file, datatypes=self.datatypes[security], datetypes=self.datetypes[security])
+            dataframes = self.read(file=file, datatypes=self.columns[security].datatypes, datetypes=self.columns["datetypes"][security])
             yield security, dataframes
 
 

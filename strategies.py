@@ -56,10 +56,15 @@ class Strategies(metaclass=StrategiesMeta):
 
 
 class StrategyCalculation(Calculation):
+    σ = feed("volatility", np.float16, variable="volatility")
+
 #    τau = equation("τau", np.int16, function=lambda tτ, to: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
-#    σ = feed("volatility", np.float16, variable="volatility")
-#    tτ = feed("expire", np.datetime64, variable="expire")
-#    to = feed("date", np.datetime64, variable="date")
+#    tpα = feed("put|long|time", np.datetime64, key=Securities.Option.Put.Long, variable="expire")
+#    tpβ = feed("put|short|time", np.datetime64, key=Securities.Option.Put.Short, variable="expire")
+#    tcα = feed("call|long|time", np.datetime64, key=Securities.Option.Call.Long, variable="expire")
+#    tcβ = feed("call|short|time", np.datetime64, key=Securities.Option.Call.Short, variable="expire")
+#    tsα = feed("stock|long|time", np.datetime64, key=Securities.Stock.Long, variable="expire")
+#    tsβ = feed("stock|short|time", np.datetime64, key=Securities.Stock.Short, variable="expire")
 
     wpα = feed("put|long|price", np.float32, axes="(i)", key=Securities.Option.Put.Long, variable="price")
     wpβ = feed("put|short|price", np.float32, axes="(j)", key=Securities.Option.Put.Short, variable="price")
@@ -73,12 +78,12 @@ class StrategyCalculation(Calculation):
     kcα = feed("call|long|strike", np.float32, axes="(k)", key=Securities.Option.Call.Long, variable="strike")
     kcβ = feed("call|short|strike", np.float32, axes="(l)", key=Securities.Option.Call.Short, variable="strike")
 
-    tpα = feed("put|long|time", np.float32, axes="(i)", key=Securities.Option.Put.Long, variable="time")
-    tpβ = feed("put|short|time", np.float32, axes="(j)", key=Securities.Option.Put.Short, variable="time")
-    tcα = feed("call|long|time", np.float32, axes="(k)", key=Securities.Option.Call.Long, variable="time")
-    tcβ = feed("call|short|time", np.float32, axes="(l)", key=Securities.Option.Call.Short, variable="time")
-    tsα = feed("stock|long|time", np.float32, axes="()", key=Securities.Stock.Long, variable="time")
-    tsβ = feed("stock|short|time", np.float32, axes="()", key=Securities.Stock.Short, variable="time")
+    ipα = feed("put|long|expire", np.float32, axes="(i)", key=Securities.Option.Put.Long, variable="time")
+    ipβ = feed("put|short|expire", np.float32, axes="(j)", key=Securities.Option.Put.Short, variable="time")
+    icα = feed("call|long|expire", np.float32, axes="(k)", key=Securities.Option.Call.Long, variable="time")
+    icβ = feed("call|short|expire", np.float32, axes="(l)", key=Securities.Option.Call.Short, variable="time")
+    isα = feed("stock|long|expire", np.float32, axes="()", key=Securities.Stock.Long, variable="time")
+    isβ = feed("stock|short|expire", np.float32, axes="()", key=Securities.Stock.Short, variable="time")
 
     xpα = feed("put|long|size", np.float32, axes="(i)", key=Securities.Option.Put.Long, variable="size")
     xpβ = feed("put|short|size", np.float32, axes="(j)", key=Securities.Option.Put.Short, variable="size")
@@ -127,7 +132,7 @@ class StrategyCalculation(Calculation):
 
 
 class StrangleLongCalculation(StrategyCalculation, strategy=Strategies.StrangleLong):
-    to = equation("time", np.datetime64, axes="(i,k)", function=lambda tpα, tcα: np.maximum.outer(tpα, tcα))
+    io = equation("time", np.datetime64, axes="(i,k)", function=lambda ipα, icα: np.maximum.outer(ipα, icα))
     xo = equation("size", np.float32, axes="(i,k)", function=lambda xpα, xcα: np.minimum.outer(xpα, xcα))
     yo = equation("volume", np.int64, axes="(i,k)", function=lambda ypα, ycα: np.minimum.outer(ypα, ycα))
     zo = equation("interest", np.int32, axes="(i,k)", function=lambda zpα, zcα: np.minimum.outer(zpα, zcα))
@@ -138,7 +143,7 @@ class StrangleLongCalculation(StrategyCalculation, strategy=Strategies.StrangleL
     vu = equation("upper", np.float32, axes="(i,k)", function=lambda kpα, kcα: + np.ones((kpα.shape, kcα.shape)) * np.inf)
 
 class VerticalPutCalculation(StrategyCalculation, strategy=Strategies.VerticalPut):
-    to = equation("time", np.datetime64, axes="(i,j)", function=lambda tpα, tpβ: np.maximum.outer(tpα, tpβ))
+    io = equation("time", np.datetime64, axes="(i,j)", function=lambda ipα, ipβ: np.maximum.outer(ipα, ipβ))
     xo = equation("size", np.float32, axes="(i,j)", function=lambda xpα, xpβ: np.minimum.outer(xpα, xpβ))
     yo = equation("volume", np.int64, axes="(i,j)", function=lambda ypα, ypβ: np.minimum.outer(ypα, ypβ))
     zo = equation("interest", np.int32, axes="(i,j)", function=lambda zpα, zpβ: np.minimum.outer(zpα, zpβ))
@@ -149,7 +154,7 @@ class VerticalPutCalculation(StrategyCalculation, strategy=Strategies.VerticalPu
     vu = equation("upper", np.float32, axes="(i,j)", function=lambda kpα, kpβ: + np.maximum(np.add.outer(kpα, -kpβ), 0))
 
 class VerticalCallCalculation(StrategyCalculation, strategy=Strategies.VerticalCall):
-    to = equation("time", np.datetime64, axes="(k,l)", function=lambda tcα, tcβ: np.maximum.outer(tcα, tcβ))
+    io = equation("time", np.datetime64, axes="(k,l)", function=lambda icα, icβ: np.maximum.outer(icα, icβ))
     xo = equation("size", np.float32, axes="(k,l)", function=lambda xcα, xcβ: np.minimum.outer(xcα, xcβ))
     yo = equation("volume", np.int64, axes="(k,l)", function=lambda ycα, ycβ: np.minimum.outer(ycα, ycβ))
     zo = equation("interest", np.int32, axes="(k,l)", function=lambda zcα, zcβ: np.minimum.outer(zcα, zcβ))
@@ -160,7 +165,7 @@ class VerticalCallCalculation(StrategyCalculation, strategy=Strategies.VerticalC
     vu = equation("upper", np.float32, axes="(k,l)", function=lambda kcα, kcβ: + np.maximum(np.add.outer(-kcα, kcβ), 0))
 
 class CollarLongCalculation(StrategyCalculation, strategy=Strategies.CollarLong):
-    to = equation("time", np.datetime64, axes="(i,l)", function=lambda tpα, tcβ, tsα: np.maximum(np.maximum.outer(tpα, tcβ), tsα))
+    io = equation("time", np.datetime64, axes="(i,l)", function=lambda ipα, icβ, isα: np.maximum(np.maximum.outer(ipα, icβ), isα))
     xo = equation("size", np.float32, axes="(i,l)", function=lambda xpα, xcβ, xsα: np.minimum(np.minimum.outer(xpα, xcβ), xsα))
     yo = equation("volume", np.int64, axes="(i,l)", function=lambda ypα, ycβ, ysα: np.minimum(np.minimum.outer(ypα, ycβ), ysα))
     zo = equation("interest", np.int32, axes="(i,l)", function=lambda zpα, zcβ: np.minimum.outer(zpα, zcβ))
@@ -171,7 +176,7 @@ class CollarLongCalculation(StrategyCalculation, strategy=Strategies.CollarLong)
     vu = equation("upper", np.float32, axes="(i,l)", function=lambda kpα, kcβ: + np.maximum.outer(kpα, kcβ))
 
 class CollarShortCalculation(StrategyCalculation, strategy=Strategies.CollarShort):
-    to = equation("time", np.datetime64, axes="(j,k)", function=lambda tpβ, tcα, tsβ: np.maximum(np.maximum.outer(tpβ, tcα), tsβ))
+    io = equation("time", np.datetime64, axes="(j,k)", function=lambda ipβ, icα, isβ: np.maximum(np.maximum.outer(ipβ, icα), isβ))
     xo = equation("size", np.float32, axes="(j,k)", function=lambda xpβ, xcα, xsβ: np.minimum(np.minimum.outer(xpβ, xcα), xsβ))
     yo = equation("volume", np.int64, axes="(j,k)", function=lambda ypβ, ycα, ysβ: np.minimum(np.minimum.outer(ypβ, ycα), ysβ))
     zo = equation("interest", np.int32, axes="(j,k)", function=lambda zpβ, zcα: np.minimum.outer(zpβ, zcα))
@@ -182,7 +187,7 @@ class CollarShortCalculation(StrategyCalculation, strategy=Strategies.CollarShor
     vu = equation("upper", np.float32, axes="(j,k)", function=lambda kpβ, kcα: + np.maximum.outer(-kpβ, -kcα))
 
 class CondorCalculation(StrategyCalculation, strategy=Strategies.Condor):
-    to = equation("time", np.datetime64, axes="(i,j,k,l)", function=lambda tpα, tpβ, tcα, tcβ: np.maximum.outer(np.maximum.outer(tpα, tpβ), np.maximum.outer(tcα, tcβ)))
+    io = equation("time", np.datetime64, axes="(i,j,k,l)", function=lambda ipα, ipβ, icα, icβ: np.maximum.outer(np.maximum.outer(ipα, ipβ), np.maximum.outer(icα, icβ)))
     xo = equation("size", np.float32, axes="(i,j,k,l)", function=lambda xpα, xpβ, xcα, xcβ: np.minimum.outer(np.minimum.outer(xpα, xpβ), np.minimum.outer(xcα, xcβ)))
     yo = equation("volume", np.int64, axes="(i,j,k,l)", function=lambda ypα, ypβ, ycα, ycβ: np.minimum.outer(np.minimum.outer(ypα, ypβ), np.minimum.outer(ycα, ycβ)))
     zo = equation("interest", np.int32, axes="(i,j,k,l)", function=lambda zpα, zpβ, zcα, zcβ: np.minimum.outer(np.maxminimumimum.outer(zpα, zpβ), np.minimum.outer(zcα, zcβ)))
