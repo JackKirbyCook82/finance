@@ -15,49 +15,13 @@ from datetime import datetime as Datetime
 from collections import namedtuple as ntuple
 
 from support.pipelines import Processor, Saver, Loader
+from support.calculations import Calculation, feed, equation
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["DateRange", "Security", "Securities", "Instruments", "Positions", "HistorySaver", "HistoryLoader", "HistoryCalculator", "SecuritySaver", "SecurityLoader", "SecurityCalculator"]
+__all__ = ["DateRange", "Security", "Securities", "Instruments", "Positions", "Calculations", "SecuritySaver", "SecurityLoader", "SecurityCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
-
-
-Columns = ntuple("Columns", "datetypes datatypes")
-Instruments = IntEnum("Instrument", ["PUT", "CALL", "STOCK"], start=1)
-Positions = IntEnum("Position", ["LONG", "SHORT"], start=1)
-class Security(ntuple("Security", "instrument position")):
-    def __new__(cls, instrument, position, *args, **kwargs): return super().__new__(cls, instrument, position)
-    def __init__(self, *args, payoff, **kwargs): self.__payoff = payoff
-    def __str__(self): return "|".join([str(value.name).lower() for value in self if bool(value)])
-
-    @property
-    def payoff(self): return self.__payoff
-
-
-class SecuritiesMeta(type):
-    def __getitem__(cls, string):
-        instrument, position = str(string).split("|")
-        instrument, position = str(instrument).title(), str(position).title()
-        try:
-            option = getattr(cls.Option, str(instrument).title())
-            return getattr(option, str(position).title())
-        except AttributeError:
-            stock = getattr(cls, str(instrument).title())
-            return getattr(stock, str(position).title())
-
-
-class Securities(metaclass=SecuritiesMeta):
-    class Stock:
-        Long = Security(Instruments.STOCK, Positions.LONG, payoff=lambda x: np.copy(x))
-        Short = Security(Instruments.STOCK, Positions.SHORT, payoff=lambda x: -np.copy(x))
-    class Option:
-        class Put:
-            Long = Security(Instruments.PUT, Positions.LONG, payoff=lambda x, k: np.maximum(k - x, 0))
-            Short = Security(Instruments.PUT, Positions.SHORT, payoff=lambda x, k: - np.maximum(k - x, 0))
-        class Call:
-            Long = Security(Instruments.CALL, Positions.LONG, payoff=lambda x, k: np.maximum(x - k, 0))
-            Short = Security(Instruments.CALL, Positions.SHORT, payoff=lambda x, k: - np.maximum(x - k, 0))
 
 
 class DateRange(ntuple("DateRange", "minimum maximum")):
@@ -74,30 +38,78 @@ class DateRange(ntuple("DateRange", "minimum maximum")):
     def __contains__(self, date): return self.minimum <= date <= self.maximum
 
 
-class HistorySaver(Saver):
-    def execute(self, contents, *args, **kwargs):
-        ticker, dataframe = contents
-        assert isinstance(dataframe, pd.DataFrame)
-        file = os.path.join(self.repository, str(ticker) + ".csv")
-        dataframe = dataframe.reset_index(drop=False, inplace=False)
-        self.write(dataframe, file=file, mode="a")
+Instruments = IntEnum("Instrument", ["PUT", "CALL", "STOCK"], start=1)
+Positions = IntEnum("Position", ["LONG", "SHORT"], start=1)
+class Security(ntuple("Security", "instrument position")):
+    def __new__(cls, instrument, position, *args, **kwargs): return super().__new__(cls, instrument, position)
+    def __init__(self, *args, payoff, **kwargs): self.__payoff = payoff
+    def __str__(self): return "|".join([str(value.name).lower() for value in self if bool(value)])
+
+    @property
+    def payoff(self): return self.__payoff
+
+class SecuritiesMeta(type):
+    def __getitem__(cls, string):
+        instrument, position = str(string).split("|")
+        instrument, position = str(instrument).title(), str(position).title()
+        try:
+            option = getattr(cls.Option, str(instrument).title())
+            return getattr(option, str(position).title())
+        except AttributeError:
+            stock = getattr(cls, str(instrument).title())
+            return getattr(stock, str(position).title())
+
+class Securities(metaclass=SecuritiesMeta):
+    class Stock:
+        Long = Security(Instruments.STOCK, Positions.LONG, payoff=lambda x: np.copy(x))
+        Short = Security(Instruments.STOCK, Positions.SHORT, payoff=lambda x: -np.copy(x))
+    class Option:
+        class Put:
+            Long = Security(Instruments.PUT, Positions.LONG, payoff=lambda x, k: np.maximum(k - x, 0))
+            Short = Security(Instruments.PUT, Positions.SHORT, payoff=lambda x, k: - np.maximum(k - x, 0))
+        class Call:
+            Long = Security(Instruments.CALL, Positions.LONG, payoff=lambda x, k: np.maximum(x - k, 0))
+            Short = Security(Instruments.CALL, Positions.SHORT, payoff=lambda x, k: - np.maximum(x - k, 0))
 
 
-class HistoryLoader(Loader):
-    def execute(self, ticker, *args, **kwargs):
-        file = os.path.join(self.repository, str(ticker) + ".csv")
-        datatypes = {"ticker": str, "open": np.float32, "close": np.float32, "high": np.float32, "low": np.float32, "price": np.float32, "volume": np.int64}
-        dataframe = self.read(file=file, datatypes=datatypes, datetypes=["date"])
-        yield ticker, dataframe
+class PositionCalculation(Calculation): pass
+class SecurityCalculation(Calculation):
+    to = feed("date", np.datetime64)
+    wo = feed("price", np.float32)
+    io = feed("time", np.datetime64)
+    xo = feed("size", np.int32)
+    yo = feed("volume", np.int64)
 
+class OptionCalculation(SecurityCalculation):
+    τ = equation("tau", np.int16, domain=("to", "tτ"), function=lambda : np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
+    k = feed("strike", np.float32)
+    tτ = feed("expire", np.datetime64)
+    zo = feed("interest", np.int32)
 
-class HistoryCalculator(Processor):
-    def execute(self, contents, *args, dates=None, **kwargs):
-        ticker, dataframe = contents
-        assert isinstance(dataframe, pd.DataFrame)
-        assert isinstance(dates, (DateRange, type(None)))
-        dataframe = dataframe.where(dataframe["date"] in dates) if bool(dates) else dataframe
-        yield ticker, dataframe
+class LongCalculation(OptionCalculation): pass
+class ShortCalculation(PositionCalculation): pass
+class StockCalculation(SecurityCalculation): pass
+class PutCalculation(OptionCalculation): pass
+class CallCalculation(SecurityCalculation): pass
+
+class StockLong(StockCalculation, LongCalculation): pass
+class StockShort(StockCalculation, ShortCalculation): pass
+class PutLong(PutCalculation, LongCalculation, axes={"i": str(Securities.Option.Put.Long)}): pass
+class PutShort(PutCalculation, ShortCalculation, axes={"j": str(Securities.Option.Put.Short)}): pass
+class CallLong(CallCalculation, LongCalculation, axes={"k": str(Securities.Option.Call.Long)}): pass
+class CallShort(CallCalculation, ShortCalculation, axes={"l": str(Securities.Option.Call.Short)}): pass
+
+class Calculations:
+    class Stock:
+        Long = StockLong
+        Short = StockShort
+    class Option:
+        class Put:
+            Long = PutLong
+            Short = PutShort
+        class Call:
+            Long = CallLong
+            Short = CallShort
 
 
 class SecuritySaver(Saver):
@@ -120,6 +132,7 @@ class SecuritySaver(Saver):
 class SecurityLoader(Loader):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        Columns = ntuple("Columns", "datetypes datatypes")
         stock = Columns(["date", "time"], {"ticker": str, "price": np.float32, "size": np.float32, "volume": np.int64})
         option = Columns[stock.datetypes + ["expire"], stock.datatypes | {"strike": np.float32, "interest": np.int32}]
         self.columns = {Securities.Stock.Long: stock, Securities.Stock.Short: stock}
