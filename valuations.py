@@ -26,15 +26,18 @@ class Valuation(ntuple("Valuation", "method")):
 
 Arbitrage = Valuation(Methods.ARBITRAGE)
 
+class Valuations:
+    Arbitrage = Arbitrage
+
 
 class ValuationCalculation(Calculation): pass
 class ArbitrageCalculation(Calculation): pass
 
+class Calculations:
+    Arbitrage = ArbitrageCalculation
 
-Valuations = {"Arbitrage": Arbitrage}
-Calculations = {"Arbitrage": ArbitrageCalculation}
 
-
+calculations = {Valuations[key]: Calculation[key] for key in Valuations.keys()}
 class ValuationCalculator(Calculator):
     def execute(self, contents, *args, **kwargs):
         ticker, expire, datasets = contents

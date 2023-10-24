@@ -39,6 +39,17 @@ VerticalPut = Strategy(Spreads.VERTICAL, Instruments.PUT, 0, securities=[Securit
 VerticalCall = Strategy(Spreads.VERTICAL, Instruments.CALL, 0, securities=[Securities.Option.Call.Long, Securities.Option.Call.Short])
 Condor = Strategy(Spreads.CONDOR, 0, 0, securities=[Securities.Option.Put.Long, Securities.Option.Call.Long, Securities.Option.Put.Short, Securities.Option.Call.Short])
 
+class Strategies:
+    Condor = Condor
+    class Strangle:
+        Long = StrangleLong
+    class Collar:
+        Long = CollarLong
+        Short = CollarShort
+    class Vertical:
+        Put = VerticalPut
+        Call = VerticalCall
+
 
 class StrategyCalculation(Calculation): pass
 class StrangleCalculation(StrategyCalculation): pass
@@ -98,14 +109,20 @@ class CollarShortCalculation(CollarCalculation, sources=("pβ", "cα", "sβ")):
 class CondorCalculation(StrategyCalculation, sources=("pα", "pβ", "cα", "cβ")):
     pass
 
+class Calculations:
+    Condor = CondorCalculation
+    class Strangle:
+        Long = StrangleLongCalculation
+    class Collar:
+        Long = CollarLongCalculation
+        Short = CollarShortCalculation
+    class Vertical:
+        Put = VerticalPutCalculation
+        Call = VerticalCallCalculation
 
-Strategies = {"Strangle.Long": StrangleLong, "Collar.Long": CollarLong, "Collar.Short": CollarShort}
-Strategies.update({"Vertical.Put": VerticalPut, "Vertical.Call": VerticalCall, "Condor": Condor})
-Calculations = {"Strangle.Long": StrangleLongCalculation, "Vertical.Put": VerticalPutCalculation, "Vertical.Call": VerticalCallCalculation}
-Calculations.update({"Collar.Long": CollarLongCalculation, "Collar.Short": CollarShortCalculation, "Condor": CondorCalculation})
 
-
-class StrategyCalculator(Calculator, calculations=Calculations):
+calculations = {Strategies[key]: Calculation[key] for key in Strategies.keys()}
+class StrategyCalculator(Calculator, calculations=calculations):
     def execute(self, contents, *args, partition=None, **kwargs):
         ticker, expire, datasets = contents
         assert isinstance(datasets, dict)

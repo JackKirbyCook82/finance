@@ -17,6 +17,7 @@ from collections import namedtuple as ntuple
 
 from support.pipelines import Processor, Calculator, Saver, Loader
 from support.calculations import Calculation, equation
+from support.custom import AttributeCollection
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -49,12 +50,17 @@ class Security(ntuple("Security", "instrument position")):
     @property
     def payoff(self): return self.__payoff
 
-StockLongSecurity = Security(Instruments.STOCK, Positions.LONG, payoff=lambda x: np.copy(x))
-StockShortSecurity = Security(Instruments.STOCK, Positions.SHORT, payoff=lambda x: -np.copy(x))
-PutLongSecurity = Security(Instruments.PUT, Positions.LONG, payoff=lambda x, k: np.maximum(k - x, 0))
-PutShortSecurity = Security(Instruments.PUT, Positions.SHORT, payoff=lambda x, k: - np.maximum(k - x, 0))
-CallLongSecurity = Security(Instruments.CALL, Positions.LONG, payoff=lambda x, k: np.maximum(x - k, 0))
-CallShortSecurity = Security(Instruments.CALL, Positions.SHORT, payoff=lambda x, k: - np.maximum(x - k, 0))
+class Securities:
+    class Stock:
+        Long = Security(Instruments.STOCK, Positions.LONG, payoff=lambda x: np.copy(x))
+        Short = Security(Instruments.STOCK, Positions.SHORT, payoff=lambda x: -np.copy(x))
+    class Option:
+        class Put:
+            Long = Security(Instruments.PUT, Positions.LONG, payoff=lambda x, k: np.maximum(k - x, 0))
+            Short = Security(Instruments.PUT, Positions.SHORT, payoff=lambda x, k: - np.maximum(k - x, 0))
+        class Call:
+            Long = Security(Instruments.CALL, Positions.LONG, payoff=lambda x, k: np.maximum(x - k, 0))
+            Short = Security(Instruments.CALL, Positions.SHORT, payoff=lambda x, k: - np.maximum(x - k, 0))
 
 
 class PositionCalculation(Calculation): pass
@@ -76,13 +82,17 @@ class PutShortCalculation(PutCalculation, ShortCalculation): pass
 class CallLongCalculation(CallCalculation, LongCalculation): pass
 class CallShortCalculation(CallCalculation, ShortCalculation): pass
 
-
-Securities = {"Stock.Long": StockLongSecurity, "Stock.Short": StockShortSecurity}
-Securities.update({"Option.Put.Long": PutLongSecurity, "Option.Put.Short": PutShortSecurity})
-Securities.update({"Option.Call.Long": CallLongSecurity, "Option.Call.Short": CallShortSecurity})
-Calculations = {"Stock.Long": StockLongCalculation, "Stock.Short": StockShortCalculation}
-Calculations.update({"Option.Put.Long": PutLongCalculation, "Option.Put.Short": PutShortCalculation})
-Calculations.update({"Option.Call.Long": CallLongCalculation, "Option.Call.Short": CallShortCalculation})
+class Calculations:
+    class Stock:
+        Long = StockLongCalculation
+        Short = StockShortCalculation
+    class Option:
+        class Put:
+            Long = PutLongCalculation
+            Short = PutShortCalculation
+        class Call:
+            Long = CallLongCalculation
+            Short = CallShortCalculation
 
 
 class SecurityProcessor(Processor):
@@ -92,7 +102,7 @@ class SecurityProcessor(Processor):
         assert all([isinstance(security, pd.DataFrame) for security in dataframes.values()])
         dataframes = {security: self.filter(dataframe, *args, security=security, **kwargs) for security, dataframe in dataframes.items()}
         datasets = {security: self.parser(dataframe, *args, security=security, **kwargs) for security, dataframe in dataframes.items()}
-        return ticker, expire, datasets
+        yield ticker, expire, datasets
 
     @staticmethod
     def filter(dataframe, *args, size=None, interest=None, **kwargs):
@@ -118,7 +128,8 @@ class SecurityProcessor(Processor):
         return dataset
 
 
-class SecurityCalculator(Calculator, calculations=Calculations):
+calculations = {Securities[key]: Calculation[key] for key in Securities.keys()}
+class SecurityCalculator(Calculator, calculations=calculations):
     def execute(self, contents, *args, **kwargs):
         ticker, expire, datasets = contents
         assert isinstance(datasets, dict)
