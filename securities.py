@@ -8,18 +8,19 @@ Created on Weds Jul 19 2023
 
 import os.path
 import numpy as np
+import xarray as xr
 import pandas as pd
 from enum import IntEnum
 from datetime import date as Date
 from datetime import datetime as Datetime
 from collections import namedtuple as ntuple
 
-from support.pipelines import Processor, Saver, Loader
-from support.calculations import Calculation, feed, equation
+from support.pipelines import Processor, Calculator, Saver, Loader
+from support.calculations import Calculation, equation
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["DateRange", "Security", "Securities", "Instruments", "Positions", "Calculations", "SecuritySaver", "SecurityLoader", "SecurityCalculator"]
+__all__ = ["DateRange", "Instruments", "Positions", "Security", "Securities", "Calculations", "SecurityProcessor", "SecurityCalculator", "SecuritySaver", "SecurityLoader"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
@@ -48,68 +49,80 @@ class Security(ntuple("Security", "instrument position")):
     @property
     def payoff(self): return self.__payoff
 
-class SecuritiesMeta(type):
-    def __getitem__(cls, string):
-        instrument, position = str(string).split("|")
-        instrument, position = str(instrument).title(), str(position).title()
-        try:
-            option = getattr(cls.Option, str(instrument).title())
-            return getattr(option, str(position).title())
-        except AttributeError:
-            stock = getattr(cls, str(instrument).title())
-            return getattr(stock, str(position).title())
-
-class Securities(metaclass=SecuritiesMeta):
-    class Stock:
-        Long = Security(Instruments.STOCK, Positions.LONG, payoff=lambda x: np.copy(x))
-        Short = Security(Instruments.STOCK, Positions.SHORT, payoff=lambda x: -np.copy(x))
-    class Option:
-        class Put:
-            Long = Security(Instruments.PUT, Positions.LONG, payoff=lambda x, k: np.maximum(k - x, 0))
-            Short = Security(Instruments.PUT, Positions.SHORT, payoff=lambda x, k: - np.maximum(k - x, 0))
-        class Call:
-            Long = Security(Instruments.CALL, Positions.LONG, payoff=lambda x, k: np.maximum(x - k, 0))
-            Short = Security(Instruments.CALL, Positions.SHORT, payoff=lambda x, k: - np.maximum(x - k, 0))
+StockLongSecurity = Security(Instruments.STOCK, Positions.LONG, payoff=lambda x: np.copy(x))
+StockShortSecurity = Security(Instruments.STOCK, Positions.SHORT, payoff=lambda x: -np.copy(x))
+PutLongSecurity = Security(Instruments.PUT, Positions.LONG, payoff=lambda x, k: np.maximum(k - x, 0))
+PutShortSecurity = Security(Instruments.PUT, Positions.SHORT, payoff=lambda x, k: - np.maximum(k - x, 0))
+CallLongSecurity = Security(Instruments.CALL, Positions.LONG, payoff=lambda x, k: np.maximum(x - k, 0))
+CallShortSecurity = Security(Instruments.CALL, Positions.SHORT, payoff=lambda x, k: - np.maximum(x - k, 0))
 
 
 class PositionCalculation(Calculation): pass
-class SecurityCalculation(Calculation):
-    to = feed("date", np.datetime64)
-    wo = feed("price", np.float32)
-    io = feed("time", np.datetime64)
-    xo = feed("size", np.int32)
-    yo = feed("volume", np.int64)
-
-class OptionCalculation(SecurityCalculation):
-    τ = equation("tau", np.int16, domain=("to", "tτ"), function=lambda : np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
-    k = feed("strike", np.float32)
-    tτ = feed("expire", np.datetime64)
-    zo = feed("interest", np.int32)
-
-class LongCalculation(OptionCalculation): pass
+class LongCalculation(PositionCalculation): pass
 class ShortCalculation(PositionCalculation): pass
-class StockCalculation(SecurityCalculation): pass
+
+class InstrumentCalculation(Calculation, variables={"to": "date", "w": "price", "x": "time", "q": "size"}): pass
+class StockCalculation(InstrumentCalculation): pass
+class OptionCalculation(InstrumentCalculation, variables={"tτ": "tau", "k": "strike", "i": "interest"}):
+    τ = equation("tau", np.int16, domain=("to", "tτ"), function=lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
+
 class PutCalculation(OptionCalculation): pass
-class CallCalculation(SecurityCalculation): pass
+class CallCalculation(OptionCalculation): pass
 
-class StockLong(StockCalculation, LongCalculation): pass
-class StockShort(StockCalculation, ShortCalculation): pass
-class PutLong(PutCalculation, LongCalculation, axes={"i": str(Securities.Option.Put.Long)}): pass
-class PutShort(PutCalculation, ShortCalculation, axes={"j": str(Securities.Option.Put.Short)}): pass
-class CallLong(CallCalculation, LongCalculation, axes={"k": str(Securities.Option.Call.Long)}): pass
-class CallShort(CallCalculation, ShortCalculation, axes={"l": str(Securities.Option.Call.Short)}): pass
+class StockLongCalculation(StockCalculation, LongCalculation): pass
+class StockShortCalculation(StockCalculation, ShortCalculation): pass
+class PutLongCalculation(PutCalculation, LongCalculation): pass
+class PutShortCalculation(PutCalculation, ShortCalculation): pass
+class CallLongCalculation(CallCalculation, LongCalculation): pass
+class CallShortCalculation(CallCalculation, ShortCalculation): pass
 
-class Calculations:
-    class Stock:
-        Long = StockLong
-        Short = StockShort
-    class Option:
-        class Put:
-            Long = PutLong
-            Short = PutShort
-        class Call:
-            Long = CallLong
-            Short = CallShort
+
+Securities = {"Stock.Long": StockLongSecurity, "Stock.Short": StockShortSecurity}
+Securities.update({"Option.Put.Long": PutLongSecurity, "Option.Put.Short": PutShortSecurity})
+Securities.update({"Option.Call.Long": CallLongSecurity, "Option.Call.Short": CallShortSecurity})
+Calculations = {"Stock.Long": StockLongCalculation, "Stock.Short": StockShortCalculation}
+Calculations.update({"Option.Put.Long": PutLongCalculation, "Option.Put.Short": PutShortCalculation})
+Calculations.update({"Option.Call.Long": CallLongCalculation, "Option.Call.Short": CallShortCalculation})
+
+
+class SecurityProcessor(Processor):
+    def execute(self, contents, *args, **kwargs):
+        ticker, expire, dataframes = contents
+        assert isinstance(dataframes, dict)
+        assert all([isinstance(security, pd.DataFrame) for security in dataframes.values()])
+        dataframes = {security: self.filter(dataframe, *args, security=security, **kwargs) for security, dataframe in dataframes.items()}
+        datasets = {security: self.parser(dataframe, *args, security=security, **kwargs) for security, dataframe in dataframes.items()}
+        return ticker, expire, datasets
+
+    @staticmethod
+    def filter(dataframe, *args, size=None, interest=None, **kwargs):
+        dataframe = dataframe.where(dataframe["size"] >= size) if bool(size) else dataframe
+        dataframe = dataframe.where(dataframe["interest"] >= interest) if bool(interest) else dataframe
+        return dataframe
+
+    @staticmethod
+    def parser(dataframe, *args, security, partition=None, **kwargs):
+        if "expire" in dataframe.columns and "strike" in dataframe.columns:
+            dataframe = dataframe.drop_duplicates(subset=["date", "ticker", "expire", "strike"], keep="last", inplace=False)
+            dataframe = dataframe.set_index(["date", "ticker", "expire", "strike"], inplace=False, drop=True)
+            dataset = xr.Dataset.from_dataframe(dataframe)
+            dataset = dataset.squeeze("ticker").squeeze("date")
+        else:
+            dataframe = dataframe.drop_duplicates(subset=["date", "ticker"], keep="last", inplace=False)
+            dataframe = dataframe.set_index(["date", "ticker"], inplace=False, drop=True)
+            dataset = xr.Dataset.from_dataframe(dataframe)
+            dataset = dataset.squeeze("ticker").squeeze("date")
+            dataset = dataset.rename({"strike": str(security)})
+            dataset["strike"] = dataset[str(security)]
+            dataset = dataset.chunk({str(security): partition}) if bool(partition) else dataset
+        return dataset
+
+
+class SecurityCalculator(Calculator, calculations=Calculations):
+    def execute(self, contents, *args, **kwargs):
+        ticker, expire, datasets = contents
+        assert isinstance(datasets, dict)
+        assert all([isinstance(security, xr.Dataset) for security in datasets.values()])
 
 
 class SecuritySaver(Saver):
@@ -133,7 +146,7 @@ class SecurityLoader(Loader):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         Columns = ntuple("Columns", "datetypes datatypes")
-        stock = Columns(["date", "time"], {"ticker": str, "price": np.float32, "size": np.float32, "volume": np.int64})
+        stock = Columns(["date", "time"], {"ticker": str, "price": np.float32, "size": np.float32})
         option = Columns[stock.datetypes + ["expire"], stock.datatypes | {"strike": np.float32, "interest": np.int32}]
         self.columns = {Securities.Stock.Long: stock, Securities.Stock.Short: stock}
         self.columns.update({Securities.Option.Put.Long: option, Securities.Option.Put.Short: option})
@@ -153,30 +166,6 @@ class SecurityLoader(Loader):
             file = os.path.join(folder, filename)
             dataframes = self.read(file=file, datatypes=self.columns[security].datatypes, datetypes=self.columns["datetypes"][security])
             yield security, dataframes
-
-
-class SecurityCalculator(Processor):
-    def execute(self, contents, *args, **kwargs):
-        ticker, expire, dataframes = contents
-        assert isinstance(dataframes, dict)
-        assert all([isinstance(security, pd.DataFrame) for security in dataframes.values()])
-        dataframes = {security: self.parser(dataframe) for security, dataframe in dataframes.items()}
-        return ticker, expire, dataframes
-
-    @staticmethod
-    def parser(dataframe, *args, size=None, interest=None, volume=None, **kwargs):
-        dataframe = dataframe.where(dataframe["size"] >= size) if bool(size) else dataframe
-        dataframe = dataframe.where(dataframe["interest"] >= interest) if bool(interest) else dataframe
-        dataframe = dataframe.where(dataframe["volume"] >= volume) if bool(volume) else dataframe
-        columns = [column for column in ("date", "ticker", "expire", "strike") if column in dataframe.columns]
-        dataframe = dataframe.drop_duplicates(subset=columns, keep="last", inplace=False)
-        if "expire" in dataframe.columns and "strike" in dataframe.columns:
-            dataframe = dataframe.drop_duplicates(subset=["date", "ticker", "expire", "strike"], keep="last", inplace=False)
-            dataframe = dataframe.set_index(["date", "ticker", "expire", "strike"], inplace=False, drop=True)
-        else:
-            dataframe = dataframe.drop_duplicates(subset=["date", "ticker"], keep="last", inplace=False)
-            dataframe = dataframe.set_index(["date", "ticker"], inplace=False, drop=True)
-        return dataframe
 
 
 
