@@ -17,7 +17,7 @@ from collections import namedtuple as ntuple
 
 from support.pipelines import Processor, Calculator, Saver, Loader
 from support.calculations import Calculation, equation
-from support.custom import AttributeCollection
+from support.dispatchers import kwargsdispatcher
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -69,7 +69,7 @@ class ShortCalculation(PositionCalculation): pass
 
 class InstrumentCalculation(Calculation, variables={"to": "date", "w": "price", "x": "time", "q": "size"}): pass
 class StockCalculation(InstrumentCalculation): pass
-class OptionCalculation(InstrumentCalculation, variables={"tτ": "tau", "k": "strike", "i": "interest"}):
+class OptionCalculation(InstrumentCalculation, variables={"tτ": "expire", "k": "strike", "i": "interest"}):
     τ = equation("tau", np.int16, domain=("to", "tτ"), function=lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
 
 class PutCalculation(OptionCalculation): pass
@@ -110,21 +110,24 @@ class SecurityProcessor(Processor):
         dataframe = dataframe.where(dataframe["interest"] >= interest) if bool(interest) else dataframe
         return dataframe
 
-    @staticmethod
-    def parser(dataframe, *args, security, partition=None, **kwargs):
-        if "expire" in dataframe.columns and "strike" in dataframe.columns:
-            dataframe = dataframe.drop_duplicates(subset=["date", "ticker", "expire", "strike"], keep="last", inplace=False)
-            dataframe = dataframe.set_index(["date", "ticker", "expire", "strike"], inplace=False, drop=True)
-            dataset = xr.Dataset.from_dataframe(dataframe)
-            dataset = dataset.squeeze("ticker").squeeze("date")
-        else:
-            dataframe = dataframe.drop_duplicates(subset=["date", "ticker"], keep="last", inplace=False)
-            dataframe = dataframe.set_index(["date", "ticker"], inplace=False, drop=True)
-            dataset = xr.Dataset.from_dataframe(dataframe)
-            dataset = dataset.squeeze("ticker").squeeze("date")
-            dataset = dataset.rename({"strike": str(security)})
-            dataset["strike"] = dataset[str(security)]
-            dataset = dataset.chunk({str(security): partition}) if bool(partition) else dataset
+    @kwargsdispatcher("security")
+    def parser(self, *args, security, **kwargs): raise ValueError(str(security))
+
+    @parser.register(Securities.Stock.Long, Securities.Stock.Short)
+    def stock(self, dataframe, *args, **kwargs):
+        dataframe = dataframe.drop_duplicates(subset=["date", "ticker", "expire", "strike"], keep="last", inplace=False)
+        dataframe = dataframe.set_index(["date", "ticker", "expire", "strike"], inplace=False, drop=True)
+        dataset = xr.Dataset.from_dataframe(dataframe).squeeze("ticker")
+        return dataset
+
+    @parser.register(Securities.Option.Put.Long, Securities.Option.Put.Short, Securities.Option.Call.Long, Securities.Option.Call.Short)
+    def option(self, dataframe, *args, security, partition=None, **kwargs):
+        dataframe = dataframe.drop_duplicates(subset=["date", "ticker"], keep="last", inplace=False)
+        dataframe = dataframe.set_index(["date", "ticker"], inplace=False, drop=True)
+        dataset = xr.Dataset.from_dataframe(dataframe).squeeze("ticker")
+        dataset = dataset.rename({"strike": str(security)})
+        dataset["strike"] = dataset[str(security)]
+        dataset = dataset.chunk({str(security): partition}) if bool(partition) else dataset
         return dataset
 
 
@@ -134,6 +137,8 @@ class SecurityCalculator(Calculator, calculations=calculations):
         ticker, expire, datasets = contents
         assert isinstance(datasets, dict)
         assert all([isinstance(security, xr.Dataset) for security in datasets.values()])
+
+        ###
 
 
 class SecuritySaver(Saver):

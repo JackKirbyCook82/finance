@@ -51,62 +51,67 @@ class Strategies:
         Call = VerticalCall
 
 
-class StrategyCalculation(Calculation): pass
+class StrategyCalculation(Calculation, variables={"tτ": "tau", "w": "price", "k": "strike", "x": "time", "q": "size", "i": "interest"}): pass
 class StrangleCalculation(StrategyCalculation): pass
 class VerticalCalculation(StrategyCalculation): pass
 class CollarCalculation(StrategyCalculation): pass
 
-class StrangleLongCalculation(StrangleCalculation, sources=("pα", "cα")):
+class StrangleLongCalculation(StrangleCalculation, sources={"pα": Securities.Option.Put.Long, "cα": Securities.Option.Call.Long}):
     τ = equation("tau", np.int16, domain=("pα.τ", "cα.τ"), function=lambda τpα, τcα: τpα)
     x = equation("time", np.datetime64, domain=("pα.x", "cα.x"), function=lambda xpα, xcα: np.maximum.outer(xpα, xcα))
     q = equation("size", np.float32, domain=("pα.q", "cα.q"), function=lambda qpα, qcα: np.minimum.outer(qpα, qcα))
     i = equation("interest", np.int32, domain=("pα.i", "cα.i"), function=lambda ipα, icα: np.minimum.outer(ipα, icα))
 
     wo = equation("spot", np.float32, domain=("pα.w", "cα.w"), function=lambda wpα, wcα: - np.add.outer(wpα, wcα))
-    vmn = equation("min", np.float32, domain=("pα.k", "cα.k"), function=lambda kpα, kcα: + np.maximum(np.add.outer(kpα, -kcα), 0))
-    vmx = equation("max", np.float32, domain=("pα.k", "cα.k"), function=lambda kpα, kcα: + np.ones((kpα.shape, kcα.shape)) * np.inf)
+    vo = equation("current", np.float32, domain=("pα.w", "cα.w"), function=lambda : )
+    vmn = equation("minimum", np.float32, domain=("pα.k", "cα.k"), function=lambda kpα, kcα: + np.maximum(np.add.outer(kpα, -kcα), 0))
+    vmx = equation("maximum", np.float32, domain=("pα.k", "cα.k"), function=lambda kpα, kcα: + np.ones((kpα.shape, kcα.shape)) * np.inf)
 
-class VerticalPutCalculation(VerticalCalculation, sources=("pα", "pβ")):
+class VerticalPutCalculation(VerticalCalculation, sources={"pα": Securities.Option.Put.Long, "pβ": Securities.Option.Put.Short}):
     τ = equation("tau", np.int16, domain=("pα.τ", "pβ.τ"), function=lambda τpα, τpβ: τpα)
     x = equation("time", np.datetime64, domain=("pα.x", "pβ.x"), function=lambda xpα, xpβ: np.maximum.outer(xpα, xpβ))
     q = equation("size", np.float32, domain=("pα.q", "pβ.q"), function=lambda qpα, qpβ: np.minimum.outer(qpα, qpβ))
     i = equation("interest", np.int32, domain=("pα.i", "pβ.i"), function=lambda ipα, ipβ: np.minimum.outer(ipα, ipβ))
 
     wo = equation("spot", np.float32, domain=("pα.w", "pβ.w"), function=lambda wpα, wpβ: - np.add.outer(wpα, -wpβ))
-    vmn = equation("min", np.float32, domain=("pα.k", "pβ.k"), function=lambda kpα, kpβ: + np.minimum(np.add.outer(kpα, -kpβ), 0))
-    vmx = equation("max", np.float32, domain=("pα.k", "pβ.k"), function=lambda kpα, kpβ: + np.maximum(np.add.outer(kpα, -kpβ), 0))
+    vo = equation("current", np.float32, domain=("pα.w", "pβ.w"), function=lambda : )
+    vmn = equation("minimum", np.float32, domain=("pα.k", "pβ.k"), function=lambda kpα, kpβ: + np.minimum(np.add.outer(kpα, -kpβ), 0))
+    vmx = equation("maximum", np.float32, domain=("pα.k", "pβ.k"), function=lambda kpα, kpβ: + np.maximum(np.add.outer(kpα, -kpβ), 0))
 
-class VerticalCallCalculation(VerticalCalculation, sources=("cα", "cβ")):
+class VerticalCallCalculation(VerticalCalculation, sources={"cα": Securities.Option.Call.Long, "cβ": Securities.Option.Call.Short}):
     τ = equation("tau", np.int16, domain=("cα.τ", "cβ.τ"), function=lambda τcα, τcβ: τcα)
     x = equation("time", np.datetime64, domain=("cα.x", "cβ.x"), function=lambda xcα, xcβ: np.maximum.outer(xcα, xcβ))
     q = equation("size", np.float32, domain=("cα.q", "cβ.q"), function=lambda qcα, qcβ: np.minimum.outer(qcα, qcβ))
     i = equation("interest", np.int32, domain=("cα.i", "cβ.i"), function=lambda icα, icβ: np.minimum.outer(icα, icβ))
 
     wo = equation("spot", np.float32, domain=("cα.w", "cβ.w"), function=lambda wcα, wcβ: - np.add.outer(wcα, -wcβ))
-    vmn = equation("min", np.float32, domain=("cα.k", "cβ.k"), function=lambda kcα, kcβ: + np.minimum(np.add.outer(-kcα, kcβ), 0))
-    vmx = equation("max", np.float32, domain=("cα.k", "cβ.k"), function=lambda kcα, kcβ: + np.maximum(np.add.outer(-kcα, kcβ), 0))
+    vo = equation("current", np.float32, domain=("cα.w", "cβ.w"), function=lambda : )
+    vmn = equation("minimum", np.float32, domain=("cα.k", "cβ.k"), function=lambda kcα, kcβ: + np.minimum(np.add.outer(-kcα, kcβ), 0))
+    vmx = equation("maximum", np.float32, domain=("cα.k", "cβ.k"), function=lambda kcα, kcβ: + np.maximum(np.add.outer(-kcα, kcβ), 0))
 
-class CollarLongCalculation(CollarCalculation, sources=("pα", "cβ", "sα")):
+class CollarLongCalculation(CollarCalculation, sources={"pα": Securities.Option.Put.Long, "cβ": Securities.Option.Call.Short, "sα": Securities.Stock.Long}):
     τ = equation("tau", np.int16, domain=("pα.τ", "cβ.τ"), function=lambda τpα, τcβ: τpα)
     x = equation("time", np.datetime64, domain=("pα.x", "cβ.x"), function=lambda xpα, xcβ: np.maximum.outer(xpα, xcβ))
     q = equation("size", np.float32, domain=("pα.q", "cβ.q"), function=lambda qpα, qcβ: np.minimum.outer(qpα, qcβ))
     i = equation("interest", np.int32, domain=("pα.i", "cβ.i"), function=lambda ipα, icβ: np.minimum.outer(ipα, icβ))
 
     wo = equation("spot", np.float32, domain=("pα.w", "cβ.w"), function=lambda wpα, wcβ, wsα: - np.add.outer(wpα, -wcβ) - wsα)
-    vmn = equation("min", np.float32, domain=("pα.k", "cβ.k"), function=lambda kpα, kcβ: + np.minimum.outer(kpα, kcβ))
-    vmx = equation("max", np.float32, domain=("pα.k", "cβ.k"), function=lambda kpα, kcβ: + np.maximum.outer(kpα, kcβ))
+    vo = equation("current", np.float32, domain=("pα.w", "cβ.w"), function=lambda : )
+    vmn = equation("minimum", np.float32, domain=("pα.k", "cβ.k"), function=lambda kpα, kcβ: + np.minimum.outer(kpα, kcβ))
+    vmx = equation("maximum", np.float32, domain=("pα.k", "cβ.k"), function=lambda kpα, kcβ: + np.maximum.outer(kpα, kcβ))
 
-class CollarShortCalculation(CollarCalculation, sources=("pβ", "cα", "sβ")):
+class CollarShortCalculation(CollarCalculation, sources={"pβ": Securities.Option.Put.Short, "cα": Securities.Option.Call.Long, "sβ": Securities.Stock.Short}):
     τ = equation("tau", np.int16, domain=("pβ.τ", "cα.τ"), function=lambda τpβ, τcα: τpβ)
     x = equation("time", np.datetime64, domain=("pβ.x", "cα.x"), function=lambda xpβ, xcα: np.maximum.outer(xpβ, xcα))
     q = equation("size", np.float32, domain=("pβ.q", "cα.q"), function=lambda qpβ, qcα: np.minimum.outer(qpβ, qcα))
     i = equation("interest", np.int32, domain=("pβ.i", "cα.i"), function=lambda ipβ, icα: np.minimum.outer(ipβ, icα))
 
     wo = equation("spot", np.float32, domain=("pβ.w", "cα.w"), function=lambda wpβ, wcα, wsβ: - np.add.outer(-wpβ, wcα) + wsβ)
-    vmn = equation("min", np.float32, domain=("pβ.k", "cα.k"), function=lambda kpβ, kcα: + np.minimum.outer(-kpβ, -kcα))
-    vmx = equation("max", np.float32, domain=("pβ.k", "cα.k"), function=lambda kpβ, kcα: + np.maximum.outer(-kpβ, -kcα))
+    vo = equation("current", np.float32, domain=("pβ.w", "cα.w"), function=lambda : )
+    vmn = equation("minimum", np.float32, domain=("pβ.k", "cα.k"), function=lambda kpβ, kcα: + np.minimum.outer(-kpβ, -kcα))
+    vmx = equation("maximum", np.float32, domain=("pβ.k", "cα.k"), function=lambda kpβ, kcα: + np.maximum.outer(-kpβ, -kcα))
 
-class CondorCalculation(StrategyCalculation, sources=("pα", "pβ", "cα", "cβ")):
+class CondorCalculation(StrategyCalculation, sources={"pα": Securities.Option.Put.Long, "pβ": Securities.Option.Put.Short, "cα": Securities.Option.Call.Long, "cβ": Securities.Option.Call.Short}):
     pass
 
 class Calculations:
@@ -128,5 +133,6 @@ class StrategyCalculator(Calculator, calculations=calculations):
         assert isinstance(datasets, dict)
         assert all([isinstance(security, xr.Dataset) for security in datasets.values()])
 
+        ###
 
 
