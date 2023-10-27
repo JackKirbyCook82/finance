@@ -8,15 +8,33 @@ Created on Weds Jul 19 2023
 
 import numpy as np
 import xarray as xr
+from enum import IntEnum
+from collections import namedtuple as ntuple
 
 from support.pipelines import Calculator
 from support.calculations import Calculation, equation
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = []
+__all__ = ["Valuation", "Valuations", "Calculations", "ValuationCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
+
+
+Basis = IntEnum("Basis", ["ARBITRAGE"], start=1)
+Scenario = IntEnum("Scenario", ["CURRENT", "MINIMUM", "MAXIMUM"], start=1)
+class Valuation(ntuple("Valuation", "basis scenario")):
+    def __str__(self): return "|".join([str(value.name).lower() for value in self if bool(value)])
+
+CurrentArbitrage = Valuation(Basis.ARBITRAGE, Scenario.CURRENT)
+MinimumArbitrage = Valuation(Basis.ARBITRAGE, Scenario.MINIMUM)
+MaximumArbitrage = Valuation(Basis.ARBITRAGE, Scenario.MAXIMUM)
+
+class Valuations:
+    class Arbitrage:
+        Current = CurrentArbitrage
+        Minimum = MinimumArbitrage
+        Maximum = MaximumArbitrage
 
 
 class ValuationCalculation(Calculation, variables={"τ": "tau", "w": "price", "k": "strike", "x": "time", "q": "size", "i": "interest"}, sources={"ρ": "discount"}):
@@ -32,8 +50,15 @@ class CurrentCalculation(ArbitrageCalculation, variables={"vτ": "current"}): pa
 class MinimumCalculation(ArbitrageCalculation, variables={"vτ": "minimum"}): pass
 class MaximumCalculation(ArbitrageCalculation, variables={"vτ": "maximum"}): pass
 
+class Calculations:
+    class Arbitrage:
+        Current = CurrentCalculation
+        Minimum = MinimumCalculation
+        Maximum = MaximumCalculation
 
-calculations = {}
+
+calculations = {Valuations.Arbitrage.Minimum: Calculations.Arbitrage.Minimum, Valuations.Arbitrage.Maximum: Calculations.Arbitrage.Maximum}
+calculations.update({Valuations.Arbitrage.Current: Calculations.Arbitrage.Current})
 class ValuationCalculator(Calculator, calculations=calculations):
     def execute(self, contents, *args, **kwargs):
         ticker, expire, datasets = contents

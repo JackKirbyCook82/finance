@@ -115,15 +115,15 @@ class SecurityProcessor(Processor):
 
     @parser.register(Securities.Stock.Long, Securities.Stock.Short)
     def stock(self, dataframe, *args, **kwargs):
-        dataframe = dataframe.drop_duplicates(subset=["date", "ticker", "expire", "strike"], keep="last", inplace=False)
-        dataframe = dataframe.set_index(["date", "ticker", "expire", "strike"], inplace=False, drop=True)
+        dataframe = dataframe.drop_duplicates(subset=["ticker"], keep="last", inplace=False)
+        dataframe = dataframe.set_index(["date", "ticker"], inplace=False, drop=True)
         dataset = xr.Dataset.from_dataframe(dataframe).squeeze("ticker")
         return dataset
 
     @parser.register(Securities.Option.Put.Long, Securities.Option.Put.Short, Securities.Option.Call.Long, Securities.Option.Call.Short)
     def option(self, dataframe, *args, security, partition=None, **kwargs):
-        dataframe = dataframe.drop_duplicates(subset=["date", "ticker"], keep="last", inplace=False)
-        dataframe = dataframe.set_index(["date", "ticker"], inplace=False, drop=True)
+        dataframe = dataframe.drop_duplicates(subset=["ticker", "expire", "strike"], keep="last", inplace=False)
+        dataframe = dataframe.set_index(["date", "ticker", "expire", "strike"], inplace=False, drop=True)
         dataset = xr.Dataset.from_dataframe(dataframe).squeeze("ticker")
         dataset = dataset.rename({"strike": str(security)})
         dataset["strike"] = dataset[str(security)]
@@ -131,7 +131,9 @@ class SecurityProcessor(Processor):
         return dataset
 
 
-calculations = {Securities[key]: Calculation[key] for key in Securities.keys()}
+calculations = {Securities.Stock.Long: Calculations.Stock.Long, Securities.Stock.Short: Calculations.Stock.Short}
+calculations.update({Securities.Option.Put.Long: Calculations.Option.Put.Long, Securities.Option.Put.Short: Calculations.Option.Put.Short})
+calculations.update({Securities.Option.Call.Long: Calculations.Option.Call.Long, Securities.Option.Call.Short: Calculations.Option.Call.Short})
 class SecurityCalculator(Calculator, calculations=calculations):
     def execute(self, contents, *args, **kwargs):
         ticker, expire, datasets = contents
@@ -168,10 +170,12 @@ class SecurityLoader(Loader):
         self.columns.update({Securities.Option.Put.Long: option, Securities.Option.Put.Short: option})
         self.columns.update({Securities.Option.Call.Long: option, Securities.Option.Call.Short: option})
 
-    def execute(self, ticker, *args, **kwargs):
+    def execute(self, ticker, *args, expires, **kwargs):
         folder = os.path.join(self.repository, str(ticker))
         for foldername in os.listdir(folder):
             expire = Datetime.strptime(os.path.splitext(foldername)[0], "%Y%m%d").date()
+            if expire not in expires:
+                continue
             dataframes = {key: value for key, value in self.securities(ticker, expire)}
             yield ticker, expire, dataframes
 

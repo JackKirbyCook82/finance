@@ -126,7 +126,10 @@ class Calculations:
         Call = VerticalCallCalculation
 
 
-calculations = {Strategies[key]: Calculation[key] for key in Strategies.keys()}
+calculations = {Strategies.Strangle.Long: Calculations.Strangle.Long, Strategies.Strangle.Short: Calculations.Strangle.Short}
+calculations.update({Strategies.Vertical.Put: Calculations.Vertical.Put, Strategies.Vertical.Call: Calculations.Vertical.Call})
+calculations.update({Strategies.Collar.Long: Calculations.Collar.Long, Strategies.Collar.Short: Calculations.Collar.Short})
+calculations.update({Strategies.Condor: Calculations.Condor})
 class StrategyCalculator(Calculator, calculations=calculations):
     def execute(self, contents, *args, partition=None, **kwargs):
         ticker, expire, datasets = contents
