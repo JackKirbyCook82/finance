@@ -51,7 +51,9 @@ class Strategies:
         Call = VerticalCall
 
 
-class StrategyCalculation(Calculation, variables={"tτ": "tau", "w": "price", "k": "strike", "x": "time", "q": "size", "i": "interest"}): pass
+variables = {"tτ": "tau", "w": "price", "k": "strike", "x": "time", "q": "size", "i": "interest"}
+calculation = ["τ", "wo", "vmn"]
+class StrategyCalculation(Calculation, variables=variables, calculation=calculation): pass
 class StrangleCalculation(StrategyCalculation): pass
 class VerticalCalculation(StrategyCalculation): pass
 class CollarCalculation(StrategyCalculation): pass
