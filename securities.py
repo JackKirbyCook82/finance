@@ -63,14 +63,16 @@ class Securities:
             Short = Security(Instruments.CALL, Positions.SHORT, payoff=lambda x, k: - np.maximum(x - k, 0))
 
 
-variables = {"stock": {"to": "date", "w": "price", "x": "time", "q": "size"}, "option": {"tτ": "expire", "k": "strike", "i": "interest"}}
-calculations = {"stock": ["w"], "option": ["w", "k", "τ"]}
+variables = {"to": "date", "w": "price", "x": "time", "q": "size", "tτ": "expire", "k": "strike", "i": "interest"}
+calculations = {"w": "price", "k": "strike", "τ": "tau"}
+
 class PositionCalculation(Calculation): pass
 class LongCalculation(PositionCalculation): pass
 class ShortCalculation(PositionCalculation): pass
-class InstrumentCalculation(Calculation, variables=variables["stock"], calculation=calculations["stock"]): pass
+
+class InstrumentCalculation(Calculation, variables=variables, calculation=calculations): pass
 class StockCalculation(InstrumentCalculation): pass
-class OptionCalculation(InstrumentCalculation, variables=variables["option"], calculation=calculations["option"]):
+class OptionCalculation(InstrumentCalculation):
     τ = equation("tau", np.int16, domain=["to", "tτ"], function=lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
 
 class PutCalculation(OptionCalculation): pass
@@ -140,8 +142,8 @@ class SecurityCalculator(Calculator, calculations=calculations):
         ticker, expire, datasets = contents
         assert isinstance(datasets, dict)
         assert all([isinstance(security, xr.Dataset) for security in datasets.values()])
-
-        ###
+        securities = {security: self.calculations[security](dataset, *args, **kwargs) for security, dataset in datasets.items()}
+        yield ticker, expire, securities
 
 
 class SecuritySaver(Saver):

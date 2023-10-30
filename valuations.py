@@ -37,7 +37,11 @@ class Valuations:
         Maximum = MaximumArbitrage
 
 
-class ValuationCalculation(Calculation, variables={"τ": "tau", "w": "price", "k": "strike", "x": "time", "q": "size", "i": "interest"}, sources={"ρ": "discount"}):
+variables = {"τ": "tau", "w": "price", "k": "strike", "x": "time", "q": "size", "i": "interest"},
+calculations = {"τ": "tau", "exp": "cost", "apy": "apy", "npv": "npv"}
+sources = {"ρ": "discount"}
+
+class ValuationCalculation(Calculation, variables=variables, sources=sources, calculations=calculations):
     inc = equation("income", np.float32, function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
     exp = equation("expense", np.float32, function=lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0))
     apy = equation("apy", np.float32, function=lambda r, τ: np.power(r + 1, np.power(τ / 365, -1)) - 1)
@@ -61,10 +65,12 @@ calculations = {Valuations.Arbitrage.Minimum: Calculations.Arbitrage.Minimum, Va
 calculations.update({Valuations.Arbitrage.Current: Calculations.Arbitrage.Current})
 class ValuationCalculator(Calculator, calculations=calculations):
     def execute(self, contents, *args, **kwargs):
-        ticker, expire, datasets = contents
+        ticker, expire, strategy, datasets = contents
         assert isinstance(datasets, dict)
         assert all([isinstance(security, xr.Dataset) for security in datasets.values()])
+        for valuation, calculation in self.calculations.items():
+            valuations = calculation(*args, **datasets, **kwargs)
+            yield ticker, expire, strategy, valuation, valuations
 
-        ###
 
 
