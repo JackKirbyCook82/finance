@@ -51,13 +51,12 @@ class Strategies:
         Call = VerticalCall
 
 
-sources = {"pα": Securities.Option.Put.Long, "pβ": Securities.Option.Put.Short, "cα": Securities.Option.Call.Long, "cβ": Securities.Option.Call.Short, "sα": Securities.Stock.Long, "sβ": Securities.Stock.Short, "ε": "fees"}
+sources = {"pα": Securities.Option.Put.Long, "pβ": Securities.Option.Put.Short, "cα": Securities.Option.Call.Long, "cβ": Securities.Option.Call.Short, "sα": Securities.Stock.Long, "sβ": Securities.Stock.Short}
 variables = {"τ": "tau", "w": "price", "k": "strike", "x": "time", "q": "size", "i": "interest"}
-calculations = {"τ": "tau", "wo": "spot", "vmn": "future"}
+results = {"τ": "tau", "wo": "spot", "vmn": "future"}
+constants = {"ε": "fees"}
 
-class StrategyCalculation(Calculation, variables=variables, sources=sources, calculations=calculations):
-
-
+class StrategyCalculation(Calculation, sources=sources, variables=variables, constants=constants, results=results): pass
 class StrangleCalculation(StrategyCalculation): pass
 class VerticalCalculation(StrategyCalculation): pass
 class CollarCalculation(StrategyCalculation): pass

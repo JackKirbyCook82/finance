@@ -64,13 +64,13 @@ class Securities:
 
 
 variables = {"to": "date", "w": "price", "x": "time", "q": "size", "tτ": "expire", "k": "strike", "i": "interest"}
-calculations = {"w": "price", "k": "strike", "τ": "tau"}
+results = {"w": "price", "k": "strike", "τ": "tau"}
 
 class PositionCalculation(Calculation): pass
 class LongCalculation(PositionCalculation): pass
 class ShortCalculation(PositionCalculation): pass
 
-class InstrumentCalculation(Calculation, variables=variables, calculation=calculations): pass
+class InstrumentCalculation(Calculation, variables=variables, results=results): pass
 class StockCalculation(InstrumentCalculation): pass
 class OptionCalculation(InstrumentCalculation):
     τ = equation("tau", np.int16, domain=["to", "tτ"], function=lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
