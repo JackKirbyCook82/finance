@@ -37,11 +37,7 @@ class Valuations:
         Maximum = MaximumArbitrage
 
 
-variables = {"τ": "tau", "w": "price", "k": "strike", "x": "time", "q": "size", "i": "interest"},
-results = {"τ": "tau", "exp": "cost", "apy": "apy", "npv": "npv"}
-constants = {"ρ": "discount"}
-
-class ValuationCalculation(Calculation, variables=variables, constants=constants, results=results):
+class ValuationCalculation(Calculation, variables={"τ": "tau", "w": "price", "k": "strike", "x": "time", "q": "size", "i": "interest", "ρ": "discount"}):
     inc = equation("income", np.float32, function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
     exp = equation("expense", np.float32, function=lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0))
     apy = equation("apy", np.float32, function=lambda r, τ: np.power(r + 1, np.power(τ / 365, -1)) - 1)

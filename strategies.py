@@ -12,7 +12,7 @@ from enum import IntEnum
 from collections import namedtuple as ntuple
 
 from support.pipelines import Calculator
-from support.calculations import Calculation, equation
+from support.calculations import Calculation, equation, source
 
 from finance.securities import Positions, Instruments, Securities
 
@@ -51,12 +51,14 @@ class Strategies:
         Call = VerticalCall
 
 
-sources = {"pα": Securities.Option.Put.Long, "pβ": Securities.Option.Put.Short, "cα": Securities.Option.Call.Long, "cβ": Securities.Option.Call.Short, "sα": Securities.Stock.Long, "sβ": Securities.Stock.Short}
-variables = {"τ": "tau", "w": "price", "k": "strike", "x": "time", "q": "size", "i": "interest"}
-results = {"τ": "tau", "wo": "spot", "vmn": "future"}
-constants = {"ε": "fees"}
+class StrategyCalculation(Calculation, variables={"ε": "fees"}):
+    pα = source(Securities.Option.Put.Long, variables={"τ": "tau", "w": "price", "k": "strike", "x": "time", "q": "size", "i": "interest"})
+    pβ = source(Securities.Option.Put.Short, variables={"τ": "tau", "w": "price", "k": "strike", "x": "time", "q": "size", "i": "interest"})
+    cα = source(Securities.Option.Call.Long, variables={"τ": "tau", "w": "price", "k": "strike", "x": "time", "q": "size", "i": "interest"})
+    cβ = source(Securities.Option.Call.Short, variables={"τ": "tau", "w": "price", "k": "strike", "x": "time", "q": "size", "i": "interest"})
+    sα = source(Securities.Stock.Long, variables={"w": "price", "x": "time", "q": "size"})
+    sβ = source(Securities.Stock.Short, variables={"w": "price", "x": "time", "q": "size"})
 
-class StrategyCalculation(Calculation, sources=sources, variables=variables, constants=constants, results=results): pass
 class StrangleCalculation(StrategyCalculation): pass
 class VerticalCalculation(StrategyCalculation): pass
 class CollarCalculation(StrategyCalculation): pass

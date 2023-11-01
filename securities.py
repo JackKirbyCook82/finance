@@ -63,16 +63,13 @@ class Securities:
             Short = Security(Instruments.CALL, Positions.SHORT, payoff=lambda x, k: - np.maximum(x - k, 0))
 
 
-variables = {"to": "date", "w": "price", "x": "time", "q": "size", "tτ": "expire", "k": "strike", "i": "interest"}
-results = {"w": "price", "k": "strike", "τ": "tau"}
-
 class PositionCalculation(Calculation): pass
 class LongCalculation(PositionCalculation): pass
 class ShortCalculation(PositionCalculation): pass
 
-class InstrumentCalculation(Calculation, variables=variables, results=results): pass
-class StockCalculation(InstrumentCalculation): pass
-class OptionCalculation(InstrumentCalculation):
+class InstrumentCalculation(Calculation): pass
+class StockCalculation(InstrumentCalculation, variables={"to": "date", "w": "price", "x": "time", "q": "size"}): pass
+class OptionCalculation(InstrumentCalculation, variables={"to": "date", "w": "price", "x": "time", "q": "size", "tτ": "expire", "k": "strike", "i": "interest"}):
     τ = equation("tau", np.int16, domain=["to", "tτ"], function=lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
 
 class PutCalculation(OptionCalculation): pass
