@@ -37,7 +37,7 @@ class Valuations:
         Maximum = MaximumArbitrage
 
 
-class ValuationCalculation(Calculation, variables={"τ": "tau", "w": "price", "k": "strike", "x": "time", "q": "size", "i": "interest", "ρ": "discount"}):
+class ValuationCalculation(Calculation, vars={"τ": "tau", "w": "price", "k": "strike", "x": "time", "q": "size", "i": "interest"}, parms={"ρ": "discount"}):
     inc = equation("income", np.float32, function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
     exp = equation("expense", np.float32, function=lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0))
     apy = equation("apy", np.float32, function=lambda r, τ: np.power(r + 1, np.power(τ / 365, -1)) - 1)
@@ -45,10 +45,10 @@ class ValuationCalculation(Calculation, variables={"τ": "tau", "w": "price", "k
     π = equation("profit", np.float32, function=lambda inc, exp: inc - exp)
     r = equation("return", np.float32, function=lambda π, exp: π / exp)
 
-class ArbitrageCalculation(ValuationCalculation, variables={"vo": "spot", "vτ": "future"}): pass
-class CurrentCalculation(ArbitrageCalculation, variables={"vτ": "current"}): pass
-class MinimumCalculation(ArbitrageCalculation, variables={"vτ": "minimum"}): pass
-class MaximumCalculation(ArbitrageCalculation, variables={"vτ": "maximum"}): pass
+class ArbitrageCalculation(ValuationCalculation, vars={"vo": "spot", "vτ": "future"}): pass
+class CurrentCalculation(ArbitrageCalculation, vars={"vτ": "current"}): pass
+class MinimumCalculation(ArbitrageCalculation, vars={"vτ": "minimum"}): pass
+class MaximumCalculation(ArbitrageCalculation, vars={"vτ": "maximum"}): pass
 
 class Calculations:
     class Arbitrage:
