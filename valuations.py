@@ -38,12 +38,12 @@ class Valuations:
 
 
 class ValuationCalculation(Calculation, vars={"τ": "tau", "w": "price", "k": "strike", "x": "time", "q": "size", "i": "interest"}, parms={"ρ": "discount"}):
-    inc = equation("income", np.float32, function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
-    exp = equation("expense", np.float32, function=lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0))
-    apy = equation("apy", np.float32, function=lambda r, τ: np.power(r + 1, np.power(τ / 365, -1)) - 1)
-    npv = equation("npv", np.float32, function=lambda π, τ, ρ: π * np.power(ρ / 365 + 1, τ))
-    π = equation("profit", np.float32, function=lambda inc, exp: inc - exp)
-    r = equation("return", np.float32, function=lambda π, exp: π / exp)
+    inc = equation("inc", "income", np.float32, function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
+    exp = equation("exp", "expense", np.float32, function=lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0))
+    apy = equation("apy", "yield", np.float32, function=lambda r, τ: np.power(r + 1, np.power(τ / 365, -1)) - 1)
+    npv = equation("npv", "value", np.float32, function=lambda π, τ, ρ: π * np.power(ρ / 365 + 1, τ))
+    π = equation("π", "profit", np.float32, function=lambda inc, exp: inc - exp)
+    r = equation("r", "return", np.float32, function=lambda π, exp: π / exp)
 
 class ArbitrageCalculation(ValuationCalculation, vars={"vo": "spot", "vτ": "future"}): pass
 class CurrentCalculation(ArbitrageCalculation, vars={"vτ": "current"}): pass
