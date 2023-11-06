@@ -70,7 +70,7 @@ class ShortCalculation(PositionCalculation): pass
 class InstrumentCalculation(Calculation): pass
 class StockCalculation(InstrumentCalculation, vars={"to": "date", "w": "price", "x": "time", "q": "size"}): pass
 class OptionCalculation(InstrumentCalculation, vars={"to": "date", "w": "price", "x": "time", "q": "size", "tτ": "expire", "k": "strike", "i": "interest"}):
-    τ = equation("τ", "tau", np.int16, domain=["to", "tτ"], function=lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
+    τ = equation("τ", "tau", np.int16, domain=("0.to", "0.tτ"), function=lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
 
 class PutCalculation(OptionCalculation): pass
 class CallCalculation(OptionCalculation): pass
