@@ -38,12 +38,12 @@ class Valuations:
 
 
 class ValuationCalculation(Calculation, vars={"τ": "tau", "w": "price", "k": "strike", "x": "time", "q": "size", "i": "interest"}, parms={"ρ": "discount"}):
-    inc = equation("inc", "income", np.float32, domain=("0.vo", "0.vτ"), function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
-    exp = equation("exp", "expense", np.float32, domain=("0.vo", "0.vτ"), function=lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0))
-    apy = equation("apy", "yield", np.float32, domain=("0.r", "0.τ"), function=lambda r, τ: np.power(r + 1, np.power(τ / 365, -1)) - 1)
-    npv = equation("npv", "value", np.float32, domain=("0.π", "0.τ"), function=lambda π, τ, ρ: π * np.power(ρ / 365 + 1, τ))
-    π = equation("π", "profit", np.float32, domain=("0.inc", "0.exp"), function=lambda inc, exp: inc - exp)
-    r = equation("r", "return", np.float32, domain=("0.π", "0.exp"), function=lambda π, exp: π / exp)
+    inc = equation("inc", "income", np.float32, domain=("vo", "vτ"), function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
+    exp = equation("exp", "expense", np.float32, domain=("vo", "vτ"), function=lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0))
+    apy = equation("apy", "yield", np.float32, domain=("r", "τ"), function=lambda r, τ: np.power(r + 1, np.power(τ / 365, -1)) - 1)
+    npv = equation("npv", "value", np.float32, domain=("π", "τ"), function=lambda π, τ, ρ: π * np.power(ρ / 365 + 1, τ))
+    π = equation("π", "profit", np.float32, domain=("inc", "exp"), function=lambda inc, exp: inc - exp)
+    r = equation("r", "return", np.float32, domain=("π", "exp"), function=lambda π, exp: π / exp)
 
 class ArbitrageCalculation(ValuationCalculation, vars={"vo": "spot", "vτ": "future"}): pass
 class CurrentCalculation(ArbitrageCalculation, vars={"vτ": "current"}): pass
