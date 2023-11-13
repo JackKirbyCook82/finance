@@ -16,7 +16,7 @@ from datetime import datetime as Datetime
 from collections import namedtuple as ntuple
 
 from support.pipelines import Processor, Calculator, Saver, Loader
-from support.calculations import Calculation, equation
+from support.calculations import Calculation, equation, source
 from support.dispatchers import kwargsdispatcher
 
 __version__ = "1.0.0"
@@ -64,13 +64,16 @@ class Securities:
 
 
 class PositionCalculation(Calculation): pass
+class InstrumentCalculation(Calculation): pass
 class LongCalculation(PositionCalculation): pass
 class ShortCalculation(PositionCalculation): pass
 
-class InstrumentCalculation(Calculation): pass
-class StockCalculation(InstrumentCalculation, vars={"to": "date", "w": "price", "x": "time", "q": "size"}): pass
-class OptionCalculation(InstrumentCalculation, vars={"to": "date", "w": "price", "x": "time", "q": "size", "tτ": "expire", "k": "strike", "i": "interest"}):
-    τ = equation("τ", "tau", np.int16, domain=("1.to", "1.tτ"), function=lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
+class StockCalculation(InstrumentCalculation):
+    s = source("s", "stock", position=0, variables={"to": "date", "w": "price", "x": "time", "q": "size"})
+
+class OptionCalculation(InstrumentCalculation):
+    o = source("o", "option", position=0, variables={"to": "date", "w": "price", "x": "time", "q": "size", "tτ": "expire", "k": "strike", "i": "interest"})
+    τ = equation("τ", "tau", np.int16, domain=("o.to", "o.tτ"), function=lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
 
 class PutCalculation(OptionCalculation): pass
 class CallCalculation(OptionCalculation): pass

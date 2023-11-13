@@ -51,13 +51,14 @@ class Strategies:
         Call = VerticalCall
 
 
-class StrategyCalculation(Calculation, parms={"ε": "fees"}):
-    pα = source("pα", Securities.Option.Put.Long, vars={"τ": "tau", "w": "price", "k": "strike", "x": "time", "q": "size", "i": "interest"})
-    pβ = source("pβ", Securities.Option.Put.Short, vars={"τ": "tau", "w": "price", "k": "strike", "x": "time", "q": "size", "i": "interest"})
-    cα = source("cα", Securities.Option.Call.Long, vars={"τ": "tau", "w": "price", "k": "strike", "x": "time", "q": "size", "i": "interest"})
-    cβ = source("cβ", Securities.Option.Call.Short, vars={"τ": "tau", "w": "price", "k": "strike", "x": "time", "q": "size", "i": "interest"})
-    sα = source("sα", Securities.Stock.Long, vars={"w": "price", "x": "time", "q": "size"})
-    sβ = source("sβ", Securities.Stock.Short, vars={"w": "price", "x": "time", "q": "size"})
+class StrategyCalculation(Calculation):
+    pα = source("pα", str(Securities.Option.Put.Long), variables={"τ": "tau", "w": "price", "k": "strike", "x": "time", "q": "size", "i": "interest"})
+    pβ = source("pβ", str(Securities.Option.Put.Short), variables={"τ": "tau", "w": "price", "k": "strike", "x": "time", "q": "size", "i": "interest"})
+    cα = source("cα", str(Securities.Option.Call.Long), variables={"τ": "tau", "w": "price", "k": "strike", "x": "time", "q": "size", "i": "interest"})
+    cβ = source("cβ", str(Securities.Option.Call.Short), variables={"τ": "tau", "w": "price", "k": "strike", "x": "time", "q": "size", "i": "interest"})
+    sα = source("sα", str(Securities.Stock.Long), variables={"w": "price", "x": "time", "q": "size"})
+    sβ = source("sβ", str(Securities.Stock.Short), variables={"w": "price", "x": "time", "q": "size"})
+    ε = source("ε", "fees", variables={})
 
 class StrangleCalculation(StrategyCalculation): pass
 class VerticalCalculation(StrategyCalculation): pass

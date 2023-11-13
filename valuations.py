@@ -12,7 +12,7 @@ from enum import IntEnum
 from collections import namedtuple as ntuple
 
 from support.pipelines import Calculator
-from support.calculations import Calculation, equation
+from support.calculations import Calculation, equation, source
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -37,18 +37,28 @@ class Valuations:
         Maximum = MaximumArbitrage
 
 
-class ValuationCalculation(Calculation, vars={"τ": "tau", "w": "price", "k": "strike", "x": "time", "q": "size", "i": "interest"}, parms={"ρ": "discount"}):
-    inc = equation("inc", "income", np.float32, domain=("1.vo", "1.vτ"), function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
-    exp = equation("exp", "expense", np.float32, domain=("1.vo", "1.vτ"), function=lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0))
-    apy = equation("apy", "yield", np.float32, domain=("1.r", "1.τ"), function=lambda r, τ: np.power(r + 1, np.power(τ / 365, -1)) - 1)
-    npv = equation("npv", "value", np.float32, domain=("1.π", "1.τ"), function=lambda π, τ, ρ: π * np.power(ρ / 365 + 1, τ))
-    π = equation("π", "profit", np.float32, domain=("1.inc", "1.exp"), function=lambda inc, exp: inc - exp)
-    r = equation("r", "return", np.float32, domain=("1.π", "1.exp"), function=lambda π, exp: π / exp)
+class ValuationCalculation(Calculation):
+    v = source("v", "valuation", position=0, variables={"τ": "tau", "w": "price", "k": "strike", "x": "time", "q": "size", "i": "interest"})
+    ρ = source("ρ", "discount", position=0, variables={})
 
-class ArbitrageCalculation(ValuationCalculation, vars={"vo": "spot", "vτ": "future"}): pass
-class CurrentCalculation(ArbitrageCalculation, vars={"vτ": "current"}): pass
-class MinimumCalculation(ArbitrageCalculation, vars={"vτ": "minimum"}): pass
-class MaximumCalculation(ArbitrageCalculation, vars={"vτ": "maximum"}): pass
+    inc = equation("income", np.float32, domain=("v.vo", "v.vτ"), function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
+    exp = equation("expense", np.float32, domain=("v.vo", "v.vτ"), function=lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0))
+    apy = equation("yield", np.float32, domain=("v.r", "v.τ"), function=lambda r, τ: np.power(r + 1, np.power(τ / 365, -1)) - 1)
+    npv = equation("value", np.float32, domain=("v.π", "v.τ"), function=lambda π, τ, ρ: π * np.power(ρ / 365 + 1, τ))
+    π = equation("profit", np.float32, domain=("v.inc", "v.exp"), function=lambda inc, exp: inc - exp)
+    r = equation("return", np.float32, domain=("v.π", "v.exp"), function=lambda π, exp: π / exp)
+
+class ArbitrageCalculation(ValuationCalculation):
+    v = source("v", "arbitrage", position=0, variables={"vo": "spot", "vτ": "future"})
+
+class CurrentCalculation(ArbitrageCalculation):
+    v = source("v", "current", position=0, variables={"vτ": "current"})
+
+class MinimumCalculation(ArbitrageCalculation):
+    v = source("v", "minimum", position=0, variables={"vτ": "minimum"})
+
+class MaximumCalculation(ArbitrageCalculation):
+    v = source("v", "maximum", position=0, variables={"vτ": "maximum"})
 
 class Calculations:
     class Arbitrage:
