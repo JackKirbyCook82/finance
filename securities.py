@@ -70,19 +70,17 @@ class LongCalculation(PositionCalculation, ABC): pass
 class ShortCalculation(PositionCalculation, ABC): pass
 
 class StockCalculation(InstrumentCalculation):
-    s = source("s", "stock", position=0, variables={"to": "date", "w": "price", "x": "time", "q": "size"})
+    x = source("x", "stock", position=0, variables={"to": "date", "w": "price", "s": "time", "q": "size"})
 
     def execute(self, dataset, *args, **kwargs):
-        dataset["date"] = self.to(*args, **kwargs)
-        dataset["price"] = self.w(*args, **kwargs)
+        dataset["price"] = self["x"].w(*args, **kwargs)
 
 class OptionCalculation(InstrumentCalculation):
-    o = source("o", "option", position=0, variables={"to": "date", "w": "price", "x": "time", "q": "size", "tτ": "expire", "k": "strike", "i": "interest"})
+    x = source("x", "option", position=0, variables={"to": "date", "w": "price", "s": "time", "q": "size", "tτ": "expire", "k": "strike", "i": "interest"})
     τ = equation("τ", "tau", np.int16, domain=("o.to", "o.tτ"), function=lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
 
     def execute(self, dataset, *args, **kwargs):
-        dataset["date"] = self.to(*args, **kwargs)
-        dataset["price"] = self.w(*args, **kwargs)
+        dataset["price"] = self["x"].w(*args, **kwargs)
         dataset["tau"] = self.τ(*args, **kwargs)
 
 class PutCalculation(OptionCalculation): pass

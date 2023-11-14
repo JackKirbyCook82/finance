@@ -16,7 +16,7 @@ from support.calculations import Calculation, equation, source
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["Valuation", "Valuations", "Calculations", "ValuationCalculator"]
+__all__ = ["Valuation", "Valuations", "Calculations", "ValuationCalculator", "ValuationSaver", "ValuationLoader"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
@@ -38,8 +38,8 @@ class Valuations:
 
 
 class ValuationCalculation(Calculation):
-    v = source("v", "valuation", position=0, variables={"τ": "tau", "w": "price", "k": "strike", "x": "time", "q": "size", "i": "interest"})
-    ρ = source("ρ", "discount", position=0, variables={})
+    v = source("v", "valuation", position=0, variables={"τ": "tau", "w": "price", "k": "strike", "s": "time", "q": "size", "i": "interest"})
+#    ρ = source("ρ", "discount", position="discount", variables={})
 
     inc = equation("inc", "income", np.float32, domain=("v.vo", "v.vτ"), function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
     exp = equation("exp", "cost", np.float32, domain=("v.vo", "v.vτ"), function=lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0))
@@ -85,13 +85,13 @@ class ValuationCalculator(Calculator, calculations=calculations):
             yield ticker, expire, strategy, valuation, results
 
 
-class SecuritySaver(Saver):
+class ValuationSaver(Saver):
     def execute(self, contents, *args, **kwargs):
         ticker, expire, strategy, valuation, datasets = contents
         assert isinstance(datasets, xr.Dataset)
 
 
-class SecurityLoader(Loader):
+class ValuationLoader(Loader):
     def execute(self, *args, **kwargs):
         pass
 
