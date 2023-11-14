@@ -60,6 +60,11 @@ class StrategyCalculation(Calculation):
     sβ = source("sβ", str(Securities.Stock.Short), variables={"w": "price", "x": "time", "q": "size"})
     ε = source("ε", "fees", variables={})
 
+    def execute(self, dataset, *args, **kwargs):
+        dataset["tau"] = self.τ(*args, **kwargs)
+        dataset["spot"] = self.wo(*args, **kwargs)
+        dataset["minimum"] = self.vmn(*args, **kwargs)
+
 class StrangleCalculation(StrategyCalculation): pass
 class VerticalCalculation(StrategyCalculation): pass
 class CollarCalculation(StrategyCalculation): pass
@@ -139,8 +144,8 @@ class StrategyCalculator(Calculator, calculations=calculations):
         assert isinstance(datasets, dict)
         assert all([isinstance(security, xr.Dataset) for security in datasets.values()])
         for strategy, calculation in self.calculations.items():
-            strategies = calculation(*args, **datasets, **kwargs)
-            yield ticker, expire, strategy, strategies
+            results = calculation(*args, **datasets, **kwargs)
+            yield ticker, expire, strategy, results
 
 
 

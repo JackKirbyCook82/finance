@@ -11,7 +11,7 @@ import xarray as xr
 from enum import IntEnum
 from collections import namedtuple as ntuple
 
-from support.pipelines import Calculator
+from support.pipelines import Calculator, Saver, Loader
 from support.calculations import Calculation, equation, source
 
 __version__ = "1.0.0"
@@ -41,12 +41,18 @@ class ValuationCalculation(Calculation):
     v = source("v", "valuation", position=0, variables={"τ": "tau", "w": "price", "k": "strike", "x": "time", "q": "size", "i": "interest"})
     ρ = source("ρ", "discount", position=0, variables={})
 
-    inc = equation("income", np.float32, domain=("v.vo", "v.vτ"), function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
-    exp = equation("expense", np.float32, domain=("v.vo", "v.vτ"), function=lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0))
-    apy = equation("yield", np.float32, domain=("v.r", "v.τ"), function=lambda r, τ: np.power(r + 1, np.power(τ / 365, -1)) - 1)
-    npv = equation("value", np.float32, domain=("v.π", "v.τ"), function=lambda π, τ, ρ: π * np.power(ρ / 365 + 1, τ))
-    π = equation("profit", np.float32, domain=("v.inc", "v.exp"), function=lambda inc, exp: inc - exp)
-    r = equation("return", np.float32, domain=("v.π", "v.exp"), function=lambda π, exp: π / exp)
+    inc = equation("inc", "income", np.float32, domain=("v.vo", "v.vτ"), function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
+    exp = equation("exp", "cost", np.float32, domain=("v.vo", "v.vτ"), function=lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0))
+    apy = equation("apy", "yield", np.float32, domain=("v.r", "v.τ"), function=lambda r, τ: np.power(r + 1, np.power(τ / 365, -1)) - 1)
+    npv = equation("npv", "value", np.float32, domain=("v.π", "v.τ"), function=lambda π, τ, ρ: π * np.power(ρ / 365 + 1, τ))
+    π = equation("π", "profit", np.float32, domain=("v.inc", "v.exp"), function=lambda inc, exp: inc - exp)
+    r = equation("r", "return", np.float32, domain=("v.π", "v.exp"), function=lambda π, exp: π / exp)
+
+    def execute(self, dataset, *args, **kwargs):
+        dataset["tau"] = self.τ(*args, **kwargs)
+        dataset["cost"] = self.exp(*args, **kwargs)
+        dataset["apy"] = self.apy(*args, **kwargs)
+        dataset["npv"] = self.npv(*args, **kwargs)
 
 class ArbitrageCalculation(ValuationCalculation):
     v = source("v", "arbitrage", position=0, variables={"vo": "spot", "vτ": "future"})
@@ -75,8 +81,18 @@ class ValuationCalculator(Calculator, calculations=calculations):
         assert isinstance(datasets, dict)
         assert all([isinstance(security, xr.Dataset) for security in datasets.values()])
         for valuation, calculation in self.calculations.items():
-            valuations = calculation(*args, **datasets, **kwargs)
-            yield ticker, expire, strategy, valuation, valuations
+            results = calculation(*args, **datasets, **kwargs)
+            yield ticker, expire, strategy, valuation, results
 
+
+class SecuritySaver(Saver):
+    def execute(self, contents, *args, **kwargs):
+        ticker, expire, strategy, valuation, datasets = contents
+        assert isinstance(datasets, xr.Dataset)
+
+
+class SecurityLoader(Loader):
+    def execute(self, *args, **kwargs):
+        pass
 
 

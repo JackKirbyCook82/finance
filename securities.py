@@ -10,6 +10,7 @@ import os.path
 import numpy as np
 import xarray as xr
 import pandas as pd
+from abc import ABC
 from enum import IntEnum
 from datetime import date as Date
 from datetime import datetime as Datetime
@@ -63,17 +64,26 @@ class Securities:
             Short = Security(Instruments.CALL, Positions.SHORT, payoff=lambda x, k: - np.maximum(x - k, 0))
 
 
-class PositionCalculation(Calculation): pass
-class InstrumentCalculation(Calculation): pass
-class LongCalculation(PositionCalculation): pass
-class ShortCalculation(PositionCalculation): pass
+class PositionCalculation(Calculation, ABC): pass
+class InstrumentCalculation(Calculation, ABC): pass
+class LongCalculation(PositionCalculation, ABC): pass
+class ShortCalculation(PositionCalculation, ABC): pass
 
 class StockCalculation(InstrumentCalculation):
     s = source("s", "stock", position=0, variables={"to": "date", "w": "price", "x": "time", "q": "size"})
 
+    def execute(self, dataset, *args, **kwargs):
+        dataset["date"] = self.to(*args, **kwargs)
+        dataset["price"] = self.w(*args, **kwargs)
+
 class OptionCalculation(InstrumentCalculation):
     o = source("o", "option", position=0, variables={"to": "date", "w": "price", "x": "time", "q": "size", "tτ": "expire", "k": "strike", "i": "interest"})
     τ = equation("τ", "tau", np.int16, domain=("o.to", "o.tτ"), function=lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
+
+    def execute(self, dataset, *args, **kwargs):
+        dataset["date"] = self.to(*args, **kwargs)
+        dataset["price"] = self.w(*args, **kwargs)
+        dataset["tau"] = self.τ(*args, **kwargs)
 
 class PutCalculation(OptionCalculation): pass
 class CallCalculation(OptionCalculation): pass
@@ -142,8 +152,8 @@ class SecurityCalculator(Calculator, calculations=calculations):
         ticker, expire, datasets = contents
         assert isinstance(datasets, dict)
         assert all([isinstance(security, xr.Dataset) for security in datasets.values()])
-        securities = {security: self.calculations[security](dataset, *args, **kwargs) for security, dataset in datasets.items()}
-        yield ticker, expire, securities
+        results = {security: self.calculations[security](dataset, *args, **kwargs) for security, dataset in datasets.items()}
+        yield ticker, expire, results
 
 
 class SecuritySaver(Saver):
