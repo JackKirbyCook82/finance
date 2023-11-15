@@ -12,7 +12,7 @@ from enum import IntEnum
 from collections import namedtuple as ntuple
 
 from support.pipelines import Calculator, Saver, Loader
-from support.calculations import Calculation, equation, source
+from support.calculations import Calculation, equation, source, constant
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -39,7 +39,7 @@ class Valuations:
 
 class ValuationCalculation(Calculation):
     v = source("v", "valuation", position=0, variables={"τ": "tau", "w": "price", "k": "strike", "s": "time", "q": "size", "i": "interest"})
-#    ρ = source("ρ", "discount", position="discount", variables={})
+    ρ = constant("ρ", "discount", position="discount")
 
     inc = equation("inc", "income", np.float32, domain=("v.vo", "v.vτ"), function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
     exp = equation("exp", "cost", np.float32, domain=("v.vo", "v.vτ"), function=lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0))

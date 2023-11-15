@@ -12,7 +12,7 @@ from enum import IntEnum
 from collections import namedtuple as ntuple
 
 from support.pipelines import Calculator
-from support.calculations import Calculation, equation, source
+from support.calculations import Calculation, equation, source, constant
 
 from finance.securities import Positions, Instruments, Securities
 
@@ -58,7 +58,7 @@ class StrategyCalculation(Calculation):
     cβ = source("cβ", str(Securities.Option.Call.Short), position=Securities.Option.Call.Short, variables={"τ": "tau", "w": "price", "k": "strike", "s": "time", "q": "size", "i": "interest"})
     sα = source("sα", str(Securities.Stock.Long), position=Securities.Option.Stock.Long, variables={"w": "price", "s": "time", "q": "size"})
     sβ = source("sβ", str(Securities.Stock.Short), position=Securities.Option.Stock.Short, variables={"w": "price", "s": "time", "q": "size"})
-#    ε = source("ε", "fees", position="fees", variables={})
+    ε = constant("ε", "fees", position="fees")
 
     def execute(self, dataset, *args, **kwargs):
         dataset["tau"] = self.τ(*args, **kwargs)
