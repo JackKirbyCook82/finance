@@ -6,7 +6,7 @@ Created on Weds Jul 19 2023
 
 """
 
-import os.path
+import os
 import numpy as np
 import xarray as xr
 import pandas as pd
@@ -34,11 +34,11 @@ class DateRange(ntuple("DateRange", "minimum maximum")):
         dates = [date if isinstance(date, Date) else date.date() for date in dates]
         return super().__new__(cls, min(dates), max(dates)) if dates else None
 
+    def __contains__(self, date): return self.minimum <= date <= self.maximum
     def __repr__(self): return "{}({}, {})".format(self.__class__.__name__, repr(self.minimum), repr(self.maximum))
     def __str__(self): return "{}|{}".format(str(self.minimum), str(self.maximum))
     def __bool__(self): return self.minimum < self.maximum
     def __len__(self): return (self.maximum - self.minimum).days
-    def __contains__(self, date): return self.minimum <= date <= self.maximum
 
 
 Instruments = IntEnum("Instrument", ["PUT", "CALL", "STOCK"], start=1)
@@ -47,21 +47,34 @@ class Security(ntuple("Security", "instrument position")):
     def __new__(cls, instrument, position, *args, **kwargs): return super().__new__(cls, instrument, position)
     def __init__(self, *args, payoff, **kwargs): self.__payoff = payoff
     def __str__(self): return "|".join([str(value.name).lower() for value in self if bool(value)])
+    def __int__(self): return int(self.instrument) * 10 + int(self.position) * 1
 
     @property
     def payoff(self): return self.__payoff
 
+StockLong = Security(Instruments.STOCK, Positions.LONG, payoff=lambda x: np.copy(x))
+StockShort = Security(Instruments.STOCK, Positions.SHORT, payoff=lambda x: -np.copy(x))
+PutLong = Security(Instruments.PUT, Positions.LONG, payoff=lambda x, k: np.maximum(k - x, 0))
+PutShort = Security(Instruments.PUT, Positions.SHORT, payoff=lambda x, k: - np.maximum(k - x, 0))
+CallLong = Security(Instruments.CALL, Positions.LONG, payoff=lambda x, k: np.maximum(x - k, 0))
+CallShort = Security(Instruments.CALL, Positions.SHORT, payoff=lambda x, k: - np.maximum(x - k, 0))
+
 class Securities:
     class Stock:
-        Long = Security(Instruments.STOCK, Positions.LONG, payoff=lambda x: np.copy(x))
-        Short = Security(Instruments.STOCK, Positions.SHORT, payoff=lambda x: -np.copy(x))
+        Long = StockLong
+        Short = StockShort
     class Option:
         class Put:
-            Long = Security(Instruments.PUT, Positions.LONG, payoff=lambda x, k: np.maximum(k - x, 0))
-            Short = Security(Instruments.PUT, Positions.SHORT, payoff=lambda x, k: - np.maximum(k - x, 0))
+            Long = PutLong
+            Short = PutShort
         class Call:
-            Long = Security(Instruments.CALL, Positions.LONG, payoff=lambda x, k: np.maximum(x - k, 0))
-            Short = Security(Instruments.CALL, Positions.SHORT, payoff=lambda x, k: - np.maximum(x - k, 0))
+            Long = CallLong
+            Short = CallShort
+
+    @classmethod
+    def fromInt(cls, integer): pass
+    @classmethod
+    def fromStr(cls, string): pass
 
 
 class PositionCalculation(Calculation, ABC): pass
@@ -70,22 +83,21 @@ class LongCalculation(PositionCalculation, ABC): pass
 class ShortCalculation(PositionCalculation, ABC): pass
 
 class StockCalculation(InstrumentCalculation):
-    x = source("x", "stock", position=0, variables={"to": "date", "w": "price", "s": "time", "q": "size"})
+    Λ = source("Λ", "stock", position=0, variables={"to": "date", "w": "price", "s": "time", "q": "size"})
 
-    def execute(self, dataset, *args, **kwargs):
-        dataset["price"] = self["x"].w(*args, **kwargs)
+    def execute(self, *args, **kwargs):
+        yield self["Λ"].w(*args, **kwargs)
 
 class OptionCalculation(InstrumentCalculation):
-    x = source("x", "option", position=0, variables={"to": "date", "w": "price", "s": "time", "q": "size", "tτ": "expire", "k": "strike", "i": "interest"})
+    Λ = source("Λ", "option", position=0, variables={"to": "date", "w": "price", "s": "time", "q": "size", "tτ": "expire", "k": "strike", "i": "interest"})
     τ = equation("τ", "tau", np.int16, domain=("o.to", "o.tτ"), function=lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
 
     def execute(self, dataset, *args, **kwargs):
-        dataset["price"] = self["x"].w(*args, **kwargs)
-        dataset["tau"] = self.τ(*args, **kwargs)
+        yield self["Λ"].w(*args, **kwargs)
+        yield self.τ(*args, **kwargs)
 
 class PutCalculation(OptionCalculation): pass
 class CallCalculation(OptionCalculation): pass
-
 class StockLongCalculation(StockCalculation, LongCalculation): pass
 class StockShortCalculation(StockCalculation, ShortCalculation): pass
 class PutLongCalculation(PutCalculation, LongCalculation): pass
@@ -108,12 +120,12 @@ class Calculations:
 
 class SecurityProcessor(Processor):
     def execute(self, contents, *args, **kwargs):
-        ticker, expire, dataframes = contents
+        current, ticker, expire, dataframes = contents
         assert isinstance(dataframes, dict)
         assert all([isinstance(security, pd.DataFrame) for security in dataframes.values()])
         dataframes = {security: self.filter(dataframe, *args, security=security, **kwargs) for security, dataframe in dataframes.items()}
         datasets = {security: self.parser(dataframe, *args, security=security, **kwargs) for security, dataframe in dataframes.items()}
-        yield ticker, expire, datasets
+        yield current, ticker, expire, datasets
 
     @staticmethod
     def filter(dataframe, *args, size=None, interest=None, **kwargs):
@@ -147,16 +159,16 @@ calculations.update({Securities.Option.Put.Long: Calculations.Option.Put.Long, S
 calculations.update({Securities.Option.Call.Long: Calculations.Option.Call.Long, Securities.Option.Call.Short: Calculations.Option.Call.Short})
 class SecurityCalculator(Calculator, calculations=calculations):
     def execute(self, contents, *args, **kwargs):
-        ticker, expire, datasets = contents
+        current, ticker, expire, datasets = contents
         assert isinstance(datasets, dict)
         assert all([isinstance(security, xr.Dataset) for security in datasets.values()])
         results = {security: self.calculations[security](dataset, *args, **kwargs) for security, dataset in datasets.items()}
-        yield ticker, expire, results
+        yield current, ticker, expire, results
 
 
 class SecuritySaver(Saver):
     def execute(self, contents, *args, **kwargs):
-        ticker, expire, dataframes = contents
+        current, ticker, expire, dataframes = contents
         assert isinstance(dataframes, dict)
         assert all([isinstance(security, pd.DataFrame) for security in dataframes.values()])
         folder = os.path.join(self.repository, str(ticker))
@@ -166,7 +178,8 @@ class SecuritySaver(Saver):
         if not os.path.isdir(folder):
             os.mkdir(folder)
         for security, dataframe in dataframes.items():
-            file = os.path.join(folder, str(security).replace("|", "_") + ".csv")
+            filename = str(security).replace("|", "_") + ".csv"
+            file = os.path.join(folder, filename)
             dataframe = dataframe.reset_index(drop=False, inplace=False)
             self.write(dataframe, file=file, mode="w")
 
@@ -175,7 +188,7 @@ class SecurityLoader(Loader):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         Columns = ntuple("Columns", "datetypes datatypes")
-        stock = Columns(["date", "time"], {"ticker": str, "price": np.float32, "size": np.float32})
+        stock = Columns(["date", "time"], {"ticker": str, "security": np.int32, "price": np.float32, "size": np.float32})
         option = Columns[stock.datetypes + ["expire"], stock.datatypes | {"strike": np.float32, "interest": np.int32}]
         self.columns = {Securities.Stock.Long: stock, Securities.Stock.Short: stock}
         self.columns.update({Securities.Option.Put.Long: option, Securities.Option.Put.Short: option})
@@ -193,10 +206,10 @@ class SecurityLoader(Loader):
     def securities(self, ticker, expire):
         folder = os.path.join(self.repository, str(ticker), str(expire.strftime("%Y%m%d")))
         for filename in os.listdir(folder):
-            security = Securities[str(filename).split(".")[0].replace("_", "|")]
+            security = Securities.fromstr(str(filename).split(".")[0].replace("_", "|"))
             file = os.path.join(folder, filename)
-            dataframes = self.read(file=file, datatypes=self.columns[security].datatypes, datetypes=self.columns["datetypes"][security])
-            yield security, dataframes
+            dataframe = self.read(file=file, datatypes=self.columns[security].datatypes, datetypes=self.columns["datetypes"][security])
+            yield security, dataframe
 
 
 

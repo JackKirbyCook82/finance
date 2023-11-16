@@ -28,6 +28,7 @@ class Strategy(ntuple("Strategy", "spread instrument position")):
     def __new__(cls, spread, instrument, position, *args, **kwargs): return super().__new__(cls, spread, instrument, position)
     def __init__(self, *args, **kwargs): self.__securities = kwargs["securities"]
     def __str__(self): return "|".join([str(value.name).lower() for value in self if bool(value)])
+    def __int__(self): return int(self.spread) * 100 + int(self.instrument) * 10 + int(self.position) * 1
 
     @property
     def securities(self): return self.__securities
@@ -50,6 +51,11 @@ class Strategies:
         Put = VerticalPut
         Call = VerticalCall
 
+    @classmethod
+    def fromInt(cls, integer): pass
+    @classmethod
+    def fromStr(cls, string): pass
+
 
 class StrategyCalculation(Calculation):
     pα = source("pα", str(Securities.Option.Put.Long), position=Securities.Option.Put.Long, variables={"τ": "tau", "w": "price", "k": "strike", "s": "time", "q": "size", "i": "interest"})
@@ -61,9 +67,10 @@ class StrategyCalculation(Calculation):
     ε = constant("ε", "fees", position="fees")
 
     def execute(self, dataset, *args, **kwargs):
-        dataset["tau"] = self.τ(*args, **kwargs)
-        dataset["spot"] = self.wo(*args, **kwargs)
-        dataset["minimum"] = self.vmn(*args, **kwargs)
+        yield self.τ(*args, **kwargs)
+        yield self.wo(*args, **kwargs)
+        yield self.vmn(*args, **kwargs)
+        yield self.vmx(*args, **kwargs)
 
 class StrangleCalculation(StrategyCalculation): pass
 class VerticalCalculation(StrategyCalculation): pass
@@ -140,12 +147,12 @@ calculations.update({Strategies.Collar.Long: Calculations.Collar.Long, Strategie
 calculations.update({Strategies.Condor: Calculations.Condor})
 class StrategyCalculator(Calculator, calculations=calculations):
     def execute(self, contents, *args, **kwargs):
-        ticker, expire, datasets = contents
+        current, ticker, expire, datasets = contents
         assert isinstance(datasets, dict)
         assert all([isinstance(security, xr.Dataset) for security in datasets.values()])
         for strategy, calculation in self.calculations.items():
             results = calculation(*args, **datasets, **kwargs)
-            yield ticker, expire, strategy, results
+            yield current, ticker, expire, strategy, results
 
 
 
