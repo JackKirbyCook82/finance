@@ -13,6 +13,7 @@ from collections import namedtuple as ntuple
 
 from support.pipelines import Calculator
 from support.calculations import Calculation, equation, source, constant
+from support.dispatchers import typedispatcher
 
 from finance.securities import Positions, Instruments, Securities
 
@@ -40,7 +41,17 @@ VerticalPut = Strategy(Spreads.VERTICAL, Instruments.PUT, 0, securities=[Securit
 VerticalCall = Strategy(Spreads.VERTICAL, Instruments.CALL, 0, securities=[Securities.Option.Call.Long, Securities.Option.Call.Short])
 Condor = Strategy(Spreads.CONDOR, 0, 0, securities=[Securities.Option.Put.Long, Securities.Option.Call.Long, Securities.Option.Put.Short, Securities.Option.Call.Short])
 
-class Strategies:
+class Strategies(type):
+    def __iter__(cls): return iter([StrangleLong, CollarLong, CollarShort, VerticalPut, VerticalCall, Condor])
+    def __getitem__(cls, indexkey): return cls.retrieve(indexkey)
+
+    @typedispatcher
+    def retrieve(cls, indexkey): raise TypeError(type(indexkey).__name__)
+    @retrieve.register(int)
+    def integer(cls, index): return {int(strategy): strategy for strategy in iter(cls)}[index]
+    @retrieve.register(str)
+    def string(cls, string): return {int(strategy): strategy for strategy in iter(cls)}[str(string).lower()]
+
     Condor = Condor
     class Strangle:
         Long = StrangleLong
@@ -51,19 +62,14 @@ class Strategies:
         Put = VerticalPut
         Call = VerticalCall
 
-    @classmethod
-    def fromInt(cls, integer): pass
-    @classmethod
-    def fromStr(cls, string): pass
-
 
 class StrategyCalculation(Calculation):
-    pα = source("pα", str(Securities.Option.Put.Long), position=Securities.Option.Put.Long, variables={"τ": "tau", "w": "price", "k": "strike", "s": "time", "q": "size", "i": "interest"})
-    pβ = source("pβ", str(Securities.Option.Put.Short), position=Securities.Option.Put.Short, variables={"τ": "tau", "w": "price", "k": "strike", "s": "time", "q": "size", "i": "interest"})
-    cα = source("cα", str(Securities.Option.Call.Long), position=Securities.Option.Call.Long, variables={"τ": "tau", "w": "price", "k": "strike", "s": "time", "q": "size", "i": "interest"})
-    cβ = source("cβ", str(Securities.Option.Call.Short), position=Securities.Option.Call.Short, variables={"τ": "tau", "w": "price", "k": "strike", "s": "time", "q": "size", "i": "interest"})
-    sα = source("sα", str(Securities.Stock.Long), position=Securities.Option.Stock.Long, variables={"w": "price", "s": "time", "q": "size"})
-    sβ = source("sβ", str(Securities.Stock.Short), position=Securities.Option.Stock.Short, variables={"w": "price", "s": "time", "q": "size"})
+    pα = source("pα", str(Securities.Option.Put.Long), position=Securities.Option.Put.Long, variables={"τ": "tau", "w": "price", "k": "strike", "q": "size", "i": "interest"})
+    pβ = source("pβ", str(Securities.Option.Put.Short), position=Securities.Option.Put.Short, variables={"τ": "tau", "w": "price", "k": "strike", "q": "size", "i": "interest"})
+    cα = source("cα", str(Securities.Option.Call.Long), position=Securities.Option.Call.Long, variables={"τ": "tau", "w": "price", "k": "strike", "q": "size", "i": "interest"})
+    cβ = source("cβ", str(Securities.Option.Call.Short), position=Securities.Option.Call.Short, variables={"τ": "tau", "w": "price", "k": "strike", "q": "size", "i": "interest"})
+    sα = source("sα", str(Securities.Stock.Long), position=Securities.Option.Stock.Long, variables={"w": "price", "q": "size"})
+    sβ = source("sβ", str(Securities.Stock.Short), position=Securities.Option.Stock.Short, variables={"w": "price", "q": "size"})
     ε = constant("ε", "fees", position="fees")
 
     def execute(self, dataset, *args, **kwargs):
@@ -78,7 +84,6 @@ class CollarCalculation(StrategyCalculation): pass
 
 class StrangleLongCalculation(StrangleCalculation):
     τ = equation("τ", "tau", np.int16, domain=("pα.τ", "cα.τ"), function=lambda τpα, τcα: τpα)
-    s = equation("x", "time", np.datetime64, domain=("pα.s", "cα.s"), function=lambda spα, scα: np.maximum.outer(spα, scα))
     q = equation("q", "size", np.float32, domain=("pα.q", "cα.q"), function=lambda qpα, qcα: np.minimum.outer(qpα, qcα))
     i = equation("i", "interest", np.int32, domain=("pα.i", "cα.i"), function=lambda ipα, icα: np.minimum.outer(ipα, icα))
 
@@ -88,7 +93,6 @@ class StrangleLongCalculation(StrangleCalculation):
 
 class VerticalPutCalculation(VerticalCalculation):
     τ = equation("τ", "tau", np.int16, domain=("pα.τ", "pβ.τ"), function=lambda τpα, τpβ: τpα)
-    s = equation("s", "time", np.datetime64, domain=("pα.s", "pβ.s"), function=lambda spα, spβ: np.maximum.outer(spα, spβ))
     q = equation("q", "size", np.float32, domain=("pα.q", "pβ.q"), function=lambda qpα, qpβ: np.minimum.outer(qpα, qpβ))
     i = equation("i", "interest", np.int32, domain=("pα.i", "pβ.i"), function=lambda ipα, ipβ: np.minimum.outer(ipα, ipβ))
 
@@ -98,7 +102,6 @@ class VerticalPutCalculation(VerticalCalculation):
 
 class VerticalCallCalculation(VerticalCalculation):
     τ = equation("τ", "tau", np.int16, domain=("cα.τ", "cβ.τ"), function=lambda τcα, τcβ: τcα)
-    s = equation("s", "time", np.datetime64, domain=("cα.s", "cβ.s"), function=lambda scα, scβ: np.maximum.outer(scα, scβ))
     q = equation("q", "size", np.float32, domain=("cα.q", "cβ.q"), function=lambda qcα, qcβ: np.minimum.outer(qcα, qcβ))
     i = equation("i", "interest", np.int32, domain=("cα.i", "cβ.i"), function=lambda icα, icβ: np.minimum.outer(icα, icβ))
 
@@ -108,7 +111,6 @@ class VerticalCallCalculation(VerticalCalculation):
 
 class CollarLongCalculation(CollarCalculation):
     τ = equation("τ", "tau", np.int16, domain=("pα.τ", "cβ.τ"), function=lambda τpα, τcβ: τpα)
-    s = equation("s", "time", np.datetime64, domain=("pα.s", "cβ.s"), function=lambda spα, scβ: np.maximum.outer(spα, scβ))
     q = equation("q", "size", np.float32, domain=("pα.q", "cβ.q"), function=lambda qpα, qcβ: np.minimum.outer(qpα, qcβ))
     i = equation("i", "interest", np.int32, domain=("pα.i", "cβ.i"), function=lambda ipα, icβ: np.minimum.outer(ipα, icβ))
 
@@ -118,7 +120,6 @@ class CollarLongCalculation(CollarCalculation):
 
 class CollarShortCalculation(CollarCalculation):
     τ = equation("τ", "tau", np.int16, domain=("pβ.τ", "cα.τ"), function=lambda τpβ, τcα: τpβ)
-    s = equation("s", "time", np.datetime64, domain=("pβ.s", "cα.s"), function=lambda spβ, scα: np.maximum.outer(spβ, scα))
     q = equation("q", "size", np.float32, domain=("pβ.q", "cα.q"), function=lambda qpβ, qcα: np.minimum.outer(qpβ, qcα))
     i = equation("i", "interest", np.int32, domain=("pβ.i", "cα.i"), function=lambda ipβ, icα: np.minimum.outer(ipβ, icα))
 

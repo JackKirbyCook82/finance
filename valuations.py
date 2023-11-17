@@ -14,6 +14,7 @@ from collections import namedtuple as ntuple
 
 from support.pipelines import Calculator, Saver
 from support.calculations import Calculation, equation, source, constant
+from support.dispatchers import typedispatcher
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -32,20 +33,25 @@ CurrentArbitrage = Valuation(Basis.ARBITRAGE, Scenario.CURRENT)
 MinimumArbitrage = Valuation(Basis.ARBITRAGE, Scenario.MINIMUM)
 MaximumArbitrage = Valuation(Basis.ARBITRAGE, Scenario.MAXIMUM)
 
-class Valuations:
+class Valuations(type):
+    def __iter__(cls): return iter([CurrentArbitrage, MinimumArbitrage, MaximumArbitrage])
+    def __getitem__(cls, indexkey): return cls.retrieve(indexkey)
+
+    @typedispatcher
+    def retrieve(cls, indexkey): raise TypeError(type(indexkey).__name__)
+    @retrieve.register(int)
+    def integer(cls, index): return {int(valuation): valuation for valuation in iter(cls)}[index]
+    @retrieve.register(str)
+    def string(cls, string): return {int(valuation): valuation for valuation in iter(cls)}[str(string).lower()]
+
     class Arbitrage:
         Current = CurrentArbitrage
         Minimum = MinimumArbitrage
         Maximum = MaximumArbitrage
 
-    @classmethod
-    def fromInt(cls, integer): pass
-    @classmethod
-    def fromStr(cls, string): pass
-
 
 class ValuationCalculation(Calculation):
-    Λ = source("Λ", "valuation", position=0, variables={"τ": "tau", "w": "price", "k": "strike", "s": "time", "q": "size", "i": "interest"})
+    Λ = source("Λ", "valuation", position=0, variables={"τ": "tau", "w": "price", "k": "strike", "q": "size", "i": "interest"})
     ρ = constant("ρ", "discount", position="discount")
 
     inc = equation("inc", "income", np.float32, domain=("v.vo", "v.vτ"), function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
@@ -96,14 +102,16 @@ class ValuationSaver(Saver):
     def execute(self, contents, *args, **kwargs):
         current, ticker, expire, strategy, valuation, dataset = contents
         assert isinstance(dataset, xr.Dataset)
-        folder = os.path.join(self.repository, str(valuation).replace("|", "_"))
-        if not os.path.isdir(folder):
-            os.mkdir(folder)
-        folder = os.path.join(folder, str(strategy).replace("|", "_"))
-        if not os.path.isdir(folder):
-            os.mkdir(folder)
-        filename = str(ticker) + str(expire.strftime("%Y%m%d")) + ".csv"
-        file = os.path.join(folder, filename)
+        current_folder = os.path.join(self.repository, str(expire.strftime("%Y%m%d_%H%M%S")))
+        assert not os.path.isdir(current_folder)
+        valuation_folder = os.path.join(current_folder, str(valuation).replace("|", "_"))
+        if not os.path.isdir(valuation_folder):
+            os.mkdir(valuation_folder)
+        strategy_folder = os.path.join(valuation_folder, str(strategy.replace("|", "_")))
+        if not os.path.isdir(strategy_folder):
+            os.mkdir(strategy_folder)
+        filename = "_".join([str(ticker), str(expire.strftime("%Y%m%d"))]) + ".csv"
+        file = os.path.join(strategy_folder, filename)
         dataframe = dataset.to_dask_dataframe()
         dataframe = dataframe.reset_index(drop=False, inplace=False)
         self.write(dataframe, file=file, mode="a")
