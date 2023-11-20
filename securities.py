@@ -153,14 +153,14 @@ class SecurityProcessor(Processor):
     @kwargsdispatcher("security")
     def parser(self, *args, security, **kwargs): raise ValueError(str(security))
 
-    @parser.register(Securities.Stock.Long, Securities.Stock.Short)
+    @parser.register.value(Securities.Stock.Long, Securities.Stock.Short)
     def stock(self, dataframe, *args, **kwargs):
         dataframe = dataframe.drop_duplicates(subset=["ticker", "date"], keep="last", inplace=False)
         dataframe = dataframe.set_index(["ticker", "date"], inplace=False, drop=True)
         dataset = xr.Dataset.from_dataframe(dataframe)
         return dataset
 
-    @parser.register(Securities.Option.Put.Long, Securities.Option.Put.Short, Securities.Option.Call.Long, Securities.Option.Call.Short)
+    @parser.register.value(Securities.Option.Put.Long, Securities.Option.Put.Short, Securities.Option.Call.Long, Securities.Option.Call.Short)
     def option(self, dataframe, *args, security, partition=None, **kwargs):
         dataframe = dataframe.drop_duplicates(subset=["ticker", "date", "expire", "strike"], keep="last", inplace=False)
         dataframe = dataframe.set_index(["ticker", "date", "expire", "strike"], inplace=False, drop=True)
@@ -178,6 +178,7 @@ class SecuritySaver(Saver):
         assert all([isinstance(security, pd.DataFrame) for security in dataframes.values()])
         current_folder = os.path.join(self.repository, str(expire.strftime("%Y%m%d_%H%M%S")))
         assert not os.path.isdir(current_folder)
+        os.mkdir(current_folder)
         ticker_expire_name = "_".join([str(ticker), str(expire.strftime("%Y%m%d"))])
         ticker_expire_folder = os.path.join(current_folder, ticker_expire_name)
         if not os.path.isdir(ticker_expire_folder):
