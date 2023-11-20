@@ -11,6 +11,7 @@ import numpy as np
 import xarray as xr
 from enum import IntEnum
 from collections import namedtuple as ntuple
+from collections import OrderedDict as ODict
 
 from support.pipelines import Calculator, Saver
 from support.calculations import Calculation, equation, source, constant
@@ -33,7 +34,7 @@ CurrentArbitrage = Valuation(Basis.ARBITRAGE, Scenario.CURRENT)
 MinimumArbitrage = Valuation(Basis.ARBITRAGE, Scenario.MINIMUM)
 MaximumArbitrage = Valuation(Basis.ARBITRAGE, Scenario.MAXIMUM)
 
-class Valuations(type):
+class ValuationsMeta(type):
     def __iter__(cls): return iter([CurrentArbitrage, MinimumArbitrage, MaximumArbitrage])
     def __getitem__(cls, indexkey): return cls.retrieve(indexkey)
 
@@ -48,6 +49,9 @@ class Valuations(type):
         Current = CurrentArbitrage
         Minimum = MinimumArbitrage
         Maximum = MaximumArbitrage
+
+class Valuations(object, metaclass=ValuationsMeta):
+    pass
 
 
 class ValuationCalculation(Calculation):
@@ -79,16 +83,21 @@ class MinimumCalculation(ArbitrageCalculation):
 class MaximumCalculation(ArbitrageCalculation):
     Λ = source("Λ", "maximum", position=0, variables={"vτ": "maximum"})
 
-class Calculations:
+class CalculationsMeta(type):
+    def __iter__(cls):
+        contents = {Valuations.Arbitrage.Current: CurrentCalculation, Valuations.Arbitrage.Minimum: MinimumCalculation, Valuations.Arbitrage.Maximum: MaximumCalculation}
+        return ((key, value) for key, value in contents.items())
+
     class Arbitrage:
         Current = CurrentCalculation
         Minimum = MinimumCalculation
         Maximum = MaximumCalculation
 
+class Calculations(object, metaclass=CalculationsMeta):
+    pass
 
-calculations = {Valuations.Arbitrage.Minimum: Calculations.Arbitrage.Minimum, Valuations.Arbitrage.Maximum: Calculations.Arbitrage.Maximum}
-calculations.update({Valuations.Arbitrage.Current: Calculations.Arbitrage.Current})
-class ValuationCalculator(Calculator, calculations=calculations):
+
+class ValuationCalculator(Calculator, calculations=ODict(list(iter(Calculations)))):
     def execute(self, contents, *args, **kwargs):
         current, ticker, expire, strategy, datasets = contents
         assert isinstance(datasets, dict)

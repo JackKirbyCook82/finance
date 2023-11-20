@@ -15,6 +15,7 @@ from enum import IntEnum
 from datetime import date as Date
 from datetime import datetime as Datetime
 from collections import namedtuple as ntuple
+from collections import OrderedDict as ODict
 
 from support.pipelines import Processor, Calculator, Saver, Loader
 from support.calculations import Calculation, equation, source
@@ -59,7 +60,7 @@ PutShort = Security(Instruments.PUT, Positions.SHORT, payoff=lambda x, k: - np.m
 CallLong = Security(Instruments.CALL, Positions.LONG, payoff=lambda x, k: np.maximum(x - k, 0))
 CallShort = Security(Instruments.CALL, Positions.SHORT, payoff=lambda x, k: - np.maximum(x - k, 0))
 
-class Securities(type):
+class SecuritiesMeta(type):
     def __iter__(cls): return iter([StockLong, StockShort, PutLong, PutShort, CallLong, CallShort])
     def __getitem__(cls, indexkey): return cls.retrieve(indexkey)
 
@@ -80,6 +81,9 @@ class Securities(type):
         class Call:
             Long = CallLong
             Short = CallShort
+
+class Securities(object, metaclass=SecuritiesMeta):
+    pass
 
 
 class PositionCalculation(Calculation, ABC): pass
@@ -110,7 +114,13 @@ class PutShortCalculation(PutCalculation, ShortCalculation): pass
 class CallLongCalculation(CallCalculation, LongCalculation): pass
 class CallShortCalculation(CallCalculation, ShortCalculation): pass
 
-class Calculations:
+class CalculationsMeta(type):
+    def __iter__(cls):
+        contents = {Securities.Stock.Long: StockLongCalculation, Securities.Stock.Short: StockShortCalculation}
+        contents.update({Securities.Option.Put.Long: PutLongCalculation, Securities.Option.Put.Short: PutShortCalculation})
+        contents.update({Securities.Option.Call.Long: CallLongCalculation, Securities.Option.Call.Short: CallShortCalculation})
+        return ((key, value) for key, value in contents.items())
+
     class Stock:
         Long = StockLongCalculation
         Short = StockShortCalculation
@@ -122,16 +132,16 @@ class Calculations:
             Long = CallLongCalculation
             Short = CallShortCalculation
 
+class Calculations(object, metaclass=CalculationsMeta):
+    pass
 
-calculations = {Securities.Stock.Long: Calculations.Stock.Long, Securities.Stock.Short: Calculations.Stock.Short}
-calculations.update({Securities.Option.Put.Long: Calculations.Option.Put.Long, Securities.Option.Put.Short: Calculations.Option.Put.Short})
-calculations.update({Securities.Option.Call.Long: Calculations.Option.Call.Long, Securities.Option.Call.Short: Calculations.Option.Call.Short})
-class SecurityCalculator(Calculator, calculations=calculations):
+
+class SecurityCalculator(Calculator, calculations=ODict(list(iter(Calculations)))):
     def execute(self, contents, *args, **kwargs):
         current, ticker, expire, datasets = contents
         assert isinstance(datasets, dict)
         assert all([isinstance(security, xr.Dataset) for security in datasets.values()])
-        results = {security: self.calculations[security](dataset, *args, **kwargs) for security, dataset in datasets.items()}
+        results = {security: calculation(datasets[security], *args, **kwargs) for security, calculation in self.calculations.items()}
         yield current, ticker, expire, results
 
 
@@ -157,14 +167,14 @@ class SecurityProcessor(Processor):
     def stock(self, dataframe, *args, **kwargs):
         dataframe = dataframe.drop_duplicates(subset=["ticker", "date"], keep="last", inplace=False)
         dataframe = dataframe.set_index(["ticker", "date"], inplace=False, drop=True)
-        dataset = xr.Dataset.from_dataframe(dataframe)
+        dataset = xr.Dataset.from_dataframe(dataframe[["price", "size", "volume"]])
         return dataset
 
     @parser.register.value(Securities.Option.Put.Long, Securities.Option.Put.Short, Securities.Option.Call.Long, Securities.Option.Call.Short)
     def option(self, dataframe, *args, security, partition=None, **kwargs):
         dataframe = dataframe.drop_duplicates(subset=["ticker", "date", "expire", "strike"], keep="last", inplace=False)
         dataframe = dataframe.set_index(["ticker", "date", "expire", "strike"], inplace=False, drop=True)
-        dataset = xr.Dataset.from_dataframe(dataframe)
+        dataset = xr.Dataset.from_dataframe(dataframe[["price", "size", "volume", "interest"]])
         dataset = dataset.rename({"strike": str(security)})
         dataset["strike"] = dataset[str(security)]
         dataset = dataset.chunk({str(security): partition}) if bool(partition) else dataset
@@ -176,7 +186,7 @@ class SecuritySaver(Saver):
         current, ticker, expire, dataframes = contents
         assert isinstance(dataframes, dict)
         assert all([isinstance(security, pd.DataFrame) for security in dataframes.values()])
-        current_folder = os.path.join(self.repository, str(expire.strftime("%Y%m%d_%H%M%S")))
+        current_folder = os.path.join(self.repository, str(current.strftime("%Y%m%d_%H%M%S")))
         assert not os.path.isdir(current_folder)
         os.mkdir(current_folder)
         ticker_expire_name = "_".join([str(ticker), str(expire.strftime("%Y%m%d"))])
@@ -186,7 +196,6 @@ class SecuritySaver(Saver):
         for security, dataframe in dataframes.items():
             filename = str(security).replace("|", "_") + ".csv"
             file = os.path.join(ticker_expire_folder, filename)
-            dataframe = dataframe.reset_index(drop=False, inplace=False)
             self.write(dataframe, file=file, mode="w")
 
 
@@ -194,11 +203,11 @@ class SecurityLoader(Loader):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         Columns = ntuple("Columns", "datetypes datatypes")
-        stock = Columns(["date", "time"], {"ticker": str, "security": np.int32, "price": np.float32, "size": np.float32})
-        option = Columns[stock.datetypes + ["expire"], stock.datatypes | {"strike": np.float32, "interest": np.int32}]
-        self.columns = {Securities.Stock.Long: stock, Securities.Stock.Short: stock}
-        self.columns.update({Securities.Option.Put.Long: option, Securities.Option.Put.Short: option})
-        self.columns.update({Securities.Option.Call.Long: option, Securities.Option.Call.Short: option})
+        stocks = Columns(["date"], {"ticker": str, "security": np.int32, "price": np.float32, "size": np.float32})
+        options = Columns(["date", "expire"], {"ticker": str, "security": np.int32, "price": np.float32, "size": np.float32, "strike": np.float32, "interest": np.int32})
+        self.columns = {Securities.Stock.Long: stocks, Securities.Stock.Short: stocks}
+        self.columns.update({Securities.Option.Put.Long: options, Securities.Option.Put.Short: options})
+        self.columns.update({Securities.Option.Call.Long: options, Securities.Option.Call.Short: options})
 
     def execute(self, ticker, *args, expires, **kwargs):
         TickerExpire = ntuple("TickerExpire", "ticker expire")

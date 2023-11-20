@@ -10,6 +10,7 @@ import numpy as np
 import xarray as xr
 from enum import IntEnum
 from collections import namedtuple as ntuple
+from collections import OrderedDict as ODict
 
 from support.pipelines import Calculator
 from support.calculations import Calculation, equation, source, constant
@@ -41,7 +42,7 @@ VerticalPut = Strategy(Spreads.VERTICAL, Instruments.PUT, 0, securities=[Securit
 VerticalCall = Strategy(Spreads.VERTICAL, Instruments.CALL, 0, securities=[Securities.Option.Call.Long, Securities.Option.Call.Short])
 Condor = Strategy(Spreads.CONDOR, 0, 0, securities=[Securities.Option.Put.Long, Securities.Option.Call.Long, Securities.Option.Put.Short, Securities.Option.Call.Short])
 
-class Strategies(type):
+class StrategiesMeta(type):
     def __iter__(cls): return iter([StrangleLong, CollarLong, CollarShort, VerticalPut, VerticalCall, Condor])
     def __getitem__(cls, indexkey): return cls.retrieve(indexkey)
 
@@ -62,14 +63,17 @@ class Strategies(type):
         Put = VerticalPut
         Call = VerticalCall
 
+class Strategies(object, metaclass=StrategiesMeta):
+    pass
+
 
 class StrategyCalculation(Calculation):
-    pα = source("pα", str(Securities.Option.Put.Long), position=Securities.Option.Put.Long, variables={"τ": "tau", "w": "price", "k": "strike", "q": "size", "i": "interest"})
-    pβ = source("pβ", str(Securities.Option.Put.Short), position=Securities.Option.Put.Short, variables={"τ": "tau", "w": "price", "k": "strike", "q": "size", "i": "interest"})
-    cα = source("cα", str(Securities.Option.Call.Long), position=Securities.Option.Call.Long, variables={"τ": "tau", "w": "price", "k": "strike", "q": "size", "i": "interest"})
-    cβ = source("cβ", str(Securities.Option.Call.Short), position=Securities.Option.Call.Short, variables={"τ": "tau", "w": "price", "k": "strike", "q": "size", "i": "interest"})
-    sα = source("sα", str(Securities.Stock.Long), position=Securities.Option.Stock.Long, variables={"w": "price", "q": "size"})
-    sβ = source("sβ", str(Securities.Stock.Short), position=Securities.Option.Stock.Short, variables={"w": "price", "q": "size"})
+    pα = source("pα", str(Securities.Option.Put.Long), position=str(Securities.Option.Put.Long), variables={"τ": "tau", "w": "price", "k": "strike", "q": "size", "i": "interest"})
+    pβ = source("pβ", str(Securities.Option.Put.Short), position=str(Securities.Option.Put.Short), variables={"τ": "tau", "w": "price", "k": "strike", "q": "size", "i": "interest"})
+    cα = source("cα", str(Securities.Option.Call.Long), position=str(Securities.Option.Call.Long), variables={"τ": "tau", "w": "price", "k": "strike", "q": "size", "i": "interest"})
+    cβ = source("cβ", str(Securities.Option.Call.Short), position=str(Securities.Option.Call.Short), variables={"τ": "tau", "w": "price", "k": "strike", "q": "size", "i": "interest"})
+    sα = source("sα", str(Securities.Stock.Long), position=str(Securities.Stock.Long), variables={"w": "price", "q": "size"})
+    sβ = source("sβ", str(Securities.Stock.Short), position=str(Securities.Stock.Short), variables={"w": "price", "q": "size"})
     ε = constant("ε", "fees", position="fees")
 
     def execute(self, dataset, *args, **kwargs):
@@ -127,11 +131,14 @@ class CollarShortCalculation(CollarCalculation):
     vmn = equation("vmn", "minimum", np.float32, domain=("pβ.k", "cα.k", "ε"), function=lambda kpβ, kcα, ε: + np.minimum.outer(-kpβ, -kcα) * 100 - ε)
     vmx = equation("vmx", "maximum", np.float32, domain=("pβ.k", "cα.k", "ε"), function=lambda kpβ, kcα, ε: + np.maximum.outer(-kpβ, -kcα) * 100 - ε)
 
-class CondorCalculation(StrategyCalculation):
-    pass
 
-class Calculations:
-    Condor = CondorCalculation
+class CalculationsMeta(type):
+    def __iter__(cls):
+        contents = {Strategies.Strangle.Long: StrangleLongCalculation}
+        contents.update({Strategies.Vertical.Put: VerticalPutCalculation, Strategies.Vertical.Call: VerticalCallCalculation})
+        contents.update({Strategies.Collar.Long: CollarLongCalculation, Strategies.Collar.Short: CollarShortCalculation})
+        return ((key, value) for key, value in contents.items())
+
     class Strangle:
         Long = StrangleLongCalculation
     class Collar:
@@ -141,16 +148,21 @@ class Calculations:
         Put = VerticalPutCalculation
         Call = VerticalCallCalculation
 
+class Calculations(object, metaclass=CalculationsMeta):
+    pass
 
-calculations = {Strategies.Strangle.Long: Calculations.Strangle.Long, Strategies.Strangle.Short: Calculations.Strangle.Short}
-calculations.update({Strategies.Vertical.Put: Calculations.Vertical.Put, Strategies.Vertical.Call: Calculations.Vertical.Call})
-calculations.update({Strategies.Collar.Long: Calculations.Collar.Long, Strategies.Collar.Short: Calculations.Collar.Short})
-calculations.update({Strategies.Condor: Calculations.Condor})
-class StrategyCalculator(Calculator, calculations=calculations):
+
+class StrategyCalculator(Calculator, calculations=ODict(list(iter(Calculations)))):
     def execute(self, contents, *args, **kwargs):
         current, ticker, expire, datasets = contents
         assert isinstance(datasets, dict)
         assert all([isinstance(security, xr.Dataset) for security in datasets.values()])
+
+        for key, value in datasets.items():
+            print(key)
+            print(value)
+        raise Exception()
+
         for strategy, calculation in self.calculations.items():
             results = calculation(*args, **datasets, **kwargs)
             yield current, ticker, expire, strategy, results
