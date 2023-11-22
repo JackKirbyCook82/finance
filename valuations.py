@@ -58,12 +58,12 @@ class ValuationCalculation(Calculation):
     Λ = source("Λ", "valuation", position=0, variables={"τ": "tau", "w": "price", "k": "strike", "q": "size", "i": "interest"})
     ρ = constant("ρ", "discount", position="discount")
 
-    inc = equation("inc", "income", np.float32, domain=("v.vo", "v.vτ"), function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
-    exp = equation("exp", "cost", np.float32, domain=("v.vo", "v.vτ"), function=lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0))
-    apy = equation("apy", "yield", np.float32, domain=("v.r", "v.τ"), function=lambda r, τ: np.power(r + 1, np.power(τ / 365, -1)) - 1)
-    npv = equation("npv", "value", np.float32, domain=("v.π", "v.τ"), function=lambda π, τ, ρ: π * np.power(ρ / 365 + 1, τ))
-    π = equation("π", "profit", np.float32, domain=("v.inc", "v.exp"), function=lambda inc, exp: inc - exp)
-    r = equation("r", "return", np.float32, domain=("v.π", "v.exp"), function=lambda π, exp: π / exp)
+    inc = equation("inc", "income", np.float32, domain=("Λ.vo", "Λ.vτ"), function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
+    exp = equation("exp", "cost", np.float32, domain=("Λ.vo", "Λ.vτ"), function=lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0))
+    apy = equation("apy", "yield", np.float32, domain=("r", "Λ.τ"), function=lambda r, τ: np.power(r + 1, np.power(τ / 365, -1)) - 1)
+    npv = equation("npv", "value", np.float32, domain=("π", "Λ.τ"), function=lambda π, τ, ρ: π * np.power(ρ / 365 + 1, τ))
+    π = equation("π", "profit", np.float32, domain=("inc", "exp"), function=lambda inc, exp: inc - exp)
+    r = equation("r", "return", np.float32, domain=("π", "exp"), function=lambda π, exp: π / exp)
 
     def execute(self, dataset, *args, **kwargs):
         yield self.τ(*args, **kwargs)

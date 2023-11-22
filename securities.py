@@ -99,7 +99,7 @@ class StockCalculation(InstrumentCalculation):
 
 class OptionCalculation(InstrumentCalculation):
     Λ = source("Λ", "option", position=0, variables={"to": "date", "w": "price", "q": "size", "tτ": "expire", "k": "strike", "i": "interest"})
-    τ = equation("τ", "tau", np.int16, domain=("o.to", "o.tτ"), function=lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
+    τ = equation("τ", "tau", np.int16, domain=("Λ.to", "Λ.tτ"), function=lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
 
     def execute(self, dataset, *args, **kwargs):
         yield self["Λ"].w(*args, **kwargs)
