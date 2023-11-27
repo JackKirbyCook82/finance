@@ -94,18 +94,20 @@ class ShortCalculation(PositionCalculation, ABC): pass
 class StockCalculation(InstrumentCalculation):
     Λ = source("Λ", "stock", position=0, variables={"to": "date", "w": "price", "q": "size"})
 
-    def execute(self, *args, **kwargs):
-        yield self["Λ"].w(*args, **kwargs)
+    def execute(self, dataset, *args, **kwargs):
+        yield self["Λ"].w(dataset)
 
 class OptionCalculation(InstrumentCalculation):
     Λ = source("Λ", "option", position=0, variables={"to": "date", "w": "price", "q": "size", "tτ": "expire", "k": "strike", "i": "interest"})
     τ = equation("τ", "tau", np.int16, domain=("Λ.to", "Λ.tτ"), function=lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
 
     def execute(self, dataset, *args, **kwargs):
-        yield self["Λ"].w(*args, **kwargs)
-        yield self.τ(*args, **kwargs)
+        yield self["Λ"].w(dataset)
+        yield self["Λ"].k(dataset)
+        yield self.τ(dataset)
 
 class PutCalculation(OptionCalculation): pass
+
 class CallCalculation(OptionCalculation): pass
 class StockLongCalculation(StockCalculation, LongCalculation): pass
 class StockShortCalculation(StockCalculation, ShortCalculation): pass
@@ -141,7 +143,8 @@ class SecurityCalculator(Calculator, calculations=ODict(list(iter(Calculations))
         current, ticker, expire, datasets = contents
         assert isinstance(datasets, dict)
         assert all([isinstance(security, xr.Dataset) for security in datasets.values()])
-        results = {security: calculation(datasets[security], *args, **kwargs) for security, calculation in self.calculations.items()}
+        feeds = {str(security): dataset for security, dataset in datasets.items()}
+        results = {security: calculation(feeds[str(security)], *args, **kwargs) for security, calculation in self.calculations.items()}
         yield current, ticker, expire, results
 
 

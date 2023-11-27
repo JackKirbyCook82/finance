@@ -157,14 +157,9 @@ class StrategyCalculator(Calculator, calculations=ODict(list(iter(Calculations))
         current, ticker, expire, datasets = contents
         assert isinstance(datasets, dict)
         assert all([isinstance(security, xr.Dataset) for security in datasets.values()])
-
-        for key, value in datasets.items():
-            print(key)
-            print(value)
-        raise Exception()
-
+        feeds = {str(security): dataset for security, dataset in datasets.items()}
         for strategy, calculation in self.calculations.items():
-            results = calculation(*args, **datasets, **kwargs)
+            results = calculation(*args, **feeds, **kwargs)
             yield current, ticker, expire, strategy, results
 
 
