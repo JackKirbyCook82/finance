@@ -180,7 +180,6 @@ class SecurityProcessor(Processor):
         dataset = xr.Dataset.from_dataframe(dataframe[["price", "size", "volume", "interest"]])
         dataset = dataset.rename({"strike": str(security)})
         dataset["strike"] = dataset[str(security)]
-        dataset = dataset.chunk({str(security): partition}) if bool(partition) else dataset
         return dataset
 
 

@@ -76,11 +76,11 @@ class StrategyCalculation(Calculation):
     sβ = source("sβ", str(Securities.Stock.Short), position=str(Securities.Stock.Short), variables={"w": "price", "q": "size"})
     ε = constant("ε", "fees", position="fees")
 
-    def execute(self, dataset, *args, **kwargs):
-        yield self.τ(*args, **kwargs)
-        yield self.wo(*args, **kwargs)
-        yield self.vmn(*args, **kwargs)
-        yield self.vmx(*args, **kwargs)
+    def execute(self, datasets, *args, fees, **kwargs):
+        yield self.τ(**datasets, fees=fees)
+        yield self.wo(**datasets, fees=fees)
+        yield self.vmn(**datasets, fees=fees)
+        yield self.vmx(**datasets, fees=fees)
 
 class StrangleCalculation(StrategyCalculation): pass
 class VerticalCalculation(StrategyCalculation): pass
@@ -93,7 +93,7 @@ class StrangleLongCalculation(StrangleCalculation):
 
     wo = equation("wo", "spot", np.float32, domain=("pα.w", "cα.w", "ε"), function=lambda wpα, wcα, ε: - np.add.outer(wpα, wcα) * 100 - ε)
     vmn = equation("vmn", "minimum", np.float32, domain=("pα.k", "cα.k", "ε"), function=lambda kpα, kcα, ε: + np.maximum(np.add.outer(kpα, -kcα), 0) * 100 - ε)
-    vmx = equation("vmx", "maximum", np.float32, domain=("pα.k", "cα.k", "ε"), function=lambda kpα, kcα, ε: + np.ones((kpα.shape, kcα.shape)) * np.inf * 100 - ε)
+    vmx = equation("vmx", "maximum", np.float32, domain=("pα.k", "cα.k", "ε"), function=lambda kpα, kcα, ε: + np.inf * 100 - ε)
 
 class VerticalPutCalculation(VerticalCalculation):
     τ = equation("τ", "tau", np.int16, domain=("pα.τ", "pβ.τ"), function=lambda τpα, τpβ: τpα)
@@ -159,7 +159,7 @@ class StrategyCalculator(Calculator, calculations=ODict(list(iter(Calculations))
         assert all([isinstance(security, xr.Dataset) for security in datasets.values()])
         feeds = {str(security): dataset for security, dataset in datasets.items()}
         for strategy, calculation in self.calculations.items():
-            results = calculation(*args, **feeds, **kwargs)
+            results = calculation(feeds, *args, **kwargs)
             yield current, ticker, expire, strategy, results
 
 
