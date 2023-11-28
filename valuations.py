@@ -8,18 +8,19 @@ Created on Weds Jul 19 2023
 
 import os
 import numpy as np
+import pandas as pd
 import xarray as xr
 from enum import IntEnum
 from collections import namedtuple as ntuple
 from collections import OrderedDict as ODict
 
-from support.pipelines import Calculator, Saver
+from support.pipelines import Processor, Calculator, Saver
 from support.calculations import Calculation, equation, source, constant
 from support.dispatchers import typedispatcher
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["Valuation", "Valuations", "Calculations", "ValuationCalculator", "ValuationSaver"]
+__all__ = ["Valuation", "Valuations", "Calculations", "ValuationProcessor", "ValuationCalculator", "ValuationSaver"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
@@ -60,8 +61,8 @@ class ValuationCalculation(Calculation):
 
     inc = equation("inc", "income", np.float32, domain=("Λ.vo", "Λ.vτ"), function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
     exp = equation("exp", "cost", np.float32, domain=("Λ.vo", "Λ.vτ"), function=lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0))
-    apy = equation("apy", "yield", np.float32, domain=("r", "Λ.τ"), function=lambda r, τ: np.power(r + 1, np.power(τ / 365, -1)) - 1)
-    npv = equation("npv", "value", np.float32, domain=("π", "Λ.τ", "ρ"), function=lambda π, τ, ρ: π * np.power(ρ / 365 + 1, τ))
+    apy = equation("apy", "apy", np.float32, domain=("r", "Λ.τ"), function=lambda r, τ: np.power(r + 1, np.power(τ / 365, -1)) - 1)
+    npv = equation("npv", "npv", np.float32, domain=("π", "Λ.τ", "ρ"), function=lambda π, τ, ρ: π * np.power(ρ / 365 + 1, τ))
     π = equation("π", "profit", np.float32, domain=("inc", "exp"), function=lambda inc, exp: inc - exp)
     r = equation("r", "return", np.float32, domain=("π", "exp"), function=lambda π, exp: π / exp)
 
@@ -103,10 +104,33 @@ class ValuationCalculator(Calculator, calculations=ODict(list(iter(Calculations)
             yield current, ticker, expire, strategy, valuation, results
 
 
-class ValuationSaver(Saver):
+class ValuationProcessor(Processor):
     def execute(self, contents, *args, **kwargs):
         current, ticker, expire, strategy, valuation, dataset = contents
         assert isinstance(dataset, xr.Dataset)
+        dataframe = self.parser(dataset, *args, **kwargs)
+        dataframe = self.filter(dataframe, *args, **kwargs)
+        yield current, ticker, expire, strategy, valuation, dataframe
+
+    @staticmethod
+    def parser(dataset, *args, **kwargs):
+        dataframe = dataset.to_dataframe()
+        dataframe = dataframe.reset_index(drop=False, inplace=False)
+        return dataframe
+
+    @staticmethod
+    def filter(dataframe, *args, apy=None, cost=None, size=None, interest=None, **kwargs):
+        dataframe = dataframe.where(dataframe["apy"] >= apy) if bool(apy) else dataframe
+        dataframe = dataframe.where(dataframe["cost"] >= cost) if bool(cost) else dataframe
+        dataframe = dataframe.where(dataframe["size"] >= size) if bool(size) else dataframe
+        dataframe = dataframe.where(dataframe["interest"] >= interest) if bool(interest) else dataframe
+        return dataframe
+
+
+class ValuationSaver(Saver):
+    def execute(self, contents, *args, **kwargs):
+        current, ticker, expire, strategy, valuation, dataframe = contents
+        assert isinstance(dataframe, pd.DataFrame)
         current_folder = os.path.join(self.repository, str(current.strftime("%Y%m%d_%H%M%S")))
         assert not os.path.isdir(current_folder)
         os.mkdir(current_folder)
@@ -118,8 +142,6 @@ class ValuationSaver(Saver):
             os.mkdir(strategy_folder)
         filename = "_".join([str(ticker), str(expire.strftime("%Y%m%d"))]) + ".csv"
         file = os.path.join(strategy_folder, filename)
-        dataframe = dataset.to_dataframe()
-        dataframe = dataframe.reset_index(drop=False, inplace=False)
         self.write(dataframe, file=file, mode="a")
 
 

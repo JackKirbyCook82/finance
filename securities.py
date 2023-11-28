@@ -174,7 +174,7 @@ class SecurityProcessor(Processor):
         return dataset
 
     @parser.register.value(Securities.Option.Put.Long, Securities.Option.Put.Short, Securities.Option.Call.Long, Securities.Option.Call.Short)
-    def option(self, dataframe, *args, security, partition=None, **kwargs):
+    def option(self, dataframe, *args, security, **kwargs):
         dataframe = dataframe.drop_duplicates(subset=["ticker", "date", "expire", "strike"], keep="last", inplace=False)
         dataframe = dataframe.set_index(["ticker", "date", "expire", "strike"], inplace=False, drop=True)
         dataset = xr.Dataset.from_dataframe(dataframe[["price", "size", "volume", "interest"]])
