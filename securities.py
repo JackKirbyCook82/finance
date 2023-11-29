@@ -107,7 +107,6 @@ class OptionCalculation(InstrumentCalculation):
         yield self.τ(dataset)
 
 class PutCalculation(OptionCalculation): pass
-
 class CallCalculation(OptionCalculation): pass
 class StockLongCalculation(StockCalculation, LongCalculation): pass
 class StockShortCalculation(StockCalculation, ShortCalculation): pass
@@ -175,11 +174,12 @@ class SecurityProcessor(Processor):
 
     @parser.register.value(Securities.Option.Put.Long, Securities.Option.Put.Short, Securities.Option.Call.Long, Securities.Option.Call.Short)
     def option(self, dataframe, *args, security, **kwargs):
+        index = str(security) + "|strike"
         dataframe = dataframe.drop_duplicates(subset=["ticker", "date", "expire", "strike"], keep="last", inplace=False)
         dataframe = dataframe.set_index(["ticker", "date", "expire", "strike"], inplace=False, drop=True)
         dataset = xr.Dataset.from_dataframe(dataframe[["price", "size", "volume", "interest"]])
-        dataset = dataset.rename({"strike": str(security)})
-        dataset["strike"] = dataset[str(security)]
+        dataset = dataset.rename({"strike": index})
+        dataset["strike"] = dataset[index].expand_dims(["ticker", "date", "expire"])
         return dataset
 
 
@@ -189,10 +189,11 @@ class SecuritySaver(Saver):
         assert isinstance(dataframes, dict)
         assert all([isinstance(security, pd.DataFrame) for security in dataframes.values()])
         current_folder = os.path.join(self.repository, str(current.strftime("%Y%m%d_%H%M%S")))
-        assert not os.path.isdir(current_folder)
-        os.mkdir(current_folder)
+        if not os.path.isdir(current_folder):
+            os.mkdir(current_folder)
         ticker_expire_name = "_".join([str(ticker), str(expire.strftime("%Y%m%d"))])
         ticker_expire_folder = os.path.join(current_folder, ticker_expire_name)
+        assert not os.path.isdir(ticker_expire_folder)
         if not os.path.isdir(ticker_expire_folder):
             os.mkdir(ticker_expire_folder)
         for security, dataframe in dataframes.items():

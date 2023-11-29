@@ -56,7 +56,7 @@ class Valuations(object, metaclass=ValuationsMeta):
 
 
 class ValuationCalculation(Calculation):
-    Λ = source("Λ", "valuation", position=0, variables={"τ": "tau", "w": "price", "k": "strike", "q": "size", "i": "interest"})
+    Λ = source("Λ", "valuation", position=0, variables={"τ": "tau", "q": "size", "i": "interest"})
     ρ = constant("ρ", "discount", position="discount")
 
     inc = equation("inc", "income", np.float32, domain=("Λ.vo", "Λ.vτ"), function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
@@ -132,8 +132,8 @@ class ValuationSaver(Saver):
         current, ticker, expire, strategy, valuation, dataframe = contents
         assert isinstance(dataframe, pd.DataFrame)
         current_folder = os.path.join(self.repository, str(current.strftime("%Y%m%d_%H%M%S")))
-        assert not os.path.isdir(current_folder)
-        os.mkdir(current_folder)
+        if not os.path.isdir(current_folder):
+            os.mkdir(current_folder)
         valuation_folder = os.path.join(current_folder, str(valuation).replace("|", "_"))
         if not os.path.isdir(valuation_folder):
             os.mkdir(valuation_folder)

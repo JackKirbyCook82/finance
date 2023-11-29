@@ -118,7 +118,7 @@ class CollarLongCalculation(CollarCalculation):
     q = equation("q", "size", np.float32, domain=("pα.q", "cβ.q"), function=lambda qpα, qcβ: np.minimum.outer(qpα, qcβ))
     i = equation("i", "interest", np.int32, domain=("pα.i", "cβ.i"), function=lambda ipα, icβ: np.minimum.outer(ipα, icβ))
 
-    wo = equation("wo", "spot", np.float32, domain=("pα.w", "cβ.w", "ε"), function=lambda wpα, wcβ, wsα, ε: (-np.add.outer(wpα, -wcβ) - wsα) * 100 - ε)
+    wo = equation("wo", "spot", np.float32, domain=("pα.w", "cβ.w", "ε"), function=lambda wpα, wcβ, wsα, ε: (- np.add.outer(wpα, -wcβ) - wsα) * 100 - ε)
     vmn = equation("vmn", "minimum", np.float32, domain=("pα.k", "cβ.k", "ε"), function=lambda kpα, kcβ, ε: + np.minimum.outer(kpα, kcβ) * 100 - ε)
     vmx = equation("vmx", "maximum", np.float32, domain=("pα.k", "cβ.k", "ε"), function=lambda kpα, kcβ, ε: + np.maximum.outer(kpα, kcβ) * 100 - ε)
 
@@ -127,7 +127,7 @@ class CollarShortCalculation(CollarCalculation):
     q = equation("q", "size", np.float32, domain=("pβ.q", "cα.q"), function=lambda qpβ, qcα: np.minimum.outer(qpβ, qcα))
     i = equation("i", "interest", np.int32, domain=("pβ.i", "cα.i"), function=lambda ipβ, icα: np.minimum.outer(ipβ, icα))
 
-    wo = equation("wo", "spot", np.float32, domain=("pβ.w", "cα.w", "ε"), function=lambda wpβ, wcα, wsβ, ε: (-np.add.outer(-wpβ, wcα) + wsβ) * 100 - ε)
+    wo = equation("wo", "spot", np.float32, domain=("pβ.w", "cα.w", "ε"), function=lambda wpβ, wcα, wsβ, ε: (- np.add.outer(-wpβ, wcα) + wsβ) * 100 - ε)
     vmn = equation("vmn", "minimum", np.float32, domain=("pβ.k", "cα.k", "ε"), function=lambda kpβ, kcα, ε: + np.minimum.outer(-kpβ, -kcα) * 100 - ε)
     vmx = equation("vmx", "maximum", np.float32, domain=("pβ.k", "cα.k", "ε"), function=lambda kpβ, kcα, ε: + np.maximum.outer(-kpβ, -kcα) * 100 - ε)
 
@@ -160,6 +160,10 @@ class StrategyCalculator(Calculator, calculations=ODict(list(iter(Calculations))
         feeds = {str(security): dataset for security, dataset in datasets.items()}
         for strategy, calculation in self.calculations.items():
             results = calculation(feeds, *args, **kwargs)
+
+            print(results)
+            raise Exception()
+
             yield current, ticker, expire, strategy, results
 
 
