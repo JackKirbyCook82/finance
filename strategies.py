@@ -76,11 +76,11 @@ class StrategyCalculation(Calculation):
     sβ = source("sβ", str(Securities.Stock.Short), position=str(Securities.Stock.Short), variables={"w": "price", "q": "size"})
     ε = constant("ε", "fees", position="fees")
 
-    def execute(self, datasets, *args, fees, **kwargs):
-        yield self.τ(**datasets, fees=fees)
-        yield self.wo(**datasets, fees=fees)
-        yield self.vmn(**datasets, fees=fees)
-        yield self.vmx(**datasets, fees=fees)
+    def execute(self, results, *args, feeds, fees, **kwargs):
+        results["tau"] = self.τ(**feeds, fees=fees)
+        results["spot"] = self.wo(**feeds, fees=fees)
+        results["minimum"] = self.vmn(**feeds, fees=fees)
+        results["maximum"] = self.vmx(**feeds, fees=fees)
 
 class StrangleCalculation(StrategyCalculation): pass
 class VerticalCalculation(StrategyCalculation): pass
@@ -159,11 +159,7 @@ class StrategyCalculator(Calculator, calculations=ODict(list(iter(Calculations))
         assert all([isinstance(security, xr.Dataset) for security in datasets.values()])
         feeds = {str(security): dataset for security, dataset in datasets.items()}
         for strategy, calculation in self.calculations.items():
-            results = calculation(feeds, *args, **kwargs)
-
-            print(results)
-            raise Exception()
-
+            results = calculation(*args, feeds=feeds, **kwargs)
             yield current, ticker, expire, strategy, results
 
 

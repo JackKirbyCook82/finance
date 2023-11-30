@@ -94,17 +94,17 @@ class ShortCalculation(PositionCalculation, ABC): pass
 class StockCalculation(InstrumentCalculation):
     Λ = source("Λ", "stock", position=0, variables={"to": "date", "w": "price", "q": "size"})
 
-    def execute(self, dataset, *args, **kwargs):
-        yield self["Λ"].w(dataset)
+    def execute(self, result, *args, feed, **kwargs):
+        result["price"] = self["Λ"].w(feed)
 
 class OptionCalculation(InstrumentCalculation):
     Λ = source("Λ", "option", position=0, variables={"to": "date", "w": "price", "q": "size", "tτ": "expire", "k": "strike", "i": "interest"})
     τ = equation("τ", "tau", np.int16, domain=("Λ.to", "Λ.tτ"), function=lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
 
-    def execute(self, dataset, *args, **kwargs):
-        yield self["Λ"].w(dataset)
-        yield self["Λ"].k(dataset)
-        yield self.τ(dataset)
+    def execute(self, result, *args, feed, **kwargs):
+        result["price"] = self["Λ"].w(feed)
+        result["strike"] = self["Λ"].k(feed)
+        result["tau"] = self.τ(feed)
 
 class PutCalculation(OptionCalculation): pass
 class CallCalculation(OptionCalculation): pass
@@ -143,7 +143,7 @@ class SecurityCalculator(Calculator, calculations=ODict(list(iter(Calculations))
         assert isinstance(datasets, dict)
         assert all([isinstance(security, xr.Dataset) for security in datasets.values()])
         feeds = {str(security): dataset for security, dataset in datasets.items()}
-        results = {security: calculation(feeds[str(security)], *args, **kwargs) for security, calculation in self.calculations.items()}
+        results = {security: calculation(*args, feed=feeds[str(security)], **kwargs) for security, calculation in self.calculations.items()}
         yield current, ticker, expire, results
 
 
@@ -174,7 +174,7 @@ class SecurityProcessor(Processor):
 
     @parser.register.value(Securities.Option.Put.Long, Securities.Option.Put.Short, Securities.Option.Call.Long, Securities.Option.Call.Short)
     def option(self, dataframe, *args, security, **kwargs):
-        index = str(security) + "|strike"
+        index = str(security)
         dataframe = dataframe.drop_duplicates(subset=["ticker", "date", "expire", "strike"], keep="last", inplace=False)
         dataframe = dataframe.set_index(["ticker", "date", "expire", "strike"], inplace=False, drop=True)
         dataset = xr.Dataset.from_dataframe(dataframe[["price", "size", "volume", "interest"]])
@@ -189,17 +189,18 @@ class SecuritySaver(Saver):
         assert isinstance(dataframes, dict)
         assert all([isinstance(security, pd.DataFrame) for security in dataframes.values()])
         current_folder = os.path.join(self.repository, str(current.strftime("%Y%m%d_%H%M%S")))
-        if not os.path.isdir(current_folder):
-            os.mkdir(current_folder)
+        with self.locks[current_folder]:
+            if not os.path.isdir(current_folder):
+                os.mkdir(current_folder)
         ticker_expire_name = "_".join([str(ticker), str(expire.strftime("%Y%m%d"))])
         ticker_expire_folder = os.path.join(current_folder, ticker_expire_name)
-        assert not os.path.isdir(ticker_expire_folder)
-        if not os.path.isdir(ticker_expire_folder):
-            os.mkdir(ticker_expire_folder)
-        for security, dataframe in dataframes.items():
-            filename = str(security).replace("|", "_") + ".csv"
-            file = os.path.join(ticker_expire_folder, filename)
-            self.write(dataframe, file=file, mode="w")
+        with self.locks[ticker_expire_folder]:
+            if not os.path.isdir(ticker_expire_folder):
+                os.mkdir(ticker_expire_folder)
+            for security, dataframe in dataframes.items():
+                filename = str(security).replace("|", "_") + ".csv"
+                file = os.path.join(ticker_expire_folder, filename)
+                self.write(dataframe, file=file, mode="w")
 
 
 class SecurityLoader(Loader):
@@ -212,26 +213,28 @@ class SecurityLoader(Loader):
         self.columns.update({Securities.Option.Put.Long: options, Securities.Option.Put.Short: options})
         self.columns.update({Securities.Option.Call.Long: options, Securities.Option.Call.Short: options})
 
-    def execute(self, ticker, *args, expires, **kwargs):
+    def execute(self, *args, tickers=None, expires=None, **kwargs):
         TickerExpire = ntuple("TickerExpire", "ticker expire")
         for current_name in os.listdir(self.repository):
             current = Datetime.strptime(os.path.splitext(current_name)[0], "%Y%m%d_%H%M%S")
             current_folder = os.path.join(self.repository, current_name)
             for ticker_expire_name in os.listdir(current_folder):
                 ticker_expire = TickerExpire(*str(ticker_expire_name).split("_"))
-                if ticker != str(ticker_expire.ticker).upper():
+                ticker = str(ticker_expire.ticker).upper()
+                if ticker not in tickers and tickers is not None:
                     continue
                 expire = Datetime.strptime(os.path.splitext(ticker_expire.expire)[0], "%Y%m%d").date()
-                if expire not in expires:
+                if expire not in expires and expires is not None:
                     continue
-                folder = os.path.join(current_folder, ticker_expire_name)
+                ticker_expire_folder = os.path.join(current_folder, ticker_expire_name)
                 security = lambda filename: Securities[str(filename).split(".")[0].replace("_", "|")]
                 datatypes = lambda filename: self.columns[security(filename)].datatypes
                 datetypes = lambda filename: self.columns[security(filename)].datetypes
-                file = lambda filename: os.path.join(folder, filename)
-                reader = lambda filename: self.read(file=file(filename), datatypes=datatypes(filename), datetypes=datetypes(filename))
-                dataframes = {security(filename): reader(filename) for filename in os.listdir(folder)}
-                yield current, ticker, expire, dataframes
+                file = lambda filename: os.path.join(ticker_expire_folder, filename)
+                reader = lambda filename: self.read(file=file(filename), filetype=pd.DataFrame, datatypes=datatypes(filename), datetypes=datetypes(filename))
+                with self.locks[ticker_expire_folder]:
+                    dataframes = {security(filename): reader(filename) for filename in os.listdir(ticker_expire_folder)}
+                    yield current, ticker, expire, dataframes
 
 
 

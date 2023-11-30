@@ -66,12 +66,12 @@ class ValuationCalculation(Calculation):
     π = equation("π", "profit", np.float32, domain=("inc", "exp"), function=lambda inc, exp: inc - exp)
     r = equation("r", "return", np.float32, domain=("π", "exp"), function=lambda π, exp: π / exp)
 
-    def execute(self, dataset, *args, discount, **kwargs):
-        yield self["Λ"].τ(dataset, discount=discount)
-        yield self.inc(dataset, discount=discount)
-        yield self.exp(dataset, discount=discount)
-        yield self.npv(dataset, discount=discount)
-        yield self.apy(dataset, discount=discount)
+    def execute(self, result, *args, feed, discount, **kwargs):
+        result["tau"] = self["Λ"].τ(feed)
+        result["income"] = self.inc(feed, discount=discount)
+        result["cost"] = self.exp(feed, discount=discount)
+        result["npv"] = self.npv(feed, discount=discount)
+        result["apy"] = self.apy(feed, discount=discount)
 
 class ArbitrageCalculation(ValuationCalculation):
     Λ = source("Λ", "arbitrage", position=0, variables={"vo": "spot", "vτ": "future"})
@@ -100,7 +100,7 @@ class ValuationCalculator(Calculator, calculations=ODict(list(iter(Calculations)
         current, ticker, expire, strategy, dataset = contents
         assert isinstance(dataset, xr.Dataset)
         for valuation, calculation in self.calculations.items():
-            results = calculation(dataset, *args, **kwargs)
+            results = calculation(*args, feed=dataset, **kwargs)
             yield current, ticker, expire, strategy, valuation, results
 
 
@@ -120,10 +120,10 @@ class ValuationProcessor(Processor):
 
     @staticmethod
     def filter(dataframe, *args, apy=None, cost=None, size=None, interest=None, **kwargs):
-        dataframe = dataframe.where(dataframe["apy"] >= apy) if bool(apy) else dataframe
-        dataframe = dataframe.where(dataframe["cost"] >= cost) if bool(cost) else dataframe
-        dataframe = dataframe.where(dataframe["size"] >= size) if bool(size) else dataframe
-        dataframe = dataframe.where(dataframe["interest"] >= interest) if bool(interest) else dataframe
+        dataframe = dataframe.where(dataframe["apy"] >= apy) if apy is not None else dataframe
+        dataframe = dataframe.where(dataframe["cost"] <= cost) if cost is not None else dataframe
+        dataframe = dataframe.where(dataframe["size"] >= size) if size is not None else dataframe
+        dataframe = dataframe.where(dataframe["interest"] >= interest) if interest is not None else dataframe
         return dataframe
 
 
@@ -132,17 +132,21 @@ class ValuationSaver(Saver):
         current, ticker, expire, strategy, valuation, dataframe = contents
         assert isinstance(dataframe, pd.DataFrame)
         current_folder = os.path.join(self.repository, str(current.strftime("%Y%m%d_%H%M%S")))
-        if not os.path.isdir(current_folder):
-            os.mkdir(current_folder)
+        with self.locks[current_folder]:
+            if not os.path.isdir(current_folder):
+                os.mkdir(current_folder)
         valuation_folder = os.path.join(current_folder, str(valuation).replace("|", "_"))
-        if not os.path.isdir(valuation_folder):
-            os.mkdir(valuation_folder)
+        with self.locks[valuation_folder]:
+            if not os.path.isdir(valuation_folder):
+                os.mkdir(valuation_folder)
         strategy_folder = os.path.join(valuation_folder, str(strategy).replace("|", "_"))
-        if not os.path.isdir(strategy_folder):
-            os.mkdir(strategy_folder)
+        with self.locks[strategy_folder]:
+            if not os.path.isdir(strategy_folder):
+                os.mkdir(strategy_folder)
         filename = "_".join([str(ticker), str(expire.strftime("%Y%m%d"))]) + ".csv"
         file = os.path.join(strategy_folder, filename)
-        self.write(dataframe, file=file, mode="a")
+        with self.locks[file]:
+            self.write(dataframe, file=file, mode="a")
 
 
 
