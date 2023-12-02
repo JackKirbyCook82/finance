@@ -11,16 +11,21 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 from enum import IntEnum
+from datetime import datetime as Datetime
 from collections import namedtuple as ntuple
 from collections import OrderedDict as ODict
 
-from support.pipelines import Processor, Calculator, Saver
+from support.pipelines import Calculator, Screener, Processor, Saver, Loader
 from support.calculations import Calculation, equation, source, constant
 from support.dispatchers import typedispatcher
 
+from finance.securities import Securities
+from finance.strategies import Strategies
+
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["Valuation", "Valuations", "Calculations", "ValuationProcessor", "ValuationCalculator", "ValuationSaver"]
+__all__ = ["Valuation", "Valuations", "Calculations"]
+__all__ += ["ValuationCalculator", "ValuationAnalysis", "ValuationScreener", "ValuationSaver", "ValuationLoader", "ValuationProcessor"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
@@ -56,6 +61,10 @@ class Valuations(object, metaclass=ValuationsMeta):
 
 
 class ValuationCalculation(Calculation):
+    pα = source("pα", str(Securities.Option.Put.Long), position=0, variables={"w": "price", "k": "strike"})
+    pβ = source("pβ", str(Securities.Option.Put.Short), position=0, variables={"w": "price", "k": "strike"})
+    cα = source("cα", str(Securities.Option.Call.Long), position=0, variables={"w": "price", "k": "strike"})
+    cβ = source("cβ", str(Securities.Option.Call.Short), position=0, variables={"w": "price", "k": "strike"})
     Λ = source("Λ", "valuation", position=0, variables={"τ": "tau", "q": "size", "i": "interest"})
     ρ = constant("ρ", "discount", position="discount")
 
@@ -66,12 +75,20 @@ class ValuationCalculation(Calculation):
     π = equation("π", "profit", np.float32, domain=("inc", "exp"), function=lambda inc, exp: inc - exp)
     r = equation("r", "return", np.float32, domain=("π", "exp"), function=lambda π, exp: π / exp)
 
-    def execute(self, result, *args, feed, discount, **kwargs):
-        result["tau"] = self["Λ"].τ(feed)
-        result["income"] = self.inc(feed, discount=discount)
-        result["cost"] = self.exp(feed, discount=discount)
-        result["npv"] = self.npv(feed, discount=discount)
-        result["apy"] = self.apy(feed, discount=discount)
+    def execute(self, *args, feed, discount, **kwargs):
+        yield "income", self.inc(feed, discount=discount)
+        yield "cost", self.exp(feed, discount=discount)
+        yield "npv", self.npv(feed, discount=discount)
+        yield "apy", self.apy(feed, discount=discount)
+        yield "tau", self["Λ"].τ(feed)
+        yield "put|long|strike", self["pα"].k(feed)
+        yield "put|short|strike", self["pβ"].k(feed)
+        yield "call|long|strike", self["cα"].k(feed)
+        yield "call|short|strike", self["cβ"].k(feed)
+        yield "put|long|price", self["pα"].w(feed)
+        yield "put|short|price", self["pβ"].w(feed)
+        yield "call|long|price", self["cα"].w(feed)
+        yield "call|short|price", self["cβ"].w(feed)
 
 class ArbitrageCalculation(ValuationCalculation):
     Λ = source("Λ", "arbitrage", position=0, variables={"vo": "spot", "vτ": "future"})
@@ -104,12 +121,15 @@ class ValuationCalculator(Calculator, calculations=ODict(list(iter(Calculations)
             yield current, ticker, expire, strategy, valuation, results
 
 
-class ValuationProcessor(Processor):
+class ValuationScreener(Screener):
     def execute(self, contents, *args, **kwargs):
         current, ticker, expire, strategy, valuation, dataset = contents
         assert isinstance(dataset, xr.Dataset)
         dataframe = self.parser(dataset, *args, **kwargs)
         dataframe = self.filter(dataframe, *args, **kwargs)
+        assert isinstance(dataframe, pd.DataFrame)
+        if dataframe.empty:
+            return
         yield current, ticker, expire, strategy, valuation, dataframe
 
     @staticmethod
@@ -124,7 +144,14 @@ class ValuationProcessor(Processor):
         dataframe = dataframe.where(dataframe["cost"] <= cost) if cost is not None else dataframe
         dataframe = dataframe.where(dataframe["size"] >= size) if size is not None else dataframe
         dataframe = dataframe.where(dataframe["interest"] >= interest) if interest is not None else dataframe
+        dataframe = dataframe.dropna(axis=0, how="all")
         return dataframe
+
+
+class ValuationProcessor(Processor):
+    def execute(self, contents, *args, **kwargs):
+        current, ticker, expire, strategy, valuation, dataframe = contents
+        yield current, ticker, expire, strategy, valuation, dataframe
 
 
 class ValuationSaver(Saver):
@@ -143,10 +170,49 @@ class ValuationSaver(Saver):
         with self.locks[strategy_folder]:
             if not os.path.isdir(strategy_folder):
                 os.mkdir(strategy_folder)
-        filename = "_".join([str(ticker), str(expire.strftime("%Y%m%d"))]) + ".csv"
-        file = os.path.join(strategy_folder, filename)
-        with self.locks[file]:
-            self.write(dataframe, file=file, mode="a")
+        ticker_expire_filename = "_".join([str(ticker), str(expire.strftime("%Y%m%d"))]) + ".csv"
+        ticker_expire_file = os.path.join(strategy_folder, ticker_expire_filename)
+
+        print(dataframe)
+
+#        with self.locks[ticker_expire_file]:
+#            self.write(dataframe, file=ticker_expire_file, mode="a")
+
+
+class ValuationLoader(Loader):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        Columns = ntuple("Columns", "datetypes datatypes")
+        datetypes = ["date", "expire"]
+        datatypes = {"ticker": str, "tau": np.int16}
+        datatypes.update({"spot": np.float32, "minimum": np.float32, "maximum": np.float32, "current": np.float32})
+        datatypes.update({"income": np.float32, "cost": np.float32, "npv": np.float32, "apy": np.float32})
+        self.columns = Columns(datetypes, datatypes)
+
+    def execute(self, *args, tickers, expires, **kwargs):
+        TickerExpire = ntuple("TickerExpire", "ticker expire")
+        for current_name in os.listdir(self.repository):
+            current = Datetime.strptime(os.path.splitext(current_name)[0], "%Y%m%d_%H%M%S")
+            current_folder = os.path.join(self.repository, current_name)
+            for valuation_name in os.listdir(current_folder):
+                valuation = Valuations[str(valuation_name).replace("_", "|")]
+                valuation_folder = os.path.join(current_folder, valuation_name)
+                for strategy_name in os.listdir(valuation_folder):
+                    strategy = Strategies[str(strategy_name).replace("_", "|")]
+                    strategy_folder = os.path.join(valuation_folder, strategy_name)
+                    for ticker_expire_filename in os.listdir(strategy_folder):
+                        ticker_expire = TickerExpire(*str(ticker_expire_filename).split(".")[0].split("_"))
+                        ticker = str(ticker_expire.ticker).upper()
+                        if ticker not in tickers and tickers is not None:
+                            continue
+                        expire = Datetime.strptime(os.path.splitext(ticker_expire.expire)[0], "%Y%m%d").date()
+                        if expire not in expires and expires is not None:
+                            continue
+                        ticker_expire_file = os.path.join(strategy_folder, ticker_expire_filename)
+                        with self.locks[ticker_expire_file]:
+                            dataframe = self.read(file=ticker_expire_file, filetype=pd.DataFrame, datatypes=self.columns.datatypes, datetypes=self.columns.datetypes)
+                            yield current, ticker, expire, valuation, strategy, dataframe
+
 
 
 

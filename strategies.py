@@ -20,7 +20,8 @@ from finance.securities import Positions, Instruments, Securities
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["Strategy", "Strategies", "Calculations", "StrategyCalculator"]
+__all__ = ["Strategy", "Strategies", "Calculations"]
+__all__ += ["StrategyCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
@@ -76,11 +77,19 @@ class StrategyCalculation(Calculation):
     sβ = source("sβ", str(Securities.Stock.Short), position=str(Securities.Stock.Short), variables={"w": "price", "q": "size"})
     ε = constant("ε", "fees", position="fees")
 
-    def execute(self, results, *args, feeds, fees, **kwargs):
-        results["tau"] = self.τ(**feeds, fees=fees)
-        results["spot"] = self.wo(**feeds, fees=fees)
-        results["minimum"] = self.vmn(**feeds, fees=fees)
-        results["maximum"] = self.vmx(**feeds, fees=fees)
+    def execute(self, *args, feeds, fees, **kwargs):
+        yield "tau", self.τ(**feeds, fees=fees)
+        yield "spot", self.wo(**feeds, fees=fees)
+        yield "minimum", self.vmn(**feeds, fees=fees)
+        yield "maximum", self.vmx(**feeds, fees=fees)
+        yield "put|long|strike", self["pα"].k(**feeds)
+        yield "put|short|strike", self["pβ"].k(**feeds)
+        yield "call|long|strike", self["cα"].k(**feeds)
+        yield "call|short|strike", self["cβ"].k(**feeds)
+        yield "put|long|price", self["pα"].w(**feeds)
+        yield "put|short|price", self["pβ"].w(**feeds)
+        yield "call|long|price", self["cα"].w(**feeds)
+        yield "call|short|price", self["cβ"].w(**feeds)
 
 class StrangleCalculation(StrategyCalculation): pass
 class VerticalCalculation(StrategyCalculation): pass
