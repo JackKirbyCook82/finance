@@ -17,14 +17,14 @@ from datetime import datetime as Datetime
 from collections import namedtuple as ntuple
 from collections import OrderedDict as ODict
 
-from support.pipelines import Calculator, Screener, Processor, Saver, Loader
+from support.pipelines import Calculator, Processor, Saver, Loader
 from support.calculations import Calculation, equation, source
 from support.dispatchers import kwargsdispatcher, typedispatcher
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
 __all__ = ["DateRange", "Instruments", "Positions", "Security", "Securities", "Calculations"]
-__all__ += ["SecurityScreener", "SecuritySaver", "SecurityLoader", "SecurityProcessor", "SecurityCalculator"]
+__all__ += ["SecurityProcessor", "SecurityCalculator", "SecuritySaver", "SecurityLoader"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
@@ -93,19 +93,19 @@ class LongCalculation(PositionCalculation, ABC): pass
 class ShortCalculation(PositionCalculation, ABC): pass
 
 class StockCalculation(InstrumentCalculation):
-    Λ = source("Λ", "stock", position=0, variables={"to": "date", "w": "price", "q": "size"})
+    Λ = source("Λ", "stock", position=0, variables={"to": "date", "w": "price", "q": "size"}, fullname=False)
 
     def execute(self, *args, feed, **kwargs):
-        yield "price", self["Λ"].w(feed)
+        yield self["Λ"].w(feed)
 
 class OptionCalculation(InstrumentCalculation):
-    Λ = source("Λ", "option", position=0, variables={"to": "date", "w": "price", "q": "size", "tτ": "expire", "k": "strike", "i": "interest"})
+    Λ = source("Λ", "option", position=0, variables={"to": "date", "w": "price", "q": "size", "tτ": "expire", "k": "strike", "i": "interest"}, fullname=False)
     τ = equation("τ", "tau", np.int16, domain=("Λ.to", "Λ.tτ"), function=lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
 
     def execute(self, *args, feed, **kwargs):
-        yield "price", self["Λ"].w(feed)
-        yield "strike", self["Λ"].k(feed)
-        yield "tau", self.τ(feed)
+        yield self["Λ"].w(feed)
+        yield self["Λ"].k(feed)
+        yield self.τ(feed)
 
 class PutCalculation(OptionCalculation): pass
 class CallCalculation(OptionCalculation): pass
@@ -148,12 +148,6 @@ class SecurityCalculator(Calculator, calculations=ODict(list(iter(Calculations))
         yield current, ticker, expire, results
 
 
-class SecurityScreener(Screener):
-    def execute(self, contents, *args, **kwargs):
-        current, ticker, expire, dataframes = contents
-        yield current, ticker, expire, dataframes
-
-
 class SecurityProcessor(Processor):
     def execute(self, contents, *args, **kwargs):
         current, ticker, expire, dataframes = contents
@@ -164,9 +158,10 @@ class SecurityProcessor(Processor):
         yield current, ticker, expire, datasets
 
     @staticmethod
-    def filter(dataframe, *args, size=None, interest=None, **kwargs):
+    def filter(dataframe, *args, size=None, interest=None, volume=None, **kwargs):
         dataframe = dataframe.where(dataframe["size"] >= size) if bool(size) else dataframe
         dataframe = dataframe.where(dataframe["interest"] >= interest) if bool(interest) else dataframe
+        dataframe = dataframe.where(dataframe["volume"] >= volume) if bool(volume) else dataframe
         dataframe = dataframe.dropna(axis=0, how="all")
         return dataframe
 
@@ -223,6 +218,9 @@ class SecurityLoader(Loader):
 
     def execute(self, *args, tickers=None, expires=None, **kwargs):
         TickerExpire = ntuple("TickerExpire", "ticker expire")
+        security = lambda filename: Securities[str(filename).split(".")[0].replace("_", "|")]
+        datatypes = lambda filename: self.columns[security(filename)].datatypes
+        datetypes = lambda filename: self.columns[security(filename)].datetypes
         for current_name in os.listdir(self.repository):
             current = Datetime.strptime(os.path.splitext(current_name)[0], "%Y%m%d_%H%M%S")
             current_folder = os.path.join(self.repository, current_name)
@@ -235,14 +233,12 @@ class SecurityLoader(Loader):
                 if expire not in expires and expires is not None:
                     continue
                 ticker_expire_folder = os.path.join(current_folder, ticker_expire_name)
-                security = lambda filename: Securities[str(filename).split(".")[0].replace("_", "|")]
-                datatypes = lambda filename: self.columns[security(filename)].datatypes
-                datetypes = lambda filename: self.columns[security(filename)].datetypes
-                ticker_expire_file = lambda ticker_expire_filename: os.path.join(ticker_expire_folder, ticker_expire_filename)
-                reader = lambda ticker_expire_filename: self.read(file=ticker_expire_file(ticker_expire_filename), filetype=pd.DataFrame, datatypes=datatypes(ticker_expire_filename), datetypes=datetypes(ticker_expire_filename))
+                file = lambda filename: os.path.join(ticker_expire_folder, filename)
+                reader = lambda filename: self.read(file=file(filename), filetype=pd.DataFrame, datatypes=datatypes(filename), datetypes=datetypes(filename))
                 with self.locks[ticker_expire_folder]:
                     dataframes = {security(ticker_expire_filename): reader(ticker_expire_filename) for ticker_expire_filename in os.listdir(ticker_expire_folder)}
                     yield current, ticker, expire, dataframes
+
 
 
 

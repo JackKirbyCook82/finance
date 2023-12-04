@@ -78,18 +78,17 @@ class StrategyCalculation(Calculation):
     ε = constant("ε", "fees", position="fees")
 
     def execute(self, *args, feeds, fees, **kwargs):
-        yield "tau", self.τ(**feeds, fees=fees)
-        yield "spot", self.wo(**feeds, fees=fees)
-        yield "minimum", self.vmn(**feeds, fees=fees)
-        yield "maximum", self.vmx(**feeds, fees=fees)
-        yield "put|long|strike", self["pα"].k(**feeds)
-        yield "put|short|strike", self["pβ"].k(**feeds)
-        yield "call|long|strike", self["cα"].k(**feeds)
-        yield "call|short|strike", self["cβ"].k(**feeds)
-        yield "put|long|price", self["pα"].w(**feeds)
-        yield "put|short|price", self["pβ"].w(**feeds)
-        yield "call|long|price", self["cα"].w(**feeds)
-        yield "call|short|price", self["cβ"].w(**feeds)
+        yield self.τ(**feeds, fees=fees)
+        yield self.wo(**feeds, fees=fees)
+        yield self.wτ(**feeds, fees=fees)
+        yield self["pα"].k(**feeds)
+        yield self["pβ"].k(**feeds)
+        yield self["cα"].k(**feeds)
+        yield self["cβ"].k(**feeds)
+        yield self["pα"].w(**feeds)
+        yield self["pβ"].w(**feeds)
+        yield self["cα"].w(**feeds)
+        yield self["cβ"].w(**feeds)
 
 class StrangleCalculation(StrategyCalculation): pass
 class VerticalCalculation(StrategyCalculation): pass
@@ -101,6 +100,7 @@ class StrangleLongCalculation(StrangleCalculation):
     i = equation("i", "interest", np.int32, domain=("pα.i", "cα.i"), function=lambda ipα, icα: np.minimum.outer(ipα, icα))
 
     wo = equation("wo", "spot", np.float32, domain=("pα.w", "cα.w", "ε"), function=lambda wpα, wcα, ε: - np.add.outer(wpα, wcα) * 100 - ε)
+    wτ = equation("wτ", "future", np.float32, domain=("pα.k", "cα.k", "ε"), function=lambda kpα, kcα, ε: + np.maximum(np.add.outer(kpα, -kcα), 0) * 100 - ε)
     vmn = equation("vmn", "minimum", np.float32, domain=("pα.k", "cα.k", "ε"), function=lambda kpα, kcα, ε: + np.maximum(np.add.outer(kpα, -kcα), 0) * 100 - ε)
     vmx = equation("vmx", "maximum", np.float32, domain=("pα.k", "cα.k", "ε"), function=lambda kpα, kcα, ε: + np.inf * 100 - ε)
 
@@ -110,6 +110,7 @@ class VerticalPutCalculation(VerticalCalculation):
     i = equation("i", "interest", np.int32, domain=("pα.i", "pβ.i"), function=lambda ipα, ipβ: np.minimum.outer(ipα, ipβ))
 
     wo = equation("wo", "spot", np.float32, domain=("pα.w", "pβ.w", "ε"), function=lambda wpα, wpβ, ε: - np.add.outer(wpα, -wpβ) * 100 - ε)
+    wτ = equation("wτ", "future", np.float32, domain=("pα.k", "pβ.k", "ε"), function=lambda kpα, kpβ, ε: + np.minimum(np.add.outer(kpα, -kpβ), 0) * 100 - ε)
     vmn = equation("vmn", "minimum", np.float32, domain=("pα.k", "pβ.k", "ε"), function=lambda kpα, kpβ, ε: + np.minimum(np.add.outer(kpα, -kpβ), 0) * 100 - ε)
     vmx = equation("vmx", "maximum", np.float32, domain=("pα.k", "pβ.k", "ε"), function=lambda kpα, kpβ, ε: + np.maximum(np.add.outer(kpα, -kpβ), 0) * 100 - ε)
 
@@ -119,6 +120,7 @@ class VerticalCallCalculation(VerticalCalculation):
     i = equation("i", "interest", np.int32, domain=("cα.i", "cβ.i"), function=lambda icα, icβ: np.minimum.outer(icα, icβ))
 
     wo = equation("wo", "spot", np.float32, domain=("cα.w", "cβ.w", "ε"), function=lambda wcα, wcβ, ε: - np.add.outer(wcα, -wcβ) * 100 - ε)
+    wτ = equation("wτ", "future", np.float32, domain=("cα.k", "cβ.k", "ε"), function=lambda kcα, kcβ, ε: + np.minimum(np.add.outer(-kcα, kcβ), 0) * 100 - ε)
     vmn = equation("vmn", "minimum", np.float32, domain=("cα.k", "cβ.k", "ε"), function=lambda kcα, kcβ, ε: + np.minimum(np.add.outer(-kcα, kcβ), 0) * 100 - ε)
     vmx = equation("vmx", "maximum", np.float32, domain=("cα.k", "cβ.k", "ε"), function=lambda kcα, kcβ, ε: + np.maximum(np.add.outer(-kcα, kcβ), 0) * 100 - ε)
 
@@ -128,6 +130,7 @@ class CollarLongCalculation(CollarCalculation):
     i = equation("i", "interest", np.int32, domain=("pα.i", "cβ.i"), function=lambda ipα, icβ: np.minimum.outer(ipα, icβ))
 
     wo = equation("wo", "spot", np.float32, domain=("pα.w", "cβ.w", "ε"), function=lambda wpα, wcβ, wsα, ε: (- np.add.outer(wpα, -wcβ) - wsα) * 100 - ε)
+    wτ = equation("wτ", "future", np.float32, domain=("pα.k", "cβ.k", "ε"), function=lambda kpα, kcβ, ε: + np.minimum.outer(kpα, kcβ) * 100 - ε)
     vmn = equation("vmn", "minimum", np.float32, domain=("pα.k", "cβ.k", "ε"), function=lambda kpα, kcβ, ε: + np.minimum.outer(kpα, kcβ) * 100 - ε)
     vmx = equation("vmx", "maximum", np.float32, domain=("pα.k", "cβ.k", "ε"), function=lambda kpα, kcβ, ε: + np.maximum.outer(kpα, kcβ) * 100 - ε)
 
@@ -137,6 +140,7 @@ class CollarShortCalculation(CollarCalculation):
     i = equation("i", "interest", np.int32, domain=("pβ.i", "cα.i"), function=lambda ipβ, icα: np.minimum.outer(ipβ, icα))
 
     wo = equation("wo", "spot", np.float32, domain=("pβ.w", "cα.w", "ε"), function=lambda wpβ, wcα, wsβ, ε: (- np.add.outer(-wpβ, wcα) + wsβ) * 100 - ε)
+    wτ = equation("wτ", "future", np.float32, domain=("pα.k", "cβ.k", "ε"), function=lambda kpα, kcβ, ε: + np.minimum.outer(kpα, kcβ) * 100 - ε)
     vmn = equation("vmn", "minimum", np.float32, domain=("pβ.k", "cα.k", "ε"), function=lambda kpβ, kcα, ε: + np.minimum.outer(-kpβ, -kcα) * 100 - ε)
     vmx = equation("vmx", "maximum", np.float32, domain=("pβ.k", "cα.k", "ε"), function=lambda kpβ, kcα, ε: + np.maximum.outer(-kpβ, -kcα) * 100 - ε)
 
