@@ -61,11 +61,11 @@ class Valuations(object, metaclass=ValuationsMeta):
 
 
 class ValuationCalculation(Calculation):
-    pα = source("pα", str(Securities.Option.Put.Long), position=0, variables={"w": "price", "k": "strike"})
-    pβ = source("pβ", str(Securities.Option.Put.Short), position=0, variables={"w": "price", "k": "strike"})
-    cα = source("cα", str(Securities.Option.Call.Long), position=0, variables={"w": "price", "k": "strike"})
-    cβ = source("cβ", str(Securities.Option.Call.Short), position=0, variables={"w": "price", "k": "strike"})
-    Λ = source("Λ", "valuation", position=0, variables={"wo": "spot", "wτ": "future", "τ": "tau", "q": "size", "i": "interest"}, fullname=False)
+    pα = source("pα", str(Securities.Option.Put.Long), position=0, variables={"w": "price", "k": "strike"}, source=True, destination=True)
+    pβ = source("pβ", str(Securities.Option.Put.Short), position=0, variables={"w": "price", "k": "strike"}, source=True, destination=True)
+    cα = source("cα", str(Securities.Option.Call.Long), position=0, variables={"w": "price", "k": "strike"}, source=True, destination=True)
+    cβ = source("cβ", str(Securities.Option.Call.Short), position=0, variables={"w": "price", "k": "strike"}, source=True, destination=True)
+    Λ = source("Λ", "valuation", position=0, variables={"wo": "spot", "wτ": "future", "τ": "tau", "q": "size", "i": "interest"})
     ρ = constant("ρ", "discount", position="discount")
 
     inc = equation("inc", "income", np.float32, domain=("Λ.vo", "Λ.vτ"), function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
@@ -83,23 +83,16 @@ class ValuationCalculation(Calculation):
         yield self["Λ"].wo(feed)
         yield self["Λ"].wτ(feed)
         yield self["Λ"].τ(feed)
-        yield self["pα"].k(feed)
-        yield self["pβ"].k(feed)
-        yield self["cα"].k(feed)
-        yield self["cβ"].k(feed)
-        yield self["pα"].w(feed)
-        yield self["pβ"].w(feed)
-        yield self["cα"].w(feed)
-        yield self["cβ"].w(feed)
 
 class ArbitrageCalculation(ValuationCalculation):
-    Λ = source("Λ", "arbitrage", position=0, variables={"vo": "spot", "vτ": "future"}, fullname=False)
+    Λ = source("Λ", "arbitrage", position=0, variables={"vo": "spot", "vτ": "future"})
 
 class MinimumCalculation(ArbitrageCalculation):
-    Λ = source("Λ", "minimum", position=0, variables={"vτ": "future"}, fullname=False)
+    Λ = source("Λ", "minimum", position=0, variables={"vτ": "future"})
 
 class MaximumCalculation(ArbitrageCalculation):
-    Λ = source("Λ", "maximum", position=0, variables={"vτ": "future"}, fullname=False)
+    Λ = source("Λ", "maximum", position=0, variables={"vτ": "future"})
+
 
 class CalculationsMeta(type):
     def __iter__(cls):
@@ -127,7 +120,7 @@ class ValuationProcessor(Processor):
     def execute(self, contents, *args, **kwargs):
         current, ticker, expire, strategy, valuation, dataset = contents
         assert isinstance(dataset, xr.Dataset)
-        dataframe = self.parser(dataset, *args, **kwargs)
+        dataframe = self.parser(dataset, *args, current=current, **kwargs)
         dataframe = self.filter(dataframe, *args, **kwargs)
         assert isinstance(dataframe, pd.DataFrame)
         if dataframe.empty:
@@ -135,14 +128,15 @@ class ValuationProcessor(Processor):
         yield current, ticker, expire, strategy, valuation, dataframe
 
     @staticmethod
-    def parser(dataset, *args, **kwargs):
+    def parser(dataset, *args, current, **kwargs):
         dataframe = dataset.to_dataframe()
         dataframe = dataframe.reset_index(drop=False, inplace=False)
         return dataframe
 
     @staticmethod
-    def filter(dataframe, *args, apy=None, cost=None, size=None, interest=None, volume=None, **kwargs):
+    def filter(dataframe, *args, apy=None, npv=None, cost=None, size=None, interest=None, volume=None, **kwargs):
         dataframe = dataframe.where(dataframe["apy"] >= apy) if apy is not None else dataframe
+        dataframe = dataframe.where(dataframe["npv"] >= npv) if npv is not None else dataframe
         dataframe = dataframe.where(dataframe["cost"] <= cost) if cost is not None else dataframe
         dataframe = dataframe.where(dataframe["size"] >= size) if size is not None else dataframe
         dataframe = dataframe.where(dataframe["interest"] >= interest) if interest is not None else dataframe
@@ -155,11 +149,11 @@ class ValuationSaver(Saver):
     def execute(self, contents, *args, **kwargs):
         current, ticker, expire, strategy, valuation, dataframe = contents
         assert isinstance(dataframe, pd.DataFrame)
-        current_folder = os.path.join(self.repository, str(current.strftime("%Y%m%d_%H%M%S")))
-        with self.locks[current_folder]:
-            if not os.path.isdir(current_folder):
-                os.mkdir(current_folder)
-        valuation_folder = os.path.join(current_folder, str(valuation).replace("|", "_"))
+        date_folder = os.path.join(self.repository, str(current.strftime("%Y%m%d")))
+        with self.locks[date_folder]:
+            if not os.path.isdir(date_folder):
+                os.mkdir(date_folder)
+        valuation_folder = os.path.join(date_folder, str(valuation).replace("|", "_"))
         with self.locks[valuation_folder]:
             if not os.path.isdir(valuation_folder):
                 os.mkdir(valuation_folder)
@@ -185,12 +179,12 @@ class ValuationLoader(Loader):
 
     def execute(self, *args, tickers, expires, **kwargs):
         TickerExpire = ntuple("TickerExpire", "ticker expire")
-        for current_name in os.listdir(self.repository):
-            current = Datetime.strptime(os.path.splitext(current_name)[0], "%Y%m%d_%H%M%S")
-            current_folder = os.path.join(self.repository, current_name)
-            for valuation_name in os.listdir(current_folder):
+        for today_name in os.listdir(self.repository):
+            today = Datetime.strptime(os.path.splitext(today_name)[0], "%Y%m%d")
+            today_folder = os.path.join(self.repository, today_name)
+            for valuation_name in os.listdir(today_folder):
                 valuation = Valuations[str(valuation_name).replace("_", "|")]
-                valuation_folder = os.path.join(current_folder, valuation_name)
+                valuation_folder = os.path.join(today_folder, valuation_name)
                 for strategy_name in os.listdir(valuation_folder):
                     strategy = Strategies[str(strategy_name).replace("_", "|")]
                     strategy_folder = os.path.join(valuation_folder, strategy_name)
@@ -205,7 +199,7 @@ class ValuationLoader(Loader):
                         ticker_expire_file = os.path.join(strategy_folder, ticker_expire_filename)
                         with self.locks[ticker_expire_file]:
                             dataframe = self.read(file=ticker_expire_file, filetype=pd.DataFrame, datatypes=self.columns.datatypes, datetypes=self.columns.datetypes)
-                            yield current, ticker, expire, valuation, strategy, dataframe
+                            yield today, ticker, expire, valuation, strategy, dataframe
 
 
 class ValuationWrapper(object):
@@ -242,6 +236,17 @@ class ValuationResults(object):
 
     def __getitem__(self, column):
         return ValuationWrapper(self.dataframe, column)
+
+    @property
+    def tau(self): return self.dataframe["tau"].min(), self.dataframe["tau"].max()
+    @property
+    def weights(self): return self.dataframe["cost"] / self.cost
+    @property
+    def apy(self): return self.dataframe["apy"] @ self.weights
+    @property
+    def npv(self): return self.dataframe["npv"].sum()
+    @property
+    def cost(self): return self.dataframe["cost"].sum()
 
     @property
     def columns(self): return self.__columns

@@ -69,26 +69,18 @@ class Strategies(object, metaclass=StrategiesMeta):
 
 
 class StrategyCalculation(Calculation):
-    pα = source("pα", str(Securities.Option.Put.Long), position=str(Securities.Option.Put.Long), variables={"τ": "tau", "w": "price", "k": "strike", "q": "size", "i": "interest"})
-    pβ = source("pβ", str(Securities.Option.Put.Short), position=str(Securities.Option.Put.Short), variables={"τ": "tau", "w": "price", "k": "strike", "q": "size", "i": "interest"})
-    cα = source("cα", str(Securities.Option.Call.Long), position=str(Securities.Option.Call.Long), variables={"τ": "tau", "w": "price", "k": "strike", "q": "size", "i": "interest"})
-    cβ = source("cβ", str(Securities.Option.Call.Short), position=str(Securities.Option.Call.Short), variables={"τ": "tau", "w": "price", "k": "strike", "q": "size", "i": "interest"})
-    sα = source("sα", str(Securities.Stock.Long), position=str(Securities.Stock.Long), variables={"w": "price", "q": "size"})
-    sβ = source("sβ", str(Securities.Stock.Short), position=str(Securities.Stock.Short), variables={"w": "price", "q": "size"})
+    pα = source("pα", str(Securities.Option.Put.Long), position=str(Securities.Option.Put.Long), variables={"τ": "tau", "w": "price", "k": "strike", "q": "size", "i": "interest"}, destination=True)
+    pβ = source("pβ", str(Securities.Option.Put.Short), position=str(Securities.Option.Put.Short), variables={"τ": "tau", "w": "price", "k": "strike", "q": "size", "i": "interest"}, destination=True)
+    cα = source("cα", str(Securities.Option.Call.Long), position=str(Securities.Option.Call.Long), variables={"τ": "tau", "w": "price", "k": "strike", "q": "size", "i": "interest"}, destination=True)
+    cβ = source("cβ", str(Securities.Option.Call.Short), position=str(Securities.Option.Call.Short), variables={"τ": "tau", "w": "price", "k": "strike", "q": "size", "i": "interest"}, destination=True)
+    sα = source("sα", str(Securities.Stock.Long), position=str(Securities.Stock.Long), variables={"w": "price", "q": "size"}, destination=True)
+    sβ = source("sβ", str(Securities.Stock.Short), position=str(Securities.Stock.Short), variables={"w": "price", "q": "size"}, destination=True)
     ε = constant("ε", "fees", position="fees")
 
     def execute(self, *args, feeds, fees, **kwargs):
         yield self.τ(**feeds, fees=fees)
         yield self.wo(**feeds, fees=fees)
         yield self.wτ(**feeds, fees=fees)
-        yield self["pα"].k(**feeds)
-        yield self["pβ"].k(**feeds)
-        yield self["cα"].k(**feeds)
-        yield self["cβ"].k(**feeds)
-        yield self["pα"].w(**feeds)
-        yield self["pβ"].w(**feeds)
-        yield self["cα"].w(**feeds)
-        yield self["cβ"].w(**feeds)
 
 class StrangleCalculation(StrategyCalculation): pass
 class VerticalCalculation(StrategyCalculation): pass
