@@ -171,9 +171,9 @@ class ValuationLoader(Loader):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         Columns = ntuple("Columns", "datetypes datatypes")
-        datetypes = ["date", "expire"]
+        datetypes = ["date", "expire", "current"]
         datatypes = {"ticker": str, "tau": np.int16}
-        datatypes.update({"spot": np.float32, "minimum": np.float32, "maximum": np.float32, "current": np.float32})
+        datatypes.update({"spot": np.float32, "future": np.float32})
         datatypes.update({"income": np.float32, "cost": np.float32, "npv": np.float32, "apy": np.float32})
         self.columns = Columns(datetypes, datatypes)
 
@@ -202,74 +202,72 @@ class ValuationLoader(Loader):
                             yield today, ticker, expire, valuation, strategy, dataframe
 
 
-class ValuationWrapper(object):
-    def __init__(self, dataframe, column):
-        assert isinstance(dataframe, pd.DataFrame)
-        self.__dataframe = dataframe[["strategy", "valuation", "ticker", "tau", "cost", "apy"]]
-        self.__column = column
-
-    def __eq__(self, value): return self.dataframe.where(self.dataframe[self.column] == value)
-    def __ne__(self, value): return self.dataframe.where(self.dataframe[self.column] != value)
-    def __ge__(self, value): return self.dataframe.where(self.dataframe[self.column] >= value)
-    def __le__(self, value): return self.dataframe.where(self.dataframe[self.column] <= value)
-    def __gt__(self, value): return self.dataframe.where(self.dataframe[self.column] > value)
-    def __lt__(self, value): return self.dataframe.where(self.dataframe[self.column] < value)
-
-    @property
-    def dataframe(self): return self.__dataframe
-    @property
-    def column(self): return self.__column
+# class ValuationAnalysis(Processor):
+#     def execute(self, contents, *args, **kwargs):
+#         current, ticker, expire, strategy, valuation, dataframe = contents
+#         assert isinstance(dataframe, pd.DataFrame)
+#         dataframe["strategy"] = str(strategy)
+#         dataframe["valuation"] = str(valuation)
+#         self.results(dataframe)
+#
+#     @property
+#     def results(self): return self.__results
 
 
-class ValuationResults(object):
-    def __bool__(self): return not self.dataframe.empty
-    def __init__(self, dataframe=None):
-        assert isinstance(dataframe, (pd.DataFrame, type(None)))
-        columns = ["strategy", "valuation", "ticker", "tau", "cost", "apy"]
-        self.__dataframe = dataframe[columns] if dataframe is not None else pd.DataFrame(columns=columns)
-        self.__columns = columns
-
-    def __call__(self, dataframe):
-        assert isinstance(dataframe, (pd.DataFrame, type(None)))
-        dataframe = dataframe[self.columns]
-        self.dataframe = pd.concat([self.dataframe, dataframe], axis=0)
-
-    def __getitem__(self, column):
-        return ValuationWrapper(self.dataframe, column)
-
-    @property
-    def tau(self): return self.dataframe["tau"].min(), self.dataframe["tau"].max()
-    @property
-    def weights(self): return self.dataframe["cost"] / self.cost
-    @property
-    def apy(self): return self.dataframe["apy"] @ self.weights
-    @property
-    def npv(self): return self.dataframe["npv"].sum()
-    @property
-    def cost(self): return self.dataframe["cost"].sum()
-
-    @property
-    def columns(self): return self.__columns
-    @property
-    def dataframe(self): return self.__dataframe
-    @dataframe.setter
-    def dataframe(self, dataframe): self.__dataframe = dataframe
+# class ValuationWrapper(object):
+#     def __init__(self, dataframe, column):
+#         assert isinstance(dataframe, pd.DataFrame)
+#         self.__dataframe = dataframe[["strategy", "valuation", "ticker", "tau", "cost", "apy"]]
+#         self.__column = column
+#
+#     def __eq__(self, value): return self.dataframe.where(self.dataframe[self.column] == value)
+#     def __ne__(self, value): return self.dataframe.where(self.dataframe[self.column] != value)
+#     def __ge__(self, value): return self.dataframe.where(self.dataframe[self.column] >= value)
+#     def __le__(self, value): return self.dataframe.where(self.dataframe[self.column] <= value)
+#     def __gt__(self, value): return self.dataframe.where(self.dataframe[self.column] > value)
+#     def __lt__(self, value): return self.dataframe.where(self.dataframe[self.column] < value)
+#
+#     @property
+#     def dataframe(self): return self.__dataframe
+#     @property
+#     def column(self): return self.__column
 
 
-class ValuationAnalysis(Processor):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.__results = ValuationResults()
+# class ValuationResults(object):
+#     def __bool__(self): return not self.dataframe.empty
+#     def __init__(self, dataframe=None):
+#         assert isinstance(dataframe, (pd.DataFrame, type(None)))
+#         columns = ["strategy", "valuation", "ticker", "tau", "cost", "apy"]
+#         self.__dataframe = dataframe[columns] if dataframe is not None else pd.DataFrame(columns=columns)
+#         self.__columns = columns
+#
+#     def __call__(self, dataframe):
+#         assert isinstance(dataframe, (pd.DataFrame, type(None)))
+#         dataframe = dataframe[self.columns]
+#         self.dataframe = pd.concat([self.dataframe, dataframe], axis=0)
+#
+#     def __getitem__(self, column):
+#         return ValuationWrapper(self.dataframe, column)
+#
+#     @property
+#     def tau(self): return self.dataframe["tau"].min(), self.dataframe["tau"].max()
+#     @property
+#     def weights(self): return self.dataframe["cost"] / self.cost
+#     @property
+#     def apy(self): return self.dataframe["apy"] @ self.weights
+#     @property
+#     def npv(self): return self.dataframe["npv"].sum()
+#     @property
+#     def cost(self): return self.dataframe["cost"].sum()
+#
+#     @property
+#     def columns(self): return self.__columns
+#     @property
+#     def dataframe(self): return self.__dataframe
+#     @dataframe.setter
+#     def dataframe(self, dataframe): self.__dataframe = dataframe
 
-    def execute(self, contents, *args, **kwargs):
-        current, ticker, expire, strategy, valuation, dataframe = contents
-        assert isinstance(dataframe, pd.DataFrame)
-        dataframe["strategy"] = str(strategy)
-        dataframe["valuation"] = str(valuation)
-        self.results(dataframe)
 
-    @property
-    def results(self): return self.__results
 
 
 
