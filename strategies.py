@@ -8,20 +8,21 @@ Created on Weds Jul 19 2023
 
 import numpy as np
 import xarray as xr
+import pandas as pd
 from enum import IntEnum
 from collections import namedtuple as ntuple
 from collections import OrderedDict as ODict
 
-from support.pipelines import Calculator
+from support.pipelines import Calculator, Processor
 from support.calculations import Calculation, equation, source, constant
-from support.dispatchers import typedispatcher
+from support.dispatchers import kwargsdispatcher, typedispatcher
 
 from finance.securities import Positions, Instruments, Securities
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
 __all__ = ["Strategy", "Strategies", "Calculations"]
-__all__ += ["StrategyCalculator"]
+__all__ += ["StrategyParser", "StrategyCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
@@ -157,6 +158,34 @@ class Calculations(object, metaclass=CalculationsMeta):
     pass
 
 
+class StrategyParser(Processor):
+    def execute(self, contents, *args, **kwargs):
+        current, ticker, expire, dataframes = contents
+        assert isinstance(dataframes, dict)
+        assert all([isinstance(security, pd.DataFrame) for security in dataframes.values()])
+        datasets = {security: self.parser(dataframe, *args, security=security, **kwargs) for security, dataframe in dataframes.items()}
+        yield current, ticker, expire, datasets
+
+    @kwargsdispatcher("security")
+    def parser(self, *args, security, **kwargs): raise ValueError(str(security))
+
+    @parser.register.value(Securities.Stock.Long, Securities.Stock.Short)
+    def stock(self, dataframe, *args, **kwargs):
+        dataframe = dataframe.drop_duplicates(subset=["ticker", "date"], keep="last", inplace=False)
+        dataframe = dataframe.set_index(["ticker", "date"], inplace=False, drop=True)
+        dataset = xr.Dataset.from_dataframe(dataframe[["price", "size", "volume"]])
+        return dataset
+
+    @parser.register.value(Securities.Option.Put.Long, Securities.Option.Put.Short, Securities.Option.Call.Long, Securities.Option.Call.Short)
+    def option(self, dataframe, *args, security, **kwargs):
+        dataframe = dataframe.drop_duplicates(subset=["ticker", "date", "expire", "strike"], keep="last", inplace=False)
+        dataframe = dataframe.set_index(["ticker", "date", "expire", "strike"], inplace=False, drop=True)
+        dataset = xr.Dataset.from_dataframe(dataframe[["price", "size", "volume", "interest"]])
+        dataset = dataset.rename({"strike": str(security)})
+        dataset["strike"] = dataset[str(security)].expand_dims(["ticker", "date", "expire"])
+        return dataset
+
+
 class StrategyCalculator(Calculator, calculations=ODict(list(iter(Calculations)))):
     def execute(self, contents, *args, **kwargs):
         current, ticker, expire, datasets = contents
@@ -166,6 +195,7 @@ class StrategyCalculator(Calculator, calculations=ODict(list(iter(Calculations))
         for strategy, calculation in self.calculations.items():
             results = calculation(*args, feeds=feeds, **kwargs)
             yield current, ticker, expire, strategy, results
+
 
 
 

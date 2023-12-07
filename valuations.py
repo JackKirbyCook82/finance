@@ -25,7 +25,7 @@ from finance.strategies import Strategies
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
 __all__ = ["Valuation", "Valuations", "Calculations"]
-__all__ += ["ValuationProcessor", "ValuationCalculator", "ValuationAnalysis", "ValuationSaver", "ValuationLoader"]
+__all__ += ["ValuationCalculator", "ValuationFilter", "ValuationSaver", "ValuationLoader"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
@@ -113,25 +113,19 @@ class ValuationCalculator(Calculator, calculations=ODict(list(iter(Calculations)
         assert isinstance(dataset, xr.Dataset)
         for valuation, calculation in self.calculations.items():
             results = calculation(*args, feed=dataset, **kwargs)
+            results = results.to_dataframe()
+            results = results.reset_index(drop=False, inplace=False)
             yield current, ticker, expire, strategy, valuation, results
 
 
-class ValuationProcessor(Processor):
+class ValuationFilter(Processor):
     def execute(self, contents, *args, **kwargs):
-        current, ticker, expire, strategy, valuation, dataset = contents
-        assert isinstance(dataset, xr.Dataset)
-        dataframe = self.parser(dataset, *args, current=current, **kwargs)
-        dataframe = self.filter(dataframe, *args, **kwargs)
+        current, ticker, expire, strategy, valuation, dataframe = contents
         assert isinstance(dataframe, pd.DataFrame)
+        dataframe = self.filter(dataframe, *args, **kwargs)
         if dataframe.empty:
             return
         yield current, ticker, expire, strategy, valuation, dataframe
-
-    @staticmethod
-    def parser(dataset, *args, current, **kwargs):
-        dataframe = dataset.to_dataframe()
-        dataframe = dataframe.reset_index(drop=False, inplace=False)
-        return dataframe
 
     @staticmethod
     def filter(dataframe, *args, apy=None, npv=None, cost=None, size=None, interest=None, volume=None, **kwargs):
@@ -149,11 +143,11 @@ class ValuationSaver(Saver):
     def execute(self, contents, *args, **kwargs):
         current, ticker, expire, strategy, valuation, dataframe = contents
         assert isinstance(dataframe, pd.DataFrame)
-        date_folder = os.path.join(self.repository, str(current.strftime("%Y%m%d")))
-        with self.locks[date_folder]:
-            if not os.path.isdir(date_folder):
-                os.mkdir(date_folder)
-        valuation_folder = os.path.join(date_folder, str(valuation).replace("|", "_"))
+        current_folder = os.path.join(self.repository, str(current.strftime("%Y%m%d_%H%M%S")))
+        with self.locks[current_folder]:
+            if not os.path.isdir(current_folder):
+                os.mkdir(current_folder)
+        valuation_folder = os.path.join(current_folder, str(valuation).replace("|", "_"))
         with self.locks[valuation_folder]:
             if not os.path.isdir(valuation_folder):
                 os.mkdir(valuation_folder)
@@ -171,20 +165,20 @@ class ValuationLoader(Loader):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         Columns = ntuple("Columns", "datetypes datatypes")
-        datetypes = ["date", "expire", "current"]
-        datatypes = {"ticker": str, "tau": np.int16}
-        datatypes.update({"spot": np.float32, "future": np.float32})
-        datatypes.update({"income": np.float32, "cost": np.float32, "npv": np.float32, "apy": np.float32})
-        self.columns = Columns(datetypes, datatypes)
+        datatypes = {"ticker": str, "volume": np.float32, "size": np.float32, "interest": np.int32}
+        datatypes.update({"spot": np.float32, "future": np.float32, "tau": np.int16, "income": np.float32, "cost": np.float32, "npv": np.float32, "apy": np.float32})
+        self.columns = Columns(["date", "expire"], datatypes)
 
-    def execute(self, *args, tickers, expires, **kwargs):
+    def execute(self, *args, tickers=None, expires=None, dates=None, **kwargs):
         TickerExpire = ntuple("TickerExpire", "ticker expire")
-        for today_name in os.listdir(self.repository):
-            today = Datetime.strptime(os.path.splitext(today_name)[0], "%Y%m%d")
-            today_folder = os.path.join(self.repository, today_name)
-            for valuation_name in os.listdir(today_folder):
+        for current_name in os.listdir(self.repository):
+            current = Datetime.strptime(os.path.splitext(current_name)[0], "%Y%m%d_%H%M%S")
+            if current.date() not in dates and dates is not None:
+                continue
+            current_folder = os.path.join(self.repository, current_name)
+            for valuation_name in os.listdir(current_folder):
                 valuation = Valuations[str(valuation_name).replace("_", "|")]
-                valuation_folder = os.path.join(today_folder, valuation_name)
+                valuation_folder = os.path.join(current_folder, valuation_name)
                 for strategy_name in os.listdir(valuation_folder):
                     strategy = Strategies[str(strategy_name).replace("_", "|")]
                     strategy_folder = os.path.join(valuation_folder, strategy_name)
@@ -199,7 +193,15 @@ class ValuationLoader(Loader):
                         ticker_expire_file = os.path.join(strategy_folder, ticker_expire_filename)
                         with self.locks[ticker_expire_file]:
                             dataframe = self.read(file=ticker_expire_file, filetype=pd.DataFrame, datatypes=self.columns.datatypes, datetypes=self.columns.datetypes)
-                            yield today, ticker, expire, valuation, strategy, dataframe
+                            yield current, ticker, expire, valuation, strategy, dataframe
+
+
+
+
+
+
+
+
 
 
 # class ValuationAnalysis(Processor):

@@ -19,12 +19,12 @@ from collections import OrderedDict as ODict
 
 from support.pipelines import Calculator, Processor, Saver, Loader
 from support.calculations import Calculation, equation, source
-from support.dispatchers import kwargsdispatcher, typedispatcher
+from support.dispatchers import typedispatcher
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
 __all__ = ["DateRange", "Instruments", "Positions", "Security", "Securities", "Calculations"]
-__all__ += ["SecurityProcessor", "SecurityCalculator", "SecuritySaver", "SecurityLoader"]
+__all__ += ["SecuritySaver", "SecurityLoader", "SecurityFilter", "SecurityCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
@@ -139,54 +139,6 @@ class Calculations(object, metaclass=CalculationsMeta):
     pass
 
 
-class SecurityCalculator(Calculator, calculations=ODict(list(iter(Calculations)))):
-    def execute(self, contents, *args, **kwargs):
-        current, ticker, expire, datasets = contents
-        assert isinstance(datasets, dict)
-        assert all([isinstance(security, xr.Dataset) for security in datasets.values()])
-        feeds = {str(security): dataset for security, dataset in datasets.items()}
-        results = {security: calculation(*args, feed=feeds[str(security)], **kwargs) for security, calculation in self.calculations.items()}
-        yield current, ticker, expire, results
-
-
-class SecurityProcessor(Processor):
-    def execute(self, contents, *args, **kwargs):
-        current, ticker, expire, dataframes = contents
-        assert isinstance(dataframes, dict)
-        assert all([isinstance(security, pd.DataFrame) for security in dataframes.values()])
-        dataframes = {security: self.filter(dataframe, *args, security=security, **kwargs) for security, dataframe in dataframes.items()}
-        datasets = {security: self.parser(dataframe, *args, security=security, **kwargs) for security, dataframe in dataframes.items()}
-        yield current, ticker, expire, datasets
-
-    @staticmethod
-    def filter(dataframe, *args, size=None, interest=None, volume=None, **kwargs):
-        dataframe = dataframe.where(dataframe["size"] >= size) if bool(size) else dataframe
-        dataframe = dataframe.where(dataframe["interest"] >= interest) if bool(interest) else dataframe
-        dataframe = dataframe.where(dataframe["volume"] >= volume) if bool(volume) else dataframe
-        dataframe = dataframe.dropna(axis=0, how="all")
-        return dataframe
-
-    @kwargsdispatcher("security")
-    def parser(self, *args, security, **kwargs): raise ValueError(str(security))
-
-    @parser.register.value(Securities.Stock.Long, Securities.Stock.Short)
-    def stock(self, dataframe, *args, **kwargs):
-        dataframe = dataframe.drop_duplicates(subset=["ticker", "date"], keep="last", inplace=False)
-        dataframe = dataframe.set_index(["ticker", "date"], inplace=False, drop=True)
-        dataset = xr.Dataset.from_dataframe(dataframe[["price", "size", "volume"]])
-        return dataset
-
-    @parser.register.value(Securities.Option.Put.Long, Securities.Option.Put.Short, Securities.Option.Call.Long, Securities.Option.Call.Short)
-    def option(self, dataframe, *args, security, **kwargs):
-        index = str(security)
-        dataframe = dataframe.drop_duplicates(subset=["ticker", "date", "expire", "strike"], keep="last", inplace=False)
-        dataframe = dataframe.set_index(["ticker", "date", "expire", "strike"], inplace=False, drop=True)
-        dataset = xr.Dataset.from_dataframe(dataframe[["price", "size", "volume", "interest"]])
-        dataset = dataset.rename({"strike": index})
-        dataset["strike"] = dataset[index].expand_dims(["ticker", "date", "expire"])
-        return dataset
-
-
 class SecuritySaver(Saver):
     def execute(self, contents, *args, **kwargs):
         current, ticker, expire, dataframes = contents
@@ -211,19 +163,24 @@ class SecurityLoader(Loader):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         Columns = ntuple("Columns", "datetypes datatypes")
-        stocks = Columns(["date"], {"ticker": str, "price": np.float32, "size": np.float32})
-        options = Columns(["date", "expire"], {"ticker": str, "price": np.float32, "size": np.float32, "strike": np.float32, "interest": np.int32})
+        stocks = Columns(["date"], {"ticker": str, "price": np.float32, "volume": np.float32, "size": np.float32})
+        options = Columns(["date", "expire"], {"ticker": str, "strike": np.float32, "price": np.float32, "volume": np.float32, "size": np.float32, "interest": np.int32})
         self.columns = {Securities.Stock.Long: stocks, Securities.Stock.Short: stocks}
         self.columns.update({Securities.Option.Put.Long: options, Securities.Option.Put.Short: options})
         self.columns.update({Securities.Option.Call.Long: options, Securities.Option.Call.Short: options})
 
-    def execute(self, *args, tickers=None, expires=None, **kwargs):
+    def execute(self, *args, tickers=None, expires=None, dates=None, **kwargs):
         TickerExpire = ntuple("TickerExpire", "ticker expire")
+        function = lambda foldername: Datetime.strptime(foldername, "%Y%m%d_%H%M%S")
         security = lambda filename: Securities[str(filename).split(".")[0].replace("_", "|")]
         datatypes = lambda filename: self.columns[security(filename)].datatypes
         datetypes = lambda filename: self.columns[security(filename)].datetypes
-        for current_name in os.listdir(self.repository):
-            current = Datetime.strptime(os.path.splitext(current_name)[0], "%Y%m%d_%H%M%S")
+        file = lambda folder, filename: os.path.join(folder, filename)
+        reader = lambda folder, filename: self.read(file=file(folder, filename), filetype=pd.DataFrame, datatypes=datatypes(filename), datetypes=datetypes(filename))
+        for current_name in sorted(os.listdir(self.repository), key=function, reverse=False):
+            current = function(current_name)
+            if current.date() not in dates and dates is not None:
+                continue
             current_folder = os.path.join(self.repository, current_name)
             for ticker_expire_name in os.listdir(current_folder):
                 ticker_expire = TickerExpire(*str(ticker_expire_name).split("_"))
@@ -234,11 +191,44 @@ class SecurityLoader(Loader):
                 if expire not in expires and expires is not None:
                     continue
                 ticker_expire_folder = os.path.join(current_folder, ticker_expire_name)
-                file = lambda filename: os.path.join(ticker_expire_folder, filename)
-                reader = lambda filename: self.read(file=file(filename), filetype=pd.DataFrame, datatypes=datatypes(filename), datetypes=datetypes(filename))
                 with self.locks[ticker_expire_folder]:
-                    dataframes = {security(ticker_expire_filename): reader(ticker_expire_filename) for ticker_expire_filename in os.listdir(ticker_expire_folder)}
+                    dataframes = dict.fromkeys([security(ticker_expire_filename) for ticker_expire_filename in os.listdir(ticker_expire_folder)])
+                    for ticker_expire_filename in dataframes.keys():
+                        dataframes[security(ticker_expire_filename)] = reader(ticker_expire_folder, ticker_expire_filename)
                     yield current, ticker, expire, dataframes
+
+
+class SecurityFilter(Processor):
+    def execute(self, contents, *args, **kwargs):
+        current, ticker, expire, dataframes = contents
+        assert isinstance(dataframes, dict)
+        assert all([isinstance(security, pd.DataFrame) for security in dataframes.values()])
+        dataframes = {security: self.filter(dataframe, *args, security=security, **kwargs) for security, dataframe in dataframes.items()}
+        yield current, ticker, expire, dataframes
+
+    @staticmethod
+    def filter(dataframe, *args, size=None, interest=None, volume=None, **kwargs):
+        dataframe = dataframe.where(dataframe["size"] >= size) if bool(size) else dataframe
+        dataframe = dataframe.where(dataframe["interest"] >= interest) if bool(interest) else dataframe
+        dataframe = dataframe.where(dataframe["volume"] >= volume) if bool(volume) else dataframe
+        dataframe = dataframe.dropna(axis=0, how="all")
+        return dataframe
+
+
+class SecurityCalculator(Calculator, calculations=ODict(list(iter(Calculations)))):
+    def execute(self, contents, *args, **kwargs):
+        current, ticker, expire, datasets = contents
+        assert isinstance(datasets, dict)
+        assert all([isinstance(security, xr.Dataset) for security in datasets.values()])
+        feeds = {str(security): dataset for security, dataset in datasets.items()}
+        results = {security: calculation(*args, feed=feeds[str(security)], **kwargs) for security, calculation in self.calculations.items()}
+        yield current, ticker, expire, results
+
+
+
+
+
+
 
 
 
