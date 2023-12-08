@@ -93,18 +93,20 @@ class LongCalculation(PositionCalculation, ABC): pass
 class ShortCalculation(PositionCalculation, ABC): pass
 
 class StockCalculation(InstrumentCalculation):
-    Λ = source("Λ", "stock", position=0, variables={"to": "date", "w": "price", "q": "size"})
+    Λ = source("Λ", "stock", position=0, variables={"to": "date", "w": "price", "x": "size", "q": "volume"})
 
     def execute(self, *args, feed, **kwargs):
         yield self["Λ"].w(feed)
+        yield self["Λ"].x(feed)
 
 class OptionCalculation(InstrumentCalculation):
-    Λ = source("Λ", "option", position=0, variables={"to": "date", "w": "price", "q": "size", "tτ": "expire", "k": "strike", "i": "interest"})
+    Λ = source("Λ", "option", position=0, variables={"to": "date", "w": "price", "x": "size", "q": "volume", "tτ": "expire", "k": "strike", "i": "interest"})
     τ = equation("τ", "tau", np.int16, domain=("Λ.to", "Λ.tτ"), function=lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
 
     def execute(self, *args, feed, **kwargs):
         yield self["Λ"].w(feed)
         yield self["Λ"].k(feed)
+        yield self["Λ"].x(feed)
         yield self.τ(feed)
 
 class PutCalculation(OptionCalculation): pass

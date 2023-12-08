@@ -80,6 +80,7 @@ class StrategyCalculation(Calculation):
 
     def execute(self, *args, feeds, fees, **kwargs):
         yield self.τ(**feeds, fees=fees)
+        yield self.x(**feeds, fees=fees)
         yield self.wo(**feeds, fees=fees)
         yield self.wτ(**feeds, fees=fees)
 
@@ -89,8 +90,7 @@ class CollarCalculation(StrategyCalculation): pass
 
 class StrangleLongCalculation(StrangleCalculation):
     τ = equation("τ", "tau", np.int16, domain=("pα.τ", "cα.τ"), function=lambda τpα, τcα: τpα)
-    q = equation("q", "size", np.float32, domain=("pα.q", "cα.q"), function=lambda qpα, qcα: np.minimum.outer(qpα, qcα))
-    i = equation("i", "interest", np.int32, domain=("pα.i", "cα.i"), function=lambda ipα, icα: np.minimum.outer(ipα, icα))
+    x = equation("x", "size", np.float32, domain=("pα.x", "cα.x"), function=lambda qpα, qcα: np.minimum.outer(qpα, qcα))
 
     wo = equation("wo", "spot", np.float32, domain=("pα.w", "cα.w", "ε"), function=lambda wpα, wcα, ε: - np.add.outer(wpα, wcα) * 100 - ε)
     wτ = equation("wτ", "future", np.float32, domain=("pα.k", "cα.k", "ε"), function=lambda kpα, kcα, ε: + np.maximum(np.add.outer(kpα, -kcα), 0) * 100 - ε)
@@ -99,8 +99,7 @@ class StrangleLongCalculation(StrangleCalculation):
 
 class VerticalPutCalculation(VerticalCalculation):
     τ = equation("τ", "tau", np.int16, domain=("pα.τ", "pβ.τ"), function=lambda τpα, τpβ: τpα)
-    q = equation("q", "size", np.float32, domain=("pα.q", "pβ.q"), function=lambda qpα, qpβ: np.minimum.outer(qpα, qpβ))
-    i = equation("i", "interest", np.int32, domain=("pα.i", "pβ.i"), function=lambda ipα, ipβ: np.minimum.outer(ipα, ipβ))
+    x = equation("x", "size", np.float32, domain=("pα.x", "pβ.x"), function=lambda qpα, qpβ: np.minimum.outer(qpα, qpβ))
 
     wo = equation("wo", "spot", np.float32, domain=("pα.w", "pβ.w", "ε"), function=lambda wpα, wpβ, ε: - np.add.outer(wpα, -wpβ) * 100 - ε)
     wτ = equation("wτ", "future", np.float32, domain=("pα.k", "pβ.k", "ε"), function=lambda kpα, kpβ, ε: + np.minimum(np.add.outer(kpα, -kpβ), 0) * 100 - ε)
@@ -109,8 +108,7 @@ class VerticalPutCalculation(VerticalCalculation):
 
 class VerticalCallCalculation(VerticalCalculation):
     τ = equation("τ", "tau", np.int16, domain=("cα.τ", "cβ.τ"), function=lambda τcα, τcβ: τcα)
-    q = equation("q", "size", np.float32, domain=("cα.q", "cβ.q"), function=lambda qcα, qcβ: np.minimum.outer(qcα, qcβ))
-    i = equation("i", "interest", np.int32, domain=("cα.i", "cβ.i"), function=lambda icα, icβ: np.minimum.outer(icα, icβ))
+    x = equation("x", "size", np.float32, domain=("cα.x", "cβ.x"), function=lambda qcα, qcβ: np.minimum.outer(qcα, qcβ))
 
     wo = equation("wo", "spot", np.float32, domain=("cα.w", "cβ.w", "ε"), function=lambda wcα, wcβ, ε: - np.add.outer(wcα, -wcβ) * 100 - ε)
     wτ = equation("wτ", "future", np.float32, domain=("cα.k", "cβ.k", "ε"), function=lambda kcα, kcβ, ε: + np.minimum(np.add.outer(-kcα, kcβ), 0) * 100 - ε)
@@ -119,8 +117,7 @@ class VerticalCallCalculation(VerticalCalculation):
 
 class CollarLongCalculation(CollarCalculation):
     τ = equation("τ", "tau", np.int16, domain=("pα.τ", "cβ.τ"), function=lambda τpα, τcβ: τpα)
-    q = equation("q", "size", np.float32, domain=("pα.q", "cβ.q"), function=lambda qpα, qcβ: np.minimum.outer(qpα, qcβ))
-    i = equation("i", "interest", np.int32, domain=("pα.i", "cβ.i"), function=lambda ipα, icβ: np.minimum.outer(ipα, icβ))
+    x = equation("x", "size", np.float32, domain=("pα.x", "cβ.x"), function=lambda qpα, qcβ: np.minimum.outer(qpα, qcβ))
 
     wo = equation("wo", "spot", np.float32, domain=("pα.w", "cβ.w", "ε"), function=lambda wpα, wcβ, wsα, ε: (- np.add.outer(wpα, -wcβ) - wsα) * 100 - ε)
     wτ = equation("wτ", "future", np.float32, domain=("pα.k", "cβ.k", "ε"), function=lambda kpα, kcβ, ε: + np.minimum.outer(kpα, kcβ) * 100 - ε)
@@ -129,8 +126,7 @@ class CollarLongCalculation(CollarCalculation):
 
 class CollarShortCalculation(CollarCalculation):
     τ = equation("τ", "tau", np.int16, domain=("pβ.τ", "cα.τ"), function=lambda τpβ, τcα: τpβ)
-    q = equation("q", "size", np.float32, domain=("pβ.q", "cα.q"), function=lambda qpβ, qcα: np.minimum.outer(qpβ, qcα))
-    i = equation("i", "interest", np.int32, domain=("pβ.i", "cα.i"), function=lambda ipβ, icα: np.minimum.outer(ipβ, icα))
+    x = equation("x", "size", np.float32, domain=("pβ.x", "cα.x"), function=lambda qpβ, qcα: np.minimum.outer(qpβ, qcα))
 
     wo = equation("wo", "spot", np.float32, domain=("pβ.w", "cα.w", "ε"), function=lambda wpβ, wcα, wsβ, ε: (- np.add.outer(-wpβ, wcα) + wsβ) * 100 - ε)
     wτ = equation("wτ", "future", np.float32, domain=("pα.k", "cβ.k", "ε"), function=lambda kpα, kcβ, ε: + np.minimum.outer(kpα, kcβ) * 100 - ε)
