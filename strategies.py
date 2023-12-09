@@ -8,12 +8,11 @@ Created on Weds Jul 19 2023
 
 import numpy as np
 import xarray as xr
-import pandas as pd
 from enum import IntEnum
 from collections import namedtuple as ntuple
 from collections import OrderedDict as ODict
 
-from support.pipelines import Calculator, Processor
+from support.pipelines import Calculator
 from support.calculations import Calculation, equation, source, constant
 from support.dispatchers import kwargsdispatcher, typedispatcher
 
@@ -70,12 +69,12 @@ class Strategies(object, metaclass=StrategiesMeta):
 
 
 class StrategyCalculation(Calculation):
-    pα = source("pα", str(Securities.Option.Put.Long), position=str(Securities.Option.Put.Long), variables={"τ": "tau", "w": "price", "k": "strike", "q": "size", "i": "interest"}, destination=True)
-    pβ = source("pβ", str(Securities.Option.Put.Short), position=str(Securities.Option.Put.Short), variables={"τ": "tau", "w": "price", "k": "strike", "q": "size", "i": "interest"}, destination=True)
-    cα = source("cα", str(Securities.Option.Call.Long), position=str(Securities.Option.Call.Long), variables={"τ": "tau", "w": "price", "k": "strike", "q": "size", "i": "interest"}, destination=True)
-    cβ = source("cβ", str(Securities.Option.Call.Short), position=str(Securities.Option.Call.Short), variables={"τ": "tau", "w": "price", "k": "strike", "q": "size", "i": "interest"}, destination=True)
-    sα = source("sα", str(Securities.Stock.Long), position=str(Securities.Stock.Long), variables={"w": "price", "q": "size"}, destination=True)
-    sβ = source("sβ", str(Securities.Stock.Short), position=str(Securities.Stock.Short), variables={"w": "price", "q": "size"}, destination=True)
+    pα = source("pα", str(Securities.Option.Put.Long), position=str(Securities.Option.Put.Long), variables={"τ": "tau", "w": "price", "k": "strike", "x": "size"}, destination=True)
+    pβ = source("pβ", str(Securities.Option.Put.Short), position=str(Securities.Option.Put.Short), variables={"τ": "tau", "w": "price", "k": "strike", "x": "size"}, destination=True)
+    cα = source("cα", str(Securities.Option.Call.Long), position=str(Securities.Option.Call.Long), variables={"τ": "tau", "w": "price", "k": "strike", "x": "size"}, destination=True)
+    cβ = source("cβ", str(Securities.Option.Call.Short), position=str(Securities.Option.Call.Short), variables={"τ": "tau", "w": "price", "k": "strike", "x": "size"}, destination=True)
+    sα = source("sα", str(Securities.Stock.Long), position=str(Securities.Stock.Long), variables={"w": "price", "x": "size"}, destination=True)
+    sβ = source("sβ", str(Securities.Stock.Short), position=str(Securities.Stock.Short), variables={"w": "price", "x": "size"}, destination=True)
     ε = constant("ε", "fees", position="fees")
 
     def execute(self, *args, feeds, fees, **kwargs):
@@ -83,6 +82,10 @@ class StrategyCalculation(Calculation):
         yield self.x(**feeds, fees=fees)
         yield self.wo(**feeds, fees=fees)
         yield self.wτ(**feeds, fees=fees)
+        yield self["pα"].w(**feeds)
+        yield self["pβ"].w(**feeds)
+        yield self["cα"].w(**feeds)
+        yield self["cβ"].w(**feeds)
 
 class StrangleCalculation(StrategyCalculation): pass
 class VerticalCalculation(StrategyCalculation): pass
@@ -90,7 +93,7 @@ class CollarCalculation(StrategyCalculation): pass
 
 class StrangleLongCalculation(StrangleCalculation):
     τ = equation("τ", "tau", np.int16, domain=("pα.τ", "cα.τ"), function=lambda τpα, τcα: τpα)
-    x = equation("x", "size", np.float32, domain=("pα.x", "cα.x"), function=lambda qpα, qcα: np.minimum.outer(qpα, qcα))
+    x = equation("x", "size", np.float32, domain=("pα.x", "cα.x"), function=lambda xpα, xcα: np.minimum.outer(xpα, xcα))
 
     wo = equation("wo", "spot", np.float32, domain=("pα.w", "cα.w", "ε"), function=lambda wpα, wcα, ε: - np.add.outer(wpα, wcα) * 100 - ε)
     wτ = equation("wτ", "future", np.float32, domain=("pα.k", "cα.k", "ε"), function=lambda kpα, kcα, ε: + np.maximum(np.add.outer(kpα, -kcα), 0) * 100 - ε)
@@ -99,7 +102,7 @@ class StrangleLongCalculation(StrangleCalculation):
 
 class VerticalPutCalculation(VerticalCalculation):
     τ = equation("τ", "tau", np.int16, domain=("pα.τ", "pβ.τ"), function=lambda τpα, τpβ: τpα)
-    x = equation("x", "size", np.float32, domain=("pα.x", "pβ.x"), function=lambda qpα, qpβ: np.minimum.outer(qpα, qpβ))
+    x = equation("x", "size", np.float32, domain=("pα.x", "pβ.x"), function=lambda xpα, xpβ: np.minimum.outer(xpα, xpβ))
 
     wo = equation("wo", "spot", np.float32, domain=("pα.w", "pβ.w", "ε"), function=lambda wpα, wpβ, ε: - np.add.outer(wpα, -wpβ) * 100 - ε)
     wτ = equation("wτ", "future", np.float32, domain=("pα.k", "pβ.k", "ε"), function=lambda kpα, kpβ, ε: + np.minimum(np.add.outer(kpα, -kpβ), 0) * 100 - ε)
@@ -108,7 +111,7 @@ class VerticalPutCalculation(VerticalCalculation):
 
 class VerticalCallCalculation(VerticalCalculation):
     τ = equation("τ", "tau", np.int16, domain=("cα.τ", "cβ.τ"), function=lambda τcα, τcβ: τcα)
-    x = equation("x", "size", np.float32, domain=("cα.x", "cβ.x"), function=lambda qcα, qcβ: np.minimum.outer(qcα, qcβ))
+    x = equation("x", "size", np.float32, domain=("cα.x", "cβ.x"), function=lambda xcα, xcβ: np.minimum.outer(xcα, xcβ))
 
     wo = equation("wo", "spot", np.float32, domain=("cα.w", "cβ.w", "ε"), function=lambda wcα, wcβ, ε: - np.add.outer(wcα, -wcβ) * 100 - ε)
     wτ = equation("wτ", "future", np.float32, domain=("cα.k", "cβ.k", "ε"), function=lambda kcα, kcβ, ε: + np.minimum(np.add.outer(-kcα, kcβ), 0) * 100 - ε)
@@ -117,7 +120,7 @@ class VerticalCallCalculation(VerticalCalculation):
 
 class CollarLongCalculation(CollarCalculation):
     τ = equation("τ", "tau", np.int16, domain=("pα.τ", "cβ.τ"), function=lambda τpα, τcβ: τpα)
-    x = equation("x", "size", np.float32, domain=("pα.x", "cβ.x"), function=lambda qpα, qcβ: np.minimum.outer(qpα, qcβ))
+    x = equation("x", "size", np.float32, domain=("pα.x", "cβ.x"), function=lambda xpα, xcβ: np.minimum.outer(xpα, xcβ))
 
     wo = equation("wo", "spot", np.float32, domain=("pα.w", "cβ.w", "ε"), function=lambda wpα, wcβ, wsα, ε: (- np.add.outer(wpα, -wcβ) - wsα) * 100 - ε)
     wτ = equation("wτ", "future", np.float32, domain=("pα.k", "cβ.k", "ε"), function=lambda kpα, kcβ, ε: + np.minimum.outer(kpα, kcβ) * 100 - ε)
@@ -126,7 +129,7 @@ class CollarLongCalculation(CollarCalculation):
 
 class CollarShortCalculation(CollarCalculation):
     τ = equation("τ", "tau", np.int16, domain=("pβ.τ", "cα.τ"), function=lambda τpβ, τcα: τpβ)
-    x = equation("x", "size", np.float32, domain=("pβ.x", "cα.x"), function=lambda qpβ, qcα: np.minimum.outer(qpβ, qcα))
+    x = equation("x", "size", np.float32, domain=("pβ.x", "cα.x"), function=lambda xpβ, xcα: np.minimum.outer(xpβ, xcα))
 
     wo = equation("wo", "spot", np.float32, domain=("pβ.w", "cα.w", "ε"), function=lambda wpβ, wcα, wsβ, ε: (- np.add.outer(-wpβ, wcα) + wsβ) * 100 - ε)
     wτ = equation("wτ", "future", np.float32, domain=("pα.k", "cβ.k", "ε"), function=lambda kpα, kcβ, ε: + np.minimum.outer(kpα, kcβ) * 100 - ε)
@@ -154,43 +157,30 @@ class Calculations(object, metaclass=CalculationsMeta):
     pass
 
 
-class StrategyParser(Processor):
-    def execute(self, contents, *args, **kwargs):
-        current, ticker, expire, dataframes = contents
-        assert isinstance(dataframes, dict)
-        assert all([isinstance(security, pd.DataFrame) for security in dataframes.values()])
-        datasets = {security: self.parser(dataframe, *args, security=security, **kwargs) for security, dataframe in dataframes.items()}
-        yield current, ticker, expire, datasets
-
-    @kwargsdispatcher("security")
-    def parser(self, *args, security, **kwargs): raise ValueError(str(security))
-
-    @parser.register.value(Securities.Stock.Long, Securities.Stock.Short)
-    def stock(self, dataframe, *args, **kwargs):
-        dataframe = dataframe.drop_duplicates(subset=["ticker", "date"], keep="last", inplace=False)
-        dataframe = dataframe.set_index(["ticker", "date"], inplace=False, drop=True)
-        dataset = xr.Dataset.from_dataframe(dataframe[["price", "size", "volume"]])
-        return dataset
-
-    @parser.register.value(Securities.Option.Put.Long, Securities.Option.Put.Short, Securities.Option.Call.Long, Securities.Option.Call.Short)
-    def option(self, dataframe, *args, security, **kwargs):
-        dataframe = dataframe.drop_duplicates(subset=["ticker", "date", "expire", "strike"], keep="last", inplace=False)
-        dataframe = dataframe.set_index(["ticker", "date", "expire", "strike"], inplace=False, drop=True)
-        dataset = xr.Dataset.from_dataframe(dataframe[["price", "size", "volume", "interest"]])
-        dataset = dataset.rename({"strike": str(security)})
-        dataset["strike"] = dataset[str(security)].expand_dims(["ticker", "date", "expire"])
-        return dataset
-
-
 class StrategyCalculator(Calculator, calculations=ODict(list(iter(Calculations)))):
     def execute(self, contents, *args, **kwargs):
         current, ticker, expire, datasets = contents
         assert isinstance(datasets, dict)
         assert all([isinstance(security, xr.Dataset) for security in datasets.values()])
-        feeds = {str(security): dataset for security, dataset in datasets.items()}
+        datasets = {security: self.parser(dataset, *args, security=security, **kwargs) for security, dataset in datasets.items()}
         for strategy, calculation in self.calculations.items():
+            if not all([security in datasets.keys() for security in strategy.securities]):
+                continue
+            feeds = {str(security): datasets[security] for security in strategy.securities}
             results = calculation(*args, feeds=feeds, **kwargs)
             yield current, ticker, expire, strategy, results
+
+    @kwargsdispatcher("security")
+    def parser(self, dataset, *args, security, **kwargs): raise ValueError(str(security))
+
+    @parser.register.value(Securities.Stock.Long, Securities.Stock.Short)
+    def stock(self, dataset, *args, **kwargs): return dataset
+
+    @parser.register.value(Securities.Option.Put.Long, Securities.Option.Put.Short, Securities.Option.Call.Long, Securities.Option.Call.Short)
+    def option(self, dataset, *args, security, **kwargs):
+        dataset = dataset.rename({"strike": str(security)})
+        dataset["strike"] = dataset[str(security)].expand_dims(["ticker", "date", "expire"])
+        return dataset
 
 
 
