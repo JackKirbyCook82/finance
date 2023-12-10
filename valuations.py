@@ -65,7 +65,7 @@ class ValuationCalculation(Calculation):
     pβ = source("pβ", str(Securities.Option.Put.Short), position=0, variables={"w": "price", "k": "strike"}, source=True, destination=True)
     cα = source("cα", str(Securities.Option.Call.Long), position=0, variables={"w": "price", "k": "strike"}, source=True, destination=True)
     cβ = source("cβ", str(Securities.Option.Call.Short), position=0, variables={"w": "price", "k": "strike"}, source=True, destination=True)
-    Λ = source("Λ", "valuation", position=0, variables={"wo": "spot", "wτ": "future", "τ": "tau", "q": "size"})
+    Λ = source("Λ", "valuation", position=0, variables={"wo": "spot", "wτ": "future", "τ": "tau", "x": "size"})
     ρ = constant("ρ", "discount", position="discount")
 
     inc = equation("inc", "income", np.float32, domain=("Λ.vo", "Λ.vτ"), function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
@@ -83,10 +83,15 @@ class ValuationCalculation(Calculation):
         yield self["Λ"].wo(feed)
         yield self["Λ"].wτ(feed)
         yield self["Λ"].τ(feed)
+        yield self["Λ"].x(feed)
         yield self["pα"].w(feed)
         yield self["pβ"].w(feed)
         yield self["cα"].w(feed)
         yield self["cβ"].w(feed)
+        yield self["pα"].k(feed)
+        yield self["pβ"].k(feed)
+        yield self["cα"].k(feed)
+        yield self["cβ"].k(feed)
 
 class ArbitrageCalculation(ValuationCalculation):
     Λ = source("Λ", "arbitrage", position=0, variables={"vo": "spot", "vτ": "future"})

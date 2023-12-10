@@ -86,69 +86,40 @@ class StrategyCalculation(Calculation):
         yield self["pβ"].w(**feeds)
         yield self["cα"].w(**feeds)
         yield self["cβ"].w(**feeds)
+        yield self["pα"].k(**feeds)
+        yield self["pβ"].k(**feeds)
+        yield self["cα"].k(**feeds)
+        yield self["cβ"].k(**feeds)
 
 class StrangleCalculation(StrategyCalculation): pass
 class VerticalCalculation(StrategyCalculation): pass
 class CollarCalculation(StrategyCalculation): pass
 
-class StrangleLongCalculation(StrangleCalculation):
-    τ = equation("τ", "tau", np.int16, domain=("pα.τ", "cα.τ"), function=lambda τpα, τcα: τpα)
-    x = equation("x", "size", np.float32, domain=("pα.x", "cα.x"), function=lambda xpα, xcα: np.minimum.outer(xpα, xcα))
-
-    wo = equation("wo", "spot", np.float32, domain=("pα.w", "cα.w", "ε"), function=lambda wpα, wcα, ε: - np.add.outer(wpα, wcα) * 100 - ε)
-    wτ = equation("wτ", "future", np.float32, domain=("pα.k", "cα.k", "ε"), function=lambda kpα, kcα, ε: + np.maximum(np.add.outer(kpα, -kcα), 0) * 100 - ε)
-    vmn = equation("vmn", "minimum", np.float32, domain=("pα.k", "cα.k", "ε"), function=lambda kpα, kcα, ε: + np.maximum(np.add.outer(kpα, -kcα), 0) * 100 - ε)
-    vmx = equation("vmx", "maximum", np.float32, domain=("pα.k", "cα.k", "ε"), function=lambda kpα, kcα, ε: + np.inf * 100 - ε)
 
 class VerticalPutCalculation(VerticalCalculation):
     τ = equation("τ", "tau", np.int16, domain=("pα.τ", "pβ.τ"), function=lambda τpα, τpβ: τpα)
-    x = equation("x", "size", np.float32, domain=("pα.x", "pβ.x"), function=lambda xpα, xpβ: np.minimum.outer(xpα, xpβ))
+    x = equation("x", "size", np.float32, domain=("pα.x", "pβ.x"), function=lambda xpα, xpβ: np.minimum(xpα, xpβ))
 
-    wo = equation("wo", "spot", np.float32, domain=("pα.w", "pβ.w", "ε"), function=lambda wpα, wpβ, ε: - np.add.outer(wpα, -wpβ) * 100 - ε)
-    wτ = equation("wτ", "future", np.float32, domain=("pα.k", "pβ.k", "ε"), function=lambda kpα, kpβ, ε: + np.minimum(np.add.outer(kpα, -kpβ), 0) * 100 - ε)
-    vmn = equation("vmn", "minimum", np.float32, domain=("pα.k", "pβ.k", "ε"), function=lambda kpα, kpβ, ε: + np.minimum(np.add.outer(kpα, -kpβ), 0) * 100 - ε)
-    vmx = equation("vmx", "maximum", np.float32, domain=("pα.k", "pβ.k", "ε"), function=lambda kpα, kpβ, ε: + np.maximum(np.add.outer(kpα, -kpβ), 0) * 100 - ε)
+    wo = equation("wo", "spot", np.float32, domain=("pα.w", "pβ.w", "ε"), function=lambda wpα, wpβ, ε: (wpβ - wpα) * 100 - ε)
+    wτ = equation("wτ", "future", np.float32, domain=("pα.k", "pβ.k", "ε"), function=lambda kpα, kpβ, ε: np.minimum(kpα - kpβ, 0) * 100 - ε)
 
 class VerticalCallCalculation(VerticalCalculation):
     τ = equation("τ", "tau", np.int16, domain=("cα.τ", "cβ.τ"), function=lambda τcα, τcβ: τcα)
-    x = equation("x", "size", np.float32, domain=("cα.x", "cβ.x"), function=lambda xcα, xcβ: np.minimum.outer(xcα, xcβ))
+    x = equation("x", "size", np.float32, domain=("cα.x", "cβ.x"), function=lambda xcα, xcβ: np.minimum(xcα, xcβ))
 
-    wo = equation("wo", "spot", np.float32, domain=("cα.w", "cβ.w", "ε"), function=lambda wcα, wcβ, ε: - np.add.outer(wcα, -wcβ) * 100 - ε)
-    wτ = equation("wτ", "future", np.float32, domain=("cα.k", "cβ.k", "ε"), function=lambda kcα, kcβ, ε: + np.minimum(np.add.outer(-kcα, kcβ), 0) * 100 - ε)
-    vmn = equation("vmn", "minimum", np.float32, domain=("cα.k", "cβ.k", "ε"), function=lambda kcα, kcβ, ε: + np.minimum(np.add.outer(-kcα, kcβ), 0) * 100 - ε)
-    vmx = equation("vmx", "maximum", np.float32, domain=("cα.k", "cβ.k", "ε"), function=lambda kcα, kcβ, ε: + np.maximum(np.add.outer(-kcα, kcβ), 0) * 100 - ε)
-
-class CollarLongCalculation(CollarCalculation):
-    τ = equation("τ", "tau", np.int16, domain=("pα.τ", "cβ.τ"), function=lambda τpα, τcβ: τpα)
-    x = equation("x", "size", np.float32, domain=("pα.x", "cβ.x"), function=lambda xpα, xcβ: np.minimum.outer(xpα, xcβ))
-
-    wo = equation("wo", "spot", np.float32, domain=("pα.w", "cβ.w", "ε"), function=lambda wpα, wcβ, wsα, ε: (- np.add.outer(wpα, -wcβ) - wsα) * 100 - ε)
-    wτ = equation("wτ", "future", np.float32, domain=("pα.k", "cβ.k", "ε"), function=lambda kpα, kcβ, ε: + np.minimum.outer(kpα, kcβ) * 100 - ε)
-    vmn = equation("vmn", "minimum", np.float32, domain=("pα.k", "cβ.k", "ε"), function=lambda kpα, kcβ, ε: + np.minimum.outer(kpα, kcβ) * 100 - ε)
-    vmx = equation("vmx", "maximum", np.float32, domain=("pα.k", "cβ.k", "ε"), function=lambda kpα, kcβ, ε: + np.maximum.outer(kpα, kcβ) * 100 - ε)
-
-class CollarShortCalculation(CollarCalculation):
-    τ = equation("τ", "tau", np.int16, domain=("pβ.τ", "cα.τ"), function=lambda τpβ, τcα: τpβ)
-    x = equation("x", "size", np.float32, domain=("pβ.x", "cα.x"), function=lambda xpβ, xcα: np.minimum.outer(xpβ, xcα))
-
-    wo = equation("wo", "spot", np.float32, domain=("pβ.w", "cα.w", "ε"), function=lambda wpβ, wcα, wsβ, ε: (- np.add.outer(-wpβ, wcα) + wsβ) * 100 - ε)
-    wτ = equation("wτ", "future", np.float32, domain=("pα.k", "cβ.k", "ε"), function=lambda kpα, kcβ, ε: + np.minimum.outer(kpα, kcβ) * 100 - ε)
-    vmn = equation("vmn", "minimum", np.float32, domain=("pβ.k", "cα.k", "ε"), function=lambda kpβ, kcα, ε: + np.minimum.outer(-kpβ, -kcα) * 100 - ε)
-    vmx = equation("vmx", "maximum", np.float32, domain=("pβ.k", "cα.k", "ε"), function=lambda kpβ, kcα, ε: + np.maximum.outer(-kpβ, -kcα) * 100 - ε)
+    wo = equation("wo", "spot", np.float32, domain=("cα.w", "cβ.w", "ε"), function=lambda wcα, wcβ, ε: (wcβ - wcα) * 100 - ε)
+    wτ = equation("wτ", "future", np.float32, domain=("cα.k", "cβ.k", "ε"), function=lambda kcα, kcβ, ε: + np.minimum(kcβ - kcα, 0) * 100 - ε)
 
 
 class CalculationsMeta(type):
     def __iter__(cls):
-        contents = {Strategies.Strangle.Long: StrangleLongCalculation}
-        contents.update({Strategies.Vertical.Put: VerticalPutCalculation, Strategies.Vertical.Call: VerticalCallCalculation})
-        contents.update({Strategies.Collar.Long: CollarLongCalculation, Strategies.Collar.Short: CollarShortCalculation})
+        contents = {Strategies.Vertical.Put: VerticalPutCalculation, Strategies.Vertical.Call: VerticalCallCalculation}
         return ((key, value) for key, value in contents.items())
 
     class Strangle:
-        Long = StrangleLongCalculation
+        pass
     class Collar:
-        Long = CollarLongCalculation
-        Short = CollarShortCalculation
+        pass
     class Vertical:
         Put = VerticalPutCalculation
         Call = VerticalCallCalculation
