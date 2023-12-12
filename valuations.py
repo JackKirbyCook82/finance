@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 from enum import IntEnum
+from itertools import product
 from datetime import datetime as Datetime
 from collections import namedtuple as ntuple
 from collections import OrderedDict as ODict
@@ -61,37 +62,26 @@ class Valuations(object, metaclass=ValuationsMeta):
 
 
 class ValuationCalculation(Calculation):
-    pα = source("pα", str(Securities.Option.Put.Long), position=0, variables={"w": "price", "k": "strike"}, source=True, destination=True)
-    pβ = source("pβ", str(Securities.Option.Put.Short), position=0, variables={"w": "price", "k": "strike"}, source=True, destination=True)
-    cα = source("cα", str(Securities.Option.Call.Long), position=0, variables={"w": "price", "k": "strike"}, source=True, destination=True)
-    cβ = source("cβ", str(Securities.Option.Call.Short), position=0, variables={"w": "price", "k": "strike"}, source=True, destination=True)
-    Λ = source("Λ", "valuation", position=0, variables={"wo": "spot", "wτ": "future", "τ": "tau", "x": "size"})
-    ρ = constant("ρ", "discount", position="discount")
-
     inc = equation("inc", "income", np.float32, domain=("Λ.vo", "Λ.vτ"), function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
     exp = equation("exp", "cost", np.float32, domain=("Λ.vo", "Λ.vτ"), function=lambda vo, vτ: + np.minimum(vo, 0) + np.minimum(vτ, 0))
     apy = equation("apy", "apy", np.float32, domain=("r", "Λ.τ"), function=lambda r, τ: np.power(r + 1, np.power(τ / 365, -1)) - 1)
     npv = equation("npv", "npv", np.float32, domain=("π", "Λ.τ", "ρ"), function=lambda π, τ, ρ: π * np.power(ρ / 365 + 1, τ))
     π = equation("π", "profit", np.float32, domain=("inc", "exp"), function=lambda inc, exp: inc + exp)
     r = equation("r", "return", np.float32, domain=("π", "exp"), function=lambda π, exp: π / - exp)
+    Λ = source("Λ", "valuation", position=0, variables={"τ": "tau", "x": "size", "wo": "spot", "wτ": "future", "τ": "tau", "x": "size", "sμ": "underlying"})
+    ρ = constant("ρ", "discount", position="discount")
 
     def execute(self, feed, *args, discount, **kwargs):
         yield self.inc(feed, discount=discount)
         yield self.exp(feed, discount=discount)
         yield self.npv(feed, discount=discount)
         yield self.apy(feed, discount=discount)
-        yield self["Λ"].wo(feed)
-        yield self["Λ"].wτ(feed)
         yield self["Λ"].τ(feed)
         yield self["Λ"].x(feed)
-        yield self["pα"].w(feed)
-        yield self["pβ"].w(feed)
-        yield self["cα"].w(feed)
-        yield self["cβ"].w(feed)
-        yield self["pα"].k(feed)
-        yield self["pβ"].k(feed)
-        yield self["cα"].k(feed)
-        yield self["cβ"].k(feed)
+        yield self["Λ"].wo(feed)
+        yield self["Λ"].wτ(feed)
+        yield self["Λ"].sμ(feed)
+
 
 class ArbitrageCalculation(ValuationCalculation):
     Λ = source("Λ", "arbitrage", position=0, variables={"vo": "spot", "vτ": "future"})
@@ -122,6 +112,10 @@ class ValuationCalculator(Calculator, calculations=ODict(list(iter(Calculations)
         assert isinstance(dataset, xr.Dataset)
         for valuation, calculation in self.calculations.items():
             results = calculation(dataset, *args, **kwargs)
+            for security, variable in product(list(Securities.options), ["price", "strike"]):
+                key = "|".join([str(security), str(variable)])
+                if key in dataset.data_vars:
+                    results[key] = dataset[key]
             results = results.to_dataframe()
             results = results.reset_index(drop=False, inplace=False)
             yield current, ticker, expire, strategy, valuation, results
@@ -203,9 +197,6 @@ class ValuationLoader(Loader):
                         with self.locks[ticker_expire_file]:
                             dataframe = self.read(file=ticker_expire_file, filetype=pd.DataFrame, datatypes=self.columns.datatypes, datetypes=self.columns.datetypes)
                             yield current, ticker, expire, valuation, strategy, dataframe
-
-
-
 
 
 

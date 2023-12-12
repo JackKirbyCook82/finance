@@ -72,6 +72,15 @@ class SecuritiesMeta(type):
     @retrieve.register(str)
     def string(cls, string): return {str(security): security for security in iter(cls)}[str(string).lower()]
 
+    @property
+    def stocks(cls): return iter([StockLong, StockShort])
+    @property
+    def options(cls): return iter([PutLong, PutShort, CallLong, CallShort])
+    @property
+    def puts(cls): return iter([PutLong, PutShort])
+    @property
+    def calls(cls): return iter([CallLong, CallShort])
+
     class Stock:
         Long = StockLong
         Short = StockShort
@@ -100,8 +109,8 @@ class StockCalculation(InstrumentCalculation):
         yield self["Λ"].x(feed)
 
 class OptionCalculation(InstrumentCalculation):
-    Λ = source("Λ", "option", position=0, variables={"to": "date", "w": "price", "x": "size", "q": "volume", "tτ": "expire", "i": "interest"})
     τ = equation("τ", "tau", np.int16, domain=("Λ.to", "Λ.tτ"), function=lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
+    Λ = source("Λ", "option", position=0, variables={"to": "date", "w": "price", "x": "size", "q": "volume", "tτ": "expire", "i": "interest"})
 
     def execute(self, feed, *args, **kwargs):
         yield self["Λ"].w(feed)
@@ -154,14 +163,14 @@ class SecurityFilter(Processor):
     @kwargsdispatcher("security")
     def filter(self, dataframe, *args, security, **kwargs): raise ValueError(str(security))
 
-    @filter.register.value(Securities.Stock.Long, Securities.Stock.Short)
+    @filter.register.value(*list(Securities.stocks))
     def stock(self, dataframe, *args, size=None, volume=None, **kwargs):
         dataframe = dataframe.where(dataframe["size"] >= size) if bool(size) else dataframe
         dataframe = dataframe.where(dataframe["volume"] >= volume) if bool(volume) else dataframe
         dataframe = dataframe.dropna(axis=0, how="all")
         return dataframe
 
-    @filter.register.value(Securities.Option.Put.Long, Securities.Option.Put.Short, Securities.Option.Call.Long, Securities.Option.Call.Short)
+    @filter.register.value(*list(Securities.options))
     def option(self, dataframe, *args, size=None, interest=None, volume=None, **kwargs):
         dataframe = dataframe.where(dataframe["interest"] >= interest) if bool(interest) else dataframe
         dataframe = dataframe.where(dataframe["size"] >= size) if bool(size) else dataframe
@@ -181,14 +190,14 @@ class SecurityParser(Processor):
     @kwargsdispatcher("security")
     def parser(self, dataframe, *args, security, **kwargs): raise ValueError(str(security))
 
-    @parser.register.value(Securities.Stock.Long, Securities.Stock.Short)
+    @parser.register.value(*list(Securities.stocks))
     def stock(self, dataframe, *args, **kwargs):
         dataframe = dataframe.drop_duplicates(subset=["ticker", "date"], keep="last", inplace=False)
         dataframe = dataframe.set_index(["ticker", "date"], inplace=False, drop=True)
         dataset = xr.Dataset.from_dataframe(dataframe[["price", "size"]])
         return dataset
 
-    @parser.register.value(Securities.Option.Put.Long, Securities.Option.Put.Short, Securities.Option.Call.Long, Securities.Option.Call.Short)
+    @parser.register.value(*list(Securities.options))
     def option(self, dataframe, *args, security, **kwargs):
         dataframe = dataframe.drop_duplicates(subset=["ticker", "date", "expire", "strike"], keep="last", inplace=False)
         dataframe = dataframe.set_index(["ticker", "date", "expire", "strike"], inplace=False, drop=True)
@@ -262,6 +271,7 @@ class SecurityLoader(Loader):
                     security_filenames = {security(security_filename): os.path.join(ticker_expire_folder, security_filename) for security_filename in os.listdir(ticker_expire_folder)}
                     dataframes = {key: reader(key, value) for key, value in security_filenames.items()}
                     yield current, ticker, expire, dataframes
+
 
 
 
