@@ -199,6 +199,32 @@ class ValuationLoader(Loader):
                             yield current, ticker, expire, valuation, strategy, dataframe
 
 
+class ValuationAnalysis(Processor):
+    def __init__(self, *args, **kwargs):
+        columns = ["tau", "cost", "npv", "apy", "size"]
+        self.__dataframe = pd.DataFrame(columns=columns)
+        self.__columns = columns
+
+    def execute(self, contents, *args, **kwargs):
+        current, ticker, expire, valuation, strategy, dataframe = contents
+        assert isinstance(dataframe, pd.DataFrame)
+        dataframe = pd.concat([self.dataframe, dataframe[self.columns]], axis=0)
+        dataframe = dataframe.sort_values(["apy", "npv"], axis=0, ascending=False, inplace=False, ignore_index=True)
+        self.dataframe = dataframe
+
+    @property
+    def tau(self): return self.dataframe["tau"].min(), self.dataframe["tau"].max()
+    @property
+    def cost(self): return self.dataframe["cost"] @ self.dataframe["size"]
+    @property
+    def npv(self): return self.dataframe["npv"] @ self.dataframe["size"]
+
+    @property
+    def columns(self): return self.__columns
+    @property
+    def dataframe(self): return self.__dataframe
+    @property
+    def dataframe(self, dataframe): self.__dataframe = dataframe
 
 
 
