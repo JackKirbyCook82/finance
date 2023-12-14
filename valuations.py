@@ -11,7 +11,6 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 from enum import IntEnum
-from itertools import product
 from datetime import datetime as Datetime
 from collections import namedtuple as ntuple
 from collections import OrderedDict as ODict
@@ -20,13 +19,10 @@ from support.pipelines import Calculator, Processor, Saver, Loader
 from support.calculations import Calculation, equation, source, constant
 from support.dispatchers import typedispatcher
 
-from finance.securities import Securities
-from finance.strategies import Strategies
-
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
 __all__ = ["Valuation", "Valuations", "Calculations"]
-__all__ += ["ValuationCalculator", "ValuationFilter", "ValuationSaver", "ValuationLoader"]
+__all__ += ["ValuationSaver", "ValuationLoader", "ValuationFilter", "ValuationParser", "ValuationCalculator", "ValuationAnalysis"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
@@ -57,8 +53,8 @@ class ValuationsMeta(type):
         Minimum = MinimumArbitrage
         Maximum = MaximumArbitrage
 
-class Valuations(object, metaclass=ValuationsMeta):
-    pass
+class Valuations(object, metaclass=ValuationsMeta): pass
+class ValuationQuery(ntuple("Query", "current ticker expire strategy valuation data")): pass
 
 
 class ValuationCalculation(Calculation):
@@ -107,61 +103,56 @@ class Calculations(object, metaclass=CalculationsMeta):
 
 
 class ValuationCalculator(Calculator, calculations=ODict(list(iter(Calculations)))):
-    def execute(self, contents, *args, **kwargs):
-        current, ticker, expire, strategy, dataset = contents
-        assert isinstance(dataset, xr.Dataset)
+    def execute(self, query, *args, **kwargs):
+        assert isinstance(query.data, xr.Dataset)
         for valuation, calculation in self.calculations.items():
-            results = calculation(dataset, *args, **kwargs)
-            for security, variable in product(list(Securities.options), ["price", "strike"]):
-                key = "|".join([str(security), str(variable)])
-                if key in dataset.data_vars:
-                    results[key] = dataset[key]
-            results = results.to_dataframe()
-            results = results.reset_index(drop=False, inplace=False)
-            yield current, ticker, expire, strategy, valuation, results
+            dataset = calculation(query.data, *args, **kwargs)
+            yield ValuationQuery(query.current, query.ticker, query.expire, query.strategy, valuation, dataset)
+
+
+class ValuationParser(Processor):
+    def execute(self, query, *args, **kwargs):
+        assert isinstance(query.data, xr.Dataset)
+        dataframe = self.parser(query.data, *args, strategy=query.strategy, valuation=query.valuation, **kwargs)
+        yield ValuationQuery(query.current, query.ticker, query.expire, query.strategy, query.valuation, dataframe)
+
+    @staticmethod
+    def parser(dataset, *args, strategy, valuation, **kwargs):
+        dataframe = dataset.to_dataframe()
+        dataframe["strategy"] = str(strategy)
+        dataframe["valuation"] = str(valuation)
+        dataframe = dataframe.reset_index(drop=False, inplace=False)
+        return dataframe
 
 
 class ValuationFilter(Processor):
-    def execute(self, contents, *args, **kwargs):
-        current, ticker, expire, strategy, valuation, dataframe = contents
-        assert isinstance(dataframe, pd.DataFrame)
-        dataframe = self.filter(dataframe, *args, **kwargs)
+    def execute(self, query, *args, **kwargs):
+        assert isinstance(query.data, pd.DataFrame)
+        dataframe = self.filter(query.data, *args, **kwargs)
         if dataframe.empty:
             return
-        yield current, ticker, expire, strategy, valuation, dataframe
+        yield ValuationQuery(query.current, query.ticker, query.expire, query.strategy, query.valuation, dataframe)
 
     @staticmethod
-    def filter(dataframe, *args, apy=None, npv=None, cost=None, size=None, **kwargs):
+    def filter(dataframe, *args, apy=None, **kwargs):
         dataframe = dataframe.where(dataframe["apy"] >= apy) if apy is not None else dataframe
-        dataframe = dataframe.where(dataframe["npv"] >= npv) if npv is not None else dataframe
-        dataframe = dataframe.where(dataframe["cost"] >= cost) if cost is not None else dataframe
-        dataframe = dataframe.where(dataframe["size"] >= size) if size is not None else dataframe
         dataframe = dataframe.dropna(axis=0, how="all")
         return dataframe
 
 
 class ValuationSaver(Saver):
-    def execute(self, contents, *args, **kwargs):
-        current, ticker, expire, strategy, valuation, dataframe = contents
-        assert isinstance(dataframe, pd.DataFrame)
-        if dataframe.empty:
+    def execute(self, query, *args, **kwargs):
+        assert isinstance(query.data, pd.DataFrame)
+        if query.data.empty:
             return
-        current_folder = os.path.join(self.repository, str(current.strftime("%Y%m%d_%H%M%S")))
+        current_folder = os.path.join(self.repository, str(query.current.strftime("%Y%m%d_%H%M%S")))
         with self.locks[current_folder]:
             if not os.path.isdir(current_folder):
                 os.mkdir(current_folder)
-        valuation_folder = os.path.join(current_folder, str(valuation).replace("|", "_"))
-        with self.locks[valuation_folder]:
-            if not os.path.isdir(valuation_folder):
-                os.mkdir(valuation_folder)
-        strategy_folder = os.path.join(valuation_folder, str(strategy).replace("|", "_"))
-        with self.locks[strategy_folder]:
-            if not os.path.isdir(strategy_folder):
-                os.mkdir(strategy_folder)
-        ticker_expire_filename = "_".join([str(ticker), str(expire.strftime("%Y%m%d"))]) + ".csv"
-        ticker_expire_file = os.path.join(strategy_folder, ticker_expire_filename)
+        ticker_expire_filename = "_".join([str(query.ticker), str(query.expire.strftime("%Y%m%d"))]) + ".csv"
+        ticker_expire_file = os.path.join(current_folder, ticker_expire_filename)
         with self.locks[ticker_expire_file]:
-            self.write(dataframe, file=ticker_expire_file, mode="a")
+            self.write(query.data, file=ticker_expire_file, mode="a")
 
 
 class ValuationLoader(Loader):
@@ -179,48 +170,47 @@ class ValuationLoader(Loader):
             if dates is not None and current.date() not in dates:
                 continue
             current_folder = os.path.join(self.repository, current_name)
-            for valuation_name in os.listdir(current_folder):
-                valuation = Valuations[str(valuation_name).replace("_", "|")]
-                valuation_folder = os.path.join(current_folder, valuation_name)
-                for strategy_name in os.listdir(valuation_folder):
-                    strategy = Strategies[str(strategy_name).replace("_", "|")]
-                    strategy_folder = os.path.join(valuation_folder, strategy_name)
-                    for ticker_expire_filename in os.listdir(strategy_folder):
-                        ticker_expire = TickerExpire(*str(ticker_expire_filename).split(".")[0].split("_"))
-                        ticker = str(ticker_expire.ticker).upper()
-                        if tickers is not None and ticker not in tickers:
-                            continue
-                        expire = Datetime.strptime(os.path.splitext(ticker_expire.expire)[0], "%Y%m%d").date()
-                        if expires is not None and expire not in expires:
-                            continue
-                        ticker_expire_file = os.path.join(strategy_folder, ticker_expire_filename)
-                        with self.locks[ticker_expire_file]:
-                            dataframe = self.read(file=ticker_expire_file, filetype=pd.DataFrame, datatypes=self.columns.datatypes, datetypes=self.columns.datetypes)
-                            yield current, ticker, expire, valuation, strategy, dataframe
+            for ticker_expire_filename in os.listdir(current_folder):
+                ticker_expire = TickerExpire(*str(ticker_expire_filename).split(".")[0].split("_"))
+                ticker = str(ticker_expire.ticker).upper()
+                if tickers is not None and ticker not in tickers:
+                    continue
+                expire = Datetime.strptime(os.path.splitext(ticker_expire.expire)[0], "%Y%m%d").date()
+                if expires is not None and expire not in expires:
+                    continue
+                ticker_expire_file = os.path.join(current_folder, ticker_expire_filename)
+                with self.locks[ticker_expire_file]:
+                    dataframe = self.read(file=ticker_expire_file, filetype=pd.DataFrame, datatypes=self.columns.datatypes, datetypes=self.columns.datetypes)
+                    strategies = list(set(dataframe["strategy"].values))
+                    valuations = list(set(dataframe["valuation"].values))
+                    yield ValuationQuery(current, ticker, expire, strategies, valuations, dataframe)
 
 
 class ValuationAnalysis(Processor):
     def __init__(self, *args, **kwargs):
-        columns = ["tau", "cost", "npv", "apy", "size"]
-        self.__dataframe = pd.DataFrame(columns=columns)
-        self.__columns = columns
+        self.__dataframe = pd.DataFrame()
 
-    def execute(self, contents, *args, **kwargs):
-        current, ticker, expire, valuation, strategy, dataframe = contents
-        assert isinstance(dataframe, pd.DataFrame)
-        dataframe = pd.concat([self.dataframe, dataframe[self.columns]], axis=0)
-        dataframe = dataframe.sort_values(["apy", "npv"], axis=0, ascending=False, inplace=False, ignore_index=True)
-        self.dataframe = dataframe
+    def execute(self, query, *args, **kwargs):
+        dataframe = query.data
+
+        print(dataframe)
+        raise Exception()
+
+#        dataframe = pd.concat([self.dataframe, dataframe[self.columns]], axis=0)
+#        dataframe = dataframe.sort_values(["apy", "npv"], axis=0, ascending=False, inplace=False, ignore_index=True)
+#        self.dataframe = dataframe
 
     @property
+    def weights(self): return (self.dataframe["cost"] / self.dataframe["cost"].sum()) * (self.dataframe["size"] / self.dataframe["size"].sum())
+    @property
     def tau(self): return self.dataframe["tau"].min(), self.dataframe["tau"].max()
+    @property
+    def apy(self): return self.dataframe["apy"] @ self.weights
     @property
     def cost(self): return self.dataframe["cost"] @ self.dataframe["size"]
     @property
     def npv(self): return self.dataframe["npv"] @ self.dataframe["size"]
 
-    @property
-    def columns(self): return self.__columns
     @property
     def dataframe(self): return self.__dataframe
     @property

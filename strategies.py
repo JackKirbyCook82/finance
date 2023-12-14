@@ -20,8 +20,7 @@ from finance.securities import Positions, Instruments, Securities
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["Strategy", "Strategies", "Calculations"]
-__all__ += ["StrategyParser", "StrategyCalculator"]
+__all__ = ["Strategy", "Strategies", "Calculations", "StrategyCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
@@ -64,8 +63,8 @@ class StrategiesMeta(type):
         Put = VerticalPut
         Call = VerticalCall
 
-class Strategies(object, metaclass=StrategiesMeta):
-    pass
+class Strategies(object, metaclass=StrategiesMeta): pass
+class StrategyQuery(ntuple("Query", "current ticker expire strategy data")): pass
 
 
 class StrategyCalculation(Calculation):
@@ -89,32 +88,17 @@ class StrangleCalculation(StrategyCalculation): pass
 class VerticalCalculation(StrategyCalculation): pass
 class CollarCalculation(StrategyCalculation): pass
 
-
 class VerticalPutCalculation(VerticalCalculation):
     τ = equation("τ", "tau", np.int16, domain=("pα.τ", "pβ.τ"), function=lambda τpα, τpβ: τpα)
     x = equation("x", "size", np.float32, domain=("pα.x", "pβ.x"), function=lambda xpα, xpβ: np.minimum(xpα, xpβ))
     wo = equation("wo", "spot", np.float32, domain=("pα.w", "pβ.w", "ε"), function=lambda wpα, wpβ, ε: (wpβ - wpα) * 100 - ε)
     wτ = equation("wτ", "future", np.float32, domain=("pα.k", "pβ.k", "ε"), function=lambda kpα, kpβ, ε: np.minimum(kpα - kpβ, 0) * 100 - ε)
 
-    def execute(self, *args, feeds, **kwargs):
-        yield from super().execute(*args, feeds=feeds, **kwargs)
-        yield self["pα"].w(**feeds)
-        yield self["pβ"].w(**feeds)
-        yield self["pα"].k(**feeds)
-        yield self["pβ"].k(**feeds)
-
 class VerticalCallCalculation(VerticalCalculation):
     τ = equation("τ", "tau", np.int16, domain=("cα.τ", "cβ.τ"), function=lambda τcα, τcβ: τcα)
     x = equation("x", "size", np.float32, domain=("cα.x", "cβ.x"), function=lambda xcα, xcβ: np.minimum(xcα, xcβ))
     wo = equation("wo", "spot", np.float32, domain=("cα.w", "cβ.w", "ε"), function=lambda wcα, wcβ, ε: (wcβ - wcα) * 100 - ε)
     wτ = equation("wτ", "future", np.float32, domain=("cα.k", "cβ.k", "ε"), function=lambda kcα, kcβ, ε: + np.minimum(kcβ - kcα, 0) * 100 - ε)
-
-    def execute(self, *args, feeds, **kwargs):
-        yield from super().execute(*args, feeds=feeds, **kwargs)
-        yield self["cα"].w(**feeds)
-        yield self["cβ"].w(**feeds)
-        yield self["cα"].k(**feeds)
-        yield self["cβ"].k(**feeds)
 
 
 class CalculationsMeta(type):
@@ -135,17 +119,16 @@ class Calculations(object, metaclass=CalculationsMeta):
 
 
 class StrategyCalculator(Calculator, calculations=ODict(list(iter(Calculations)))):
-    def execute(self, contents, *args, **kwargs):
-        current, ticker, expire, datasets = contents
-        assert isinstance(datasets, dict)
-        assert all([isinstance(security, xr.Dataset) for security in datasets.values()])
-        datasets = {security: self.parser(dataset, *args, security=security, **kwargs) for security, dataset in datasets.items()}
+    def execute(self, query, *args, **kwargs):
+        assert isinstance(query.data, dict)
+        assert all([isinstance(security, xr.Dataset) for security in query.data.values()])
+        datasets = {security: self.parser(dataset, *args, security=security, **kwargs) for security, dataset in query.data.items()}
         for strategy, calculation in self.calculations.items():
             if not all([security in datasets.keys() for security in strategy.securities]):
                 continue
             feeds = {str(security): dataset for security, dataset in datasets.items()}
-            results = calculation(*args, feeds=feeds, **kwargs)
-            yield current, ticker, expire, strategy, results
+            dataset = calculation(*args, feeds=feeds, **kwargs)
+            yield StrategyQuery(query.current, query.ticker, query.expire, strategy, dataset)
 
     @kwargsdispatcher("security")
     def parser(self, dataset, *args, security, **kwargs): raise ValueError(str(security))

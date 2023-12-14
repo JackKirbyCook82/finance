@@ -92,8 +92,8 @@ class SecuritiesMeta(type):
             Long = CallLong
             Short = CallShort
 
-class Securities(object, metaclass=SecuritiesMeta):
-    pass
+class Securities(object, metaclass=SecuritiesMeta): pass
+class SecurityQuery(ntuple("Query", "current ticker expire data")): pass
 
 
 class PositionCalculation(Calculation, ABC): pass
@@ -150,15 +150,14 @@ class Calculations(object, metaclass=CalculationsMeta):
 
 
 class SecurityFilter(Processor):
-    def execute(self, contents, *args, **kwargs):
-        current, ticker, expire, dataframes = contents
-        assert isinstance(dataframes, dict)
-        assert all([isinstance(security, pd.DataFrame) for security in dataframes.values()])
-        dataframes = {security: self.filter(dataframe, *args, security=security, **kwargs) for security, dataframe in dataframes.items()}
+    def execute(self, query, *args, **kwargs):
+        assert isinstance(query.securities, dict)
+        assert all([isinstance(security, pd.DataFrame) for security in query.data.values()])
+        dataframes = {security: self.filter(dataframe, *args, security=security, **kwargs) for security, dataframe in query.data.items()}
         dataframes = {security: dataframe for security, dataframe in dataframes.items() if not dataframe.empty}
         if not bool(dataframes):
             return
-        yield current, ticker, expire, dataframes
+        yield SecurityQuery(query.current, query.ticker, query.expire, dataframes)
 
     @kwargsdispatcher("security")
     def filter(self, dataframe, *args, security, **kwargs): raise ValueError(str(security))
@@ -172,20 +171,19 @@ class SecurityFilter(Processor):
 
     @filter.register.value(*list(Securities.options))
     def option(self, dataframe, *args, size=None, interest=None, volume=None, **kwargs):
-        dataframe = dataframe.where(dataframe["interest"] >= interest) if bool(interest) else dataframe
         dataframe = dataframe.where(dataframe["size"] >= size) if bool(size) else dataframe
+        dataframe = dataframe.where(dataframe["interest"] >= interest) if bool(interest) else dataframe
         dataframe = dataframe.where(dataframe["volume"] >= volume) if bool(volume) else dataframe
         dataframe = dataframe.dropna(axis=0, how="all")
         return dataframe
 
 
 class SecurityParser(Processor):
-    def execute(self, contents, *args, **kwargs):
-        current, ticker, expire, dataframes = contents
-        assert isinstance(dataframes, dict)
-        assert all([isinstance(security, pd.DataFrame) for security in dataframes.values()])
-        datasets = {security: self.parser(dataframe, *args, security=security, **kwargs) for security, dataframe in dataframes.items()}
-        yield current, ticker, expire, datasets
+    def execute(self, query, *args, **kwargs):
+        assert isinstance(query.securities, dict)
+        assert all([isinstance(security, pd.DataFrame) for security in query.data.values()])
+        datasets = {security: self.parser(dataframe, *args, security=security, **kwargs) for security, dataframe in query.data.items()}
+        yield SecurityQuery(query.current, query.ticker, query.expire, datasets)
 
     @kwargsdispatcher("security")
     def parser(self, dataframe, *args, security, **kwargs): raise ValueError(str(security))
@@ -206,31 +204,29 @@ class SecurityParser(Processor):
 
 
 class SecurityCalculator(Calculator, calculations=ODict(list(iter(Calculations)))):
-    def execute(self, contents, *args, **kwargs):
-        current, ticker, expire, datasets = contents
-        assert isinstance(datasets, dict)
-        assert all([isinstance(security, xr.Dataset) for security in datasets.values()])
-        results = {security: self.calculations[security](dataset, *args, **kwargs) for security, dataset in datasets.items()}
-        yield current, ticker, expire, results
+    def execute(self, query, *args, **kwargs):
+        assert isinstance(query.data, dict)
+        assert all([isinstance(security, xr.Dataset) for security in query.data.values()])
+        datasets = {security: self.calculations[security](dataset, *args, **kwargs) for security, dataset in query.data.items()}
+        yield query.current, query.ticker, query.expire, datasets
 
 
 class SecuritySaver(Saver):
-    def execute(self, contents, *args, **kwargs):
-        current, ticker, expire, dataframes = contents
-        assert isinstance(dataframes, dict)
-        assert all([isinstance(security, pd.DataFrame) for security in dataframes.values()])
-        if all([security.empty for security in dataframes.values()]):
+    def execute(self, query, *args, **kwargs):
+        assert isinstance(query.data, dict)
+        assert all([isinstance(security, pd.DataFrame) for security in query.data.values()])
+        if all([security.empty for security in query.data.values()]):
             return
-        current_folder = os.path.join(self.repository, str(current.strftime("%Y%m%d_%H%M%S")))
+        current_folder = os.path.join(self.repository, str(query.current.strftime("%Y%m%d_%H%M%S")))
         with self.locks[current_folder]:
             if not os.path.isdir(current_folder):
                 os.mkdir(current_folder)
-        ticker_expire_name = "_".join([str(ticker), str(expire.strftime("%Y%m%d"))])
+        ticker_expire_name = "_".join([str(query.ticker), str(query.expire.strftime("%Y%m%d"))])
         ticker_expire_folder = os.path.join(current_folder, ticker_expire_name)
         with self.locks[ticker_expire_folder]:
             if not os.path.isdir(ticker_expire_folder):
                 os.mkdir(ticker_expire_folder)
-            for security, dataframe in dataframes.items():
+            for security, dataframe in query.data.items():
                 security_filename = str(security).replace("|", "_") + ".csv"
                 security_file = os.path.join(ticker_expire_folder, security_filename)
                 self.write(dataframe, file=security_file, mode="w")
@@ -270,7 +266,7 @@ class SecurityLoader(Loader):
                 with self.locks[ticker_expire_folder]:
                     security_filenames = {security(security_filename): os.path.join(ticker_expire_folder, security_filename) for security_filename in os.listdir(ticker_expire_folder)}
                     dataframes = {key: reader(key, value) for key, value in security_filenames.items()}
-                    yield current, ticker, expire, dataframes
+                    yield SecurityQuery(current, ticker, expire, dataframes)
 
 
 
