@@ -7,12 +7,10 @@ Created on Weds Jul 19 2023
 """
 
 import numpy as np
-import xarray as xr
 from enum import IntEnum
 from collections import namedtuple as ntuple
-from collections import OrderedDict as ODict
 
-from support.pipelines import Calculator
+from support.pipelines import Processor
 from support.calculations import Calculation, equation, source, constant
 from support.dispatchers import kwargsdispatcher, typedispatcher
 
@@ -63,8 +61,8 @@ class StrategiesMeta(type):
         Put = VerticalPut
         Call = VerticalCall
 
-class Strategies(object, metaclass=StrategiesMeta): pass
-class StrategyQuery(ntuple("Query", "current ticker expire strategy data")): pass
+class Strategies(object, metaclass=StrategiesMeta):
+    pass
 
 
 class StrategyCalculation(Calculation):
@@ -77,7 +75,8 @@ class StrategyCalculation(Calculation):
     sμ = equation("sμ", "underlying", np.float32, domain=("sα.w", "sβ.w"), function=lambda wsα, wsβ: np.add(wsα, wsβ) / 2)
     ε = constant("ε", "fees", position="fees")
 
-    def execute(self, *args, feeds, fees, **kwargs):
+    def execute(self, feeds, *args, strategy, fees, **kwargs):
+        feeds = {str(security): dataset for security, dataset in feeds.items()}
         yield self.τ(**feeds, fees=fees)
         yield self.x(**feeds, fees=fees)
         yield self.wo(**feeds, fees=fees)
@@ -86,7 +85,6 @@ class StrategyCalculation(Calculation):
 
 class StrangleCalculation(StrategyCalculation): pass
 class VerticalCalculation(StrategyCalculation): pass
-class CollarCalculation(StrategyCalculation): pass
 
 class VerticalPutCalculation(VerticalCalculation):
     τ = equation("τ", "tau", np.int16, domain=("pα.τ", "pβ.τ"), function=lambda τpα, τpβ: τpα)
@@ -118,17 +116,20 @@ class Calculations(object, metaclass=CalculationsMeta):
     pass
 
 
-class StrategyCalculator(Calculator, calculations=ODict(list(iter(Calculations)))):
+class StrategyQuery(ntuple("Query", "current ticker expire strategies")): pass
+class StrategyCalculator(Processor):
     def execute(self, query, *args, **kwargs):
-        assert isinstance(query.data, dict)
-        assert all([isinstance(security, xr.Dataset) for security in query.data.values()])
-        datasets = {security: self.parser(dataset, *args, security=security, **kwargs) for security, dataset in query.data.items()}
-        for strategy, calculation in self.calculations.items():
-            if not all([security in datasets.keys() for security in strategy.securities]):
-                continue
-            feeds = {str(security): dataset for security, dataset in datasets.items()}
-            dataset = calculation(*args, feeds=feeds, **kwargs)
-            yield StrategyQuery(query.current, query.ticker, query.expire, strategy, dataset)
+        securities = {security: dataset for security, dataset in query.securities.items()}
+        if not bool(securities):
+            return
+        parser = lambda security, dataset: self.parser(dataset, *args, security=security, **kwargs)
+        function = lambda strategy: all([security in securities.keys() for security in strategy.securities])
+        calculations = (strategy, calculation for strategy, calculation in list(Calculations) if function(strategy))
+        securities = {security: parser(security, dataset) for security, dataset in securities.items()}
+        strategies = {strategy: calculation(securities, *args, **kwargs) for strategy, calculation in calculations}
+        if not bool(strategies):
+            return
+        yield StrategyQuery(query.current, query.ticker, query.expire, strategies)
 
     @kwargsdispatcher("security")
     def parser(self, dataset, *args, security, **kwargs): raise ValueError(str(security))
