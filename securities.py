@@ -15,8 +15,9 @@ from enum import IntEnum
 from datetime import date as Date
 from datetime import datetime as Datetime
 from collections import namedtuple as ntuple
+from collections import OrderedDict as ODict
 
-from support.pipelines import Processor, Saver, Loader
+from support.pipelines import Processor, Calculator, Saver, Loader
 from support.calculations import Calculation, equation, source
 from support.dispatchers import typedispatcher, kwargsdispatcher
 
@@ -149,18 +150,18 @@ class Calculations(object, metaclass=CalculationsMeta):
 
 
 class SecurityQuery(ntuple("Query", "current ticker expire securities")): pass
-class SecurityCalculator(Processor):
+class SecurityCalculator(Calculator, calculations=ODict(list(Calculations))):
     def execute(self, query, *args, **kwargs):
         securities = {security: dataframe for security, dataframe in query.securities.items() if not dataframe.empty}
         if not bool(securities):
             return
         parser = lambda security, dataframe: self.parser(dataframe, *args, security=security, **kwargs)
-        calculations = (security, calculation for security, calculation in list(Calculations) if security in securities)
+        calculations = {security: calculation for security, calculation in self.calculations.items() if security in securities.keys()}
         securities = {security: parser(security, dataframe) for security, dataframe in securities.items()}
-        securities = {security: calculation(securities[security], *args, **kwargs) for security, calculation in calculations}
+        securities = {security: calculation(securities[security], *args, **kwargs) for security, calculation in calculations.items()}
         if not bool(securities):
             return
-        yield query.current, query.ticker, query.expire, securities
+        yield SecurityQuery(query.current, query.ticker, query.expire, securities)
 
     @kwargsdispatcher("security")
     def parser(self, dataframe, *args, security, **kwargs): raise ValueError(str(security))
@@ -207,7 +208,7 @@ class SecurityFilter(Processor):
 class SecuritySaver(Saver):
     def execute(self, query, *args, **kwargs):
         securities = query.securities
-        if not bool(securities) or not bool([dataframe.empty for dataframe in securities.items()]):
+        if not bool(securities) or not bool([dataframe.empty for dataframe in securities.values()]):
             return
         current_folder = os.path.join(self.repository, str(query.current.strftime("%Y%m%d_%H%M%S")))
         with self.locks[current_folder]:
@@ -225,14 +226,16 @@ class SecuritySaver(Saver):
 
 
 class SecurityLoader(Loader):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, securities, **kwargs):
         super().__init__(*args, **kwargs)
         Columns = ntuple("Columns", "datetypes datatypes")
-        stocks = Columns(["date"], {"ticker": str, "price": np.float32, "volume": np.float32, "size": np.float32})
-        options = Columns(["date", "expire"], {"ticker": str, "strike": np.float32, "price": np.float32, "volume": np.float32, "size": np.float32, "interest": np.int32})
-        self.columns = {str(Securities.Stock.Long): stocks, str(Securities.Stock.Short): stocks}
-        self.columns.update({str(Securities.Option.Put.Long): options, str(Securities.Option.Put.Short): options})
-        self.columns.update({str(Securities.Option.Call.Long): options, str(Securities.Option.Call.Short): options})
+        stock = Columns(["date"], {"ticker": str, "price": np.float32, "volume": np.float32, "size": np.float32})
+        option = Columns(["date", "expire"], {"ticker": str, "strike": np.float32, "price": np.float32, "volume": np.float32, "interest": np.int32, "size": np.float32})
+        columns = {str(Securities.Stock.Long): stock, str(Securities.Stock.Short): stock}
+        columns.update({str(Securities.Option.Put.Long): option, str(Securities.Option.Put.Short): option})
+        columns.update({str(Securities.Option.Call.Long): option, str(Securities.Option.Call.Short): option})
+        self.__columns = columns
+        self.__securities = securities
 
     def execute(self, *args, tickers=None, expires=None, dates=None, **kwargs):
         TickerExpire = ntuple("TickerExpire", "ticker expire")
@@ -255,11 +258,15 @@ class SecurityLoader(Loader):
                     continue
                 ticker_expire_folder = os.path.join(current_folder, ticker_expire_name)
                 with self.locks[ticker_expire_folder]:
-                    filenames = {security: str(security).replace("|", "_") + ".csv" for security in list(Securities)}
+                    filenames = {security: str(security).replace("|", "_") + ".csv" for security in self.securities}
                     files = {security: os.path.join(ticker_expire_folder, filename) for security, filename in filenames.items()}
                     securities = {security: reader(security, file) for security, file in files.items()}
                     yield SecurityQuery(current, ticker, expire, securities)
 
+    @property
+    def columns(self): return self.__columns
+    @property
+    def securities(self): return self.__securities
 
 
 

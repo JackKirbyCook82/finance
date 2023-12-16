@@ -9,8 +9,9 @@ Created on Weds Jul 19 2023
 import numpy as np
 from enum import IntEnum
 from collections import namedtuple as ntuple
+from collections import OrderedDict as ODict
 
-from support.pipelines import Processor
+from support.pipelines import Calculator
 from support.calculations import Calculation, equation, source, constant
 from support.dispatchers import kwargsdispatcher, typedispatcher
 
@@ -75,7 +76,7 @@ class StrategyCalculation(Calculation):
     sμ = equation("sμ", "underlying", np.float32, domain=("sα.w", "sβ.w"), function=lambda wsα, wsβ: np.add(wsα, wsβ) / 2)
     ε = constant("ε", "fees", position="fees")
 
-    def execute(self, feeds, *args, strategy, fees, **kwargs):
+    def execute(self, feeds, *args, fees, **kwargs):
         feeds = {str(security): dataset for security, dataset in feeds.items()}
         yield self.τ(**feeds, fees=fees)
         yield self.x(**feeds, fees=fees)
@@ -117,16 +118,16 @@ class Calculations(object, metaclass=CalculationsMeta):
 
 
 class StrategyQuery(ntuple("Query", "current ticker expire strategies")): pass
-class StrategyCalculator(Processor):
+class StrategyCalculator(Calculator, calculations=ODict(list(Calculations))):
     def execute(self, query, *args, **kwargs):
         securities = {security: dataset for security, dataset in query.securities.items()}
         if not bool(securities):
             return
         parser = lambda security, dataset: self.parser(dataset, *args, security=security, **kwargs)
         function = lambda strategy: all([security in securities.keys() for security in strategy.securities])
-        calculations = (strategy, calculation for strategy, calculation in list(Calculations) if function(strategy))
+        calculations = {strategy: calculation for strategy, calculation in self.calculations.items() if function(strategy)}
         securities = {security: parser(security, dataset) for security, dataset in securities.items()}
-        strategies = {strategy: calculation(securities, *args, **kwargs) for strategy, calculation in calculations}
+        strategies = {strategy: calculation(securities, *args, **kwargs) for strategy, calculation in calculations.items()}
         if not bool(strategies):
             return
         yield StrategyQuery(query.current, query.ticker, query.expire, strategies)
@@ -142,8 +143,6 @@ class StrategyCalculator(Processor):
         dataset = dataset.rename({"strike": str(security)})
         dataset["strike"] = dataset[str(security)].expand_dims(["ticker", "date", "expire"])
         return dataset
-
-
 
 
 
