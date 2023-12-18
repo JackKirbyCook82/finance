@@ -61,6 +61,7 @@ PutShort = Security(Instruments.PUT, Positions.SHORT, payoff=lambda x, k: - np.m
 CallLong = Security(Instruments.CALL, Positions.LONG, payoff=lambda x, k: np.maximum(x - k, 0))
 CallShort = Security(Instruments.CALL, Positions.SHORT, payoff=lambda x, k: - np.maximum(x - k, 0))
 
+
 class SecuritiesMeta(type):
     def __iter__(cls): return iter([StockLong, StockShort, PutLong, PutShort, CallLong, CallShort])
     def __getitem__(cls, indexkey): return cls.retrieve(indexkey)
@@ -73,13 +74,13 @@ class SecuritiesMeta(type):
     def string(cls, string): return {str(security): security for security in iter(cls)}[str(string).lower()]
 
     @property
-    def stocks(cls): return iter([StockLong, StockShort])
+    def Stocks(cls): return iter([StockLong, StockShort])
     @property
-    def options(cls): return iter([PutLong, PutShort, CallLong, CallShort])
+    def Options(cls): return iter([PutLong, PutShort, CallLong, CallShort])
     @property
-    def puts(cls): return iter([PutLong, PutShort])
+    def Puts(cls): return iter([PutLong, PutShort])
     @property
-    def calls(cls): return iter([CallLong, CallShort])
+    def Calls(cls): return iter([CallLong, CallShort])
 
     class Stock:
         Long = StockLong
@@ -166,14 +167,14 @@ class SecurityCalculator(Calculator, calculations=ODict(list(Calculations))):
     @kwargsdispatcher("security")
     def parser(self, dataframe, *args, security, **kwargs): raise ValueError(str(security))
 
-    @parser.register.value(*list(Securities.stocks))
+    @parser.register.value(*list(Securities.Stocks))
     def stock(self, dataframe, *args, **kwargs):
         dataframe = dataframe.drop_duplicates(subset=["ticker", "date"], keep="last", inplace=False)
         dataframe = dataframe.set_index(["ticker", "date"], inplace=False, drop=True)
         dataset = xr.Dataset.from_dataframe(dataframe[["price", "size"]])
         return dataset
 
-    @parser.register.value(*list(Securities.options))
+    @parser.register.value(*list(Securities.Options))
     def option(self, dataframe, *args, **kwargs):
         dataframe = dataframe.drop_duplicates(subset=["ticker", "date", "expire", "strike"], keep="last", inplace=False)
         dataframe = dataframe.set_index(["ticker", "date", "expire", "strike"], inplace=False, drop=True)
@@ -189,14 +190,14 @@ class SecurityFilter(Processor):
     @kwargsdispatcher("security")
     def filter(self, dataframe, *args, security, **kwargs): raise ValueError(str(security))
 
-    @filter.register.value(*list(Securities.stocks))
+    @filter.register.value(*list(Securities.Stocks))
     def stock(self, dataframe, *args, size=None, volume=None, **kwargs):
         dataframe = dataframe.where(dataframe["size"] >= size) if bool(size) else dataframe
         dataframe = dataframe.where(dataframe["volume"] >= volume) if bool(volume) else dataframe
         dataframe = dataframe.dropna(axis=0, how="all")
         return dataframe
 
-    @filter.register.value(*list(Securities.options))
+    @filter.register.value(*list(Securities.Options))
     def option(self, dataframe, *args, size=None, interest=None, volume=None, **kwargs):
         dataframe = dataframe.where(dataframe["size"] >= size) if bool(size) else dataframe
         dataframe = dataframe.where(dataframe["interest"] >= interest) if bool(interest) else dataframe
@@ -226,16 +227,15 @@ class SecuritySaver(Saver):
 
 
 class SecurityLoader(Loader):
-    def __init__(self, *args, securities, **kwargs):
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         Columns = ntuple("Columns", "datetypes datatypes")
-        stock = Columns(["date"], {"ticker": str, "price": np.float32, "volume": np.float32, "size": np.float32})
-        option = Columns(["date", "expire"], {"ticker": str, "strike": np.float32, "price": np.float32, "volume": np.float32, "interest": np.int32, "size": np.float32})
+        stock = Columns(["date"], {"ticker": str, "price": np.float32, "volume": np.int64, "size": np.int64})
+        option = Columns(["date", "expire"], {"ticker": str, "strike": np.float32, "price": np.float32, "volume": np.int64, "interest": np.int64, "size": np.int64})
         columns = {str(Securities.Stock.Long): stock, str(Securities.Stock.Short): stock}
         columns.update({str(Securities.Option.Put.Long): option, str(Securities.Option.Put.Short): option})
         columns.update({str(Securities.Option.Call.Long): option, str(Securities.Option.Call.Short): option})
-        self.__columns = columns
-        self.__securities = securities
+        self.columns = columns
 
     def execute(self, *args, tickers=None, expires=None, dates=None, **kwargs):
         TickerExpire = ntuple("TickerExpire", "ticker expire")
@@ -258,15 +258,10 @@ class SecurityLoader(Loader):
                     continue
                 ticker_expire_folder = os.path.join(current_folder, ticker_expire_name)
                 with self.locks[ticker_expire_folder]:
-                    filenames = {security: str(security).replace("|", "_") + ".csv" for security in self.securities}
+                    filenames = {security: str(security).replace("|", "_") + ".csv" for security in list(Securities)}
                     files = {security: os.path.join(ticker_expire_folder, filename) for security, filename in filenames.items()}
                     securities = {security: reader(security, file) for security, file in files.items()}
                     yield SecurityQuery(current, ticker, expire, securities)
-
-    @property
-    def columns(self): return self.__columns
-    @property
-    def securities(self): return self.__securities
 
 
 

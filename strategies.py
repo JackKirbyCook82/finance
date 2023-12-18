@@ -41,6 +41,7 @@ VerticalPut = Strategy(Spreads.VERTICAL, Instruments.PUT, 0, securities=[Securit
 VerticalCall = Strategy(Spreads.VERTICAL, Instruments.CALL, 0, securities=[Securities.Option.Call.Long, Securities.Option.Call.Short])
 Condor = Strategy(Spreads.CONDOR, 0, 0, securities=[Securities.Option.Put.Long, Securities.Option.Call.Long, Securities.Option.Put.Short, Securities.Option.Call.Short])
 
+
 class StrategiesMeta(type):
     def __iter__(cls): return iter([StrangleLong, CollarLong, CollarShort, VerticalPut, VerticalCall, Condor])
     def __getitem__(cls, indexkey): return cls.retrieve(indexkey)
@@ -84,31 +85,41 @@ class StrategyCalculation(Calculation):
         yield self.wτ(**feeds, fees=fees)
         yield self.sμ(**feeds)
 
-class StrangleCalculation(StrategyCalculation): pass
 class VerticalCalculation(StrategyCalculation): pass
+class StrangleCalculation(StrategyCalculation): pass
+class CollarCalculation(StrategyCalculation): pass
 
 class VerticalPutCalculation(VerticalCalculation):
     τ = equation("τ", "tau", np.int16, domain=("pα.τ", "pβ.τ"), function=lambda τpα, τpβ: τpα)
-    x = equation("x", "size", np.float32, domain=("pα.x", "pβ.x"), function=lambda xpα, xpβ: np.minimum(xpα, xpβ))
+    x = equation("x", "size", np.int64, domain=("pα.x", "pβ.x"), function=lambda xpα, xpβ: np.minimum(xpα, xpβ))
     wo = equation("wo", "spot", np.float32, domain=("pα.w", "pβ.w", "ε"), function=lambda wpα, wpβ, ε: (wpβ - wpα) * 100 - ε)
     wτ = equation("wτ", "future", np.float32, domain=("pα.k", "pβ.k", "ε"), function=lambda kpα, kpβ, ε: np.minimum(kpα - kpβ, 0) * 100 - ε)
 
 class VerticalCallCalculation(VerticalCalculation):
     τ = equation("τ", "tau", np.int16, domain=("cα.τ", "cβ.τ"), function=lambda τcα, τcβ: τcα)
-    x = equation("x", "size", np.float32, domain=("cα.x", "cβ.x"), function=lambda xcα, xcβ: np.minimum(xcα, xcβ))
+    x = equation("x", "size", np.int64, domain=("cα.x", "cβ.x"), function=lambda xcα, xcβ: np.minimum(xcα, xcβ))
     wo = equation("wo", "spot", np.float32, domain=("cα.w", "cβ.w", "ε"), function=lambda wcα, wcβ, ε: (wcβ - wcα) * 100 - ε)
     wτ = equation("wτ", "future", np.float32, domain=("cα.k", "cβ.k", "ε"), function=lambda kcα, kcβ, ε: + np.minimum(kcβ - kcα, 0) * 100 - ε)
+
+class StrangleLongCalculation(StrategyCalculation): pass
+class CollarLongCalculation(CollarCalculation): pass
+class CollarShortCalculation(CollarCalculation): pass
+class CondorCalculation(StrategyCalculation): pass
 
 
 class CalculationsMeta(type):
     def __iter__(cls):
         contents = {Strategies.Vertical.Put: VerticalPutCalculation, Strategies.Vertical.Call: VerticalCallCalculation}
+        contents.update({Strategies.Collar.Long: CollarLongCalculation, Strategies.Collar.Short: CollarShortCalculation})
+        contents.update({Strategies.Strangle.Long: StrangleLongCalculation, Strategies.Collar: CondorCalculation})
         return ((key, value) for key, value in contents.items())
 
+    Condor = CondorCalculation
     class Strangle:
-        pass
+        Long = StrangleLongCalculation
     class Collar:
-        pass
+        Long = CollarLongCalculation
+        Short = CollarShortCalculation
     class Vertical:
         Put = VerticalPutCalculation
         Call = VerticalCallCalculation
@@ -135,10 +146,10 @@ class StrategyCalculator(Calculator, calculations=ODict(list(Calculations))):
     @kwargsdispatcher("security")
     def parser(self, dataset, *args, security, **kwargs): raise ValueError(str(security))
 
-    @parser.register.value(*list(Securities.stocks))
+    @parser.register.value(*list(Securities.Stocks))
     def stock(self, dataset, *args, **kwargs): return dataset
 
-    @parser.register.value(*list(Securities.options))
+    @parser.register.value(*list(Securities.Options))
     def option(self, dataset, *args, security, **kwargs):
         dataset = dataset.rename({"strike": str(security)})
         dataset["strike"] = dataset[str(security)].expand_dims(["ticker", "date", "expire"])

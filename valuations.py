@@ -38,6 +38,7 @@ CurrentArbitrage = Valuation(Basis.ARBITRAGE, Scenario.CURRENT)
 MinimumArbitrage = Valuation(Basis.ARBITRAGE, Scenario.MINIMUM)
 MaximumArbitrage = Valuation(Basis.ARBITRAGE, Scenario.MAXIMUM)
 
+
 class ValuationsMeta(type):
     def __iter__(cls): return iter([MinimumArbitrage, MaximumArbitrage])
     def __getitem__(cls, indexkey): return cls.retrieve(indexkey)
@@ -75,12 +76,17 @@ class ValuationCalculation(Calculation):
         yield self["Λ"].τ(feed)
         yield self["Λ"].x(feed)
 
-
 class ArbitrageCalculation(ValuationCalculation):
     Λ = source("Λ", "arbitrage", position=0, variables={"vo": "spot", "vτ": "future"})
 
+class CurrentCalculation(ArbitrageCalculation):
+    Λ = source("Λ", "current", position=0, variables={"vτ": "future"})
+
 class MinimumCalculation(ArbitrageCalculation):
     Λ = source("Λ", "minimum", position=0, variables={"vτ": "future"})
+
+class MaximumCalculation(ArbitrageCalculation):
+    Λ = source("Λ", "maximum", position=0, variables={"vτ": "future"})
 
 
 class CalculationsMeta(type):
@@ -89,7 +95,9 @@ class CalculationsMeta(type):
         return ((key, value) for key, value in contents.items())
 
     class Arbitrage:
+        Current = CurrentCalculation
         Minimum = MinimumCalculation
+        Maximum = MaximumCalculation
 
 class Calculations(object, metaclass=CalculationsMeta):
     pass
@@ -148,19 +156,18 @@ class ValuationSaver(Saver):
 
 
 class ValuationLoader(Loader):
-    def __init__(self, *args, securities, valuations, **kwargs):
+    def __init__(self, *args, valuations, **kwargs):
         super().__init__(*args, **kwargs)
         Columns = ntuple("Columns", "datetypes datatypes")
         stock = Columns(["date"], {"ticker": str, "price": np.float32, "volume": np.float32, "size": np.float32})
-        option = Columns(["date", "expire"], {"ticker": str, "strike": np.float32, "price": np.float32, "volume": np.float32, "interest": np.int32, "size": np.float32})
-        valuation = Columns(["date", "expire"], {"ticker": str, "size": np.float32, "spot": np.float32, "future": np.float32, "income": np.float32, "cost": np.float32, "npv": np.float32, "apy": np.float32, "tau": np.int16})
+        option = Columns(["date", "expire"], {"ticker": str, "strike": np.float32, "price": np.float32, "volume": np.int64, "interest": np.int64, "size": np.int64})
+        valuation = Columns(["date", "expire"], {"ticker": str, "cost": np.float32, "npv": np.float32, "apy": np.float32, "tau": np.int16, "size": np.int64})
         columns = {str(Valuations.Arbitrage.Minimum): valuation, str(Valuations.Arbitrage.Maximum): valuation, str(Valuations.Arbitrage.Current): valuation}
         columns.update({str(Securities.Stock.Long): stock, str(Securities.Stock.Short): stock})
         columns.update({str(Securities.Option.Put.Long): option, str(Securities.Option.Put.Short): option})
         columns.update({str(Securities.Option.Call.Long): option, str(Securities.Option.Call.Short): option})
-        self.__columns = columns
-        self.__securities = securities
-        self.__valuations = valuations
+        self.valuations = valuations
+        self.columns = columns
 
     def execute(self, *args, tickers=None, expires=None, dates=None, **kwargs):
         TickerExpire = ntuple("TickerExpire", "ticker expire")
@@ -188,46 +195,50 @@ class ValuationLoader(Loader):
                     valuations = {valuation: reader(valuation, file) for valuation, file in files.items() if os.path.isfile(file)}
                     if not bool(valuations) or all([dataframe.empty for dataframe in valuations.values()]):
                         continue
-                    filenames = {security: str(security).replace("|", "_") + ".csv" for security in self.securities}
+                    filenames = {security: str(security).replace("|", "_") + ".csv" for security in list(Securities)}
                     files = {security: os.path.join(ticker_expire_folder, filename) for security, filename in filenames.items()}
                     securities = {security: reader(security, file) for security, file in files.items()}
                     yield ValuationQuery(current, ticker, expire, securities, valuations)
 
+
+class ValuationMarketQuery(ntuple("Query", "current ticker expire valuation market")):
     @property
-    def columns(self): return self.__columns
+    def weights(self): return (self.market["cost"] / self.market["cost"].sum()) * (self.market["size"] / self.market["size"].sum())
     @property
-    def securities(self): return self.__securities
+    def tau(self): return self.market["tau"].min(), self.market["tau"].max()
     @property
-    def valuations(self): return self.__valuations
+    def apy(self): return self.market["apy"] @ self.weights
+    @property
+    def cost(self): return self.market["cost"] @ self.market["size"]
+    @property
+    def npv(self): return self.market["npv"] @ self.market["size"]
 
 
 class ValuationMarket(Processor):
     def execute(self, query, *args, **kwargs):
-        supply = self.supply(query.securities)
-        demand = self.demand(query.valuations[Valuations.Arbitrage.Minimum])
-
-        print(supply)
-        print(demand)
-        raise Exception()
-
-    @staticmethod
-    def supply(securities):
-        options = {option: securities[option] for option in Securities.options if option in securities.keys()}
-        options = [dataframe.set_index(["strike"], inplace=False, drop=True)["size"].rename(str(option)) for option, dataframe in options.items()]
-        supply = pd.concat(options, axis=1)
-        supply.columns.name = "supply"
-        return supply
+        securities = {str(security): dataframe for security, dataframe in query.securities.items()}
+        options = [str(option) for option in list(Securities.Options)]
+        for valuation, dataframe in query.valuations.items():
+            demand = dataframe.sort_values(["apy", "npv"], axis=0, ascending=False, inplace=False, ignore_index=True)
+            supply = pd.concat([securities[option].set_index("strike", inplace=False, drop=True)["size"].rename(option) for option in options], axis=1)
+            market = list(self.market(supply, demand))
+            market = pd.DataFrame.from_records(market)
+            market = dataframe.where(market["cost"] > 0)
+            market = market.dropna(axis=0, how="all")
+            yield ValuationMarketQuery(query.current, query.ticker, query.expire, valuation, market)
 
     @staticmethod
-    def demand(valuations):
-        options = [str(option) for option in Securities.options]
-        demand = valuations.set_index(options, inplace=False, drop=True)[["apy", "npv", "cost", "tau", "size"]].rename(columns={"size": "demand"})
-        demand.columns.name = "strike"
-        return demand
-
-
-
-
+    def market(supply, demand):
+        options = [str(option) for option in list(Securities.Options)]
+        for row in demand.itertuples():
+            row = row.to_dict()
+            strikes = [row[option] for option in options]
+            sizes = [supply.loc[strike, option] for strike, option in zip(strikes, options)]
+            size = np.min([row.pop("size")] + sizes)
+            for strike, option in zip(strikes, options):
+                supply.at[strike, option] = supply.loc[strike, option] - size
+            row = row | {"size": size}
+            yield row
 
 
 
