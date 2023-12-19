@@ -7,6 +7,7 @@ Created on Weds Jul 19 2023
 """
 
 import os
+import logging
 import numpy as np
 import pandas as pd
 from enum import IntEnum
@@ -28,11 +29,17 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
 
+LOGGER = logging.getLogger(__name__)
+
+
 Basis = IntEnum("Basis", ["ARBITRAGE"], start=1)
 Scenario = IntEnum("Scenario", ["CURRENT", "MINIMUM", "MAXIMUM"], start=1)
 class Valuation(ntuple("Valuation", "basis scenario")):
     def __str__(self): return "|".join([str(value.name).lower() for value in self if bool(value)])
     def __int__(self): return int(self.basis) * 10 + int(self.scenario) * 1
+
+    @property
+    def title(self): return "|".join([str(string).title() for string in str(self).split("|")])
 
 CurrentArbitrage = Valuation(Basis.ARBITRAGE, Scenario.CURRENT)
 MinimumArbitrage = Valuation(Basis.ARBITRAGE, Scenario.MINIMUM)
@@ -129,6 +136,9 @@ class ValuationCalculator(Calculator, calculations=ODict(list(Calculations))):
 class ValuationFilter(Processor):
     def execute(self, query, *args, **kwargs):
         valuations = {valuation: self.filter(dataframe, *args, **kwargs) for valuation, dataframe in query.valuations.items()}
+        strings = {str(valuation.title): str(len(dataframe.index)) for valuation, dataframe in valuations.items()}
+        string = ", ".join(["=".join([key, value]) for key, value in strings.items()])
+        LOGGER.info("Filtered: {}[{}]".format(repr(self), string))
         yield ValuationQuery(query.current, query.ticker, query.expire, query.securities, valuations)
 
     @staticmethod
@@ -202,16 +212,31 @@ class ValuationLoader(Loader):
 
 
 class ValuationMarketQuery(ntuple("Query", "current ticker expire valuation market")):
+    def __call__(self, funds):
+        cumulative = (self.market["cost"] * self.market["size"]).cumsum()
+        market = cumulative.where(cumulative > funds)
+        return ValuationMarketQuery(self.current, self.ticker, self.expire, self.valuation, market)
+
+    def curve(self, stop, *args, start=0, steps=10, **kwargs):
+        curve = pd.concat([self(funds).results for funds in reversed(range(start, stop, steps))], axis=0)
+        return ValuationCurveQuery(self.current, self.ticker, self.expire, self.valuation, curve)
+
+    @property
+    def results(self): return {"apy": self.apy, "npv": self.npv, "cost": self.cost, "size": self.size, "tau-": self.market["tau"].min(), "tau+": self.market["tau"].max()}
     @property
     def weights(self): return (self.market["cost"] / self.market["cost"].sum()) * (self.market["size"] / self.market["size"].sum())
+    @property
+    def cost(self): return self.market["cost"] @ self.market["size"]
     @property
     def tau(self): return self.market["tau"].min(), self.market["tau"].max()
     @property
     def apy(self): return self.market["apy"] @ self.weights
     @property
-    def cost(self): return self.market["cost"] @ self.market["size"]
-    @property
     def npv(self): return self.market["npv"] @ self.market["size"]
+
+
+class ValuationCurveQuery(ntuple("Query", "current ticker expire valuation curve")):
+    pass
 
 
 class ValuationMarket(Processor):
@@ -223,7 +248,7 @@ class ValuationMarket(Processor):
             supply = pd.concat([securities[option].set_index("strike", inplace=False, drop=True)["size"].rename(option) for option in options], axis=1)
             market = list(self.market(supply, demand))
             market = pd.DataFrame.from_records(market)
-            market = dataframe.where(market["cost"] > 0)
+            market = dataframe.where(market["size"] > 0)
             market = market.dropna(axis=0, how="all")
             yield ValuationMarketQuery(query.current, query.ticker, query.expire, valuation, market)
 

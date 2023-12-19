@@ -7,6 +7,7 @@ Created on Weds Jul 19 2023
 """
 
 import os
+import logging
 import numpy as np
 import xarray as xr
 import pandas as pd
@@ -27,6 +28,9 @@ __all__ = ["DateRange", "Instruments", "Positions", "Security", "Securities", "C
 __all__ += ["SecuritySaver", "SecurityLoader", "SecurityFilter", "SecurityCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 class DateRange(ntuple("DateRange", "minimum maximum")):
@@ -51,6 +55,8 @@ class Security(ntuple("Security", "instrument position")):
     def __str__(self): return "|".join([str(value.name).lower() for value in self if bool(value)])
     def __int__(self): return int(self.instrument) * 10 + int(self.position) * 1
 
+    @property
+    def title(self): return "|".join([str(string).title() for string in str(self).split("|")])
     @property
     def payoff(self): return self.__payoff
 
@@ -185,6 +191,9 @@ class SecurityCalculator(Calculator, calculations=ODict(list(Calculations))):
 class SecurityFilter(Processor):
     def execute(self, query, *args, **kwargs):
         securities = {security: self.filter(dataframe, *args, security=security, **kwargs) for security, dataframe in query.securities.items()}
+        strings = {str(valuation.title): str(len(dataframe.index)) for valuation, dataframe in securities.items()}
+        string = ", ".join(["=".join([key, value]) for key, value in strings.items()])
+        LOGGER.info("Filtered: {}[{}]".format(repr(self), string))
         yield SecurityQuery(query.current, query.ticker, query.expire, securities)
 
     @kwargsdispatcher("security")

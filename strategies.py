@@ -19,7 +19,8 @@ from finance.securities import Positions, Instruments, Securities
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["Strategy", "Strategies", "Calculations", "StrategyCalculator"]
+__all__ = ["Strategy", "Strategies", "Calculations"]
+__all__ += ["StrategyCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
@@ -31,6 +32,8 @@ class Strategy(ntuple("Strategy", "spread instrument position")):
     def __str__(self): return "|".join([str(value.name).lower() for value in self if bool(value)])
     def __int__(self): return int(self.spread) * 100 + int(self.instrument) * 10 + int(self.position) * 1
 
+    @property
+    def title(self): return "|".join([str(string).title() for string in str(self).split("|")])
     @property
     def securities(self): return self.__securities
 
@@ -154,6 +157,9 @@ class StrategyCalculator(Calculator, calculations=ODict(list(Calculations))):
         dataset = dataset.rename({"strike": str(security)})
         dataset["strike"] = dataset[str(security)].expand_dims(["ticker", "date", "expire"])
         return dataset
+
+
+
 
 
 
