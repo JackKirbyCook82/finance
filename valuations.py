@@ -24,7 +24,7 @@ from finance.securities import Securities
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
 __all__ = ["Valuation", "Valuations", "Calculations"]
-__all__ += ["ValuationSaver", "ValuationLoader", "ValuationFilter", "ValuationCalculator", "ValuationMarket"]
+__all__ += ["ValuationSaver", "ValuationLoader", "ValuationFilter", "ValuationCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
@@ -67,14 +67,15 @@ class Valuations(object, metaclass=ValuationsMeta):
 
 
 class ValuationCalculation(Calculation):
+    Λ = source("Λ", "valuation", position=0, variables={"τ": "tau", "wo": "spot", "wτ": "future", "sμ": "underlying", "x": "size"})
+    ρ = constant("ρ", "discount", position="discount")
+
     inc = equation("inc", "income", np.float32, domain=("Λ.vo", "Λ.vτ"), function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
-    exp = equation("exp", "cost", np.float32, domain=("Λ.vo", "Λ.vτ"), function=lambda vo, vτ: + np.minimum(vo, 0) + np.minimum(vτ, 0))
+    exp = equation("exp", "cost", np.float32, domain=("Λ.vo", "Λ.vτ"), function=lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0))
     apy = equation("apy", "apy", np.float32, domain=("r", "Λ.τ"), function=lambda r, τ: np.power(r + 1, np.power(τ / 365, -1)) - 1)
     npv = equation("npv", "npv", np.float32, domain=("π", "Λ.τ", "ρ"), function=lambda π, τ, ρ: π * np.power(ρ / 365 + 1, τ))
-    π = equation("π", "profit", np.float32, domain=("inc", "exp"), function=lambda inc, exp: inc + exp)
-    r = equation("r", "return", np.float32, domain=("π", "exp"), function=lambda π, exp: π / - exp)
-    Λ = source("Λ", "valuation", position=0, variables={"τ": "tau", "x": "size", "wo": "spot", "wτ": "future", "τ": "tau", "x": "size", "sμ": "underlying"})
-    ρ = constant("ρ", "discount", position="discount")
+    π = equation("π", "profit", np.float32, domain=("inc", "exp"), function=lambda inc, exp: inc - exp)
+    r = equation("r", "return", np.float32, domain=("π", "exp"), function=lambda π, exp: π / exp)
 
     def execute(self, feed, *args, discount, **kwargs):
         yield self.exp(feed, discount=discount)
@@ -116,17 +117,17 @@ class ValuationCalculator(Calculator, calculations=ODict(list(Calculations))):
         strategies = {strategy: dataset for strategy, dataset in query.strategies.items()}
         if not bool(strategies):
             return
-        parser = lambda strategy, valuation, dataset: self.parser(dataset, *args, strategy=strategy, valuation=valuation, **kwargs)
+        parser = lambda strategy, dataset: self.parser(dataset, *args, strategy=strategy, **kwargs)
         calculations = {valuation: calculation for valuation, calculation in self.calculations.items()}
         valuations = {valuation: {strategy: calculation(dataset, *args, **kwargs) for strategy, dataset in strategies.items()} for valuation, calculation in calculations.items()}
-        valuations = {valuation: [parser(strategy, valuation, dataset) for strategy, dataset in strategies.items()] for valuation, strategies in valuations.items()}
+        valuations = {valuation: [parser(strategy, dataset) for strategy, dataset in strategies.items()] for valuation, strategies in valuations.items()}
         valuations = {valuation: pd.concat(dataframes, axis=0) for valuation, dataframes in valuations.items()}
         if not bool(valuations):
             return
         yield ValuationQuery(query.current, query.ticker, query.expire, {}, valuations)
 
     @staticmethod
-    def parser(dataset, *args, strategy, valuation, **kwargs):
+    def parser(dataset, *args, strategy, **kwargs):
         dataframe = dataset.to_dataframe()
         dataframe["strategy"] = str(strategy)
         dataframe = dataframe.reset_index(drop=False, inplace=False)
@@ -148,7 +149,30 @@ class ValuationFilter(Processor):
         return dataframe
 
 
-class ValuationSaver(Saver):
+class ValuationFile(object):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        datetypes = {str(Valuations.Arbitrage.Minimum): ["date", "expire"], str(Valuations.Arbitrage.Maximum): ["date", "expire"], str(Valuations.Arbitrage.Current): ["date", "expire"]}
+        datetypes.update({str(Securities.Stock.Long): ["date"], str(Securities.Stock.Short): ["date"]})
+        datetypes.update({str(Securities.Option.Put.Long): ["date", "expire"], str(Securities.Option.Put.Short): ["date", "expire"]})
+        datetypes.update({str(Securities.Option.Call.Long): ["date", "expire"], str(Securities.Option.Call.Short): ["date", "expire"]})
+        stocks = {"ticker": str, "price": np.float32, "size": np.int64}
+        options = {"ticker": str, "strike": np.float32, "price": np.float32, "size": np.int64}
+        valuation = {"ticker": str, "npv": np.float32, "apy": np.float32, "cost": np.float32, "size": np.int64, "tau": np.int16}
+        datatypes = {str(Valuations.Arbitrage.Minimum): valuation, str(Valuations.Arbitrage.Maximum): valuation, str(Valuations.Arbitrage.Current): valuation}
+        datatypes.update({str(Securities.Stock.Long): stocks, str(Securities.Stock.Short): stocks})
+        datatypes.update({str(Securities.Option.Put.Long): options, str(Securities.Option.Put.Short): options})
+        datatypes.update({str(Securities.Option.Call.Long): options, str(Securities.Option.Call.Short): options})
+        self.__datetypes = datetypes
+        self.__datatypes = datatypes
+
+    @property
+    def datetypes(self): return self.__datetypes
+    @property
+    def datatypes(self): return self.__datatypes
+
+
+class ValuationSaver(ValuationFile, Saver):
     def execute(self, query, *args, **kwargs):
         valuations = query.valuations
         if not bool(valuations) or not bool([dataframe.empty for dataframe in valuations.values()]):
@@ -165,25 +189,12 @@ class ValuationSaver(Saver):
                 self.write(dataframe, file=valuation_file, mode="w")
 
 
-class ValuationLoader(Loader):
-    def __init__(self, *args, valuations, **kwargs):
-        super().__init__(*args, **kwargs)
-        Columns = ntuple("Columns", "datetypes datatypes")
-        stock = Columns(["date"], {"ticker": str, "price": np.float32, "volume": np.float32, "size": np.float32})
-        option = Columns(["date", "expire"], {"ticker": str, "strike": np.float32, "price": np.float32, "volume": np.int64, "interest": np.int64, "size": np.int64})
-        valuation = Columns(["date", "expire"], {"ticker": str, "cost": np.float32, "npv": np.float32, "apy": np.float32, "tau": np.int16, "size": np.int64})
-        columns = {str(Valuations.Arbitrage.Minimum): valuation, str(Valuations.Arbitrage.Maximum): valuation, str(Valuations.Arbitrage.Current): valuation}
-        columns.update({str(Securities.Stock.Long): stock, str(Securities.Stock.Short): stock})
-        columns.update({str(Securities.Option.Put.Long): option, str(Securities.Option.Put.Short): option})
-        columns.update({str(Securities.Option.Call.Long): option, str(Securities.Option.Call.Short): option})
-        self.valuations = valuations
-        self.columns = columns
-
+class ValuationLoader(ValuationFile, Loader):
     def execute(self, *args, tickers=None, expires=None, dates=None, **kwargs):
         TickerExpire = ntuple("TickerExpire", "ticker expire")
         function = lambda foldername: Datetime.strptime(foldername, "%Y%m%d_%H%M%S")
-        datatypes = lambda key: self.columns[str(key)].datatypes
-        datetypes = lambda key: self.columns[str(key)].datetypes
+        datatypes = lambda key: self.datatypes[str(key)]
+        datetypes = lambda key: self.datetypes[str(key)]
         reader = lambda key, file: self.read(file=file, filetype=pd.DataFrame, datatypes=datatypes(key), datetypes=datetypes(key))
         for current_name in sorted(os.listdir(self.repository), key=function, reverse=False):
             current = function(current_name)
@@ -211,65 +222,66 @@ class ValuationLoader(Loader):
                     yield ValuationQuery(current, ticker, expire, securities, valuations)
 
 
-class ValuationMarketQuery(ntuple("Query", "current ticker expire valuation market")):
-    def __call__(self, funds):
-        cumulative = (self.market["cost"] * self.market["size"]).cumsum()
-        market = cumulative.where(cumulative > funds)
-        return ValuationMarketQuery(self.current, self.ticker, self.expire, self.valuation, market)
-
-    def curve(self, stop, *args, start=0, steps=10, **kwargs):
-        curve = pd.concat([self(funds).results for funds in reversed(range(start, stop, steps))], axis=0)
-        return ValuationCurveQuery(self.current, self.ticker, self.expire, self.valuation, curve)
-
-    @property
-    def results(self): return {"apy": self.apy, "npv": self.npv, "cost": self.cost, "size": self.size, "tau-": self.market["tau"].min(), "tau+": self.market["tau"].max()}
-    @property
-    def weights(self): return (self.market["cost"] / self.market["cost"].sum()) * (self.market["size"] / self.market["size"].sum())
-    @property
-    def cost(self): return self.market["cost"] @ self.market["size"]
-    @property
-    def tau(self): return self.market["tau"].min(), self.market["tau"].max()
-    @property
-    def apy(self): return self.market["apy"] @ self.weights
-    @property
-    def npv(self): return self.market["npv"] @ self.market["size"]
 
 
-class ValuationCurveQuery(ntuple("Query", "current ticker expire valuation curve")):
-    pass
+# class MarketQuery(ntuple("Query", "current ticker expire valuation market")):
+#     def __call__(self, funds):
+#         cumulative = (self.market["cost"] * self.market["size"]).cumsum()
+#         market = cumulative.where(cumulative > funds)
+#         return MarketQuery(self.current, self.ticker, self.expire, self.valuation, market)
+#
+#     def curve(self, stop, *args, start=0, steps=10, **kwargs):
+#         curve = pd.concat([self(funds).results for funds in reversed(range(start, stop, steps))], axis=0)
+#         return CurveQuery(self.current, self.ticker, self.expire, self.valuation, curve)
+#
+#     @property
+#     def results(self): return {"apy": self.apy, "npv": self.npv, "cost": self.cost, "size": self.size, "tau-": self.market["tau"].min(), "tau+": self.market["tau"].max()}
+#     @property
+#     def weights(self): return (self.market["cost"] / self.market["cost"].sum()) * (self.market["size"] / self.market["size"].sum())
+#     @property
+#     def cost(self): return self.market["cost"] @ self.market["size"]
+#     @property
+#     def tau(self): return self.market["tau"].min(), self.market["tau"].max()
+#     @property
+#     def apy(self): return self.market["apy"] @ self.weights
+#     @property
+#     def npv(self): return self.market["npv"] @ self.market["size"]
 
 
-class ValuationMarket(Processor):
-    def execute(self, query, *args, **kwargs):
-        securities = {str(security): dataframe for security, dataframe in query.securities.items()}
-        options = [str(option) for option in list(Securities.Options)]
-        for valuation, dataframe in query.valuations.items():
-            demand = dataframe.sort_values(["apy", "npv"], axis=0, ascending=False, inplace=False, ignore_index=True)
-            supply = pd.concat([securities[option].set_index("strike", inplace=False, drop=True)["size"].rename(option) for option in options], axis=1)
-            market = list(self.market(supply, demand))
-            market = pd.DataFrame.from_records(market)
-            market = dataframe.where(market["size"] > 0)
-            market = market.dropna(axis=0, how="all")
-            yield ValuationMarketQuery(query.current, query.ticker, query.expire, valuation, market)
-
-    @staticmethod
-    def market(supply, demand):
-        options = [str(option) for option in list(Securities.Options)]
-        for row in demand.itertuples():
-            row = row.to_dict()
-            strikes = [row[option] for option in options]
-            sizes = [supply.loc[strike, option] for strike, option in zip(strikes, options)]
-            size = np.min([row.pop("size")] + sizes)
-            for strike, option in zip(strikes, options):
-                supply.at[strike, option] = supply.loc[strike, option] - size
-            row = row | {"size": size}
-            yield row
+# class CurveQuery(ntuple("Query", "current ticker expire valuation curve")):
+#     pass
 
 
-
-
-
-
+# class ValuationMarket(Processor):
+#     def execute(self, query, *args, **kwargs):
+#         securities = {str(security): dataframe for security, dataframe in query.securities.items()}
+#         options = [str(option) for option in list(Securities.Options)]
+#         for valuation, dataframe in query.valuations.items():
+#             demand = dataframe.sort_values(["apy", "npv"], axis=0, ascending=False, inplace=False, ignore_index=True)
+#             supply = pd.concat([securities[option].set_index("strike", inplace=False, drop=True)["size"].rename(option) for option in options], axis=1)
+#
+#             print(demand)
+#             print(supply)
+#             raise Exception()
+#
+#             market = list(self.market(supply, demand))
+#             market = pd.DataFrame.from_records(market)
+#             market = dataframe.where(market["size"] > 0)
+#             market = market.dropna(axis=0, how="all")
+#             yield MarketQuery(query.current, query.ticker, query.expire, valuation, market)
+#
+#     @staticmethod
+#     def market(supply, demand):
+#         options = [str(option) for option in list(Securities.Options)]
+#         for row in demand.itertuples():
+#             row = row.to_dict()
+#             strikes = [row[option] for option in options]
+#             sizes = [supply.loc[strike, option] for strike, option in zip(strikes, options)]
+#             size = np.min([row.pop("size")] + sizes)
+#             for strike, option in zip(strikes, options):
+#                 supply.at[strike, option] = supply.loc[strike, option] - size
+#             row = row | {"size": size}
+#             yield row
 
 
 

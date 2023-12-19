@@ -117,7 +117,7 @@ class StockCalculation(InstrumentCalculation):
 
 class OptionCalculation(InstrumentCalculation):
     τ = equation("τ", "tau", np.int16, domain=("Λ.to", "Λ.tτ"), function=lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
-    Λ = source("Λ", "option", position=0, variables={"to": "date", "w": "price", "x": "size", "q": "volume", "tτ": "expire", "i": "interest"})
+    Λ = source("Λ", "option", position=0, variables={"to": "date", "tτ": "expire", "w": "price", "x": "size", "q": "volume", "i": "interest"})
 
     def execute(self, feed, *args, **kwargs):
         yield self["Λ"].w(feed)
@@ -215,7 +215,27 @@ class SecurityFilter(Processor):
         return dataframe
 
 
-class SecuritySaver(Saver):
+class SecurityFile(object):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        datetypes = {str(Securities.Stock.Long): ["date"], str(Securities.Stock.Short): ["date"]}
+        datetypes.update({str(Securities.Option.Put.Long): ["date", "expire"], str(Securities.Option.Put.Short): ["date", "expire"]})
+        datetypes.update({str(Securities.Option.Call.Long): ["date", "expire"], str(Securities.Option.Call.Short): ["date", "expire"]})
+        stocks = {"ticker": str, "price": np.float32, "volume": np.int64, "size": np.int64}
+        options = {"ticker": str, "strike": np.float32, "price": np.float32, "volume": np.int64, "interest": np.int64, "size": np.int64}
+        datatypes = {str(Securities.Stock.Long): stocks, str(Securities.Stock.Short): stocks}
+        datatypes.update({str(Securities.Option.Put.Long): options, str(Securities.Option.Put.Short): options})
+        datatypes.update({str(Securities.Option.Call.Long): options, str(Securities.Option.Call.Short): options})
+        self.__datetypes = datetypes
+        self.__datatypes = datatypes
+
+    @property
+    def datetypes(self): return self.__datetypes
+    @property
+    def datatypes(self): return self.__datatypes
+
+
+class SecuritySaver(SecurityFile, Saver):
     def execute(self, query, *args, **kwargs):
         securities = query.securities
         if not bool(securities) or not bool([dataframe.empty for dataframe in securities.values()]):
@@ -235,22 +255,12 @@ class SecuritySaver(Saver):
                 self.write(dataframe, file=security_file, mode="w")
 
 
-class SecurityLoader(Loader):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        Columns = ntuple("Columns", "datetypes datatypes")
-        stock = Columns(["date"], {"ticker": str, "price": np.float32, "volume": np.int64, "size": np.int64})
-        option = Columns(["date", "expire"], {"ticker": str, "strike": np.float32, "price": np.float32, "volume": np.int64, "interest": np.int64, "size": np.int64})
-        columns = {str(Securities.Stock.Long): stock, str(Securities.Stock.Short): stock}
-        columns.update({str(Securities.Option.Put.Long): option, str(Securities.Option.Put.Short): option})
-        columns.update({str(Securities.Option.Call.Long): option, str(Securities.Option.Call.Short): option})
-        self.columns = columns
-
+class SecurityLoader(SecurityFile, Loader):
     def execute(self, *args, tickers=None, expires=None, dates=None, **kwargs):
         TickerExpire = ntuple("TickerExpire", "ticker expire")
         function = lambda foldername: Datetime.strptime(foldername, "%Y%m%d_%H%M%S")
-        datatypes = lambda security: self.columns[str(security)].datatypes
-        datetypes = lambda security: self.columns[str(security)].datetypes
+        datatypes = lambda key: self.datatypes[str(key)]
+        datetypes = lambda key: self.datetypes[str(key)]
         reader = lambda security, file: self.read(file=file, filetype=pd.DataFrame, datatypes=datatypes(security), datetypes=datetypes(security))
         for current_name in sorted(os.listdir(self.repository), key=function, reverse=False):
             current = function(current_name)
