@@ -160,10 +160,9 @@ class SecurityQuery(ntuple("Query", "current ticker expire securities")): pass
 class SecurityCalculator(Calculator, calculations=ODict(list(Calculations))):
     def execute(self, query, *args, **kwargs):
         securities = {security: dataframe for security, dataframe in query.securities.items() if not dataframe.empty}
-        if not bool(securities):
-            return
+        function = lambda security: security in securities.keys()
+        calculations = {security: calculation for security, calculation in self.calculations.items() if function(security)}
         parser = lambda security, dataframe: self.parser(dataframe, *args, security=security, **kwargs)
-        calculations = {security: calculation for security, calculation in self.calculations.items() if security in securities.keys()}
         securities = {security: parser(security, dataframe) for security, dataframe in securities.items()}
         securities = {security: calculation(securities[security], *args, **kwargs) for security, calculation in calculations.items()}
         if not bool(securities):

@@ -17,7 +17,7 @@ from collections import OrderedDict as ODict
 
 from support.pipelines import Processor, Calculator, Saver, Loader
 from support.calculations import Calculation, equation, source, constant
-from support.dispatchers import typedispatcher
+from support.dispatchers import typedispatcher, kwargsdispatcher
 
 from finance.securities import Securities
 
@@ -41,13 +41,13 @@ class Valuation(ntuple("Valuation", "basis scenario")):
     @property
     def title(self): return "|".join([str(string).title() for string in str(self).split("|")])
 
-CurrentArbitrage = Valuation(Basis.ARBITRAGE, Scenario.CURRENT)
 MinimumArbitrage = Valuation(Basis.ARBITRAGE, Scenario.MINIMUM)
 MaximumArbitrage = Valuation(Basis.ARBITRAGE, Scenario.MAXIMUM)
+CurrentArbitrage = Valuation(Basis.ARBITRAGE, Scenario.CURRENT)
 
 
 class ValuationsMeta(type):
-    def __iter__(cls): return iter([MinimumArbitrage, MaximumArbitrage])
+    def __iter__(cls): return iter([MinimumArbitrage])
     def __getitem__(cls, indexkey): return cls.retrieve(indexkey)
 
     @typedispatcher
@@ -58,9 +58,9 @@ class ValuationsMeta(type):
     def string(cls, string): return {int(valuation): valuation for valuation in iter(cls)}[str(string).lower()]
 
     class Arbitrage:
-        Current = CurrentArbitrage
         Minimum = MinimumArbitrage
         Maximum = MaximumArbitrage
+        Current = CurrentArbitrage
 
 class Valuations(object, metaclass=ValuationsMeta):
     pass
@@ -103,9 +103,9 @@ class CalculationsMeta(type):
         return ((key, value) for key, value in contents.items())
 
     class Arbitrage:
-        Current = CurrentCalculation
         Minimum = MinimumCalculation
         Maximum = MaximumCalculation
+        Current = CurrentCalculation
 
 class Calculations(object, metaclass=CalculationsMeta):
     pass
@@ -114,17 +114,16 @@ class Calculations(object, metaclass=CalculationsMeta):
 class ValuationQuery(ntuple("Query", "current ticker expire securities valuations")): pass
 class ValuationCalculator(Calculator, calculations=ODict(list(Calculations))):
     def execute(self, query, *args, **kwargs):
+        securities = query.securities if hasattr(query, "securities") else {}
         strategies = {strategy: dataset for strategy, dataset in query.strategies.items()}
-        if not bool(strategies):
-            return
-        parser = lambda strategy, dataset: self.parser(dataset, *args, strategy=strategy, **kwargs)
         calculations = {valuation: calculation for valuation, calculation in self.calculations.items()}
+        parser = lambda strategy, dataset: self.parser(dataset, *args, strategy=strategy, **kwargs)
         valuations = {valuation: {strategy: calculation(dataset, *args, **kwargs) for strategy, dataset in strategies.items()} for valuation, calculation in calculations.items()}
         valuations = {valuation: [parser(strategy, dataset) for strategy, dataset in strategies.items()] for valuation, strategies in valuations.items()}
         valuations = {valuation: pd.concat(dataframes, axis=0) for valuation, dataframes in valuations.items()}
         if not bool(valuations):
             return
-        yield ValuationQuery(query.current, query.ticker, query.expire, {}, valuations)
+        yield ValuationQuery(query.current, query.ticker, query.expire, securities, valuations)
 
     @staticmethod
     def parser(dataset, *args, strategy, **kwargs):
@@ -136,11 +135,12 @@ class ValuationCalculator(Calculator, calculations=ODict(list(Calculations))):
 
 class ValuationFilter(Processor):
     def execute(self, query, *args, **kwargs):
+        securities = query.securities if hasattr(query, "securities") else {}
         valuations = {valuation: self.filter(dataframe, *args, **kwargs) for valuation, dataframe in query.valuations.items()}
         strings = {str(valuation.title): str(len(dataframe.index)) for valuation, dataframe in valuations.items()}
         string = ", ".join(["=".join([key, value]) for key, value in strings.items()])
         LOGGER.info("Filtered: {}[{}]".format(repr(self), string))
-        yield ValuationQuery(query.current, query.ticker, query.expire, query.securities, valuations)
+        yield ValuationQuery(query.current, query.ticker, query.expire, securities, valuations)
 
     @staticmethod
     def filter(dataframe, *args, apy=None, **kwargs):
@@ -211,7 +211,7 @@ class ValuationLoader(ValuationFile, Loader):
                     continue
                 ticker_expire_folder = os.path.join(current_folder, ticker_expire_name)
                 with self.locks[ticker_expire_folder]:
-                    filenames = {valuation: str(valuation).replace("|", "_") + ".csv" for valuation in self.valuations}
+                    filenames = {valuation: str(valuation).replace("|", "_") + ".csv" for valuation in list(Valuations)}
                     files = {valuation: os.path.join(ticker_expire_folder, filename) for valuation, filename in filenames.items()}
                     valuations = {valuation: reader(valuation, file) for valuation, file in files.items() if os.path.isfile(file)}
                     if not bool(valuations) or all([dataframe.empty for dataframe in valuations.values()]):
@@ -220,68 +220,6 @@ class ValuationLoader(ValuationFile, Loader):
                     files = {security: os.path.join(ticker_expire_folder, filename) for security, filename in filenames.items()}
                     securities = {security: reader(security, file) for security, file in files.items()}
                     yield ValuationQuery(current, ticker, expire, securities, valuations)
-
-
-
-
-# class MarketQuery(ntuple("Query", "current ticker expire valuation market")):
-#     def __call__(self, funds):
-#         cumulative = (self.market["cost"] * self.market["size"]).cumsum()
-#         market = cumulative.where(cumulative > funds)
-#         return MarketQuery(self.current, self.ticker, self.expire, self.valuation, market)
-#
-#     def curve(self, stop, *args, start=0, steps=10, **kwargs):
-#         curve = pd.concat([self(funds).results for funds in reversed(range(start, stop, steps))], axis=0)
-#         return CurveQuery(self.current, self.ticker, self.expire, self.valuation, curve)
-#
-#     @property
-#     def results(self): return {"apy": self.apy, "npv": self.npv, "cost": self.cost, "size": self.size, "tau-": self.market["tau"].min(), "tau+": self.market["tau"].max()}
-#     @property
-#     def weights(self): return (self.market["cost"] / self.market["cost"].sum()) * (self.market["size"] / self.market["size"].sum())
-#     @property
-#     def cost(self): return self.market["cost"] @ self.market["size"]
-#     @property
-#     def tau(self): return self.market["tau"].min(), self.market["tau"].max()
-#     @property
-#     def apy(self): return self.market["apy"] @ self.weights
-#     @property
-#     def npv(self): return self.market["npv"] @ self.market["size"]
-
-
-# class CurveQuery(ntuple("Query", "current ticker expire valuation curve")):
-#     pass
-
-
-# class ValuationMarket(Processor):
-#     def execute(self, query, *args, **kwargs):
-#         securities = {str(security): dataframe for security, dataframe in query.securities.items()}
-#         options = [str(option) for option in list(Securities.Options)]
-#         for valuation, dataframe in query.valuations.items():
-#             demand = dataframe.sort_values(["apy", "npv"], axis=0, ascending=False, inplace=False, ignore_index=True)
-#             supply = pd.concat([securities[option].set_index("strike", inplace=False, drop=True)["size"].rename(option) for option in options], axis=1)
-#
-#             print(demand)
-#             print(supply)
-#             raise Exception()
-#
-#             market = list(self.market(supply, demand))
-#             market = pd.DataFrame.from_records(market)
-#             market = dataframe.where(market["size"] > 0)
-#             market = market.dropna(axis=0, how="all")
-#             yield MarketQuery(query.current, query.ticker, query.expire, valuation, market)
-#
-#     @staticmethod
-#     def market(supply, demand):
-#         options = [str(option) for option in list(Securities.Options)]
-#         for row in demand.itertuples():
-#             row = row.to_dict()
-#             strikes = [row[option] for option in options]
-#             sizes = [supply.loc[strike, option] for strike, option in zip(strikes, options)]
-#             size = np.min([row.pop("size")] + sizes)
-#             for strike, option in zip(strikes, options):
-#                 supply.at[strike, option] = supply.loc[strike, option] - size
-#             row = row | {"size": size}
-#             yield row
 
 
 

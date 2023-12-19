@@ -19,8 +19,7 @@ from finance.securities import Positions, Instruments, Securities
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["Strategy", "Strategies", "Calculations"]
-__all__ += ["StrategyCalculator"]
+__all__ = ["Strategy", "Strategies", "Calculations", "StrategyCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
@@ -29,11 +28,11 @@ Spreads = IntEnum("Strategy", ["STRANGLE", "COLLAR", "VERTICAL", "CONDOR"], star
 class Strategy(ntuple("Strategy", "spread instrument position")):
     def __new__(cls, spread, instrument, position, *args, **kwargs): return super().__new__(cls, spread, instrument, position)
     def __init__(self, *args, **kwargs): self.__securities = kwargs["securities"]
-    def __str__(self): return "_".join([str(value.name).lower() for value in self if bool(value)])
+    def __str__(self): return "|".join([str(value.name).lower() for value in self if bool(value)])
     def __int__(self): return int(self.spread) * 100 + int(self.instrument) * 10 + int(self.position) * 1
 
     @property
-    def title(self): return "_".join([str(string).title() for string in str(self).split("_")])
+    def title(self): return "|".join([str(string).title() for string in str(self).split("|")])
     @property
     def securities(self): return self.__securities
 
@@ -97,7 +96,7 @@ class CondorCalculation(StrategyCalculation): pass
 class StrangleLongCalculation(StrangleCalculation):
     τ = equation("τ", "tau", np.int16, domain=("pα.τ", "cα.τ"), function=lambda τpα, τcα: τpα)
     x = equation("x", "size", np.int64, domain=("pα.x", "cα.x"), function=lambda xpα, xcα: np.minimum(xpα, xcα))
-    wo = equation("wo", "spot", np.float32, domain=("pα.w", "cα.w", "ε"), function=lambda wpα, wcα, ε: (wpα + wcα) * 100 - ε)
+    wo = equation("wo", "spot", np.float32, domain=("pα.w", "cα.w", "ε"), function=lambda wpα, wcα, ε: - (wpα + wcα) * 100 - ε)
     wτ = equation("wτ", "future", np.float32, domain=("pα.k", "cα.k", "ε"), function=lambda kpα, kcα, ε: np.maximum(kpα - kcα, 0) * 100 - ε)
 
 class VerticalPutCalculation(VerticalCalculation):
@@ -150,11 +149,9 @@ class StrategyQuery(ntuple("Query", "current ticker expire strategies")): pass
 class StrategyCalculator(Calculator, calculations=ODict(list(Calculations))):
     def execute(self, query, *args, **kwargs):
         securities = {security: dataset for security, dataset in query.securities.items()}
-        if not bool(securities):
-            return
-        parser = lambda security, dataset: self.parser(dataset, *args, security=security, **kwargs)
         function = lambda strategy: all([security in securities.keys() for security in strategy.securities])
         calculations = {strategy: calculation for strategy, calculation in self.calculations.items() if function(strategy)}
+        parser = lambda security, dataset: self.parser(dataset, *args, security=security, **kwargs)
         securities = {security: parser(security, dataset) for security, dataset in securities.items()}
         strategies = {strategy: calculation(securities, *args, **kwargs) for strategy, calculation in calculations.items()}
         if not bool(strategies):
