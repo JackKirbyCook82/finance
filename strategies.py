@@ -24,7 +24,7 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
 
-Spreads = IntEnum("Strategy", ["STRANGLE", "COLLAR", "VERTICAL", "CONDOR"], start=1)
+Spreads = IntEnum("Strategy", ["STRANGLE", "COLLAR", "VERTICAL"], start=1)
 class Strategy(ntuple("Strategy", "spread instrument position")):
     def __new__(cls, spread, instrument, position, *args, **kwargs): return super().__new__(cls, spread, instrument, position)
     def __init__(self, *args, **kwargs): self.__securities = kwargs["securities"]
@@ -41,11 +41,10 @@ CollarLong = Strategy(Spreads.COLLAR, 0, Positions.LONG, securities=[Securities.
 CollarShort = Strategy(Spreads.COLLAR, 0, Positions.SHORT, securities=[Securities.Option.Call.Long, Securities.Option.Put.Short, Securities.Stock.Short])
 VerticalPut = Strategy(Spreads.VERTICAL, Instruments.PUT, 0, securities=[Securities.Option.Put.Long, Securities.Option.Put.Short])
 VerticalCall = Strategy(Spreads.VERTICAL, Instruments.CALL, 0, securities=[Securities.Option.Call.Long, Securities.Option.Call.Short])
-Condor = Strategy(Spreads.CONDOR, 0, 0, securities=[Securities.Option.Put.Long, Securities.Option.Call.Long, Securities.Option.Put.Short, Securities.Option.Call.Short])
 
 
 class StrategiesMeta(type):
-    def __iter__(cls): return iter([StrangleLong, CollarLong, CollarShort, VerticalPut, VerticalCall, Condor])
+    def __iter__(cls): return iter([StrangleLong, CollarLong, CollarShort, VerticalPut, VerticalCall])
     def __getitem__(cls, indexkey): return cls.retrieve(indexkey)
 
     @typedispatcher
@@ -55,7 +54,6 @@ class StrategiesMeta(type):
     @retrieve.register(str)
     def string(cls, string): return {int(strategy): strategy for strategy in iter(cls)}[str(string).lower()]
 
-    Condor = Condor
     class Strangle:
         Long = StrangleLong
     class Collar:
@@ -91,7 +89,6 @@ class StrategyCalculation(Calculation):
 class StrangleCalculation(StrategyCalculation): pass
 class VerticalCalculation(StrategyCalculation): pass
 class CollarCalculation(StrategyCalculation): pass
-class CondorCalculation(StrategyCalculation): pass
 
 class StrangleLongCalculation(StrangleCalculation):
     τ = equation("τ", "tau", np.int16, domain=("pα.τ", "cα.τ"), function=lambda τpα, τcα: τpα)
@@ -128,10 +125,9 @@ class CalculationsMeta(type):
     def __iter__(cls):
         contents = {Strategies.Vertical.Put: VerticalPutCalculation, Strategies.Vertical.Call: VerticalCallCalculation}
         contents.update({Strategies.Collar.Long: CollarLongCalculation, Strategies.Collar.Short: CollarShortCalculation})
-        contents.update({Strategies.Strangle.Long: StrangleLongCalculation, Strategies.Collar: CondorCalculation})
+        contents.update({Strategies.Strangle.Long: StrangleLongCalculation})
         return ((key, value) for key, value in contents.items())
 
-    Condor = CondorCalculation
     class Strangle:
         Long = StrangleLongCalculation
     class Collar:
@@ -145,7 +141,10 @@ class Calculations(object, metaclass=CalculationsMeta):
     pass
 
 
-class StrategyQuery(ntuple("Query", "current ticker expire strategies")): pass
+class StrategyQuery(ntuple("Query", "current ticker expire strategies")):
+    pass
+
+
 class StrategyCalculator(Calculator, calculations=ODict(list(Calculations))):
     def execute(self, query, *args, **kwargs):
         securities = {security: dataset for security, dataset in query.securities.items()}
@@ -162,7 +161,8 @@ class StrategyCalculator(Calculator, calculations=ODict(list(Calculations))):
     def parser(self, dataset, *args, security, **kwargs): raise ValueError(str(security))
 
     @parser.register.value(*list(Securities.Stocks))
-    def stock(self, dataset, *args, **kwargs): return dataset
+    def stock(self, dataset, *args, **kwargs):
+        return dataset
 
     @parser.register.value(*list(Securities.Options))
     def option(self, dataset, *args, security, **kwargs):

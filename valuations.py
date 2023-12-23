@@ -15,16 +15,13 @@ from datetime import datetime as Datetime
 from collections import namedtuple as ntuple
 from collections import OrderedDict as ODict
 
-from support.pipelines import Processor, Calculator, Saver, Loader
 from support.calculations import Calculation, equation, source, constant
-from support.dispatchers import typedispatcher, kwargsdispatcher
-
-from finance.securities import Securities
+from support.pipelines import Processor, Calculator, Saver, Loader
+from support.dispatchers import typedispatcher
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["Valuation", "Valuations", "Calculations"]
-__all__ += ["ValuationSaver", "ValuationLoader", "ValuationFilter", "ValuationCalculator"]
+__all__ = ["Valuation", "Valuations", "Calculations", "ValuationSaver", "ValuationLoader", "ValuationFilter", "ValuationCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
@@ -111,10 +108,16 @@ class Calculations(object, metaclass=CalculationsMeta):
     pass
 
 
-class ValuationQuery(ntuple("Query", "current ticker expire securities valuations")): pass
+class ValuationQuery(ntuple("Query", "current ticker expire valuations")):
+    def __str__(self):
+        strings = {str(valuation.title): str(len(dataframe.index)) for valuation, dataframe in self.valuations.items()}
+        arguments = "{}|{}".format(self.ticker, self.expire.strftime("%Y%m%d"))
+        parameters = ", ".join(["=".join([key, value]) for key, value in strings.items()])
+        return ", ".join([arguments, parameters])
+
+
 class ValuationCalculator(Calculator, calculations=ODict(list(Calculations))):
     def execute(self, query, *args, **kwargs):
-        securities = query.securities if hasattr(query, "securities") else {}
         strategies = {strategy: dataset for strategy, dataset in query.strategies.items()}
         calculations = {valuation: calculation for valuation, calculation in self.calculations.items()}
         parser = lambda strategy, dataset: self.parser(dataset, *args, strategy=strategy, **kwargs)
@@ -123,7 +126,7 @@ class ValuationCalculator(Calculator, calculations=ODict(list(Calculations))):
         valuations = {valuation: pd.concat(dataframes, axis=0) for valuation, dataframes in valuations.items()}
         if not bool(valuations):
             return
-        yield ValuationQuery(query.current, query.ticker, query.expire, securities, valuations)
+        yield ValuationQuery(query.current, query.ticker, query.expire, valuations)
 
     @staticmethod
     def parser(dataset, *args, strategy, **kwargs):
@@ -135,17 +138,16 @@ class ValuationCalculator(Calculator, calculations=ODict(list(Calculations))):
 
 class ValuationFilter(Processor):
     def execute(self, query, *args, **kwargs):
-        securities = query.securities if hasattr(query, "securities") else {}
         valuations = {valuation: self.filter(dataframe, *args, **kwargs) for valuation, dataframe in query.valuations.items()}
-        strings = {str(valuation.title): str(len(dataframe.index)) for valuation, dataframe in valuations.items()}
-        string = ", ".join(["=".join([key, value]) for key, value in strings.items()])
-        LOGGER.info("Filtered: {}[{}]".format(repr(self), string))
-        yield ValuationQuery(query.current, query.ticker, query.expire, securities, valuations)
+        query = ValuationQuery(query.current, query.ticker, query.expire, valuations)
+        LOGGER.info("Filtered: {}[{}]".format(repr(self), str(query)))
+        yield query
 
     @staticmethod
     def filter(dataframe, *args, apy=None, **kwargs):
         dataframe = dataframe.where(dataframe["apy"] >= apy) if apy is not None else dataframe
         dataframe = dataframe.dropna(axis=0, how="all")
+        dataframe = dataframe.reset_index(drop=True, inplace=False)
         return dataframe
 
 
@@ -153,16 +155,8 @@ class ValuationFile(object):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         datetypes = {str(Valuations.Arbitrage.Minimum): ["date", "expire"], str(Valuations.Arbitrage.Maximum): ["date", "expire"], str(Valuations.Arbitrage.Current): ["date", "expire"]}
-        datetypes.update({str(Securities.Stock.Long): ["date"], str(Securities.Stock.Short): ["date"]})
-        datetypes.update({str(Securities.Option.Put.Long): ["date", "expire"], str(Securities.Option.Put.Short): ["date", "expire"]})
-        datetypes.update({str(Securities.Option.Call.Long): ["date", "expire"], str(Securities.Option.Call.Short): ["date", "expire"]})
-        stocks = {"ticker": str, "price": np.float32, "size": np.int64}
-        options = {"ticker": str, "strike": np.float32, "price": np.float32, "size": np.int64}
-        valuation = {"ticker": str, "npv": np.float32, "apy": np.float32, "cost": np.float32, "size": np.int64, "tau": np.int16}
+        valuation = {"npv": np.float32, "apy": np.float32, "cost": np.float32, "size": np.int64, "tau": np.int16}
         datatypes = {str(Valuations.Arbitrage.Minimum): valuation, str(Valuations.Arbitrage.Maximum): valuation, str(Valuations.Arbitrage.Current): valuation}
-        datatypes.update({str(Securities.Stock.Long): stocks, str(Securities.Stock.Short): stocks})
-        datatypes.update({str(Securities.Option.Put.Long): options, str(Securities.Option.Put.Short): options})
-        datatypes.update({str(Securities.Option.Call.Long): options, str(Securities.Option.Call.Short): options})
         self.__datetypes = datetypes
         self.__datatypes = datatypes
 
@@ -214,12 +208,7 @@ class ValuationLoader(ValuationFile, Loader):
                     filenames = {valuation: str(valuation).replace("|", "_") + ".csv" for valuation in list(Valuations)}
                     files = {valuation: os.path.join(ticker_expire_folder, filename) for valuation, filename in filenames.items()}
                     valuations = {valuation: reader(valuation, file) for valuation, file in files.items() if os.path.isfile(file)}
-                    if not bool(valuations) or all([dataframe.empty for dataframe in valuations.values()]):
-                        continue
-                    filenames = {security: str(security).replace("|", "_") + ".csv" for security in list(Securities)}
-                    files = {security: os.path.join(ticker_expire_folder, filename) for security, filename in filenames.items()}
-                    securities = {security: reader(security, file) for security, file in files.items()}
-                    yield ValuationQuery(current, ticker, expire, securities, valuations)
+                    yield ValuationQuery(current, ticker, expire, valuations)
 
 
 

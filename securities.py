@@ -19,13 +19,12 @@ from collections import namedtuple as ntuple
 from collections import OrderedDict as ODict
 
 from support.pipelines import Processor, Calculator, Saver, Loader
-from support.calculations import Calculation, equation, source
 from support.dispatchers import typedispatcher, kwargsdispatcher
+from support.calculations import Calculation, equation, source
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["DateRange", "Instruments", "Positions", "Security", "Securities", "Calculations"]
-__all__ += ["SecuritySaver", "SecurityLoader", "SecurityFilter", "SecurityCalculator"]
+__all__ = ["DateRange", "Instruments", "Positions", "Security", "Securities", "Calculations", "SecuritySaver", "SecurityLoader", "SecurityFilter", "SecurityCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
@@ -156,7 +155,14 @@ class Calculations(object, metaclass=CalculationsMeta):
     pass
 
 
-class SecurityQuery(ntuple("Query", "current ticker expire securities")): pass
+class SecurityQuery(ntuple("Query", "current ticker expire securities")):
+    def __str__(self):
+        strings = {str(security.title): str(len(dataframe.index)) for security, dataframe in self.securities.items()}
+        arguments = "{}|{}".format(self.ticker, self.expire.strftime("%Y%m%d"))
+        parameters = ", ".join(["=".join([key, value]) for key, value in strings.items()])
+        return ", ".join([arguments, parameters])
+
+
 class SecurityCalculator(Calculator, calculations=ODict(list(Calculations))):
     def execute(self, query, *args, **kwargs):
         securities = {security: dataframe for security, dataframe in query.securities.items() if not dataframe.empty}
@@ -190,10 +196,9 @@ class SecurityCalculator(Calculator, calculations=ODict(list(Calculations))):
 class SecurityFilter(Processor):
     def execute(self, query, *args, **kwargs):
         securities = {security: self.filter(dataframe, *args, security=security, **kwargs) for security, dataframe in query.securities.items()}
-        strings = {str(valuation.title): str(len(dataframe.index)) for valuation, dataframe in securities.items()}
-        string = ", ".join(["=".join([key, value]) for key, value in strings.items()])
-        LOGGER.info("Filtered: {}[{}]".format(repr(self), string))
-        yield SecurityQuery(query.current, query.ticker, query.expire, securities)
+        query = SecurityQuery(query.current, query.ticker, query.expire, securities)
+        LOGGER.info("Filtered: {}[{}]".format(repr(self), str(query)))
+        yield query
 
     @kwargsdispatcher("security")
     def filter(self, dataframe, *args, security, **kwargs): raise ValueError(str(security))
@@ -203,6 +208,7 @@ class SecurityFilter(Processor):
         dataframe = dataframe.where(dataframe["size"] >= size) if bool(size) else dataframe
         dataframe = dataframe.where(dataframe["volume"] >= volume) if bool(volume) else dataframe
         dataframe = dataframe.dropna(axis=0, how="all")
+        dataframe = dataframe.reset_index(drop=True, inplace=False)
         return dataframe
 
     @filter.register.value(*list(Securities.Options))
@@ -211,6 +217,7 @@ class SecurityFilter(Processor):
         dataframe = dataframe.where(dataframe["interest"] >= interest) if bool(interest) else dataframe
         dataframe = dataframe.where(dataframe["volume"] >= volume) if bool(volume) else dataframe
         dataframe = dataframe.dropna(axis=0, how="all")
+        dataframe = dataframe.reset_index(drop=True, inplace=False)
         return dataframe
 
 
@@ -220,8 +227,8 @@ class SecurityFile(object):
         datetypes = {str(Securities.Stock.Long): ["date"], str(Securities.Stock.Short): ["date"]}
         datetypes.update({str(Securities.Option.Put.Long): ["date", "expire"], str(Securities.Option.Put.Short): ["date", "expire"]})
         datetypes.update({str(Securities.Option.Call.Long): ["date", "expire"], str(Securities.Option.Call.Short): ["date", "expire"]})
-        stocks = {"ticker": str, "price": np.float32, "volume": np.int64, "size": np.int64}
-        options = {"ticker": str, "strike": np.float32, "price": np.float32, "volume": np.int64, "interest": np.int64, "size": np.int64}
+        stocks = {"price": np.float32, "volume": np.int64, "size": np.int64}
+        options = {"strike": np.float32, "price": np.float32, "volume": np.int64, "interest": np.int64, "size": np.int64}
         datatypes = {str(Securities.Stock.Long): stocks, str(Securities.Stock.Short): stocks}
         datatypes.update({str(Securities.Option.Put.Long): options, str(Securities.Option.Put.Short): options})
         datatypes.update({str(Securities.Option.Call.Long): options, str(Securities.Option.Call.Short): options})
