@@ -7,8 +7,6 @@ Created on Weds Jul 19 2023
 """
 
 import logging
-
-import numpy as np
 import pandas as pd
 from support.pipelines import Processor
 from datetime import datetime as Datetime
@@ -49,6 +47,7 @@ class TargetTerminal(Processor):
         targets = targets.where(targets["current"] - Datetime.now() > self.tenure) if self.tenure is not None else targets
         targets = targets.sort_values(["apy", "npv"], axis=0, ascending=False, inplace=False, ignore_index=False)
         targets = targets.head(self.size) if self.size is not None else targets
+        targets = targets.reset_index(drop=True, inplace=False)
         self.targets = targets
 
         if bool(targets.empty): return
@@ -60,7 +59,6 @@ class TargetTerminal(Processor):
         dataframe = dataframe.where(dataframe["cost"] >= funds) if funds is not None else dataframe
         dataframe = dataframe.dropna(axis=0, how="all")
         dataframe = dataframe.drop_duplicates(subset=self.index, keep="last", inplace=False)
-        dataframe = dataframe.reset_index(drop=True, inplace=False)
         return dataframe[self.index + self.columns]
 
     @property
