@@ -8,6 +8,7 @@ Created on Weds Jul 19 2023
 
 import logging
 import pandas as pd
+import PySimpleGUI as gui
 from support.pipelines import Processor
 from datetime import datetime as Datetime
 
