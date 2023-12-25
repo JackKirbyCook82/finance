@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-Created on Weds Jul 19 2023
-@name:   Analysis Objects
+Created on Sun Dec 21 2023
+@name:   Equilibrium Objects
 @author: Jack Kirby Cook
 
 """
@@ -21,7 +21,7 @@ from finance.valuations import Valuations
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["SupplyDemandLoader", "EquilibriumCalculator", "EquilibriumAnalysis"]
+__all__ = ["SupplyDemandLoader", "EquilibriumCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
@@ -88,26 +88,26 @@ class SupplyDemandLoader(SupplyDemandFile, Loader):
 
 
 class EquilibriumCalculator(Processor):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, valuation=Valuations.Arbitrage.Minimum, **kwargs):
         super().__init__(*args, **kwargs)
         Variables = ntuple("Variables", "supply demand")
         index = ["ticker", "date", "expire"] + list(map(str, Securities.Options))
         columns = ["strategy", "apy", "npv", "cost", "tau", "size"]
         self.__index = Variables(["ticker", "date", "expire", "strike"], index)
         self.__columns = Variables(["size"], columns)
+        self.__valuation = valuation
 
     def execute(self, query, *args, **kwargs):
         if bool(query.demand.empty):
             return
-        supply = self.supply(query.supply, *args, **kwargs)
-        demand = self.demand(query.demand, *args, **kwargs)
+        options, valuations = query.supply, query.demand[self.valuation]
+        supply = self.supply(options, *args, **kwargs)
+        demand = self.demand(valuations, *args, **kwargs)
         equilibrium = self.equilibrium(supply, demand, *args, *kwargs)
-        equilibrium = list(equilibrium)
-        if not bool(equilibrium):
+        equilibrium = pd.DataFrame.from_records(list(equilibrium))
+        if bool(equilibrium.empty):
             return
-        equilibrium = pd.DataFrame.from_records(equilibrium)
-        equilibrium = equilibrium.where(equilibrium["size"] > 0)
-        equilibrium = equilibrium.dropna(axis=0, how="all")
+        equilibrium = self.parser(equilibrium, *args, **kwargs)
         if bool(equilibrium.empty):
             return
         query = EquilibriumQuery(query.current, query.ticker, query.expire, equilibrium)
@@ -124,13 +124,12 @@ class EquilibriumCalculator(Processor):
 
     def demand(self, valuations, *args, apy=None, **kwargs):
         subset = ["strategy", "ticker", "date", "expire"] + list(map(str, Securities.Options))
-        dataframe = valuations[Valuations.Arbitrage.Minimum]
-        dataframe = dataframe.where(dataframe["apy"] >= apy) if apy is not None else dataframe
-        dataframe = dataframe.dropna(axis=0, how="all")
-        dataframe = dataframe.sort_values("apy", axis=0, ascending=False, inplace=False, ignore_index=False)
-        dataframe = dataframe.drop_duplicates(subset=subset, keep="last", inplace=False)
-        dataframe = dataframe.set_index(self.index.demand, inplace=False, drop=True)
-        return dataframe[self.columns.demand]
+        valuations = valuations.where(valuations["apy"] >= apy) if apy is not None else valuations
+        valuations = valuations.dropna(axis=0, how="all")
+        valuations = valuations.sort_values("apy", axis=0, ascending=False, inplace=False, ignore_index=False)
+        valuations = valuations.drop_duplicates(subset=subset, keep="last", inplace=False)
+        valuations = valuations.set_index(self.index.demand, inplace=False, drop=True)
+        return valuations[self.columns.demand]
 
     @staticmethod
     def equilibrium(supply, demand, *args, **kwargs):
@@ -149,77 +148,19 @@ class EquilibriumCalculator(Processor):
                 purchased.loc[indx, cols] = purchased.loc[indx, cols] + size
             yield index | strikes | columns | {"size": size}
 
+    @staticmethod
+    def parser(equilibrium, *args, **kwargs):
+        equilibrium = equilibrium.where(equilibrium["size"] > 0)
+        equilibrium = equilibrium.dropna(axis=0, how="all")
+        equilibrium = equilibrium.reset_index(drop=True, inplace=False)
+        return equilibrium
+
+    @property
+    def valuation(self): return self.__valuation
+    @property
+    def columns(self): return self.__columns
     @property
     def index(self): return self.__index
-    @property
-    def columns(self): return self.__columns
-
-
-class EquilibriumResults(object):
-    def __init__(self, equilibrium):
-        columns = ["apy", "npv", "cost", "size", "tau"]
-        equilibrium = equilibrium[columns]
-        cost = equilibrium["cost"] / equilibrium["cost"].sum()
-        size = equilibrium["size"] / equilibrium["size"].sum()
-        weights = cost * size
-        weights = weights / weights.sum()
-        equilibrium["wts"] = weights
-        self.equilibrium = equilibrium
-        self.columns = columns
-
-    def __str__(self): return "{:.2f}%|${:,.0f}|{:,.0f}".format(self.apy * 100, self.cost, self.size)
-    def __getitem__(self, column): return self.equilibrium[column].values
-
-    def __add__(self, other):
-        equilibrium = [dataframe[self.columns] for dataframe in (self.equilibrium, other.equilibrium)]
-        equilibrium = pd.concat(equilibrium, axis=0)
-        equilibrium = equilibrium.reset_index(drop=True, inplace=False)
-        return EquilibriumResults(equilibrium)
-
-    def __call__(self, funds):
-        cumulative = (self.equilibrium["cost"] * self.equilibrium["size"]).cumsum()
-        results = self.equilibrium[self.columns].where(cumulative > funds)
-        return EquilibriumResults(results)
-
-    @property
-    def apy(self): return self.equilibrium["apy"] @ self.equilibrium["wts"]
-    @property
-    def npv(self): return self.equilibrium["npv"] @ self.equilibrium["size"]
-    @property
-    def cost(self): return self.equilibrium["cost"] @ self.equilibrium["size"]
-    @property
-    def size(self): return self.equilibrium["size"].sum()
-    @property
-    def tau(self): return self.equilibrium["tau"].min(), self.equilibrium["tau"].max()
-
-    @property
-    def columns(self): return self.__columns
-    @property
-    def equilibrium(self): return self.__equilibrium
-    @equilibrium.setter
-    def equilibrium(self, equilibrium): self.__equilibrium = equilibrium
-
-
-class EquilibriumAnalysis(Processor):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        columns = ["apy", "npv", "cost", "size", "tau"]
-        markets = pd.DataFrame(columns=columns)
-        self.__results = EquilibriumResults(markets)
-        self.__columns = columns
-
-    def execute(self, query, *args, **kwargs):
-        self.results = self.results + EquilibriumResults(query.equilibrium)
-        LOGGER.info("Results: {}[{}]".format(repr(self), str(self.results)))
-        yield query
-
-    @property
-    def columns(self): return self.__columns
-    @property
-    def results(self): return self.__results
-    @results.setter
-    def results(self, results): self.__results = results
-
 
 
 
