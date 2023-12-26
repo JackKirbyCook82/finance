@@ -145,7 +145,14 @@ class StrategyQuery(ntuple("Query", "current ticker expire strategies")):
     pass
 
 
-class StrategyCalculator(Calculator, calculations=ODict(list(Calculations))):
+class StrategyCalculator(Calculator):
+    def __init__(self, *args, name, **kwargs):
+        super().__init__(*args, name=name, **kwargs)
+        calculations = list(kwargs.get("calculations", ODict(list(Calculations))))
+        order = list(kwargs.get("calculations", calculations.keys()))
+        calculations = {key: calculations[key](*args, **kwargs) for key in order}
+        self.__calculations = calculations
+
     def execute(self, query, *args, **kwargs):
         securities = {security: dataset for security, dataset in query.securities.items()}
         function = lambda strategy: all([security in securities.keys() for security in strategy.securities])
@@ -170,7 +177,8 @@ class StrategyCalculator(Calculator, calculations=ODict(list(Calculations))):
         dataset["strike"] = dataset[str(security)].expand_dims(["ticker", "date", "expire"])
         return dataset
 
-
+    @property
+    def calculations(self): return self.__calculations
 
 
 

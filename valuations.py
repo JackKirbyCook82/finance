@@ -16,7 +16,7 @@ from collections import namedtuple as ntuple
 from collections import OrderedDict as ODict
 
 from support.calculations import Calculation, equation, source, constant
-from support.pipelines import Processor, Calculator, Saver, Loader
+from support.pipelines import Calculator, Filter, Saver, Loader
 from support.dispatchers import typedispatcher
 
 __version__ = "1.0.0"
@@ -116,7 +116,14 @@ class ValuationQuery(ntuple("Query", "current ticker expire valuations")):
         return ", ".join([arguments, parameters])
 
 
-class ValuationCalculator(Calculator, calculations=ODict(list(Calculations))):
+class ValuationCalculator(Calculator):
+    def __init__(self, *args, name, **kwargs):
+        super().__init__(*args, name=name, **kwargs)
+        calculations = list(kwargs.get("calculations", ODict(list(Calculations))))
+        order = list(kwargs.get("calculations", calculations.keys()))
+        calculations = {key: calculations[key](*args, **kwargs) for key in order}
+        self.__calculations = calculations
+
     def execute(self, query, *args, **kwargs):
         strategies = {strategy: dataset for strategy, dataset in query.strategies.items()}
         calculations = {valuation: calculation for valuation, calculation in self.calculations.items()}
@@ -135,8 +142,11 @@ class ValuationCalculator(Calculator, calculations=ODict(list(Calculations))):
         dataframe = dataframe.reset_index(drop=False, inplace=False)
         return dataframe
 
+    @property
+    def calculations(self): return self.__calculations
 
-class ValuationFilter(Processor):
+
+class ValuationFilter(Filter):
     def execute(self, query, *args, **kwargs):
         valuations = {valuation: self.filter(dataframe, *args, **kwargs) for valuation, dataframe in query.valuations.items()}
         query = ValuationQuery(query.current, query.ticker, query.expire, valuations)

@@ -14,7 +14,7 @@ from datetime import datetime as Datetime
 from collections import OrderedDict as ODict
 from collections import namedtuple as ntuple
 
-from support.pipelines import Processor, Loader
+from support.pipelines import Calculator, Loader
 
 from finance.securities import Securities
 from finance.valuations import Valuations
@@ -87,7 +87,7 @@ class SupplyDemandLoader(SupplyDemandFile, Loader):
                     yield SupplyDemandQuery(current, ticker, expire, options, valuations)
 
 
-class EquilibriumCalculator(Processor):
+class EquilibriumCalculator(Calculator):
     def __init__(self, *args, valuation=Valuations.Arbitrage.Minimum, **kwargs):
         super().__init__(*args, **kwargs)
         Variables = ntuple("Variables", "supply demand")
@@ -161,6 +161,21 @@ class EquilibriumCalculator(Processor):
     def columns(self): return self.__columns
     @property
     def index(self): return self.__index
+
+
+class EquilibriumStack(object):
+    pass
+
+
+
+
+
+
+
+
+
+
+
 
 
 

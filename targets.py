@@ -9,11 +9,9 @@ Created on Sun Dec 21 2023
 import logging
 import pandas as pd
 import multiprocessing
-from support.pipelines import Processor
+from support.pipelines import Calculator
 from datetime import datetime as Datetime
 from collections import namedtuple as ntuple
-
-from support.synchronize import Stack
 
 from finance.securities import Securities
 from finance.valuations import Valuations
@@ -32,7 +30,7 @@ class TargetsQuery(ntuple("Query", "current ticker expire targets")):
     def __str__(self): return "{}|{}, {:.0f}".format(self.ticker, self.expire.strftime("%Y-%m-%d"), len(self.targets.index))
 
 
-class TargetCalculator(Processor):
+class TargetCalculator(Calculator):
     def __init__(self, *args, valuation=Valuations.Arbitrage.Minimum, **kwargs):
         super().__init__(*args, **kwargs)
         index = ["ticker", "date", "expire", "strategy"] + list(map(str, Securities.Options))
@@ -45,12 +43,16 @@ class TargetCalculator(Processor):
         valuations = query.valuations[self.valuation]
         if bool(valuations.empty):
             return
+        valuations["current"] = query.current
         valuations["apy"] = valuations["apy"].round(2)
         valuations["npv"] = valuations["npv"].round(2)
         targets = self.parser(valuations, *args, **kwargs)
-        targets["current"] = query.current
         if bool(targets.empty):
             return
+
+        print(targets)
+        raise Exception()
+
         query = TargetsQuery(query.current, query.ticker, query.expire, targets)
         LOGGER.info("Targets: {}[{}]".format(repr(self), str(query)))
         yield query
@@ -72,7 +74,7 @@ class TargetCalculator(Processor):
     def index(self): return self.__index
 
 
-class TargetStack(Stack):
+class TargetStack(object):
     def __init__(self, *args, tenure, size, **kwargs):
         index = ["ticker", "date", "expire", "strategy"] + list(map(str, Securities.Options))
         columns = ["current", "apy", "npv", "cost", "tau", "size"]
@@ -83,10 +85,7 @@ class TargetStack(Stack):
         self.__tenure = tenure
         self.__size = size
 
-    def done(self): pass
-    def get(self, *args, **kwargs): pass
-
-    def put(self, content, *args, **kwargs):
+    def execute(self, content, *args, **kwargs):
         targets = content.targets if isinstance(content, TargetsQuery) else content
         assert isinstance(targets, pd.DataFrame)
         if bool(targets.empty):

@@ -18,7 +18,7 @@ from datetime import datetime as Datetime
 from collections import namedtuple as ntuple
 from collections import OrderedDict as ODict
 
-from support.pipelines import Processor, Calculator, Saver, Loader
+from support.pipelines import Calculator, Filter, Saver, Loader
 from support.dispatchers import typedispatcher, kwargsdispatcher
 from support.calculations import Calculation, equation, source
 
@@ -163,7 +163,14 @@ class SecurityQuery(ntuple("Query", "current ticker expire securities")):
         return ", ".join([arguments, parameters])
 
 
-class SecurityCalculator(Calculator, calculations=ODict(list(Calculations))):
+class SecurityCalculator(Calculator):
+    def __init__(self, *args, name, **kwargs):
+        super().__init__(*args, name=name, **kwargs)
+        calculations = list(kwargs.get("calculations", ODict(list(Calculations))))
+        order = list(kwargs.get("calculations", calculations.keys()))
+        calculations = {key: calculations[key](*args, **kwargs) for key in order}
+        self.__calculations = calculations
+
     def execute(self, query, *args, **kwargs):
         securities = {security: dataframe for security, dataframe in query.securities.items() if not dataframe.empty}
         function = lambda security: security in securities.keys()
@@ -192,8 +199,11 @@ class SecurityCalculator(Calculator, calculations=ODict(list(Calculations))):
         dataset = xr.Dataset.from_dataframe(dataframe[["price", "size"]])
         return dataset
 
+    @property
+    def calculations(self): return self.__calculations
 
-class SecurityFilter(Processor):
+
+class SecurityFilter(Filter):
     def execute(self, query, *args, **kwargs):
         securities = {security: self.filter(dataframe, *args, security=security, **kwargs) for security, dataframe in query.securities.items()}
         query = SecurityQuery(query.current, query.ticker, query.expire, securities)
