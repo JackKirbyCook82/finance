@@ -88,8 +88,8 @@ class SupplyDemandLoader(SupplyDemandFile, Loader):
 
 
 class EquilibriumCalculator(Calculator):
-    def __init__(self, *args, valuation=Valuations.Arbitrage.Minimum, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, *args, name, valuation=Valuations.Arbitrage.Minimum, **kwargs):
+        super().__init__(*args, name=name, **kwargs)
         Variables = ntuple("Variables", "supply demand")
         index = ["ticker", "date", "expire"] + list(map(str, Securities.Options))
         columns = ["strategy", "apy", "npv", "cost", "tau", "size"]
@@ -163,8 +163,6 @@ class EquilibriumCalculator(Calculator):
     def index(self): return self.__index
 
 
-class EquilibriumStack(object):
-    pass
 
 
 

@@ -190,7 +190,7 @@ class ValuationSaver(ValuationFile, Saver):
             for valuation, dataframe in valuations.items():
                 valuation_filename = str(valuation).replace("|", "_") + ".csv"
                 valuation_file = os.path.join(ticker_expire_folder, valuation_filename)
-                self.write(dataframe, file=valuation_file, mode="w")
+                self.write(dataframe, file=valuation_file, filemode="w")
 
 
 class ValuationLoader(ValuationFile, Loader):

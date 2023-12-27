@@ -268,7 +268,7 @@ class SecuritySaver(SecurityFile, Saver):
             for security, dataframe in securities.items():
                 security_filename = str(security).replace("|", "_") + ".csv"
                 security_file = os.path.join(ticker_expire_folder, security_filename)
-                self.write(dataframe, file=security_file, mode="w")
+                self.write(dataframe, file=security_file, filemode="w")
 
 
 class SecurityLoader(SecurityFile, Loader):
