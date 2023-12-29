@@ -96,7 +96,8 @@ class MaximumCalculation(ArbitrageCalculation):
 
 class CalculationsMeta(type):
     def __iter__(cls):
-        contents = {Valuations.Arbitrage.Minimum: MinimumCalculation}
+        contents = {Valuations.Arbitrage.Minimum: MinimumCalculation, Valuations.Arbitrage.Maximum: MaximumCalculation}
+        contents.update({Valuations.Arbitrage.Current: CurrentCalculation})
         return ((key, value) for key, value in contents.items())
 
     class Arbitrage:
@@ -111,7 +112,7 @@ class Calculations(object, metaclass=CalculationsMeta):
 class ValuationQuery(ntuple("Query", "current ticker expire valuations")):
     def __str__(self):
         strings = {str(valuation.title): str(len(dataframe.index)) for valuation, dataframe in self.valuations.items()}
-        arguments = "{}|{}".format(self.ticker, self.expire.strftime("%Y%m%d"))
+        arguments = "{}|{}".format(self.ticker, self.expire.strftime("%Y-%m-%d"))
         parameters = ", ".join(["=".join([key, value]) for key, value in strings.items()])
         return ", ".join([arguments, parameters])
 
@@ -119,13 +120,14 @@ class ValuationQuery(ntuple("Query", "current ticker expire valuations")):
 class ValuationCalculator(Calculator):
     def __init__(self, *args, name, **kwargs):
         super().__init__(*args, name=name, **kwargs)
-        calculations = list(kwargs.get("calculations", ODict(list(Calculations))))
-        order = list(kwargs.get("calculations", calculations.keys()))
-        calculations = {key: calculations[key](*args, **kwargs) for key in order}
+        valuations = kwargs.get("calculations", ODict(list(Calculations)).keys())
+        calculations = ODict([(valuation, calculation(*args, **kwargs)) for valuation, calculation in iter(Calculations) if valuation in valuations])
         self.__calculations = calculations
 
     def execute(self, query, *args, **kwargs):
         strategies = {strategy: dataset for strategy, dataset in query.strategies.items()}
+        if not bool(strategies):
+            return
         calculations = {valuation: calculation for valuation, calculation in self.calculations.items()}
         parser = lambda strategy, dataset: self.parser(dataset, *args, strategy=strategy, **kwargs)
         valuations = {valuation: {strategy: calculation(dataset, *args, **kwargs) for strategy, dataset in strategies.items()} for valuation, calculation in calculations.items()}
@@ -148,13 +150,17 @@ class ValuationCalculator(Calculator):
 
 class ValuationFilter(Filter):
     def execute(self, query, *args, **kwargs):
-        valuations = {valuation: self.filter(dataframe, *args, **kwargs) for valuation, dataframe in query.valuations.items()}
+        valuations = {valuation: dataframe for valuation, dataframe in query.valuations.items()}
+        if not bool(valuations):
+            return
+        valuations = {valuation: self.filter(dataframe, *args, **kwargs) for valuation, dataframe in valuations.items()}
         query = ValuationQuery(query.current, query.ticker, query.expire, valuations)
-        LOGGER.info("Filtered: {}[{}]".format(repr(self), str(query)))
+        LOGGER.info("Filter: {}[{}]".format(repr(self), str(query)))
         yield query
 
     @staticmethod
-    def filter(dataframe, *args, apy=None, **kwargs):
+    def filter(dataframe, *args, size=None, apy=None, **kwargs):
+        dataframe = dataframe.where(dataframe["size"] >= size) if size is not None else dataframe
         dataframe = dataframe.where(dataframe["apy"] >= apy) if apy is not None else dataframe
         dataframe = dataframe.dropna(axis=0, how="all")
         dataframe = dataframe.reset_index(drop=True, inplace=False)
@@ -179,14 +185,14 @@ class ValuationFile(object):
 class ValuationSaver(ValuationFile, Saver):
     def execute(self, query, *args, **kwargs):
         valuations = query.valuations
-        if not bool(valuations) or not bool([dataframe.empty for dataframe in valuations.values()]):
+        if not bool(valuations) or all([dataframe.empty for dataframe in valuations.values()]):
             return
         current_folder = os.path.join(self.repository, str(query.current.strftime("%Y%m%d_%H%M%S")))
         assert os.path.isdir(current_folder)
         ticker_expire_name = "_".join([str(query.ticker), str(query.expire.strftime("%Y%m%d"))])
         ticker_expire_folder = os.path.join(current_folder, ticker_expire_name)
         assert os.path.isdir(ticker_expire_folder)
-        with self.locks[ticker_expire_folder]:
+        with self.mutex[ticker_expire_folder]:
             for valuation, dataframe in valuations.items():
                 valuation_filename = str(valuation).replace("|", "_") + ".csv"
                 valuation_file = os.path.join(ticker_expire_folder, valuation_filename)
@@ -214,11 +220,11 @@ class ValuationLoader(ValuationFile, Loader):
                 if expires is not None and expire not in expires:
                     continue
                 ticker_expire_folder = os.path.join(current_folder, ticker_expire_name)
-                with self.locks[ticker_expire_folder]:
+                with self.mutex[ticker_expire_folder]:
                     filenames = {valuation: str(valuation).replace("|", "_") + ".csv" for valuation in list(Valuations)}
                     files = {valuation: os.path.join(ticker_expire_folder, filename) for valuation, filename in filenames.items()}
                     valuations = {valuation: reader(valuation, file) for valuation, file in files.items() if os.path.isfile(file)}
-                    yield ValuationQuery(current, ticker, expire, valuations)
+                yield ValuationQuery(current, ticker, expire, valuations)
 
 
 

@@ -14,7 +14,7 @@ from datetime import datetime as Datetime
 from collections import OrderedDict as ODict
 from collections import namedtuple as ntuple
 
-from support.pipelines import Calculator, Loader
+from support.pipelines import Calculator, Loader, Table
 
 from finance.securities import Securities
 from finance.valuations import Valuations
@@ -27,11 +27,13 @@ __license__ = ""
 
 
 LOGGER = logging.getLogger(__name__)
+INDEX = ["ticker", "date", "expire"] + list(map(str, Securities.Options))
+COLUMNS = ["strategy", "apy", "npv", "cost", "tau", "size"]
 
 
 class SupplyDemandQuery(ntuple("Query", "current ticker expire supply demand")): pass
 class EquilibriumQuery(ntuple("Query", "current ticker expire equilibrium")):
-    def __str__(self): return "{}|{}, {:.0f}".format(self.ticker, self.expire.strftime("%Y-%m-%d"), len(self.market.index))
+    def __str__(self): return "{}|{}, {:.0f}".format(self.ticker, self.expire.strftime("%Y-%m-%d"), len(self.equilibrium.index))
 
 
 class SupplyDemandFile(object):
@@ -91,10 +93,8 @@ class EquilibriumCalculator(Calculator):
     def __init__(self, *args, name, valuation=Valuations.Arbitrage.Minimum, **kwargs):
         super().__init__(*args, name=name, **kwargs)
         Variables = ntuple("Variables", "supply demand")
-        index = ["ticker", "date", "expire"] + list(map(str, Securities.Options))
-        columns = ["strategy", "apy", "npv", "cost", "tau", "size"]
-        self.__index = Variables(["ticker", "date", "expire", "strike"], index)
-        self.__columns = Variables(["size"], columns)
+        self.__index = Variables(["ticker", "date", "expire", "strike"], INDEX)
+        self.__columns = Variables(["size"], COLUMNS)
         self.__valuation = valuation
 
     def execute(self, query, *args, **kwargs):
@@ -126,8 +126,8 @@ class EquilibriumCalculator(Calculator):
         subset = ["strategy", "ticker", "date", "expire"] + list(map(str, Securities.Options))
         valuations = valuations.where(valuations["apy"] >= apy) if apy is not None else valuations
         valuations = valuations.dropna(axis=0, how="all")
-        valuations = valuations.sort_values("apy", axis=0, ascending=False, inplace=False, ignore_index=False)
         valuations = valuations.drop_duplicates(subset=subset, keep="last", inplace=False)
+        valuations = valuations.sort_values("apy", axis=0, ascending=False, inplace=False, ignore_index=False)
         valuations = valuations.set_index(self.index.demand, inplace=False, drop=True)
         return valuations[self.columns.demand]
 
@@ -163,10 +163,39 @@ class EquilibriumCalculator(Calculator):
     def index(self): return self.__index
 
 
+class EquilibriumTable(Table, index=INDEX, columns=COLUMNS):
+    def __str__(self): return "{:.2f}%|${:.0f}".format(self.apy * 100, self.cost)
 
+    def execute(self, content, *args, **kwargs):
+        equilibrium = content.equilibrium if isinstance(content, EquilibriumTable) else content
+        assert isinstance(equilibrium, pd.DataFrame)
+        if bool(equilibrium.empty):
+            return
+        with self.mutex:
+            equilibrium = equilibrium[self.index + self.columns]
+            equilibrium = pd.concat([self.table, equilibrium], axis=0)
+            equilibrium = equilibrium.reset_index(drop=True, inplace=False)
+            self.table = equilibrium
+            LOGGER.info("Equilibrium: {}[{}]".format(repr(self), str(self)))
 
+    @property
+    def weights(self):
+        cost = self.table["cost"] / self.table["cost"].sum()
+        size = self.table["size"] / self.table["size"].sum()
+        weights = cost * size
+        weights = weights / weights.sum()
+        return weights
 
-
+    @property
+    def apy(self): return self.table["apy"] @ self.weights
+    @property
+    def npv(self): return self.table["npv"] @ self.table["size"]
+    @property
+    def cost(self): return self.table["cost"] @ self.table["size"]
+    @property
+    def size(self): return self.table["size"].sum()
+    @property
+    def tau(self): return self.table["tau"].min(), self.table["tau"].max()
 
 
 

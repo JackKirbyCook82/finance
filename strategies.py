@@ -142,24 +142,26 @@ class Calculations(object, metaclass=CalculationsMeta):
 
 
 class StrategyQuery(ntuple("Query", "current ticker expire strategies")):
-    pass
+    def __str__(self): return "{}|{}".format(self.ticker, self.expire.strftime("%Y-%m-%d"))
 
 
 class StrategyCalculator(Calculator):
     def __init__(self, *args, name, **kwargs):
         super().__init__(*args, name=name, **kwargs)
-        calculations = list(kwargs.get("calculations", ODict(list(Calculations))))
-        order = list(kwargs.get("calculations", calculations.keys()))
-        calculations = {key: calculations[key](*args, **kwargs) for key in order}
+        strategies = kwargs.get("calculations", ODict(list(Calculations)).keys())
+        calculations = ODict([(strategy, calculation(*args, **kwargs)) for strategy, calculation in iter(Calculations) if strategy in strategies])
         self.__calculations = calculations
 
     def execute(self, query, *args, **kwargs):
-        securities = {security: dataset for security, dataset in query.securities.items()}
-        function = lambda strategy: all([security in securities.keys() for security in strategy.securities])
+        stocks = {security: dataset for security, dataset in query.stocks.items()}
+        options = {security: dataset for security, dataset in query.stocks.items()}
+        if not bool(stocks) or not bool(options) or len(stocks) != 2:
+            return
+        stocks = {security: self.parser(dataset, *args, security=security, **kwargs) for security, dataset in stocks.items()}
+        options = {security: self.parser(dataset, *args, security=security, **kwargs) for security, dataset in options.items()}
+        function = lambda strategy: all([security in list(stocks.keys()) + list(options.keys()) for security in strategy.securities])
         calculations = {strategy: calculation for strategy, calculation in self.calculations.items() if function(strategy)}
-        parser = lambda security, dataset: self.parser(dataset, *args, security=security, **kwargs)
-        securities = {security: parser(security, dataset) for security, dataset in securities.items()}
-        strategies = {strategy: calculation(securities, *args, **kwargs) for strategy, calculation in calculations.items()}
+        strategies = {strategy: calculation(stocks | options, *args, **kwargs) for strategy, calculation in calculations.items()}
         if not bool(strategies):
             return
         yield StrategyQuery(query.current, query.ticker, query.expire, strategies)
@@ -168,8 +170,7 @@ class StrategyCalculator(Calculator):
     def parser(self, dataset, *args, security, **kwargs): raise ValueError(str(security))
 
     @parser.register.value(*list(Securities.Stocks))
-    def stock(self, dataset, *args, **kwargs):
-        return dataset
+    def stock(self, dataset, *args, **kwargs): return dataset
 
     @parser.register.value(*list(Securities.Options))
     def option(self, dataset, *args, security, **kwargs):
