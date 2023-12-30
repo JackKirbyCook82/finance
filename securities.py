@@ -162,15 +162,13 @@ class SecurityQuery(ntuple("Query", "current ticker expire stocks options")):
         strings.update({str(security.title): str(len(dataframe.index)) for security, dataframe in self.options.items()})
         arguments = "{}|{}".format(self.ticker, self.expire.strftime("%Y-%m-%d"))
         parameters = ", ".join(["=".join([key, value]) for key, value in strings.items()])
-        return ", ".join([arguments, parameters])
+        return ", ".join([arguments, parameters]) if bool(parameters) else str(arguments)
 
 
 class SecurityFilter(Filter):
     def execute(self, query, *args, **kwargs):
-        stocks = {security: dataframe for security, dataframe in query.stocks.items()}
-        options = {security: dataframe for security, dataframe in query.options.items()}
-        if not bool(stocks) and not bool(options):
-            return
+        stocks = {security: dataframe for security, dataframe in query.stocks.items() if not bool(dataframe.empty)}
+        options = {security: dataframe for security, dataframe in query.options.items() if not bool(dataframe.empty)}
         stocks = {security: self.filter(dataframe, *args, security=security, **kwargs) for security, dataframe in stocks.items()}
         options = {security: self.filter(dataframe, *args, security=security, **kwargs) for security, dataframe in options.items()}
         query = SecurityQuery(query.current, query.ticker, query.expire, stocks, options)
@@ -235,12 +233,8 @@ class SecurityCalculator(Calculator):
     def execute(self, query, *args, **kwargs):
         stocks = {security: dataframe for security, dataframe in query.stocks.items()}
         options = {security: dataframe for security, dataframe in query.options.items()}
-        if not bool(stocks) and not bool(options):
-            return
         stocks = {security: self.calculations[security](dataframe, *args, **kwargs) for security, dataframe in stocks.items()}
         options = {security: self.calculations[security](dataframe, *args, **kwargs) for security, dataframe in options.items()}
-        if not bool(stocks) and not bool(options):
-            return
         yield SecurityQuery(query.current, query.ticker, query.expire, stocks, options)
 
     @property

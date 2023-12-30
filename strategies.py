@@ -154,7 +154,7 @@ class StrategyCalculator(Calculator):
 
     def execute(self, query, *args, **kwargs):
         stocks = {security: dataset for security, dataset in query.stocks.items()}
-        options = {security: dataset for security, dataset in query.stocks.items()}
+        options = {security: dataset for security, dataset in query.options.items()}
         if not bool(stocks) or not bool(options) or len(stocks) != 2:
             return
         stocks = {security: self.parser(dataset, *args, security=security, **kwargs) for security, dataset in stocks.items()}

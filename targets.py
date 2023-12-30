@@ -7,7 +7,9 @@ Created on Sun Dec 21 2023
 """
 
 import logging
+import numpy as np
 import pandas as pd
+import PySimpleGUI as gui
 from support.pipelines import Calculator
 from datetime import datetime as Datetime
 from collections import namedtuple as ntuple
@@ -26,7 +28,7 @@ __license__ = ""
 
 LOGGER = logging.getLogger(__name__)
 INDEX = ["ticker", "date", "expire", "strategy"] + list(map(str, Securities.Options))
-COLUMNS = ["current", "apy", "npv", "cost", "tau", "size"]
+COLUMNS = ["current", "apy", "npv", "cost", "tau", "size", "liquid"]
 
 
 class TargetsQuery(ntuple("Query", "current ticker expire targets")):
@@ -40,15 +42,19 @@ class TargetCalculator(Calculator):
         self.__columns = COLUMNS
         self.__index = INDEX
 
-    def execute(self, query, *args, **kwargs):
+    def execute(self, query, *args, liquidity=None, **kwargs):
         if not bool(query.valuations):
             return
         valuations = query.valuations[self.valuation]
         if bool(valuations.empty):
             return
+        liquidity = liquidity if liquidity is not None else 1
         valuations["current"] = query.current
         valuations["apy"] = valuations["apy"].round(2)
         valuations["npv"] = valuations["npv"].round(2)
+        valuations["tau"] = valuations["tau"].astype(np.int32)
+        valuations["size"] = valuations["size"].apply(np.floor).astype(np.int32)
+        valuations["liquid"] = (valuations["size"] * liquidity).astype(np.int32)
         targets = self.parser(valuations, *args, **kwargs)
         if bool(targets.empty):
             return
@@ -56,12 +62,10 @@ class TargetCalculator(Calculator):
         LOGGER.info("Targets: {}[{}]".format(repr(self), str(query)))
         yield query
 
-    def parser(self, dataframe, *args, apy=None, funds=None, **kwargs):
+    def parser(self, dataframe, *args, apy=None, **kwargs):
         dataframe = dataframe.where(dataframe["apy"] >= apy) if apy is not None else dataframe
-        dataframe = dataframe.where(dataframe["cost"] >= funds) if funds is not None else dataframe
         dataframe = dataframe.dropna(axis=0, how="all")
-        dataframe = dataframe.drop_duplicates(subset=self.index, keep="last", inplace=False)
-        dataframe = dataframe.sort_values(["apy", "npv"], axis=0, ascending=False, inplace=False, ignore_index=False)
+        dataframe = dataframe.sort_values("apy", axis=0, ascending=False, inplace=False, ignore_index=False)
         dataframe = dataframe.reset_index(drop=True, inplace=False)
         return dataframe[self.index + self.columns]
 
@@ -74,7 +78,7 @@ class TargetCalculator(Calculator):
 
 
 class TargetTable(Table, index=INDEX, columns=COLUMNS):
-    def __str__(self): return "{:.2f}%|${:.0f}".format(self.apy * 100, self.cost)
+    def __str__(self): return "${:,.0f}|${:,.0f}".format(self.npv, self.cost)
 
     def execute(self, content, *args, **kwargs):
         targets = content.targets if isinstance(content, TargetsQuery) else content
@@ -87,33 +91,64 @@ class TargetTable(Table, index=INDEX, columns=COLUMNS):
             targets = self.parser(targets, *args, **kwargs)
             self.table = targets
             LOGGER.info("Targets: {}[{}]".format(repr(self), str(self)))
+            print(self.table)
 
     @staticmethod
     def parser(dataframe, *args, limit=None, tenure=None, **kwargs):
         dataframe = dataframe.where(dataframe["current"] - Datetime.now() < tenure) if tenure is not None else dataframe
-        dataframe = dataframe.sort_values(["apy", "npv"], axis=0, ascending=False, inplace=False, ignore_index=False)
+        dataframe = dataframe.sort_values("apy", axis=0, ascending=False, inplace=False, ignore_index=False)
         dataframe = dataframe.head(limit) if limit is not None else dataframe
         dataframe = dataframe.reset_index(drop=True, inplace=False)
         return dataframe
 
     @property
-    def weights(self):
-        cost = self.table["cost"] / self.table["cost"].sum()
-        size = self.table["size"] / self.table["size"].sum()
-        weights = cost * size
-        weights = weights / weights.sum()
-        return weights
-
-    @property
-    def apy(self): return self.table["apy"] @ self.weights
-    @property
-    def npv(self): return self.table["npv"] @ self.table["size"]
-    @property
-    def cost(self): return self.table["cost"] @ self.table["size"]
-    @property
-    def size(self): return self.table["size"].sum()
-    @property
     def tau(self): return self.table["tau"].min(), self.table["tau"].max()
+    @property
+    def npv(self): return self.table["npv"] @ self.table["liquid"]
+    @property
+    def cost(self): return self.table["cost"] @ self.table["liquid"]
+    @property
+    def size(self): return self.table["liquid"].sum()
+
+
+#    def __str__(self):
+#        apy, cost, suffix = (self.apy * 100, self.cost, "")
+#        cost, suffix = (cost / 1000, "K") if cost >= 1000 else (cost, suffix)
+#        cost, suffix = (cost / 1000, "M") if cost >= 1000 else (cost, suffix)
+#        cost, suffix = (cost / 1000, "B") if cost >= 1000 else (cost, suffix)
+#        return "{:,.0f}%|${:,.0f}{}".format(apy * 100, cost, suffix)
+
+#    def terminal(self, *args, **kwargs):
+#        title = repr(self)
+#        window = gui.Window(title, layout=[])
+#        while True:
+#            event, values = window.read()
+#            if event == gui.WINDOW_CLOSED:
+#                break
+#        window.close()
+
+#    @staticmethod
+#    def frame(row):
+#        title = lambda string: "|".join([str(substring).title() for substring in str(string).split("|")])
+#        strategy = title(row["strategy"])
+#        ticker = str(row["ticker"]).upper()
+#        expire = str(row["expire"].strftime("%Y/%m/%d"))
+#        options = {title(option): getattr(row, option) for option in list(Securities.Options)}
+#        options = ["|".join([str(option), str(strike)]) for option, strike in options.items()]
+#        layout = []
+#        frame = gui.Frame(title, layout)
+
+#    @property
+#    def weights(self):
+#        cost = self.table["cost"] / self.table["cost"].sum()
+#        size = self.table["size"] / self.table["size"].sum()
+#        weights = cost * size
+#        weights = weights / weights.sum()
+#        return weights
+
+#    @property
+#    def apy(self): return self.table["apy"] @ self.weights
+
 
 
 

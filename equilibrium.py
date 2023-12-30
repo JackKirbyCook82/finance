@@ -28,7 +28,7 @@ __license__ = ""
 
 LOGGER = logging.getLogger(__name__)
 INDEX = ["ticker", "date", "expire"] + list(map(str, Securities.Options))
-COLUMNS = ["strategy", "apy", "npv", "cost", "tau", "size"]
+COLUMNS = ["strategy", "apy", "npv", "cost", "tau", "size", "liquidity"]
 
 
 class SupplyDemandQuery(ntuple("Query", "current ticker expire supply demand")): pass
@@ -94,7 +94,7 @@ class EquilibriumCalculator(Calculator):
         super().__init__(*args, name=name, **kwargs)
         Variables = ntuple("Variables", "supply demand")
         self.__index = Variables(["ticker", "date", "expire", "strike"], INDEX)
-        self.__columns = Variables(["size"], COLUMNS)
+        self.__columns = Variables(["size", "liquid"], COLUMNS)
         self.__valuation = valuation
 
     def execute(self, query, *args, **kwargs):
@@ -114,11 +114,13 @@ class EquilibriumCalculator(Calculator):
         LOGGER.info("Equilibrium: {}[{}]".format(repr(self), str(query)))
         yield query
 
-    def supply(self, options, *args, **kwargs):
+    def supply(self, options, *args, liquidity=None, **kwargs):
+        liquidity = liquidity if liquidity is not None else 1
         options = {str(option): dataframe for option, dataframe in options.items()}
         for option, dataframe in options.items():
             dataframe.drop_duplicates(subset=["ticker", "date", "expire", "strike"], keep="last", inplace=True)
             dataframe.set_index(self.index.supply, drop=True, inplace=True)
+            dataframe["liquid"] = (dataframe["size"] * liquidity).astype(np.int32)
         options = pd.concat([dataframe[self.columns.supply].rename(option) for option, dataframe in options.items()], axis=1)
         return options
 
@@ -164,7 +166,14 @@ class EquilibriumCalculator(Calculator):
 
 
 class EquilibriumTable(Table, index=INDEX, columns=COLUMNS):
-    def __str__(self): return "{:.2f}%|${:.0f}".format(self.apy * 100, self.cost)
+    def __str__(self): return "${:,.0f}|${:,.0f}".format(self.npv, self.cost)
+
+#    def __str__(self):
+#        apy, cost, suffix = (self.apy * 100, self.cost, "")
+#        cost, suffix = (cost / 1000, "K") if cost >= 1000 else (cost, suffix)
+#        cost, suffix = (cost / 1000, "M") if cost >= 1000 else (cost, suffix)
+#        cost, suffix = (cost / 1000, "B") if cost >= 1000 else (cost, suffix)
+#        return "{:,.0f}%|${:,.0f}{}".format(apy * 100, cost, suffix)
 
     def execute(self, content, *args, **kwargs):
         equilibrium = content.equilibrium if isinstance(content, EquilibriumTable) else content
@@ -178,22 +187,23 @@ class EquilibriumTable(Table, index=INDEX, columns=COLUMNS):
             self.table = equilibrium
             LOGGER.info("Equilibrium: {}[{}]".format(repr(self), str(self)))
 
-    @property
-    def weights(self):
-        cost = self.table["cost"] / self.table["cost"].sum()
-        size = self.table["size"] / self.table["size"].sum()
-        weights = cost * size
-        weights = weights / weights.sum()
-        return weights
+#    @property
+#    def weights(self):
+#        cost = self.table["cost"] / self.table["cost"].sum()
+#        size = self.table["size"] / self.table["size"].sum()
+#        weights = cost * size
+#        weights = weights / weights.sum()
+#        return weights
+
+#    @property
+#    def apy(self): return self.table["apy"] @ self.weights
 
     @property
-    def apy(self): return self.table["apy"] @ self.weights
+    def npv(self): return self.table["npv"] @ self.table["liquid"]
     @property
-    def npv(self): return self.table["npv"] @ self.table["size"]
+    def cost(self): return self.table["cost"] @ self.table["liquid"]
     @property
-    def cost(self): return self.table["cost"] @ self.table["size"]
-    @property
-    def size(self): return self.table["size"].sum()
+    def size(self): return self.table["liquid"].sum()
     @property
     def tau(self): return self.table["tau"].min(), self.table["tau"].max()
 

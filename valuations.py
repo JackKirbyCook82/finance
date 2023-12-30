@@ -114,7 +114,7 @@ class ValuationQuery(ntuple("Query", "current ticker expire valuations")):
         strings = {str(valuation.title): str(len(dataframe.index)) for valuation, dataframe in self.valuations.items()}
         arguments = "{}|{}".format(self.ticker, self.expire.strftime("%Y-%m-%d"))
         parameters = ", ".join(["=".join([key, value]) for key, value in strings.items()])
-        return ", ".join([arguments, parameters])
+        return ", ".join([arguments, parameters]) if bool(parameters) else str(arguments)
 
 
 class ValuationCalculator(Calculator):
@@ -151,8 +151,6 @@ class ValuationCalculator(Calculator):
 class ValuationFilter(Filter):
     def execute(self, query, *args, **kwargs):
         valuations = {valuation: dataframe for valuation, dataframe in query.valuations.items()}
-        if not bool(valuations):
-            return
         valuations = {valuation: self.filter(dataframe, *args, **kwargs) for valuation, dataframe in valuations.items()}
         query = ValuationQuery(query.current, query.ticker, query.expire, valuations)
         LOGGER.info("Filter: {}[{}]".format(repr(self), str(query)))
