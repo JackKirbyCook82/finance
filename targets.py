@@ -72,11 +72,11 @@ class TargetCalculator(Calculator):
         dataframe = dataframe.dropna(axis=0, how="all")
         dataframe = dataframe.sort_values("apy", axis=0, ascending=False, inplace=False, ignore_index=False)
         liquidity = liquidity if liquidity is not None else 1
-        count = (dataframe["size"] * liquidity).astype(np.int32)
-        dataframe = dataframe.loc[dataframe.index.repeat(count)]
-        dataframe["size"] = (dataframe["size"] / dataframe["size"]).astype(np.int32)
-        affordable = dataframe["cost"].cumsum() <= funds
-        dataframe = dataframe.where(affordable) if funds is not None else dataframe
+        liquid = (dataframe["size"] * liquidity).astype(np.int32)
+        dataframe = dataframe.loc[dataframe.index.repeat(liquid)]
+        if funds is not None:
+            affordable = dataframe["cost"].cumsum() <= funds
+            dataframe = dataframe.where(affordable)
         dataframe = dataframe.dropna(axis=0, how="all")
         dataframe = dataframe.reset_index(drop=True, inplace=False)
         return dataframe
@@ -101,6 +101,7 @@ class TargetTable(Table, index=INDEX, columns=COLUMNS):
             targets = targets[self.index + self.columns]
             targets = pd.concat([self.table, targets], axis=0)
             targets = self.parser(targets, *args, **kwargs)
+            targets = self.format(targets, *args, **kwargs)
             self.table = targets
             LOGGER.info("Targets: {}[{}]".format(repr(self), str(self)))
 
@@ -108,11 +109,16 @@ class TargetTable(Table, index=INDEX, columns=COLUMNS):
     def parser(dataframe, *args, funds=None, limit=None, tenure=None, **kwargs):
         dataframe = dataframe.where(dataframe["current"] - Datetime.now() < tenure) if tenure is not None else dataframe
         dataframe = dataframe.sort_values("apy", axis=0, ascending=False, inplace=False, ignore_index=False)
-        affordable = dataframe["cost"].cumsum() <= funds
-        dataframe = dataframe.where(affordable) if funds is not None else dataframe
+        if funds is not None:
+            affordable = dataframe["cost"].cumsum() <= funds
+            dataframe = dataframe.where(affordable)
         dataframe = dataframe.dropna(axis=0, how="all")
         dataframe = dataframe.head(limit) if limit is not None else dataframe
         dataframe = dataframe.reset_index(drop=True, inplace=False)
+        return dataframe
+
+    @staticmethod
+    def format(dataframe, *args, **kwargs):
         dataframe["tau"] = dataframe["tau"].astype(np.int32)
         dataframe["size"] = dataframe["size"].apply(np.floor).astype(np.int32)
         return dataframe
@@ -122,11 +128,11 @@ class TargetTable(Table, index=INDEX, columns=COLUMNS):
     @property
     def tau(self): return self.table["tau"].min(), self.table["tau"].max()
     @property
-    def npv(self): return self.table["npv"] @ self.table["size"]
+    def npv(self): return self.table["npv"].sum()
     @property
-    def cost(self): return self.table["cost"] @ self.table["size"]
-    @property
-    def size(self): return self.table["size"].sum()
+    def cost(self): return self.table["cost"].sum()
+
+
 
 
 #    def terminal(self, *args, **kwargs):

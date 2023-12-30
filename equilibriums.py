@@ -28,7 +28,7 @@ __license__ = ""
 
 LOGGER = logging.getLogger(__name__)
 INDEX = ["ticker", "date", "expire"] + list(map(str, Securities.Options))
-COLUMNS = ["strategy", "apy", "npv", "cost", "tau", "size", "liquidity"]
+COLUMNS = ["strategy", "apy", "npv", "cost", "tau", "size"]
 
 
 class SupplyDemandQuery(ntuple("Query", "current ticker expire supply demand")): pass
@@ -77,7 +77,7 @@ class SupplyDemandLoader(SupplyDemandFile, Loader):
                 if expires is not None and expire not in expires:
                     continue
                 ticker_expire_folder = os.path.join(current_folder, ticker_expire_name)
-                with self.locks[ticker_expire_folder]:
+                with self.mutex[ticker_expire_folder]:
                     filenames = {valuation: str(valuation).replace("|", "_") + ".csv" for valuation in list(Valuations)}
                     files = {valuation: os.path.join(ticker_expire_folder, filename) for valuation, filename in filenames.items()}
                     valuations = {valuation: reader(valuation, file) for valuation, file in files.items() if os.path.isfile(file)}
@@ -92,17 +92,21 @@ class SupplyDemandLoader(SupplyDemandFile, Loader):
 class EquilibriumCalculator(Calculator):
     def __init__(self, *args, name, valuation=Valuations.Arbitrage.Minimum, **kwargs):
         super().__init__(*args, name=name, **kwargs)
-        Variables = ntuple("Variables", "supply demand")
-        self.__index = Variables(["ticker", "date", "expire", "strike"], INDEX)
-        self.__columns = Variables(["size", "liquid"], COLUMNS)
         self.__valuation = valuation
+        self.__columns = COLUMNS
+        self.__index = INDEX
 
     def execute(self, query, *args, **kwargs):
-        if bool(query.demand.empty):
+        if not bool(query.demand) or not bool(query.supply):
             return
         options, valuations = query.supply, query.demand[self.valuation]
-        supply = self.supply(options, *args, **kwargs)
-        demand = self.demand(valuations, *args, **kwargs)
+
+        try:
+            supply = self.supply(options, *args, **kwargs)
+        except Exception as error:
+            demand = self.demand(valuations, *args, **kwargs)
+            raise error
+
         equilibrium = self.equilibrium(supply, demand, *args, *kwargs)
         equilibrium = pd.DataFrame.from_records(list(equilibrium))
         if bool(equilibrium.empty):
@@ -116,8 +120,19 @@ class EquilibriumCalculator(Calculator):
         yield query
 
     def supply(self, options, *args, liquidity=None, **kwargs):
+        columns = ["ticker", "date", "expire", "strike", "size"]
+
         liquidity = liquidity if liquidity is not None else 1
-        options = {str(option): dataframe for option, dataframe in options.items()}
+        options = {str(option): dataframe[columns].rename(columns={"strike": str(option)}) for option, dataframe in options.items()}
+        options = {str(option):  for option, dataframe in options.items()}
+
+        (dataframe["size"] * liquidity).astype(np.int32)
+
+        for key, value in options.items():
+            print(key)
+            print(value)
+        raise Exception()
+
         for option, dataframe in options.items():
             dataframe.drop_duplicates(subset=["ticker", "date", "expire", "strike"], keep="last", inplace=True)
             dataframe.set_index(self.index.supply, drop=True, inplace=True)
@@ -125,7 +140,9 @@ class EquilibriumCalculator(Calculator):
         options = pd.concat([dataframe[self.columns.supply].rename(option) for option, dataframe in options.items()], axis=1)
         return options
 
-    def demand(self, valuations, *args, apy=None, **kwargs):
+    def demand(self, valuations, *args, liquidity=None, apy=None, **kwargs):
+        liquidity = liquidity if liquidity is not None else 1
+
         subset = ["strategy", "ticker", "date", "expire"] + list(map(str, Securities.Options))
         valuations = valuations.where(valuations["apy"] >= apy) if apy is not None else valuations
         valuations = valuations.dropna(axis=0, how="all")
