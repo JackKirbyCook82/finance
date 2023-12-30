@@ -21,7 +21,7 @@ from finance.valuations import Valuations
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["SupplyDemandLoader", "EquilibriumCalculator"]
+__all__ = ["SupplyDemandLoader", "EquilibriumCalculator", "EquilibriumTable"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
@@ -107,6 +107,7 @@ class EquilibriumCalculator(Calculator):
         equilibrium = pd.DataFrame.from_records(list(equilibrium))
         if bool(equilibrium.empty):
             return
+        equilibrium = self.filter(equilibrium, *args, **kwargs)
         equilibrium = self.parser(equilibrium, *args, **kwargs)
         if bool(equilibrium.empty):
             return
@@ -151,6 +152,14 @@ class EquilibriumCalculator(Calculator):
             yield index | strikes | columns | {"size": size}
 
     @staticmethod
+    def format(dataframe, *args, **kwargs):
+        dataframe["apy"] = dataframe["apy"].round(2)
+        dataframe["npv"] = dataframe["npv"].round(2)
+        dataframe["tau"] = dataframe["tau"].astype(np.int32)
+        dataframe["size"] = dataframe["size"].apply(np.floor).astype(np.int32)
+        return dataframe
+
+    @staticmethod
     def parser(equilibrium, *args, **kwargs):
         equilibrium = equilibrium.where(equilibrium["size"] > 0)
         equilibrium = equilibrium.dropna(axis=0, how="all")
@@ -166,14 +175,7 @@ class EquilibriumCalculator(Calculator):
 
 
 class EquilibriumTable(Table, index=INDEX, columns=COLUMNS):
-    def __str__(self): return "${:,.0f}|${:,.0f}".format(self.npv, self.cost)
-
-#    def __str__(self):
-#        apy, cost, suffix = (self.apy * 100, self.cost, "")
-#        cost, suffix = (cost / 1000, "K") if cost >= 1000 else (cost, suffix)
-#        cost, suffix = (cost / 1000, "M") if cost >= 1000 else (cost, suffix)
-#        cost, suffix = (cost / 1000, "B") if cost >= 1000 else (cost, suffix)
-#        return "{:,.0f}%|${:,.0f}{}".format(apy * 100, cost, suffix)
+    def __str__(self): return "{:,.02f}%, ${:,.0f}|${:,.0f}".format(self.apy * 100, self.npv, self.cost)
 
     def execute(self, content, *args, **kwargs):
         equilibrium = content.equilibrium if isinstance(content, EquilibriumTable) else content
@@ -186,17 +188,6 @@ class EquilibriumTable(Table, index=INDEX, columns=COLUMNS):
             equilibrium = equilibrium.reset_index(drop=True, inplace=False)
             self.table = equilibrium
             LOGGER.info("Equilibrium: {}[{}]".format(repr(self), str(self)))
-
-#    @property
-#    def weights(self):
-#        cost = self.table["cost"] / self.table["cost"].sum()
-#        size = self.table["size"] / self.table["size"].sum()
-#        weights = cost * size
-#        weights = weights / weights.sum()
-#        return weights
-
-#    @property
-#    def apy(self): return self.table["apy"] @ self.weights
 
     @property
     def npv(self): return self.table["npv"] @ self.table["liquid"]

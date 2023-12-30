@@ -28,7 +28,7 @@ __license__ = ""
 
 LOGGER = logging.getLogger(__name__)
 INDEX = ["ticker", "date", "expire", "strategy"] + list(map(str, Securities.Options))
-COLUMNS = ["current", "apy", "npv", "cost", "tau", "size", "liquid"]
+COLUMNS = ["current", "apy", "npv", "cost", "tau", "size"]
 
 
 class TargetsQuery(ntuple("Query", "current ticker expire targets")):
@@ -42,32 +42,44 @@ class TargetCalculator(Calculator):
         self.__columns = COLUMNS
         self.__index = INDEX
 
-    def execute(self, query, *args, liquidity=None, **kwargs):
+    def execute(self, query, *args, **kwargs):
         if not bool(query.valuations):
             return
-        valuations = query.valuations[self.valuation]
-        if bool(valuations.empty):
+        targets = query.valuations[self.valuation]
+        if bool(targets.empty):
             return
-        liquidity = liquidity if liquidity is not None else 1
-        valuations["current"] = query.current
-        valuations["apy"] = valuations["apy"].round(2)
-        valuations["npv"] = valuations["npv"].round(2)
-        valuations["tau"] = valuations["tau"].astype(np.int32)
-        valuations["size"] = valuations["size"].apply(np.floor).astype(np.int32)
-        valuations["liquid"] = (valuations["size"] * liquidity).astype(np.int32)
-        targets = self.parser(valuations, *args, **kwargs)
+        targets["current"] = query.current
+        targets = self.format(targets, *args, **kwargs)
+        targets = self.parser(targets, *args, **kwargs)
+        targets = targets[self.index + self.columns]
         if bool(targets.empty):
             return
         query = TargetsQuery(query.current, query.ticker, query.expire, targets)
         LOGGER.info("Targets: {}[{}]".format(repr(self), str(query)))
         yield query
 
-    def parser(self, dataframe, *args, apy=None, **kwargs):
+    @staticmethod
+    def format(dataframe, *args, **kwargs):
+        dataframe["apy"] = dataframe["apy"].round(2)
+        dataframe["npv"] = dataframe["npv"].round(2)
+        dataframe["tau"] = dataframe["tau"].astype(np.int32)
+        dataframe["size"] = dataframe["size"].apply(np.floor).astype(np.int32)
+        return dataframe
+
+    @staticmethod
+    def parser(dataframe, *args, liquidity=None, apy=None, funds=None, **kwargs):
         dataframe = dataframe.where(dataframe["apy"] >= apy) if apy is not None else dataframe
         dataframe = dataframe.dropna(axis=0, how="all")
         dataframe = dataframe.sort_values("apy", axis=0, ascending=False, inplace=False, ignore_index=False)
+        liquidity = liquidity if liquidity is not None else 1
+        count = (dataframe["size"] * liquidity).astype(np.int32)
+        dataframe = dataframe.loc[dataframe.index.repeat(count)]
+        dataframe["size"] = (dataframe["size"] / dataframe["size"]).astype(np.int32)
+        affordable = dataframe["cost"].cumsum() <= funds
+        dataframe = dataframe.where(affordable) if funds is not None else dataframe
+        dataframe = dataframe.dropna(axis=0, how="all")
         dataframe = dataframe.reset_index(drop=True, inplace=False)
-        return dataframe[self.index + self.columns]
+        return dataframe
 
     @property
     def valuation(self): return self.__valuation
@@ -78,7 +90,7 @@ class TargetCalculator(Calculator):
 
 
 class TargetTable(Table, index=INDEX, columns=COLUMNS):
-    def __str__(self): return "${:,.0f}|${:,.0f}".format(self.npv, self.cost)
+    def __str__(self): return "{:,.02f}%, ${:,.0f}|${:,.0f}".format(self.apy * 100, self.npv, self.cost)
 
     def execute(self, content, *args, **kwargs):
         targets = content.targets if isinstance(content, TargetsQuery) else content
@@ -91,32 +103,31 @@ class TargetTable(Table, index=INDEX, columns=COLUMNS):
             targets = self.parser(targets, *args, **kwargs)
             self.table = targets
             LOGGER.info("Targets: {}[{}]".format(repr(self), str(self)))
-            print(self.table)
 
     @staticmethod
-    def parser(dataframe, *args, limit=None, tenure=None, **kwargs):
+    def parser(dataframe, *args, funds=None, limit=None, tenure=None, **kwargs):
         dataframe = dataframe.where(dataframe["current"] - Datetime.now() < tenure) if tenure is not None else dataframe
         dataframe = dataframe.sort_values("apy", axis=0, ascending=False, inplace=False, ignore_index=False)
+        affordable = dataframe["cost"].cumsum() <= funds
+        dataframe = dataframe.where(affordable) if funds is not None else dataframe
+        dataframe = dataframe.dropna(axis=0, how="all")
         dataframe = dataframe.head(limit) if limit is not None else dataframe
         dataframe = dataframe.reset_index(drop=True, inplace=False)
+        dataframe["tau"] = dataframe["tau"].astype(np.int32)
+        dataframe["size"] = dataframe["size"].apply(np.floor).astype(np.int32)
         return dataframe
 
     @property
+    def apy(self): return self.table["apy"] @ (self.table["cost"] / self.table["cost"].sum())
+    @property
     def tau(self): return self.table["tau"].min(), self.table["tau"].max()
     @property
-    def npv(self): return self.table["npv"] @ self.table["liquid"]
+    def npv(self): return self.table["npv"] @ self.table["size"]
     @property
-    def cost(self): return self.table["cost"] @ self.table["liquid"]
+    def cost(self): return self.table["cost"] @ self.table["size"]
     @property
-    def size(self): return self.table["liquid"].sum()
+    def size(self): return self.table["size"].sum()
 
-
-#    def __str__(self):
-#        apy, cost, suffix = (self.apy * 100, self.cost, "")
-#        cost, suffix = (cost / 1000, "K") if cost >= 1000 else (cost, suffix)
-#        cost, suffix = (cost / 1000, "M") if cost >= 1000 else (cost, suffix)
-#        cost, suffix = (cost / 1000, "B") if cost >= 1000 else (cost, suffix)
-#        return "{:,.0f}%|${:,.0f}{}".format(apy * 100, cost, suffix)
 
 #    def terminal(self, *args, **kwargs):
 #        title = repr(self)
@@ -137,17 +148,6 @@ class TargetTable(Table, index=INDEX, columns=COLUMNS):
 #        options = ["|".join([str(option), str(strike)]) for option, strike in options.items()]
 #        layout = []
 #        frame = gui.Frame(title, layout)
-
-#    @property
-#    def weights(self):
-#        cost = self.table["cost"] / self.table["cost"].sum()
-#        size = self.table["size"] / self.table["size"].sum()
-#        weights = cost * size
-#        weights = weights / weights.sum()
-#        return weights
-
-#    @property
-#    def apy(self): return self.table["apy"] @ self.weights
 
 
 
