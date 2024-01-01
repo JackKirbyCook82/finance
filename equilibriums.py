@@ -205,23 +205,19 @@ class EquilibriumTable(Table, index=INDEX, columns=COLUMNS):
         return dataframe
 
     @property
+    def equilibrium(self): return self.table
+    @property
     def apy(self): return self.table["apy"] @ self.weights
     @property
     def weights(self): return (self.table["cost"] * self.table["size"]) / (self.table["cost"] @ self.table["size"])
+    @property
+    def tau(self): return self.table["tau"].min(), self.table["tau"].max()
     @property
     def npv(self): return self.table["npv"] @ self.table["size"]
     @property
     def cost(self): return self.table["cost"] @ self.table["size"]
     @property
     def size(self): return self.table["size"].sum()
-    @property
-    def tau(self): return self.table["tau"].min(), self.table["tau"].max()
-
-
-
-
-
-
 
 
 

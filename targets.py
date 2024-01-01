@@ -75,7 +75,7 @@ class TargetCalculator(Calculator):
         if funds is not None:
             affordable = dataframe["cost"].cumsum() <= funds
             dataframe = dataframe.where(affordable)
-        dataframe = dataframe.dropna(axis=0, how="all")
+            dataframe = dataframe.dropna(axis=0, how="all")
         dataframe = dataframe.reset_index(drop=True, inplace=False)
         return dataframe
 
@@ -101,11 +101,12 @@ class TargetTable(Table, index=INDEX, columns=COLUMNS):
     @staticmethod
     def parser(dataframe, *args, funds=None, limit=None, tenure=None, **kwargs):
         dataframe = dataframe.where(dataframe["current"] - Datetime.now() < tenure) if tenure is not None else dataframe
+        dataframe = dataframe.dropna(axis=0, how="all")
         dataframe = dataframe.sort_values("apy", axis=0, ascending=False, inplace=False, ignore_index=False)
         if funds is not None:
             affordable = dataframe["cost"].cumsum() <= funds
             dataframe = dataframe.where(affordable)
-        dataframe = dataframe.dropna(axis=0, how="all")
+            dataframe = dataframe.dropna(axis=0, how="all")
         dataframe = dataframe.head(limit) if limit is not None else dataframe
         dataframe = dataframe.reset_index(drop=True, inplace=False)
         return dataframe
