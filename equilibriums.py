@@ -10,11 +10,12 @@ import os
 import logging
 import numpy as np
 import pandas as pd
+import multiprocessing
 from datetime import datetime as Datetime
 from collections import OrderedDict as ODict
 from collections import namedtuple as ntuple
 
-from support.pipelines import Calculator, Loader, Table
+from support.pipelines import Calculator, Loader
 
 from finance.securities import Securities
 from finance.valuations import Valuations
@@ -181,8 +182,14 @@ class EquilibriumCalculator(Calculator):
     def index(self): return self.__index
 
 
-class EquilibriumTable(Table, index=INDEX, columns=COLUMNS):
+class EquilibriumTable():
     def __str__(self): return "{:,.02f}%, ${:,.0f}|${:,.0f}".format(self.apy * 100, self.npv, self.cost)
+    def __bool__(self): return not bool(self.table.empty)
+    def __len__(self): return len(self.table.index)
+    def __init__(self, *args, name, **kwargs):
+        super().__init__(*args, name=name, **kwargs)
+        self.__table = pd.DataFrame(columns=INDEX + COLUMNS)
+        self.__mutex = multiprocessing.Lock()
 
     def execute(self, content, *args, **kwargs):
         equilibrium = content.equilibrium if isinstance(content, EquilibriumQuery) else content
@@ -190,13 +197,12 @@ class EquilibriumTable(Table, index=INDEX, columns=COLUMNS):
         if bool(equilibrium.empty):
             return
         with self.mutex:
-            equilibrium = equilibrium[self.index + self.columns]
+            equilibrium = equilibrium[INDEX + COLUMNS]
             equilibrium = pd.concat([self.table, equilibrium], axis=0)
             equilibrium = equilibrium.reset_index(drop=True, inplace=False)
             equilibrium = self.format(equilibrium, *args, **kwargs)
             self.table = equilibrium
             LOGGER.info("Equilibrium: {}[{}]".format(repr(self), str(self)))
-        print(self.table)
 
     @staticmethod
     def format(dataframe, *args, **kwargs):
@@ -204,8 +210,6 @@ class EquilibriumTable(Table, index=INDEX, columns=COLUMNS):
         dataframe["size"] = dataframe["size"].apply(np.floor).astype(np.int32)
         return dataframe
 
-    @property
-    def equilibrium(self): return self.table
     @property
     def apy(self): return self.table["apy"] @ self.weights
     @property
@@ -218,6 +222,15 @@ class EquilibriumTable(Table, index=INDEX, columns=COLUMNS):
     def cost(self): return self.table["cost"] @ self.table["size"]
     @property
     def size(self): return self.table["size"].sum()
+
+    @property
+    def mutex(self): return self.__mutex
+    @property
+    def equilibrium(self): return self.__table
+    @property
+    def table(self): return self.__table
+    @table.setter
+    def table(self, table): self.__table = table
 
 
 

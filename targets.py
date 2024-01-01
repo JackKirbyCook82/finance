@@ -7,14 +7,13 @@ Created on Sun Dec 21 2023
 """
 
 import logging
+import multiprocessing
 import numpy as np
 import pandas as pd
 import PySimpleGUI as gui
 from support.pipelines import Calculator
 from datetime import datetime as Datetime
 from collections import namedtuple as ntuple
-
-from support.pipelines import Table
 
 from finance.securities import Securities
 from finance.valuations import Valuations
@@ -80,8 +79,14 @@ class TargetCalculator(Calculator):
         return dataframe
 
 
-class TargetTable(Table, index=INDEX, columns=COLUMNS):
+class TargetTable():
     def __str__(self): return "{:,.02f}%, ${:,.0f}|${:,.0f}".format(self.apy * 100, self.npv, self.cost)
+    def __bool__(self): return not bool(self.table.empty)
+    def __len__(self): return len(self.table.index)
+    def __init__(self, *args, name, **kwargs):
+        super().__init__(*args, name=name, **kwargs)
+        self.__table = pd.DataFrame(columns=INDEX + COLUMNS)
+        self.__mutex = multiprocessing.Lock()
 
     def execute(self, content, *args, **kwargs):
         targets = content.targets if isinstance(content, TargetsQuery) else content
@@ -95,8 +100,6 @@ class TargetTable(Table, index=INDEX, columns=COLUMNS):
             targets = self.format(targets, *args, **kwargs)
             self.table = targets
             LOGGER.info("Targets: {}[{}]".format(repr(self), str(self)))
-        print(self.table)
-        print(self.targets)
 
     @staticmethod
     def parser(dataframe, *args, funds=None, limit=None, tenure=None, **kwargs):
@@ -135,6 +138,13 @@ class TargetTable(Table, index=INDEX, columns=COLUMNS):
     def cost(self): return self.table["cost"].sum()
     @property
     def size(self): return len(self.table.index)
+
+    @property
+    def mutex(self): return self.__mutex
+    @property
+    def table(self): return self.__table
+    @table.setter
+    def table(self, table): self.__table = table
 
 
 
