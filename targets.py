@@ -28,7 +28,7 @@ __license__ = ""
 
 LOGGER = logging.getLogger(__name__)
 INDEX = ["ticker", "date", "expire", "strategy"] + list(map(str, Securities.Options))
-COLUMNS = ["current", "apy", "npv", "cost", "tau", "size"]
+COLUMNS = ["current", "apy", "npv", "cost", "tau"]
 
 
 class TargetsQuery(ntuple("Query", "current ticker expire targets")):
@@ -38,9 +38,7 @@ class TargetsQuery(ntuple("Query", "current ticker expire targets")):
 class TargetCalculator(Calculator):
     def __init__(self, *args, name, valuation=Valuations.Arbitrage.Minimum, **kwargs):
         super().__init__(*args, name=name, **kwargs)
-        self.__valuation = valuation
-        self.__columns = COLUMNS
-        self.__index = INDEX
+        self.valuation = valuation
 
     def execute(self, query, *args, **kwargs):
         if not bool(query.valuations):
@@ -51,7 +49,7 @@ class TargetCalculator(Calculator):
         targets["current"] = query.current
         targets = self.format(targets, *args, **kwargs)
         targets = self.parser(targets, *args, **kwargs)
-        targets = targets[self.index + self.columns]
+        targets = targets[INDEX + COLUMNS]
         if bool(targets.empty):
             return
         query = TargetsQuery(query.current, query.ticker, query.expire, targets)
@@ -81,13 +79,6 @@ class TargetCalculator(Calculator):
         dataframe = dataframe.reset_index(drop=True, inplace=False)
         return dataframe
 
-    @property
-    def valuation(self): return self.__valuation
-    @property
-    def columns(self): return self.__columns
-    @property
-    def index(self): return self.__index
-
 
 class TargetTable(Table, index=INDEX, columns=COLUMNS):
     def __str__(self): return "{:,.02f}%, ${:,.0f}|${:,.0f}".format(self.apy * 100, self.npv, self.cost)
@@ -104,6 +95,8 @@ class TargetTable(Table, index=INDEX, columns=COLUMNS):
             targets = self.format(targets, *args, **kwargs)
             self.table = targets
             LOGGER.info("Targets: {}[{}]".format(repr(self), str(self)))
+        print(self.table)
+        print(self.targets)
 
     @staticmethod
     def parser(dataframe, *args, funds=None, limit=None, tenure=None, **kwargs):
@@ -120,8 +113,16 @@ class TargetTable(Table, index=INDEX, columns=COLUMNS):
     @staticmethod
     def format(dataframe, *args, **kwargs):
         dataframe["tau"] = dataframe["tau"].astype(np.int32)
-        dataframe["size"] = dataframe["size"].apply(np.floor).astype(np.int32)
         return dataframe
+
+    @property
+    def targets(self):
+        targets = self.table[~self.table.duplicated(keep="last")]
+        size = (targets.reset_index(inplace=False, drop=False)["index"] + 1)
+        size = size.diff().fillna(size.values[0]).astype(int)
+        targets.reset_index(inplace=True, drop=True)
+        targets["size"] = size
+        return targets
 
     @property
     def apy(self): return self.table["apy"] @ (self.table["cost"] / self.table["cost"].sum())
@@ -131,6 +132,8 @@ class TargetTable(Table, index=INDEX, columns=COLUMNS):
     def npv(self): return self.table["npv"].sum()
     @property
     def cost(self): return self.table["cost"].sum()
+    @property
+    def size(self): return len(self.table.index)
 
 
 

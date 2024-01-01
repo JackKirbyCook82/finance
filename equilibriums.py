@@ -100,18 +100,13 @@ class EquilibriumCalculator(Calculator):
         if not bool(query.demand) or not bool(query.supply):
             return
         options, valuations = query.supply, query.demand[self.valuation]
-
-        try:
-            supply = self.supply(options, *args, **kwargs)
-        except Exception as error:
-            demand = self.demand(valuations, *args, **kwargs)
-            raise error
-
+        supply = self.supply(options, *args, **kwargs)
+        demand = self.demand(valuations, *args, **kwargs)
         equilibrium = self.equilibrium(supply, demand, *args, *kwargs)
         equilibrium = pd.DataFrame.from_records(list(equilibrium))
         if bool(equilibrium.empty):
             return
-        equilibrium = self.filter(equilibrium, *args, **kwargs)
+        equilibrium = self.format(equilibrium, *args, **kwargs)
         equilibrium = self.parser(equilibrium, *args, **kwargs)
         if bool(equilibrium.empty):
             return
@@ -119,37 +114,32 @@ class EquilibriumCalculator(Calculator):
         LOGGER.info("Equilibrium: {}[{}]".format(repr(self), str(query)))
         yield query
 
-    def supply(self, options, *args, liquidity=None, **kwargs):
-        columns = ["ticker", "date", "expire", "strike", "size"]
-
+    @staticmethod
+    def supply(options, *args, liquidity=None, **kwargs):
         liquidity = liquidity if liquidity is not None else 1
-        options = {str(option): dataframe[columns].rename(columns={"strike": str(option)}) for option, dataframe in options.items()}
-        options = {str(option):  for option, dataframe in options.items()}
-
-        (dataframe["size"] * liquidity).astype(np.int32)
-
-        for key, value in options.items():
-            print(key)
-            print(value)
-        raise Exception()
-
+        options = {str(option): dataframe for option, dataframe in options.items()}
+        assert set([str(option) for option in options.keys()]) == set([str(option) for option in list(Securities.Options)])
         for option, dataframe in options.items():
             dataframe.drop_duplicates(subset=["ticker", "date", "expire", "strike"], keep="last", inplace=True)
-            dataframe.set_index(self.index.supply, drop=True, inplace=True)
-            dataframe["liquid"] = (dataframe["size"] * liquidity).astype(np.int32)
-        options = pd.concat([dataframe[self.columns.supply].rename(option) for option, dataframe in options.items()], axis=1)
+            dataframe.set_index(["ticker", "date", "expire", "strike"], drop=True, inplace=True)
+            dataframe["size"] = (dataframe["size"] * liquidity).apply(np.floor).astype(np.int32)
+        options = pd.concat([dataframe["size"].rename(option) for option, dataframe in options.items()], axis=1)
         return options
 
-    def demand(self, valuations, *args, liquidity=None, apy=None, **kwargs):
+    @staticmethod
+    def demand(valuations, *args, liquidity=None, apy=None, **kwargs):
         liquidity = liquidity if liquidity is not None else 1
-
         subset = ["strategy", "ticker", "date", "expire"] + list(map(str, Securities.Options))
+        for option in list(Securities.Options):
+            if str(option) not in valuations.columns:
+                valuations[str(option)] = np.NaN
         valuations = valuations.where(valuations["apy"] >= apy) if apy is not None else valuations
         valuations = valuations.dropna(axis=0, how="all")
         valuations = valuations.drop_duplicates(subset=subset, keep="last", inplace=False)
         valuations = valuations.sort_values("apy", axis=0, ascending=False, inplace=False, ignore_index=False)
-        valuations = valuations.set_index(self.index.demand, inplace=False, drop=True)
-        return valuations[self.columns.demand]
+        valuations = valuations.set_index(INDEX, inplace=False, drop=True)[COLUMNS]
+        valuations["size"] = (valuations["size"] * liquidity).apply(np.floor).astype(np.int32)
+        return valuations
 
     @staticmethod
     def equilibrium(supply, demand, *args, **kwargs):
@@ -195,7 +185,7 @@ class EquilibriumTable(Table, index=INDEX, columns=COLUMNS):
     def __str__(self): return "{:,.02f}%, ${:,.0f}|${:,.0f}".format(self.apy * 100, self.npv, self.cost)
 
     def execute(self, content, *args, **kwargs):
-        equilibrium = content.equilibrium if isinstance(content, EquilibriumTable) else content
+        equilibrium = content.equilibrium if isinstance(content, EquilibriumQuery) else content
         assert isinstance(equilibrium, pd.DataFrame)
         if bool(equilibrium.empty):
             return
@@ -203,18 +193,29 @@ class EquilibriumTable(Table, index=INDEX, columns=COLUMNS):
             equilibrium = equilibrium[self.index + self.columns]
             equilibrium = pd.concat([self.table, equilibrium], axis=0)
             equilibrium = equilibrium.reset_index(drop=True, inplace=False)
+            equilibrium = self.format(equilibrium, *args, **kwargs)
             self.table = equilibrium
             LOGGER.info("Equilibrium: {}[{}]".format(repr(self), str(self)))
+        print(self.table)
+
+    @staticmethod
+    def format(dataframe, *args, **kwargs):
+        dataframe["tau"] = dataframe["tau"].astype(np.int32)
+        dataframe["size"] = dataframe["size"].apply(np.floor).astype(np.int32)
+        return dataframe
 
     @property
-    def npv(self): return self.table["npv"] @ self.table["liquid"]
+    def apy(self): return self.table["apy"] @ self.weights
     @property
-    def cost(self): return self.table["cost"] @ self.table["liquid"]
+    def weights(self): return (self.table["cost"] * self.table["size"]) / (self.table["cost"] @ self.table["size"])
     @property
-    def size(self): return self.table["liquid"].sum()
+    def npv(self): return self.table["npv"] @ self.table["size"]
+    @property
+    def cost(self): return self.table["cost"] @ self.table["size"]
+    @property
+    def size(self): return self.table["size"].sum()
     @property
     def tau(self): return self.table["tau"].min(), self.table["tau"].max()
-
 
 
 
