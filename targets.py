@@ -7,20 +7,21 @@ Created on Sun Dec 21 2023
 """
 
 import logging
-import multiprocessing
 import numpy as np
 import pandas as pd
 import PySimpleGUI as gui
-from support.pipelines import Calculator
 from datetime import datetime as Datetime
 from collections import namedtuple as ntuple
+
+from support.tables import Writer, Table
+from support.pipelines import Processor
 
 from finance.securities import Securities
 from finance.valuations import Valuations
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["TargetCalculator", "TargetTable"]
+__all__ = ["TargetCalculator", "TargetWriter", "TargetTable"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
@@ -34,9 +35,9 @@ class TargetsQuery(ntuple("Query", "current ticker expire targets")):
     def __str__(self): return "{}|{}, {:.0f}".format(self.ticker, self.expire.strftime("%Y-%m-%d"), len(self.targets.index))
 
 
-class TargetCalculator(Calculator):
-    def __init__(self, *args, name, valuation=Valuations.Arbitrage.Minimum, **kwargs):
-        super().__init__(*args, name=name, **kwargs)
+class TargetCalculator(Processor):
+    def __init__(self, *args, valuation=Valuations.Arbitrage.Minimum, **kwargs):
+        super().__init__(*args, **kwargs)
         self.valuation = valuation
 
     def execute(self, query, *args, **kwargs):
@@ -79,54 +80,42 @@ class TargetCalculator(Calculator):
         return dataframe
 
 
-class TargetTable():
-    def __str__(self): return "{:,.02f}%, ${:,.0f}|${:,.0f}".format(self.apy * 100, self.npv, self.cost)
-    def __bool__(self): return not bool(self.table.empty)
-    def __len__(self): return len(self.table.index)
-    def __init__(self, *args, name, **kwargs):
-        super().__init__(*args, name=name, **kwargs)
-        self.__table = pd.DataFrame(columns=INDEX + COLUMNS)
-        self.__mutex = multiprocessing.Lock()
-
+class TargetWriter(Writer):
     def execute(self, content, *args, **kwargs):
         targets = content.targets if isinstance(content, TargetsQuery) else content
         assert isinstance(targets, pd.DataFrame)
         if bool(targets.empty):
             return
-        with self.mutex:
-            targets = targets[self.index + self.columns]
-            targets = pd.concat([self.table, targets], axis=0)
-            targets = self.parser(targets, *args, **kwargs)
-            targets = self.format(targets, *args, **kwargs)
-            self.table = targets
-            LOGGER.info("Targets: {}[{}]".format(repr(self), str(self)))
 
-    @staticmethod
-    def parser(dataframe, *args, funds=None, limit=None, tenure=None, **kwargs):
-        dataframe = dataframe.where(dataframe["current"] - Datetime.now() < tenure) if tenure is not None else dataframe
-        dataframe = dataframe.dropna(axis=0, how="all")
-        dataframe = dataframe.sort_values("apy", axis=0, ascending=False, inplace=False, ignore_index=False)
-        if funds is not None:
-            affordable = dataframe["cost"].cumsum() <= funds
-            dataframe = dataframe.where(affordable)
-            dataframe = dataframe.dropna(axis=0, how="all")
-        dataframe = dataframe.head(limit) if limit is not None else dataframe
-        dataframe = dataframe.reset_index(drop=True, inplace=False)
-        return dataframe
+#        with self.mutex:
+#            targets = targets[self.index + self.columns]
+#            targets = pd.concat([self.table, targets], axis=0)
+#            targets = self.parser(targets, *args, **kwargs)
+#            targets = self.format(targets, *args, **kwargs)
+#            self.table = targets
+#            LOGGER.info("Targets: {}[{}]".format(repr(self), str(self)))
 
-    @staticmethod
-    def format(dataframe, *args, **kwargs):
-        dataframe["tau"] = dataframe["tau"].astype(np.int32)
-        return dataframe
+#    @staticmethod
+#    def parser(dataframe, *args, funds=None, limit=None, tenure=None, **kwargs):
+#        dataframe = dataframe.where(dataframe["current"] - Datetime.now() < tenure) if tenure is not None else dataframe
+#        dataframe = dataframe.dropna(axis=0, how="all")
+#        dataframe = dataframe.sort_values("apy", axis=0, ascending=False, inplace=False, ignore_index=False)
+#        if funds is not None:
+#            affordable = dataframe["cost"].cumsum() <= funds
+#            dataframe = dataframe.where(affordable)
+#            dataframe = dataframe.dropna(axis=0, how="all")
+#        dataframe = dataframe.head(limit) if limit is not None else dataframe
+#        dataframe = dataframe.reset_index(drop=True, inplace=False)
+#        return dataframe
 
-    @property
-    def targets(self):
-        targets = self.table[~self.table.duplicated(keep="last")]
-        size = (targets.reset_index(inplace=False, drop=False)["index"] + 1)
-        size = size.diff().fillna(size.values[0]).astype(int)
-        targets.reset_index(inplace=True, drop=True)
-        targets["size"] = size
-        return targets
+#    @staticmethod
+#    def format(dataframe, *args, **kwargs):
+#        dataframe["tau"] = dataframe["tau"].astype(np.int32)
+#        return dataframe
+
+
+class TargetTable(Table):
+    def __str__(self): return "{:,.02f}%, ${:,.0f}|${:,.0f}".format(self.apy * 100, self.npv, self.cost)
 
     @property
     def apy(self): return self.table["apy"] @ (self.table["cost"] / self.table["cost"].sum())
@@ -140,11 +129,13 @@ class TargetTable():
     def size(self): return len(self.table.index)
 
     @property
-    def mutex(self): return self.__mutex
-    @property
-    def table(self): return self.__table
-    @table.setter
-    def table(self, table): self.__table = table
+    def targets(self):
+        targets = self.table[~self.table.duplicated(keep="last")]
+        size = (targets.reset_index(inplace=False, drop=False)["index"] + 1)
+        size = size.diff().fillna(size.values[0]).astype(int)
+        targets.reset_index(inplace=True, drop=True)
+        targets["size"] = size
+        return targets
 
 
 

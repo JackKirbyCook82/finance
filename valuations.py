@@ -12,12 +12,13 @@ import numpy as np
 import pandas as pd
 from enum import IntEnum
 from datetime import datetime as Datetime
-from collections import namedtuple as ntuple
 from collections import OrderedDict as ODict
+from collections import namedtuple as ntuple
 
 from support.calculations import Calculation, equation, source, constant
-from support.pipelines import Calculator, Filter, Saver, Loader
 from support.dispatchers import typedispatcher
+from support.pipelines import Processor
+from support.files import Saver, Loader
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -117,9 +118,9 @@ class ValuationQuery(ntuple("Query", "current ticker expire valuations")):
         return ", ".join([arguments, parameters]) if bool(parameters) else str(arguments)
 
 
-class ValuationCalculator(Calculator):
-    def __init__(self, *args, name, **kwargs):
-        super().__init__(*args, name=name, **kwargs)
+class ValuationCalculator(Processor):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         valuations = kwargs.get("calculations", ODict(list(Calculations)).keys())
         calculations = ODict([(valuation, calculation(*args, **kwargs)) for valuation, calculation in iter(Calculations) if valuation in valuations])
         self.__calculations = calculations
@@ -148,7 +149,7 @@ class ValuationCalculator(Calculator):
     def calculations(self): return self.__calculations
 
 
-class ValuationFilter(Filter):
+class ValuationFilter(Processor):
     def execute(self, query, *args, **kwargs):
         valuations = {valuation: dataframe for valuation, dataframe in query.valuations.items()}
         valuations = {valuation: self.filter(dataframe, *args, **kwargs) for valuation, dataframe in valuations.items()}

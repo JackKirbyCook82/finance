@@ -16,12 +16,13 @@ from enum import IntEnum
 from itertools import chain
 from datetime import date as Date
 from datetime import datetime as Datetime
-from collections import namedtuple as ntuple
 from collections import OrderedDict as ODict
+from collections import namedtuple as ntuple
 
-from support.pipelines import Parser, Calculator, Filter, Saver, Loader
 from support.dispatchers import typedispatcher, kwargsdispatcher
 from support.calculations import Calculation, equation, source
+from support.pipelines import Processor
+from support.files import Loader, Saver
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -165,7 +166,7 @@ class SecurityQuery(ntuple("Query", "current ticker expire stocks options")):
         return ", ".join([arguments, parameters]) if bool(parameters) else str(arguments)
 
 
-class SecurityFilter(Filter):
+class SecurityFilter(Processor):
     def execute(self, query, *args, **kwargs):
         stocks = {security: dataframe for security, dataframe in query.stocks.items() if not bool(dataframe.empty)}
         options = {security: dataframe for security, dataframe in query.options.items() if not bool(dataframe.empty)}
@@ -196,7 +197,7 @@ class SecurityFilter(Filter):
         return dataframe
 
 
-class SecurityParser(Parser):
+class SecurityParser(Processor):
     def execute(self, query, *args, **kwargs):
         stocks = {security: dataframe for security, dataframe in query.stocks.items() if not bool(dataframe.empty)}
         options = {security: dataframe for security, dataframe in query.options.items() if not bool(dataframe.empty)}
@@ -223,9 +224,9 @@ class SecurityParser(Parser):
         return dataset
 
 
-class SecurityCalculator(Calculator):
-    def __init__(self, *args, name, **kwargs):
-        super().__init__(*args, name=name, **kwargs)
+class SecurityCalculator(Processor):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         securities = kwargs.get("calculations", ODict(list(Calculations)).keys())
         calculations = ODict([(security, calculation(*args, **kwargs)) for security, calculation in iter(Calculations) if security in securities])
         self.__calculations = calculations

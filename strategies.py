@@ -11,9 +11,9 @@ from enum import IntEnum
 from collections import namedtuple as ntuple
 from collections import OrderedDict as ODict
 
-from support.pipelines import Calculator
 from support.calculations import Calculation, equation, source, constant
 from support.dispatchers import kwargsdispatcher, typedispatcher
+from support.pipelines import Processor
 
 from finance.securities import Positions, Instruments, Securities
 
@@ -145,7 +145,7 @@ class StrategyQuery(ntuple("Query", "current ticker expire strategies")):
     def __str__(self): return "{}|{}".format(self.ticker, self.expire.strftime("%Y-%m-%d"))
 
 
-class StrategyCalculator(Calculator):
+class StrategyCalculator(Processor):
     def __init__(self, *args, name, **kwargs):
         super().__init__(*args, name=name, **kwargs)
         strategies = kwargs.get("calculations", ODict(list(Calculations)).keys())

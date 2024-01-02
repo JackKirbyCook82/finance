@@ -10,19 +10,20 @@ import os
 import logging
 import numpy as np
 import pandas as pd
-import multiprocessing
 from datetime import datetime as Datetime
 from collections import OrderedDict as ODict
 from collections import namedtuple as ntuple
 
-from support.pipelines import Calculator, Loader
+from support.tables import Writer, Table
+from support.pipelines import Processor
+from support.files import Loader
 
 from finance.securities import Securities
 from finance.valuations import Valuations
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["SupplyDemandLoader", "EquilibriumCalculator", "EquilibriumTable"]
+__all__ = ["SupplyDemandFile", "SupplyDemandLoader", "EquilibriumCalculator", "EquilibriumWriter", "EquilibriumTable"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
@@ -90,12 +91,10 @@ class SupplyDemandLoader(SupplyDemandFile, Loader):
                     yield SupplyDemandQuery(current, ticker, expire, options, valuations)
 
 
-class EquilibriumCalculator(Calculator):
-    def __init__(self, *args, name, valuation=Valuations.Arbitrage.Minimum, **kwargs):
-        super().__init__(*args, name=name, **kwargs)
-        self.__valuation = valuation
-        self.__columns = COLUMNS
-        self.__index = INDEX
+class EquilibriumCalculator(Processor):
+    def __init__(self, *args, valuation=Valuations.Arbitrage.Minimum, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.valuation = valuation
 
     def execute(self, query, *args, **kwargs):
         if not bool(query.demand) or not bool(query.supply):
@@ -174,41 +173,31 @@ class EquilibriumCalculator(Calculator):
         equilibrium = equilibrium.reset_index(drop=True, inplace=False)
         return equilibrium
 
-    @property
-    def valuation(self): return self.__valuation
-    @property
-    def columns(self): return self.__columns
-    @property
-    def index(self): return self.__index
 
-
-class EquilibriumTable():
-    def __str__(self): return "{:,.02f}%, ${:,.0f}|${:,.0f}".format(self.apy * 100, self.npv, self.cost)
-    def __bool__(self): return not bool(self.table.empty)
-    def __len__(self): return len(self.table.index)
-    def __init__(self, *args, name, **kwargs):
-        super().__init__(*args, name=name, **kwargs)
-        self.__table = pd.DataFrame(columns=INDEX + COLUMNS)
-        self.__mutex = multiprocessing.Lock()
-
+class EquilibriumWriter(Writer):
     def execute(self, content, *args, **kwargs):
         equilibrium = content.equilibrium if isinstance(content, EquilibriumQuery) else content
         assert isinstance(equilibrium, pd.DataFrame)
         if bool(equilibrium.empty):
             return
-        with self.mutex:
-            equilibrium = equilibrium[INDEX + COLUMNS]
-            equilibrium = pd.concat([self.table, equilibrium], axis=0)
-            equilibrium = equilibrium.reset_index(drop=True, inplace=False)
-            equilibrium = self.format(equilibrium, *args, **kwargs)
-            self.table = equilibrium
-            LOGGER.info("Equilibrium: {}[{}]".format(repr(self), str(self)))
 
-    @staticmethod
-    def format(dataframe, *args, **kwargs):
-        dataframe["tau"] = dataframe["tau"].astype(np.int32)
-        dataframe["size"] = dataframe["size"].apply(np.floor).astype(np.int32)
-        return dataframe
+#         with self.mutex:
+#            equilibrium = equilibrium[INDEX + COLUMNS]
+#            equilibrium = pd.concat([self.table, equilibrium], axis=0)
+#            equilibrium = equilibrium.reset_index(drop=True, inplace=False)
+#            equilibrium = self.format(equilibrium, *args, **kwargs)
+#            self.table = equilibrium
+#            LOGGER.info("Equilibrium: {}[{}]".format(repr(self), str(self)))
+
+#    @staticmethod
+#    def format(dataframe, *args, **kwargs):
+#        dataframe["tau"] = dataframe["tau"].astype(np.int32)
+#        dataframe["size"] = dataframe["size"].apply(np.floor).astype(np.int32)
+#        return dataframe
+
+
+class EquilibriumTable(Table):
+    def __str__(self): return "{:,.02f}%, ${:,.0f}|${:,.0f}".format(self.apy * 100, self.npv, self.cost)
 
     @property
     def apy(self): return self.table["apy"] @ self.weights
@@ -224,13 +213,5 @@ class EquilibriumTable():
     def size(self): return self.table["size"].sum()
 
     @property
-    def mutex(self): return self.__mutex
-    @property
-    def equilibrium(self): return self.__table
-    @property
-    def table(self): return self.__table
-    @table.setter
-    def table(self, table): self.__table = table
-
-
+    def equilibrium(self): return self.table
 
