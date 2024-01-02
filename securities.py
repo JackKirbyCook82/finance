@@ -22,11 +22,11 @@ from collections import namedtuple as ntuple
 from support.dispatchers import typedispatcher, kwargsdispatcher
 from support.calculations import Calculation, equation, source
 from support.pipelines import Processor
-from support.files import Loader, Saver
+from support.files import Reader, Writer
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["DateRange", "Instruments", "Positions", "Security", "Securities", "Calculations", "SecuritySaver", "SecurityLoader", "SecurityFilter", "SecurityParser", "SecurityCalculator"]
+__all__ = ["DateRange", "Instruments", "Positions", "Security", "Securities", "Calculations", "SecurityReader", "SecurityWriter", "SecurityFilter", "SecurityParser", "SecurityCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
@@ -262,7 +262,7 @@ class SecurityFile(object):
     def datatypes(self): return self.__datatypes
 
 
-class SecuritySaver(SecurityFile, Saver):
+class SecurityWriter(SecurityFile, Writer):
     def execute(self, query, *args, **kwargs):
         stocks, options = query.stocks, query.options
         if not bool(stocks) or all([dataframe.empty for dataframe in stocks.values()]):
@@ -284,7 +284,7 @@ class SecuritySaver(SecurityFile, Saver):
                 self.write(dataframe, file=security_file, filemode="w")
 
 
-class SecurityLoader(SecurityFile, Loader):
+class SecurityReader(SecurityFile, Reader):
     def execute(self, *args, tickers=None, expires=None, dates=None, **kwargs):
         TickerExpire = ntuple("TickerExpire", "ticker expire")
         function = lambda foldername: Datetime.strptime(foldername, "%Y%m%d_%H%M%S")

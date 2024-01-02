@@ -16,14 +16,14 @@ from collections import namedtuple as ntuple
 
 from support.tables import Writer, Table
 from support.pipelines import Processor
-from support.files import Loader
+from support.files import Reader
 
 from finance.securities import Securities
 from finance.valuations import Valuations
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["SupplyDemandFile", "SupplyDemandLoader", "EquilibriumCalculator", "EquilibriumWriter", "EquilibriumTable"]
+__all__ = ["SupplyDemandFile", "SupplyDemandReader", "EquilibriumCalculator", "EquilibriumWriter", "EquilibriumTable"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
@@ -58,7 +58,7 @@ class SupplyDemandFile(object):
     def datatypes(self): return self.__datatypes
 
 
-class SupplyDemandLoader(SupplyDemandFile, Loader):
+class SupplyDemandReader(SupplyDemandFile, Reader):
     def execute(self, *args, tickers=None, expires=None, dates=None, **kwargs):
         TickerExpire = ntuple("TickerExpire", "ticker expire")
         function = lambda foldername: Datetime.strptime(foldername, "%Y%m%d_%H%M%S")

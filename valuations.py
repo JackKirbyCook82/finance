@@ -18,11 +18,11 @@ from collections import namedtuple as ntuple
 from support.calculations import Calculation, equation, source, constant
 from support.dispatchers import typedispatcher
 from support.pipelines import Processor
-from support.files import Saver, Loader
+from support.files import Reader, Writer
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["Valuation", "Valuations", "Calculations", "ValuationSaver", "ValuationLoader", "ValuationFilter", "ValuationCalculator"]
+__all__ = ["Valuation", "Valuations", "Calculations", "ValuationReader", "ValuationWriter", "ValuationFilter", "ValuationCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
@@ -181,7 +181,7 @@ class ValuationFile(object):
     def datatypes(self): return self.__datatypes
 
 
-class ValuationSaver(ValuationFile, Saver):
+class ValuationWriter(ValuationFile, Writer):
     def execute(self, query, *args, **kwargs):
         valuations = query.valuations
         if not bool(valuations) or all([dataframe.empty for dataframe in valuations.values()]):
@@ -198,7 +198,7 @@ class ValuationSaver(ValuationFile, Saver):
                 self.write(dataframe, file=valuation_file, filemode="w")
 
 
-class ValuationLoader(ValuationFile, Loader):
+class ValuationReader(ValuationFile, Reader):
     def execute(self, *args, tickers=None, expires=None, dates=None, **kwargs):
         TickerExpire = ntuple("TickerExpire", "ticker expire")
         function = lambda foldername: Datetime.strptime(foldername, "%Y%m%d_%H%M%S")
