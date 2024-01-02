@@ -22,7 +22,7 @@ from collections import namedtuple as ntuple
 from support.dispatchers import typedispatcher, kwargsdispatcher
 from support.calculations import Calculation, equation, source
 from support.pipelines import Processor
-from support.files import Reader, Writer
+from support.files import FileReader, FileWriter
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -262,7 +262,7 @@ class SecurityFile(object):
     def datatypes(self): return self.__datatypes
 
 
-class SecurityWriter(SecurityFile, Writer):
+class SecurityWriter(SecurityFile, FileWriter):
     def execute(self, query, *args, **kwargs):
         stocks, options = query.stocks, query.options
         if not bool(stocks) or all([dataframe.empty for dataframe in stocks.values()]):
@@ -284,7 +284,7 @@ class SecurityWriter(SecurityFile, Writer):
                 self.write(dataframe, file=security_file, filemode="w")
 
 
-class SecurityReader(SecurityFile, Reader):
+class SecurityReader(SecurityFile, FileReader):
     def execute(self, *args, tickers=None, expires=None, dates=None, **kwargs):
         TickerExpire = ntuple("TickerExpire", "ticker expire")
         function = lambda foldername: Datetime.strptime(foldername, "%Y%m%d_%H%M%S")

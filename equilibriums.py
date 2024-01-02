@@ -14,9 +14,9 @@ from datetime import datetime as Datetime
 from collections import OrderedDict as ODict
 from collections import namedtuple as ntuple
 
-from support.tables import Writer, Table
+from support.tables import TableWriter, Table
 from support.pipelines import Processor
-from support.files import Reader
+from support.files import FileReader
 
 from finance.securities import Securities
 from finance.valuations import Valuations
@@ -58,7 +58,7 @@ class SupplyDemandFile(object):
     def datatypes(self): return self.__datatypes
 
 
-class SupplyDemandReader(SupplyDemandFile, Reader):
+class SupplyDemandReader(SupplyDemandFile, FileReader):
     def execute(self, *args, tickers=None, expires=None, dates=None, **kwargs):
         TickerExpire = ntuple("TickerExpire", "ticker expire")
         function = lambda foldername: Datetime.strptime(foldername, "%Y%m%d_%H%M%S")
@@ -174,7 +174,7 @@ class EquilibriumCalculator(Processor):
         return equilibrium
 
 
-class EquilibriumWriter(Writer):
+class EquilibriumWriter(TableWriter):
     def execute(self, content, *args, **kwargs):
         equilibrium = content.equilibrium if isinstance(content, EquilibriumQuery) else content
         assert isinstance(equilibrium, pd.DataFrame)

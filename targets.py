@@ -13,7 +13,7 @@ import PySimpleGUI as gui
 from datetime import datetime as Datetime
 from collections import namedtuple as ntuple
 
-from support.tables import Writer, Table
+from support.tables import TableWriter, Table
 from support.pipelines import Processor
 
 from finance.securities import Securities
@@ -80,7 +80,7 @@ class TargetCalculator(Processor):
         return dataframe
 
 
-class TargetWriter(Writer):
+class TargetWriter(TableWriter):
     def execute(self, content, *args, **kwargs):
         targets = content.targets if isinstance(content, TargetsQuery) else content
         assert isinstance(targets, pd.DataFrame)

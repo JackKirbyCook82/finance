@@ -18,7 +18,7 @@ from collections import namedtuple as ntuple
 from support.calculations import Calculation, equation, source, constant
 from support.dispatchers import typedispatcher
 from support.pipelines import Processor
-from support.files import Reader, Writer
+from support.files import FileReader, FileWriter
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -181,7 +181,7 @@ class ValuationFile(object):
     def datatypes(self): return self.__datatypes
 
 
-class ValuationWriter(ValuationFile, Writer):
+class ValuationWriter(ValuationFile, FileWriter):
     def execute(self, query, *args, **kwargs):
         valuations = query.valuations
         if not bool(valuations) or all([dataframe.empty for dataframe in valuations.values()]):
@@ -198,7 +198,7 @@ class ValuationWriter(ValuationFile, Writer):
                 self.write(dataframe, file=valuation_file, filemode="w")
 
 
-class ValuationReader(ValuationFile, Reader):
+class ValuationReader(ValuationFile, FileReader):
     def execute(self, *args, tickers=None, expires=None, dates=None, **kwargs):
         TickerExpire = ntuple("TickerExpire", "ticker expire")
         function = lambda foldername: Datetime.strptime(foldername, "%Y%m%d_%H%M%S")
