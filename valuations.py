@@ -17,12 +17,12 @@ from collections import namedtuple as ntuple
 
 from support.calculations import Calculation, equation, source, constant
 from support.dispatchers import typedispatcher
-from support.pipelines import Processor
-from support.files import FileReader, FileWriter
+from support.pipelines import Processor, Reader, Writer
+from support.files import DataframeFile
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["Valuation", "Valuations", "Calculations", "ValuationReader", "ValuationWriter", "ValuationFilter", "ValuationCalculator"]
+__all__ = ["Valuation", "Valuations", "Calculations", "ValuationFile", "ValuationReader", "ValuationWriter", "ValuationFilter", "ValuationCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
@@ -166,51 +166,44 @@ class ValuationFilter(Processor):
         return dataframe
 
 
-class ValuationFile(object):
+class ValuationFile(DataframeFile):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        datetypes = {str(Valuations.Arbitrage.Minimum): ["date", "expire"], str(Valuations.Arbitrage.Maximum): ["date", "expire"], str(Valuations.Arbitrage.Current): ["date", "expire"]}
-        valuation = {"npv": np.float32, "apy": np.float32, "cost": np.float32, "size": np.int64, "tau": np.int16}
-        datatypes = {str(Valuations.Arbitrage.Minimum): valuation, str(Valuations.Arbitrage.Maximum): valuation, str(Valuations.Arbitrage.Current): valuation}
-        self.__datetypes = datetypes
-        self.__datatypes = datatypes
-
-    @property
-    def datetypes(self): return self.__datetypes
-    @property
-    def datatypes(self): return self.__datatypes
+        datatypes = {"npv": np.float32, "apy": np.float32, "cost": np.float32, "size": np.int64, "tau": np.int16}
+        datetypes = ["date", "expire"]
+        parameters = dict(datatypes=datatypes, datetypes=datetypes)
+        super().__init__(*args, **parameters, **kwargs)
 
 
-class ValuationWriter(ValuationFile, FileWriter):
+class ValuationWriter(Writer):
     def execute(self, query, *args, **kwargs):
         valuations = query.valuations
         if not bool(valuations) or all([dataframe.empty for dataframe in valuations.values()]):
             return
-        current_folder = os.path.join(self.repository, str(query.current.strftime("%Y%m%d_%H%M%S")))
+        current_name = str(query.current.strftime("%Y%m%d_%H%M%S"))
+        current_folder = self.destination.folder(current_name)
         assert os.path.isdir(current_folder)
         ticker_expire_name = "_".join([str(query.ticker), str(query.expire.strftime("%Y%m%d"))])
-        ticker_expire_folder = os.path.join(current_folder, ticker_expire_name)
+        ticker_expire_folder = self.destination.folder(current_name, ticker_expire_name)
         assert os.path.isdir(ticker_expire_folder)
-        with self.mutex[ticker_expire_folder]:
-            for valuation, dataframe in valuations.items():
-                valuation_filename = str(valuation).replace("|", "_") + ".csv"
-                valuation_file = os.path.join(ticker_expire_folder, valuation_filename)
-                self.write(dataframe, file=valuation_file, filemode="w")
+        for valuation, dataframe in valuations.items():
+            valuation_name = str(valuation).replace("|", "_") + ".csv"
+            valuation_file = self.destination.file(current_name, ticker_expire_name, valuation_name)
+            self.destination.write(dataframe, file=valuation_file, filemode="w")
+            LOGGER.info("Saved: {}[{}]".format(repr(self), str(valuation_file)))
 
 
-class ValuationReader(ValuationFile, FileReader):
+class ValuationReader(Reader):
     def execute(self, *args, tickers=None, expires=None, dates=None, **kwargs):
         TickerExpire = ntuple("TickerExpire", "ticker expire")
         function = lambda foldername: Datetime.strptime(foldername, "%Y%m%d_%H%M%S")
-        datatypes = lambda key: self.datatypes[str(key)]
-        datetypes = lambda key: self.datetypes[str(key)]
-        reader = lambda key, file: self.read(file=file, filetype=pd.DataFrame, datatypes=datatypes(key), datetypes=datetypes(key))
-        for current_name in sorted(os.listdir(self.repository), key=function, reverse=False):
+        current_folders = self.source.folders()
+        for current_name in sorted(current_folders, key=function, reverse=False):
             current = function(current_name)
             if dates is not None and current.date() not in dates:
                 continue
-            current_folder = os.path.join(self.repository, current_name)
-            for ticker_expire_name in os.listdir(current_folder):
+            ticker_expire_folders = self.source.folders(current_name)
+            for ticker_expire_name in ticker_expire_folders:
                 ticker_expire = TickerExpire(*str(ticker_expire_name).split("_"))
                 ticker = str(ticker_expire.ticker).upper()
                 if tickers is not None and ticker not in tickers:
@@ -218,11 +211,9 @@ class ValuationReader(ValuationFile, FileReader):
                 expire = Datetime.strptime(os.path.splitext(ticker_expire.expire)[0], "%Y%m%d").date()
                 if expires is not None and expire not in expires:
                     continue
-                ticker_expire_folder = os.path.join(current_folder, ticker_expire_name)
-                with self.mutex[ticker_expire_folder]:
-                    filenames = {valuation: str(valuation).replace("|", "_") + ".csv" for valuation in list(Valuations)}
-                    files = {valuation: os.path.join(ticker_expire_folder, filename) for valuation, filename in filenames.items()}
-                    valuations = {valuation: reader(valuation, file) for valuation, file in files.items() if os.path.isfile(file)}
+                filenames = {valuation: str(valuation).replace("|", "_") + ".csv" for valuation in list(Valuations)}
+                files = {valuation: self.source.file(current_name, ticker_expire_name, filename) for valuation, filename in filenames.items()}
+                valuations = {valuation: self.source.read(file=file) for valuation, file in files.items() if os.path.isfile(file)}
                 yield ValuationQuery(current, ticker, expire, valuations)
 
 

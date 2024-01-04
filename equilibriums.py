@@ -14,9 +14,9 @@ from datetime import datetime as Datetime
 from collections import OrderedDict as ODict
 from collections import namedtuple as ntuple
 
-from support.tables import TableWriter, Table
-from support.pipelines import Processor
-from support.files import FileReader
+from support.pipelines import Processor, Reader, Writer
+from support.tables import DataframeTable
+from support.files import DataframeFile
 
 from finance.securities import Securities
 from finance.valuations import Valuations
@@ -38,39 +38,25 @@ class EquilibriumQuery(ntuple("Query", "current ticker expire equilibrium")):
     def __str__(self): return "{}|{}, {:.0f}".format(self.ticker, self.expire.strftime("%Y-%m-%d"), len(self.equilibrium.index))
 
 
-class SupplyDemandFile(object):
+class SupplyDemandFile(DataframeFile):
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        datetypes = {str(Valuations.Arbitrage.Minimum): ["date", "expire"], str(Valuations.Arbitrage.Maximum): ["date", "expire"], str(Valuations.Arbitrage.Current): ["date", "expire"]}
-        datetypes.update({str(Securities.Option.Put.Long): ["date", "expire"], str(Securities.Option.Put.Short): ["date", "expire"]})
-        datetypes.update({str(Securities.Option.Call.Long): ["date", "expire"], str(Securities.Option.Call.Short): ["date", "expire"]})
-        options = {"strike": np.float32, "price": np.float32, "size": np.int64}
-        valuation = {"npv": np.float32, "apy": np.float32, "cost": np.float32, "size": np.int64, "tau": np.int16}
-        datatypes = {str(Valuations.Arbitrage.Minimum): valuation, str(Valuations.Arbitrage.Maximum): valuation, str(Valuations.Arbitrage.Current): valuation}
-        datatypes.update({str(Securities.Option.Put.Long): options, str(Securities.Option.Put.Short): options})
-        datatypes.update({str(Securities.Option.Call.Long): options, str(Securities.Option.Call.Short): options})
-        self.__datetypes = datetypes
-        self.__datatypes = datatypes
-
-    @property
-    def datetypes(self): return self.__datetypes
-    @property
-    def datatypes(self): return self.__datatypes
+        datatypes = {"strike": np.float32, "price": np.float32, "size": np.int64, "npv": np.float32, "apy": np.float32, "cost": np.float32, "size": np.int64, "tau": np.int16}
+        datetypes = ["date", "expire"]
+        parameters = dict(datatypes=datatypes, datetypes=datetypes)
+        super().__init__(*args, **parameters, **kwargs)
 
 
-class SupplyDemandReader(SupplyDemandFile, FileReader):
+class SupplyDemandReader(Reader):
     def execute(self, *args, tickers=None, expires=None, dates=None, **kwargs):
         TickerExpire = ntuple("TickerExpire", "ticker expire")
         function = lambda foldername: Datetime.strptime(foldername, "%Y%m%d_%H%M%S")
-        datatypes = lambda key: self.datatypes[str(key)]
-        datetypes = lambda key: self.datetypes[str(key)]
-        reader = lambda key, file: self.read(file=file, filetype=pd.DataFrame, datatypes=datatypes(key), datetypes=datetypes(key))
-        for current_name in sorted(os.listdir(self.repository), key=function, reverse=False):
+        current_folders = self.source.folders()
+        for current_name in sorted(current_folders, key=function, reverse=False):
             current = function(current_name)
             if dates is not None and current.date() not in dates:
                 continue
-            current_folder = os.path.join(self.repository, current_name)
-            for ticker_expire_name in os.listdir(current_folder):
+            ticker_expire_folders = self.source.folders(current_name)
+            for ticker_expire_name in ticker_expire_folders:
                 ticker_expire = TickerExpire(*str(ticker_expire_name).split("_"))
                 ticker = str(ticker_expire.ticker).upper()
                 if tickers is not None and ticker not in tickers:
@@ -78,17 +64,15 @@ class SupplyDemandReader(SupplyDemandFile, FileReader):
                 expire = Datetime.strptime(os.path.splitext(ticker_expire.expire)[0], "%Y%m%d").date()
                 if expires is not None and expire not in expires:
                     continue
-                ticker_expire_folder = os.path.join(current_folder, ticker_expire_name)
-                with self.mutex[ticker_expire_folder]:
-                    filenames = {valuation: str(valuation).replace("|", "_") + ".csv" for valuation in list(Valuations)}
-                    files = {valuation: os.path.join(ticker_expire_folder, filename) for valuation, filename in filenames.items()}
-                    valuations = {valuation: reader(valuation, file) for valuation, file in files.items() if os.path.isfile(file)}
-                    if not bool(valuations) or all([dataframe.empty for dataframe in valuations.values()]):
-                        continue
-                    filenames = {option: str(option).replace("|", "_") + ".csv" for option in list(Securities.Options)}
-                    files = {option: os.path.join(ticker_expire_folder, filename) for option, filename in filenames.items()}
-                    options = {option: reader(option, file) for option, file in files.items()}
-                    yield SupplyDemandQuery(current, ticker, expire, options, valuations)
+                filenames = {valuation: str(valuation).replace("|", "_") + ".csv" for valuation in list(Valuations)}
+                files = {valuation: self.source.file(current_name, ticker_expire_name, filename) for valuation, filename in filenames.items()}
+                valuations = {valuation: self.source.read(file=file) for valuation, file in files.items() if os.path.isfile(file)}
+                if not bool(valuations) or all([dataframe.empty for dataframe in valuations.values()]):
+                    continue
+                filenames = {option: str(option).replace("|", "_") + ".csv" for option in list(Securities.Options)}
+                files = {option: self.source.file(current_name, ticker_expire_name, filename) for option, filename in filenames.items()}
+                options = {option: self.source.read(file=file) for option, file in files.items()}
+                yield SupplyDemandQuery(current, ticker, expire, options, valuations)
 
 
 class EquilibriumCalculator(Processor):
@@ -174,30 +158,35 @@ class EquilibriumCalculator(Processor):
         return equilibrium
 
 
-class EquilibriumWriter(TableWriter):
+class EquilibriumWriter(Writer):
     def execute(self, content, *args, **kwargs):
         equilibrium = content.equilibrium if isinstance(content, EquilibriumQuery) else content
         assert isinstance(equilibrium, pd.DataFrame)
         if bool(equilibrium.empty):
             return
+        self.write(equilibrium[INDEX + COLUMNS], *args, **kwargs)
+        LOGGER.info("Equilibrium: {}[{}]".format(repr(self), str(self.destination)))
 
-#         with self.mutex:
-#            equilibrium = equilibrium[INDEX + COLUMNS]
-#            equilibrium = pd.concat([self.table, equilibrium], axis=0)
-#            equilibrium = equilibrium.reset_index(drop=True, inplace=False)
-#            equilibrium = self.format(equilibrium, *args, **kwargs)
-#            self.table = equilibrium
-#            LOGGER.info("Equilibrium: {}[{}]".format(repr(self), str(self)))
-
-#    @staticmethod
-#    def format(dataframe, *args, **kwargs):
-#        dataframe["tau"] = dataframe["tau"].astype(np.int32)
-#        dataframe["size"] = dataframe["size"].apply(np.floor).astype(np.int32)
-#        return dataframe
+    @staticmethod
+    def format(dataframe, *args, **kwargs):
+        dataframe["tau"] = dataframe["tau"].astype(np.int32)
+        dataframe["size"] = dataframe["size"].apply(np.floor).astype(np.int32)
+        return dataframe
 
 
-class EquilibriumTable(Table):
+class EquilibriumTable(DataframeTable):
     def __str__(self): return "{:,.02f}%, ${:,.0f}|${:,.0f}".format(self.apy * 100, self.npv, self.cost)
+
+    @staticmethod
+    def parser(dataframe, *args, **kwargs):
+        dataframe = dataframe.reset_index(drop=True, inplace=False)
+        return dataframe
+
+    @staticmethod
+    def format(dataframe, *args, **kwargs):
+        dataframe["tau"] = dataframe["tau"].astype(np.int32)
+        dataframe["size"] = dataframe["size"].apply(np.floor).astype(np.int32)
+        return dataframe
 
     @property
     def apy(self): return self.table["apy"] @ self.weights
@@ -212,6 +201,5 @@ class EquilibriumTable(Table):
     @property
     def size(self): return self.table["size"].sum()
 
-    @property
-    def equilibrium(self): return self.table
+
 

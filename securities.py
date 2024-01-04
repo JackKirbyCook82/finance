@@ -10,7 +10,6 @@ import os
 import logging
 import numpy as np
 import xarray as xr
-import pandas as pd
 from abc import ABC
 from enum import IntEnum
 from itertools import chain
@@ -21,12 +20,12 @@ from collections import namedtuple as ntuple
 
 from support.dispatchers import typedispatcher, kwargsdispatcher
 from support.calculations import Calculation, equation, source
-from support.pipelines import Processor
-from support.files import FileReader, FileWriter
+from support.pipelines import Processor, Reader, Writer
+from support.files import DataframeFile
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["DateRange", "Instruments", "Positions", "Security", "Securities", "Calculations", "SecurityReader", "SecurityWriter", "SecurityFilter", "SecurityParser", "SecurityCalculator"]
+__all__ = ["DateRange", "Instruments", "Positions", "Security", "Securities", "Calculations", "SecurityFile", "SecurityReader", "SecurityWriter", "SecurityFilter", "SecurityParser", "SecurityCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
@@ -242,61 +241,47 @@ class SecurityCalculator(Processor):
     def calculations(self): return self.__calculations
 
 
-class SecurityFile(object):
+class SecurityFile(DataframeFile):
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        datetypes = {str(Securities.Stock.Long): ["date"], str(Securities.Stock.Short): ["date"]}
-        datetypes.update({str(Securities.Option.Put.Long): ["date", "expire"], str(Securities.Option.Put.Short): ["date", "expire"]})
-        datetypes.update({str(Securities.Option.Call.Long): ["date", "expire"], str(Securities.Option.Call.Short): ["date", "expire"]})
-        stocks = {"price": np.float32, "volume": np.int64, "size": np.int64}
-        options = {"strike": np.float32, "price": np.float32, "volume": np.int64, "interest": np.int64, "size": np.int64}
-        datatypes = {str(Securities.Stock.Long): stocks, str(Securities.Stock.Short): stocks}
-        datatypes.update({str(Securities.Option.Put.Long): options, str(Securities.Option.Put.Short): options})
-        datatypes.update({str(Securities.Option.Call.Long): options, str(Securities.Option.Call.Short): options})
-        self.__datetypes = datetypes
-        self.__datatypes = datatypes
-
-    @property
-    def datetypes(self): return self.__datetypes
-    @property
-    def datatypes(self): return self.__datatypes
+        datatypes = {"strike": np.float32, "price": np.float32, "volume": np.int64, "interest": np.int64, "size": np.int64}
+        datetypes = ["date", "expire"]
+        parameters = dict(datatypes=datatypes, datetypes=datetypes)
+        super().__init__(*args, **parameters, **kwargs)
 
 
-class SecurityWriter(SecurityFile, FileWriter):
+class SecurityWriter(Writer):
     def execute(self, query, *args, **kwargs):
         stocks, options = query.stocks, query.options
         if not bool(stocks) or all([dataframe.empty for dataframe in stocks.values()]):
             return
         if not bool(options) or all([dataframe.empty for dataframe in options.values()]):
             return
-        current_folder = os.path.join(self.repository, str(query.current.strftime("%Y%m%d_%H%M%S")))
-        with self.mutex[current_folder]:
-            if not os.path.isdir(current_folder):
-                os.mkdir(current_folder)
+        current_name = str(query.current.strftime("%Y%m%d_%H%M%S"))
+        current_folder = self.destination.folder(current_name)
+        if not os.path.isdir(current_folder):
+            os.mkdir(current_folder)
         ticker_expire_name = "_".join([str(query.ticker), str(query.expire.strftime("%Y%m%d"))])
-        ticker_expire_folder = os.path.join(current_folder, ticker_expire_name)
-        with self.mutex[ticker_expire_folder]:
-            if not os.path.isdir(ticker_expire_folder):
-                os.mkdir(ticker_expire_folder)
-            for security, dataframe in chain(stocks.items(), options.items()):
-                security_filename = str(security).replace("|", "_") + ".csv"
-                security_file = os.path.join(ticker_expire_folder, security_filename)
-                self.write(dataframe, file=security_file, filemode="w")
+        ticker_expire_folder = self.destination.folder(current_name, ticker_expire_name)
+        if not os.path.isdir(ticker_expire_folder):
+            os.mkdir(ticker_expire_folder)
+        for security, dataframe in chain(stocks.items(), options.items()):
+            security_name = str(security).replace("|", "_") + ".csv"
+            security_file = self.destination.file(current_name, ticker_expire_name, security_name)
+            self.destination.write(dataframe, file=security_file, filemode="w")
+            LOGGER.info("Saved: {}[{}]".format(repr(self), str(security_file)))
 
 
-class SecurityReader(SecurityFile, FileReader):
+class SecurityReader(Reader):
     def execute(self, *args, tickers=None, expires=None, dates=None, **kwargs):
         TickerExpire = ntuple("TickerExpire", "ticker expire")
         function = lambda foldername: Datetime.strptime(foldername, "%Y%m%d_%H%M%S")
-        datatypes = lambda key: self.datatypes[str(key)]
-        datetypes = lambda key: self.datetypes[str(key)]
-        reader = lambda security, file: self.read(file=file, filetype=pd.DataFrame, datatypes=datatypes(security), datetypes=datetypes(security))
-        for current_name in sorted(os.listdir(self.repository), key=function, reverse=False):
+        current_folders = self.source.folders()
+        for current_name in sorted(current_folders, key=function, reverse=False):
             current = function(current_name)
             if dates is not None and current.date() not in dates:
                 continue
-            current_folder = os.path.join(self.repository, current_name)
-            for ticker_expire_name in os.listdir(current_folder):
+            ticker_expire_folders = self.source.folders(current_name)
+            for ticker_expire_name in ticker_expire_folders:
                 ticker_expire = TickerExpire(*str(ticker_expire_name).split("_"))
                 ticker = str(ticker_expire.ticker).upper()
                 if tickers is not None and ticker not in tickers:
@@ -304,14 +289,12 @@ class SecurityReader(SecurityFile, FileReader):
                 expire = Datetime.strptime(os.path.splitext(ticker_expire.expire)[0], "%Y%m%d").date()
                 if expires is not None and expire not in expires:
                     continue
-                ticker_expire_folder = os.path.join(current_folder, ticker_expire_name)
-                with self.mutex[ticker_expire_folder]:
-                    filenames = {security: str(security).replace("|", "_") + ".csv" for security in list(Securities.Stocks)}
-                    files = {security: os.path.join(ticker_expire_folder, filename) for security, filename in filenames.items()}
-                    stocks = {security: reader(security, file) for security, file in files.items()}
-                    filenames = {security: str(security).replace("|", "_") + ".csv" for security in list(Securities.Options)}
-                    files = {security: os.path.join(ticker_expire_folder, filename) for security, filename in filenames.items()}
-                    options = {security: reader(security, file) for security, file in files.items()}
+                filenames = {security: str(security).replace("|", "_") + ".csv" for security in list(Securities.Stocks)}
+                files = {security: self.source.file(current_name, ticker_expire_name, filename) for security, filename in filenames.items()}
+                stocks = {security: self.source.read(file=file) for security, file in files.items()}
+                filenames = {security: str(security).replace("|", "_") + ".csv" for security in list(Securities.Options)}
+                files = {security: self.source.file(current_name, ticker_expire_name, filename) for security, filename in filenames.items()}
+                options = {security: self.source.read(file=file) for security, file in files.items()}
                 yield SecurityQuery(current, ticker, expire, stocks, options)
 
 
