@@ -10,6 +10,7 @@ import os
 import logging
 import numpy as np
 import pandas as pd
+from enum import IntEnum
 from datetime import datetime as Datetime
 from collections import OrderedDict as ODict
 from collections import namedtuple as ntuple
@@ -30,6 +31,7 @@ __license__ = ""
 
 
 LOGGER = logging.getLogger(__name__)
+Tables = IntEnum("Table", ["EQUILIBRIUM"], start=1)
 
 
 class SupplyDemandQuery(ntuple("Query", "current ticker expire supply demand")): pass
@@ -38,12 +40,12 @@ class EquilibriumQuery(ntuple("Query", "current ticker expire equilibrium")):
 
 
 class SupplyDemandFile(DataframeFile):
-    @kwargsdispatcher("filedata")
-    def dataheader(self, *args, filedata, **kwargs): raise KeyError(str(filedata))
-    @kwargsdispatcher("filedata")
-    def datatypes(self, *args, filedata, **kwargs): raise KeyError(str(filedata))
-    @kwargsdispatcher("filedata")
-    def datetypes(self, *args, filedata, **kwargs): raise KeyError(str(filedata))
+    @kwargsdispatcher("data")
+    def dataheader(self, *args, data, **kwargs): raise KeyError(str(data))
+    @kwargsdispatcher("data")
+    def datatypes(self, *args, data, **kwargs): raise KeyError(str(data))
+    @kwargsdispatcher("data")
+    def datetypes(self, *args, data, **kwargs): raise KeyError(str(data))
 
     @datatypes.register.value(*list(Securities.Options))
     def dataheader_options(self, *args, **kwargs): return ["ticker", "date", "expire", "price", "strike", "size", "volume", "interest"]
@@ -79,12 +81,12 @@ class SupplyDemandReader(Reader):
                     continue
                 filenames = {valuation: str(valuation).replace("|", "_") + ".csv" for valuation in list(Valuations)}
                 files = {valuation: self.source.path(current_name, ticker_expire_name, filename) for valuation, filename in filenames.items()}
-                valuations = {valuation: self.source.read(file=file, filedata=valuation) for valuation, file in files.items() if os.path.isfile(file)}
+                valuations = {valuation: self.source.read(file=file, data=valuation) for valuation, file in files.items() if os.path.isfile(file)}
                 if not bool(valuations) or all([dataframe.empty for dataframe in valuations.values()]):
                     continue
                 filenames = {option: str(option).replace("|", "_") + ".csv" for option in list(Securities.Options)}
                 files = {option: self.source.path(current_name, ticker_expire_name, filename) for option, filename in filenames.items()}
-                options = {option: self.source.read(file=file, filedata=option) for option, file in files.items()}
+                options = {option: self.source.read(file=file, data=option) for option, file in files.items()}
                 yield SupplyDemandQuery(current, ticker, expire, options, valuations)
 
 
@@ -205,7 +207,7 @@ class EquilibriumWriter(Writer):
         assert isinstance(equilibrium, pd.DataFrame)
         if bool(equilibrium.empty):
             return
-        self.write(equilibrium, *args, **kwargs)
+        self.write(equilibrium, *args, table=Tables.EQUILIBRIUM, **kwargs)
         LOGGER.info("Equilibrium: {}[{}]".format(repr(self), str(self.destination)))
         print(self.destination.table)
 

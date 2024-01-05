@@ -30,10 +30,10 @@ __license__ = ""
 
 
 LOGGER = logging.getLogger(__name__)
-
-
 Basis = IntEnum("Basis", ["ARBITRAGE"], start=1)
-Scenario = IntEnum("Scenario", ["CURRENT", "MINIMUM", "MAXIMUM"], start=1)
+Scenarios = IntEnum("Scenarios", ["CURRENT", "MINIMUM", "MAXIMUM"], start=1)
+
+
 class Valuation(ntuple("Valuation", "basis scenario")):
     def __str__(self): return "|".join([str(value.name).lower() for value in self if bool(value)])
     def __int__(self): return int(self.basis) * 10 + int(self.scenario) * 1
@@ -41,9 +41,9 @@ class Valuation(ntuple("Valuation", "basis scenario")):
     @property
     def title(self): return "|".join([str(string).title() for string in str(self).split("|")])
 
-MinimumArbitrage = Valuation(Basis.ARBITRAGE, Scenario.MINIMUM)
-MaximumArbitrage = Valuation(Basis.ARBITRAGE, Scenario.MAXIMUM)
-CurrentArbitrage = Valuation(Basis.ARBITRAGE, Scenario.CURRENT)
+MinimumArbitrage = Valuation(Basis.ARBITRAGE, Scenarios.MINIMUM)
+MaximumArbitrage = Valuation(Basis.ARBITRAGE, Scenarios.MAXIMUM)
+CurrentArbitrage = Valuation(Basis.ARBITRAGE, Scenarios.CURRENT)
 
 
 class ValuationsMeta(type):
@@ -194,7 +194,7 @@ class ValuationWriter(Writer):
         for valuation, dataframe in valuations.items():
             valuation_name = str(valuation).replace("|", "_") + ".csv"
             valuation_file = self.destination.path(current_name, ticker_expire_name, valuation_name)
-            self.destination.write(dataframe, file=valuation_file, filedata=valuation, filemode="w")
+            self.destination.write(dataframe, file=valuation_file, data=valuation, mode="w")
             LOGGER.info("Saved: {}[{}]".format(repr(self), str(valuation_file)))
 
 
@@ -219,7 +219,7 @@ class ValuationReader(Reader):
 
                 filenames = {valuation: str(valuation).replace("|", "_") + ".csv" for valuation in list(Valuations)}
                 files = {valuation: self.source.path(current_name, ticker_expire_name, filename) for valuation, filename in filenames.items()}
-                valuations = {valuation: self.source.read(file=file, filedata=valuation) for valuation, file in files.items() if os.path.isfile(file)}
+                valuations = {valuation: self.source.read(file=file, data=valuation) for valuation, file in files.items() if os.path.isfile(file)}
                 yield ValuationQuery(current, ticker, expire, valuations)
 
 

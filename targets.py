@@ -9,6 +9,7 @@ Created on Sun Dec 21 2023
 import logging
 import numpy as np
 import pandas as pd
+from enum import IntEnum
 from datetime import datetime as Datetime
 from collections import namedtuple as ntuple
 
@@ -26,6 +27,7 @@ __license__ = ""
 
 
 LOGGER = logging.getLogger(__name__)
+Tables = IntEnum("Tables", ["PROSPECT", "PENDING", "PURCHASED", "ABANDONED"], start=2)
 
 
 class TargetsQuery(ntuple("Query", "current ticker expire targets")):
@@ -83,7 +85,7 @@ class TargetWriter(Writer):
         assert isinstance(targets, pd.DataFrame)
         if bool(targets.empty):
             return
-        self.write(targets, *args, **kwargs)
+        self.write(targets, *args, table=Tables.PROSPECT, **kwargs)
         LOGGER.info("Targets: {}[{}]".format(repr(self), str(self.destination)))
         print(self.destination.table)
         print(self.destination.targets)

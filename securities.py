@@ -31,6 +31,8 @@ __license__ = ""
 
 
 LOGGER = logging.getLogger(__name__)
+Instruments = IntEnum("Instruments", ["PUT", "CALL", "STOCK"], start=1)
+Positions = IntEnum("Positions", ["LONG", "SHORT"], start=1)
 
 
 class DateRange(ntuple("DateRange", "minimum maximum")):
@@ -47,8 +49,6 @@ class DateRange(ntuple("DateRange", "minimum maximum")):
     def __len__(self): return (self.maximum - self.minimum).days
 
 
-Instruments = IntEnum("Instrument", ["PUT", "CALL", "STOCK"], start=1)
-Positions = IntEnum("Position", ["LONG", "SHORT"], start=1)
 class Security(ntuple("Security", "instrument position")):
     def __new__(cls, instrument, position, *args, **kwargs): return super().__new__(cls, instrument, position)
     def __init__(self, *args, payoff, **kwargs): self.__payoff = payoff
@@ -236,12 +236,12 @@ class SecurityCalculator(Processor):
 
 
 class SecurityFile(DataframeFile):
-    @kwargsdispatcher("filedata")
-    def dataheader(self, *args, filedata, **kwargs): raise KeyError(str(filedata))
-    @kwargsdispatcher("filedata")
-    def datatypes(self, *args, filedata, **kwargs): raise KeyError(str(filedata))
-    @kwargsdispatcher("filedata")
-    def datetypes(self, *args, filedata, **kwargs): raise KeyError(str(filedata))
+    @kwargsdispatcher("data")
+    def dataheader(self, *args, data, **kwargs): raise KeyError(str(data))
+    @kwargsdispatcher("data")
+    def datatypes(self, *args, data, **kwargs): raise KeyError(str(data))
+    @kwargsdispatcher("data")
+    def datetypes(self, *args, data, **kwargs): raise KeyError(str(data))
 
     @dataheader.register.value(*list(Securities.Options))
     def dataheader_options(self, *args, **kwargs): return ["ticker", "date", "expire", "price", "strike", "size", "volume", "interest"]
@@ -275,7 +275,7 @@ class SecurityWriter(Writer):
         for security, dataframe in chain(stocks.items(), options.items()):
             security_name = str(security).replace("|", "_") + ".csv"
             security_file = self.destination.path(current_name, ticker_expire_name, security_name)
-            self.destination.write(dataframe, file=security_file, filedata=security, filemode="w")
+            self.destination.write(dataframe, file=security_file, data=security, mode="w")
             LOGGER.info("Saved: {}[{}]".format(repr(self), str(security_file)))
 
 
@@ -299,10 +299,10 @@ class SecurityReader(Reader):
                     continue
                 filenames = {security: str(security).replace("|", "_") + ".csv" for security in list(Securities.Stocks)}
                 files = {security: self.source.path(current_name, ticker_expire_name, filename) for security, filename in filenames.items()}
-                stocks = {security: self.source.read(file=file, filedata=security) for security, file in files.items()}
+                stocks = {security: self.source.read(file=file, data=security) for security, file in files.items()}
                 filenames = {security: str(security).replace("|", "_") + ".csv" for security in list(Securities.Options)}
                 files = {security: self.source.path(current_name, ticker_expire_name, filename) for security, filename in filenames.items()}
-                options = {security: self.source.read(file=file, filedata=security) for security, file in files.items()}
+                options = {security: self.source.read(file=file, data=security) for security, file in files.items()}
                 yield SecurityQuery(current, ticker, expire, stocks, options)
 
 
