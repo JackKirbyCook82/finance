@@ -12,7 +12,7 @@ import pandas as pd
 from datetime import datetime as Datetime
 from collections import namedtuple as ntuple
 
-from support.pipelines import Processor, Writer
+from support.pipelines import Processor, Writer, Reader
 from support.tables import DataframeTable
 
 from finance.securities import Securities
@@ -87,6 +87,12 @@ class TargetWriter(Writer):
         LOGGER.info("Targets: {}[{}]".format(repr(self), str(self.destination)))
         print(self.destination.table)
         print(self.destination.targets)
+
+
+class TargetReader(Reader):
+    def execute(self, *args, **kwargs):
+        while True:
+            pass
 
 
 class TargetTable(DataframeTable):
