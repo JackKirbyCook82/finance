@@ -20,6 +20,8 @@ from support.dispatchers import typedispatcher
 from support.pipelines import Processor, Reader, Writer
 from support.files import DataframeFile
 
+from finance.securities import Securities
+
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
 __all__ = ["Valuation", "Valuations", "Calculations", "ValuationFile", "ValuationReader", "ValuationWriter", "ValuationFilter", "ValuationCalculator"]
@@ -54,6 +56,9 @@ class ValuationsMeta(type):
     def integer(cls, index): return {int(valuation): valuation for valuation in iter(cls)}[index]
     @retrieve.register(str)
     def string(cls, string): return {int(valuation): valuation for valuation in iter(cls)}[str(string).lower()]
+
+    @property
+    def Arbitrages(cls): return iter([MinimumArbitrage, MaximumArbitrage, CurrentArbitrage])
 
     class Arbitrage:
         Minimum = MinimumArbitrage
@@ -119,8 +124,8 @@ class ValuationQuery(ntuple("Query", "current ticker expire valuations")):
 
 
 class ValuationCalculator(Processor):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, *args, name=None, **kwargs):
+        super().__init__(*args, name=name, **kwargs)
         valuations = kwargs.get("calculations", ODict(list(Calculations)).keys())
         calculations = ODict([(valuation, calculation(*args, **kwargs)) for valuation, calculation in iter(Calculations) if valuation in valuations])
         self.__calculations = calculations
@@ -167,12 +172,12 @@ class ValuationFilter(Processor):
 
 
 class ValuationFile(DataframeFile):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        datatypes = {"npv": np.float32, "apy": np.float32, "cost": np.float32, "size": np.int64, "tau": np.int16}
-        datetypes = ["date", "expire"]
-        parameters = dict(datatypes=datatypes, datetypes=datetypes)
-        super().__init__(*args, **parameters, **kwargs)
+    @staticmethod
+    def dataheader(*args, **kwargs): return ["strategy", "ticker", "date", "expire"] + list(map(str, Securities.Options)) + ["apy", "npv", "cost", "tau", "size"]
+    @staticmethod
+    def datatypes(*args, **kwargs): return {"apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.int32, "tau": np.int32}
+    @staticmethod
+    def datetypes(*args, **kwargs): return ["date", "expire"]
 
 
 class ValuationWriter(Writer):
@@ -181,15 +186,15 @@ class ValuationWriter(Writer):
         if not bool(valuations) or all([dataframe.empty for dataframe in valuations.values()]):
             return
         current_name = str(query.current.strftime("%Y%m%d_%H%M%S"))
-        current_folder = self.destination.folder(current_name)
+        current_folder = self.destination.path(current_name)
         assert os.path.isdir(current_folder)
         ticker_expire_name = "_".join([str(query.ticker), str(query.expire.strftime("%Y%m%d"))])
-        ticker_expire_folder = self.destination.folder(current_name, ticker_expire_name)
+        ticker_expire_folder = self.destination.path(current_name, ticker_expire_name)
         assert os.path.isdir(ticker_expire_folder)
         for valuation, dataframe in valuations.items():
             valuation_name = str(valuation).replace("|", "_") + ".csv"
-            valuation_file = self.destination.file(current_name, ticker_expire_name, valuation_name)
-            self.destination.write(dataframe, file=valuation_file, filemode="w")
+            valuation_file = self.destination.path(current_name, ticker_expire_name, valuation_name)
+            self.destination.write(dataframe, file=valuation_file, filedata=valuation, filemode="w")
             LOGGER.info("Saved: {}[{}]".format(repr(self), str(valuation_file)))
 
 
@@ -197,12 +202,12 @@ class ValuationReader(Reader):
     def execute(self, *args, tickers=None, expires=None, dates=None, **kwargs):
         TickerExpire = ntuple("TickerExpire", "ticker expire")
         function = lambda foldername: Datetime.strptime(foldername, "%Y%m%d_%H%M%S")
-        current_folders = self.source.folders()
+        current_folders = list(self.source.directory())
         for current_name in sorted(current_folders, key=function, reverse=False):
             current = function(current_name)
             if dates is not None and current.date() not in dates:
                 continue
-            ticker_expire_folders = self.source.folders(current_name)
+            ticker_expire_folders = list(self.source.directory(current_name))
             for ticker_expire_name in ticker_expire_folders:
                 ticker_expire = TickerExpire(*str(ticker_expire_name).split("_"))
                 ticker = str(ticker_expire.ticker).upper()
@@ -211,9 +216,10 @@ class ValuationReader(Reader):
                 expire = Datetime.strptime(os.path.splitext(ticker_expire.expire)[0], "%Y%m%d").date()
                 if expires is not None and expire not in expires:
                     continue
+
                 filenames = {valuation: str(valuation).replace("|", "_") + ".csv" for valuation in list(Valuations)}
-                files = {valuation: self.source.file(current_name, ticker_expire_name, filename) for valuation, filename in filenames.items()}
-                valuations = {valuation: self.source.read(file=file) for valuation, file in files.items() if os.path.isfile(file)}
+                files = {valuation: self.source.path(current_name, ticker_expire_name, filename) for valuation, filename in filenames.items()}
+                valuations = {valuation: self.source.read(file=file, filedata=valuation) for valuation, file in files.items() if os.path.isfile(file)}
                 yield ValuationQuery(current, ticker, expire, valuations)
 
 

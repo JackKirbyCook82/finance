@@ -146,7 +146,7 @@ class StrategyQuery(ntuple("Query", "current ticker expire strategies")):
 
 
 class StrategyCalculator(Processor):
-    def __init__(self, *args, name, **kwargs):
+    def __init__(self, *args, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
         strategies = kwargs.get("calculations", ODict(list(Calculations)).keys())
         calculations = ODict([(strategy, calculation(*args, **kwargs)) for strategy, calculation in iter(Calculations) if strategy in strategies])

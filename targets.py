@@ -15,7 +15,6 @@ from collections import namedtuple as ntuple
 from support.pipelines import Processor, Writer
 from support.tables import DataframeTable
 
-
 from finance.securities import Securities
 from finance.valuations import Valuations
 
@@ -27,8 +26,6 @@ __license__ = ""
 
 
 LOGGER = logging.getLogger(__name__)
-INDEX = ["ticker", "date", "expire", "strategy"] + list(map(str, Securities.Options))
-COLUMNS = ["current", "apy", "npv", "cost", "tau"]
 
 
 class TargetsQuery(ntuple("Query", "current ticker expire targets")):
@@ -36,8 +33,8 @@ class TargetsQuery(ntuple("Query", "current ticker expire targets")):
 
 
 class TargetCalculator(Processor):
-    def __init__(self, *args, valuation=Valuations.Arbitrage.Minimum, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, *args, name=None, valuation=Valuations.Arbitrage.Minimum, **kwargs):
+        super().__init__(*args, name=name, **kwargs)
         self.valuation = valuation
 
     def execute(self, query, *args, **kwargs):
@@ -49,7 +46,6 @@ class TargetCalculator(Processor):
         targets["current"] = query.current
         targets = self.format(targets, *args, **kwargs)
         targets = self.parser(targets, *args, **kwargs)
-        targets = targets[INDEX + COLUMNS]
         if bool(targets.empty):
             return
         query = TargetsQuery(query.current, query.ticker, query.expire, targets)
@@ -72,6 +68,7 @@ class TargetCalculator(Processor):
         liquidity = liquidity if liquidity is not None else 1
         liquid = (dataframe["size"] * liquidity).astype(np.int32)
         dataframe = dataframe.loc[dataframe.index.repeat(liquid)]
+        dataframe["size"] = 1
         if funds is not None:
             affordable = dataframe["cost"].cumsum() <= funds
             dataframe = dataframe.where(affordable)
@@ -86,12 +83,14 @@ class TargetWriter(Writer):
         assert isinstance(targets, pd.DataFrame)
         if bool(targets.empty):
             return
-        self.write(targets[INDEX + COLUMNS], *args, **kwargs)
+        self.write(targets, *args, **kwargs)
         LOGGER.info("Targets: {}[{}]".format(repr(self), str(self.destination)))
+        print(self.destination.table)
+        print(self.destination.targets)
 
 
 class TargetTable(DataframeTable):
-    def __str__(self): return "{:,.02f}%, ${:,.0f}|${:,.0f}".format(self.apy * 100, self.npv, self.cost)
+    def __str__(self): return "{:,.02f}%, ${:,.0f}|${:,.0f}, {:.0f}|{:.0f}".format(self.apy * 100, self.npv, self.cost, *self.tau)
 
     @staticmethod
     def parser(dataframe, *args, funds=None, limit=None, tenure=None, **kwargs):
@@ -108,9 +107,14 @@ class TargetTable(DataframeTable):
 
     @staticmethod
     def format(dataframe, *args, **kwargs):
+        dataframe["apy"] = dataframe["apy"].round(2)
+        dataframe["npv"] = dataframe["npv"].round(2)
         dataframe["tau"] = dataframe["tau"].astype(np.int32)
+        dataframe["size"] = dataframe["size"].apply(np.floor).astype(np.int32)
         return dataframe
 
+    @property
+    def header(self): return ["strategy", "ticker", "date", "expire"] + list(map(str, Securities.Options)) + ["apy", "npv", "cost", "tau", "size"]
     @property
     def apy(self): return self.table["apy"] @ (self.table["cost"] / self.table["cost"].sum())
     @property
