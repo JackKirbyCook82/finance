@@ -27,7 +27,7 @@ __license__ = ""
 
 
 LOGGER = logging.getLogger(__name__)
-Tables = IntEnum("Tables", ["PROSPECT", "PENDING", "PURCHASED", "ABANDONED"], start=2)
+Tables = IntEnum("Tables", ["PROSPECT", "PENDING", "ACQUIRED", "ABANDONED"], start=1)
 
 
 class TargetsQuery(ntuple("Query", "current ticker expire targets")):
@@ -39,44 +39,27 @@ class TargetCalculator(Processor):
         super().__init__(*args, name=name, **kwargs)
         self.valuation = valuation
 
-    def execute(self, query, *args, **kwargs):
-        if not bool(query.valuations):
+    def execute(self, query, *args, liquidity=None, apy=None, **kwargs):
+        if not bool(query.valuations) or bool(query.valuations[self.valuation].empty):
             return
         targets = query.valuations[self.valuation]
+        liquidity = liquidity if liquidity is not None else 1
+        targets["size"] = (targets["size"] * liquidity).apply(np.floor).astype(np.int32)
+        targets = targets.where(targets["apy"] >= apy) if apy is not None else targets
+        targets = targets.sort_values("apy", axis=0, ascending=False, inplace=False, ignore_index=False)
+        targets = targets.dropna(axis=0, how="all")
         if bool(targets.empty):
             return
+        assert targets["apy"].min() > 0 and targets["size"].min() > 0
+        targets = targets.reset_index(drop=True, inplace=False)
+        targets["size"] = targets["size"].astype(np.int32)
+        targets["tau"] = targets["tau"].astype(np.int32)
+        targets["apy"] = targets["apy"].round(2)
+        targets["npv"] = targets["npv"].round(2)
         targets["current"] = query.current
-        targets = self.format(targets, *args, **kwargs)
-        targets = self.parser(targets, *args, **kwargs)
-        if bool(targets.empty):
-            return
         query = TargetsQuery(query.current, query.ticker, query.expire, targets)
         LOGGER.info("Targets: {}[{}]".format(repr(self), str(query)))
         yield query
-
-    @staticmethod
-    def format(dataframe, *args, **kwargs):
-        dataframe["apy"] = dataframe["apy"].round(2)
-        dataframe["npv"] = dataframe["npv"].round(2)
-        dataframe["tau"] = dataframe["tau"].astype(np.int32)
-        dataframe["size"] = dataframe["size"].apply(np.floor).astype(np.int32)
-        return dataframe
-
-    @staticmethod
-    def parser(dataframe, *args, liquidity=None, apy=None, funds=None, **kwargs):
-        dataframe = dataframe.where(dataframe["apy"] >= apy) if apy is not None else dataframe
-        dataframe = dataframe.dropna(axis=0, how="all")
-        dataframe = dataframe.sort_values("apy", axis=0, ascending=False, inplace=False, ignore_index=False)
-        liquidity = liquidity if liquidity is not None else 1
-        liquid = (dataframe["size"] * liquidity).astype(np.int32)
-        dataframe = dataframe.loc[dataframe.index.repeat(liquid)]
-        dataframe["size"] = 1
-        if funds is not None:
-            affordable = dataframe["cost"].cumsum() <= funds
-            dataframe = dataframe.where(affordable)
-            dataframe = dataframe.dropna(axis=0, how="all")
-        dataframe = dataframe.reset_index(drop=True, inplace=False)
-        return dataframe
 
 
 class TargetWriter(Writer):
@@ -85,86 +68,54 @@ class TargetWriter(Writer):
         assert isinstance(targets, pd.DataFrame)
         if bool(targets.empty):
             return
-        self.write(targets, *args, table=Tables.PROSPECT, **kwargs)
+        self.write(targets, *args, **kwargs)
         LOGGER.info("Targets: {}[{}]".format(repr(self), str(self.destination)))
         print(self.destination.table)
-        print(self.destination.targets)
 
 
 class TargetReader(Reader):
     def execute(self, *args, **kwargs):
-        while True:
-            pass
+        pass
 
 
 class TargetTable(DataframeTable):
     def __str__(self): return "{:,.02f}%, ${:,.0f}|${:,.0f}, {:.0f}|{:.0f}".format(self.apy * 100, self.npv, self.cost, *self.tau)
 
-    @staticmethod
-    def parser(dataframe, *args, funds=None, limit=None, tenure=None, **kwargs):
+    def execute(self, dataframe, *args, funds=None, limit=None, tenure=None, **kwargs):
+        dataframe = super().execute(dataframe, *args, **kwargs)
         dataframe = dataframe.where(dataframe["current"] - Datetime.now() < tenure) if tenure is not None else dataframe
         dataframe = dataframe.dropna(axis=0, how="all")
         dataframe = dataframe.sort_values("apy", axis=0, ascending=False, inplace=False, ignore_index=False)
         if funds is not None:
-            affordable = dataframe["cost"].cumsum() <= funds
-            dataframe = dataframe.where(affordable)
+            columns = [column for column in dataframe.columns if column != "size"]
+            expanded = dataframe.loc[dataframe.index.repeat(dataframe["size"])][columns]
+            expanded = expanded.where(expanded["cost"].cumsum() <= funds)
+            expanded = expanded.dropna(axis=0, how="all")
+            dataframe["size"] = expanded.index.value_counts()
+            dataframe = dataframe.where(dataframe["size"].notna())
             dataframe = dataframe.dropna(axis=0, how="all")
         dataframe = dataframe.head(limit) if limit is not None else dataframe
-        dataframe = dataframe.reset_index(drop=True, inplace=False)
-        return dataframe
-
-    @staticmethod
-    def format(dataframe, *args, **kwargs):
+        dataframe["size"] = dataframe["size"].apply(np.floor).astype(np.int32)
+        dataframe["tau"] = dataframe["tau"].astype(np.int32)
         dataframe["apy"] = dataframe["apy"].round(2)
         dataframe["npv"] = dataframe["npv"].round(2)
-        dataframe["tau"] = dataframe["tau"].astype(np.int32)
-        dataframe["size"] = dataframe["size"].apply(np.floor).astype(np.int32)
         return dataframe
 
     @property
-    def header(self): return ["strategy", "ticker", "date", "expire"] + list(map(str, Securities.Options)) + ["apy", "npv", "cost", "tau", "size"]
+    def header(self): return ["current", "strategy", "ticker", "date", "expire"] + list(map(str, Securities.Options)) + ["apy", "npv", "cost", "tau", "size"]
     @property
-    def apy(self): return self.table["apy"] @ (self.table["cost"] / self.table["cost"].sum())
+    def weights(self): return (self.table["cost"] * self.table["size"]) / (self.table["cost"] @ self.table["size"])
     @property
     def tau(self): return self.table["tau"].min(), self.table["tau"].max()
     @property
-    def npv(self): return self.table["npv"].sum()
+    def npv(self): return self.table["npv"] @ self.table["size"]
     @property
-    def cost(self): return self.table["cost"].sum()
+    def cost(self): return self.table["cost"] @ self.table["size"]
     @property
-    def size(self): return len(self.table.index)
-
+    def apy(self): return self.table["apy"] @ self.weights
     @property
-    def targets(self):
-        targets = self.table[~self.table.duplicated(keep="last")]
-        size = (targets.reset_index(inplace=False, drop=False)["index"] + 1)
-        size = size.diff().fillna(size.values[0]).astype(int)
-        targets.reset_index(inplace=True, drop=True)
-        targets["size"] = size
-        return targets
+    def size(self): return self.table["size"].sum()
 
-
-
-
-#    def terminal(self, *args, **kwargs):
-#        title = repr(self)
-#        window = gui.Window(title, layout=[])
-#        while True:
-#            event, values = window.read()
-#            if event == gui.WINDOW_CLOSED:
-#                break
-#        window.close()
-
-#    @staticmethod
-#    def frame(row):
-#        title = lambda string: "|".join([str(substring).title() for substring in str(string).split("|")])
-#        strategy = title(row["strategy"])
-#        ticker = str(row["ticker"]).upper()
-#        expire = str(row["expire"].strftime("%Y/%m/%d"))
-#        options = {title(option): getattr(row, option) for option in list(Securities.Options)}
-#        options = ["|".join([str(option), str(strike)]) for option, strike in options.items()]
-#        layout = []
-#        frame = gui.Frame(title, layout)
 
 
 

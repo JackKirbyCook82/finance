@@ -130,10 +130,12 @@ class EquilibriumCalculator(Processor):
         equilibrium = pd.DataFrame.from_records(list(equilibrium))
         if bool(equilibrium.empty):
             return
-        equilibrium = self.format(equilibrium, *args, **kwargs)
-        equilibrium = self.parser(equilibrium, *args, **kwargs)
-        if bool(equilibrium.empty):
-            return
+        assert equilibrium["apy"].min() > 0 and equilibrium["size"].min() > 0
+        equilibrium = equilibrium.reset_index(drop=True, inplace=False)
+        equilibrium["size"] = equilibrium["size"].astype(np.int32)
+        equilibrium["tau"] = equilibrium["tau"].astype(np.int32)
+        equilibrium["apy"] = equilibrium["apy"].round(2)
+        equilibrium["npv"] = equilibrium["npv"].round(2)
         query = EquilibriumQuery(query.current, query.ticker, query.expire, equilibrium)
         LOGGER.info("Equilibrium: {}[{}]".format(repr(self), str(query)))
         yield query
@@ -181,24 +183,11 @@ class EquilibriumCalculator(Processor):
             locators = [(tuple([*index.values(), strike]), option) for option, strike in strikes.items() if not np.isnan(strike)]
             sizes = [available.loc[indx, cols] for (indx, cols) in locators]
             size = np.min([row.size, *sizes])
+            if size <= 0:
+                continue
             for (indx, cols) in locators:
                 purchased.loc[indx, cols] = purchased.loc[indx, cols] + size
             yield index | strikes | columns | {"size": size}
-
-    @staticmethod
-    def format(dataframe, *args, **kwargs):
-        dataframe["apy"] = dataframe["apy"].round(2)
-        dataframe["npv"] = dataframe["npv"].round(2)
-        dataframe["tau"] = dataframe["tau"].astype(np.int32)
-        dataframe["size"] = dataframe["size"].apply(np.floor).astype(np.int32)
-        return dataframe
-
-    @staticmethod
-    def parser(dataframe, *args, **kwargs):
-        dataframe = dataframe.where(dataframe["size"] > 0)
-        dataframe = dataframe.dropna(axis=0, how="all")
-        dataframe = dataframe.reset_index(drop=True, inplace=False)
-        return dataframe
 
 
 class EquilibriumWriter(Writer):
@@ -207,7 +196,7 @@ class EquilibriumWriter(Writer):
         assert isinstance(equilibrium, pd.DataFrame)
         if bool(equilibrium.empty):
             return
-        self.write(equilibrium, *args, table=Tables.EQUILIBRIUM, **kwargs)
+        self.write(equilibrium, *args, **kwargs)
         LOGGER.info("Equilibrium: {}[{}]".format(repr(self), str(self.destination)))
         print(self.destination.table)
 
@@ -215,16 +204,16 @@ class EquilibriumWriter(Writer):
 class EquilibriumTable(DataframeTable):
     def __str__(self): return "{:,.02f}%, ${:,.0f}|${:,.0f}, {:.0f}|{:.0f}".format(self.apy * 100, self.npv, self.cost, *self.tau)
 
-    @staticmethod
-    def format(dataframe, *args, **kwargs):
-        dataframe["tau"] = dataframe["tau"].astype(np.int32)
+    def execute(self, dataframe, *args, **kwargs):
+        dataframe = super().execute(dataframe, *args, **kwargs)
         dataframe["size"] = dataframe["size"].apply(np.floor).astype(np.int32)
+        dataframe["tau"] = dataframe["tau"].astype(np.int32)
+        dataframe["apy"] = dataframe["apy"].round(2)
+        dataframe["npv"] = dataframe["npv"].round(2)
         return dataframe
 
     @property
     def header(self): return ["strategy", "ticker", "date", "expire"] + list(map(str, Securities.Options)) + ["apy", "npv", "cost", "size", "tau"]
-    @property
-    def apy(self): return self.table["apy"] @ self.weights
     @property
     def weights(self): return (self.table["cost"] * self.table["size"]) / (self.table["cost"] @ self.table["size"])
     @property
@@ -233,6 +222,8 @@ class EquilibriumTable(DataframeTable):
     def npv(self): return self.table["npv"] @ self.table["size"]
     @property
     def cost(self): return self.table["cost"] @ self.table["size"]
+    @property
+    def apy(self): return self.table["apy"] @ self.weights
     @property
     def size(self): return self.table["size"].sum()
 
