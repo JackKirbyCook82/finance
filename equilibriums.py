@@ -10,7 +10,6 @@ import os
 import logging
 import numpy as np
 import pandas as pd
-from enum import IntEnum
 from datetime import datetime as Datetime
 from collections import OrderedDict as ODict
 from collections import namedtuple as ntuple
@@ -31,7 +30,6 @@ __license__ = ""
 
 
 LOGGER = logging.getLogger(__name__)
-Tables = IntEnum("Table", ["EQUILIBRIUM"], start=1)
 
 
 class SupplyDemandQuery(ntuple("Query", "current ticker expire supply demand")): pass
@@ -40,7 +38,7 @@ class EquilibriumQuery(ntuple("Query", "current ticker expire equilibrium")):
 
 
 class SupplyDemandFile(DataframeFile):
-    @kwargsdispatcher("data")
+    @kwargsdispatcher("data")7
     def dataheader(self, *args, data, **kwargs): raise KeyError(str(data))
     @kwargsdispatcher("data")
     def datatypes(self, *args, data, **kwargs): raise KeyError(str(data))
