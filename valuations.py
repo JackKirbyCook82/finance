@@ -56,6 +56,8 @@ class ValuationsMeta(type):
     def integer(cls, index): return {int(valuation): valuation for valuation in iter(cls)}[index]
     @retrieve.register(str)
     def string(cls, string): return {int(valuation): valuation for valuation in iter(cls)}[str(string).lower()]
+    @retrieve.register(tuple)
+    def value(cls, value): return {int(valuation): valuation for valuation in iter(cls)}[value]
 
     @property
     def Arbitrages(cls): return iter([MinimumArbitrage, MaximumArbitrage, CurrentArbitrage])
@@ -118,7 +120,7 @@ class Calculations(object, metaclass=CalculationsMeta):
 class ValuationQuery(ntuple("Query", "current ticker expire valuations")):
     def __str__(self):
         strings = {str(valuation.title): str(len(dataframe.index)) for valuation, dataframe in self.valuations.items()}
-        arguments = "{}|{}".format(self.ticker, self.expire.strftime("%Y-%m-%d"))
+        arguments = f"{self.ticker}|{self.expire.strftime('%Y-%m-%d')}"
         parameters = ", ".join(["=".join([key, value]) for key, value in strings.items()])
         return ", ".join([arguments, parameters]) if bool(parameters) else str(arguments)
 
@@ -159,7 +161,7 @@ class ValuationFilter(Processor):
         valuations = {valuation: dataframe for valuation, dataframe in query.valuations.items()}
         valuations = {valuation: self.filter(dataframe, *args, **kwargs) for valuation, dataframe in valuations.items()}
         query = ValuationQuery(query.current, query.ticker, query.expire, valuations)
-        LOGGER.info("Filter: {}[{}]".format(repr(self), str(query)))
+        LOGGER.info(f"Filter: {repr(self)}[{str(query)}]")
         yield query
 
     @staticmethod

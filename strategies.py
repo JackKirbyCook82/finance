@@ -52,7 +52,9 @@ class StrategiesMeta(type):
     @retrieve.register(int)
     def integer(cls, index): return {int(strategy): strategy for strategy in iter(cls)}[index]
     @retrieve.register(str)
-    def string(cls, string): return {int(strategy): strategy for strategy in iter(cls)}[str(string).lower()]
+    def string(cls, string): return {str(strategy): strategy for strategy in iter(cls)}[str(string).lower()]
+    @retrieve.register(tuple)
+    def value(cls, value): return {str(strategy): strategy for strategy in iter(cls)}[value]
 
     class Strangle:
         Long = StrangleLong
@@ -142,7 +144,7 @@ class Calculations(object, metaclass=CalculationsMeta):
 
 
 class StrategyQuery(ntuple("Query", "current ticker expire strategies")):
-    def __str__(self): return "{}|{}".format(self.ticker, self.expire.strftime("%Y-%m-%d"))
+    def __str__(self): return f"{self.ticker}|{self.expire.strftime('%Y-%m-%d')}"
 
 
 class StrategyCalculator(Processor):

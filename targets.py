@@ -6,35 +6,80 @@ Created on Sun Dec 21 2023
 
 """
 
+import time
 import logging
 import numpy as np
 import pandas as pd
 import PySimpleGUI as gui
 from enum import IntEnum
-from itertools import chain, zip_longest
+from itertools import chain
 from datetime import datetime as Datetime
 from collections import OrderedDict as ODict
 from collections import namedtuple as ntuple
 
-from support.pipelines import Processor, Writer, Reader
+from support.pipelines import Processor, Writer, Terminal
 from support.tables import DataframeTable
 
 from finance.securities import Securities
+from finance.strategies import Strategies
 from finance.valuations import Valuations
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["TargetCalculator", "TargetWriter", "TargetReader", "TargetTerminal", "TargetTable"]
+__all__ = ["TargetCalculator", "TargetWriter", "TargetTerminal", "TargetTable"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
 
 LOGGER = logging.getLogger(__name__)
-Status = IntEnum("Status", ["PROSPECTED", "PENDING", "ACQUIRED", "ABANDONED"], start=1)
+Status = IntEnum("Status", ["PROSPECTS", "PURSING", "PENDING", "ACQUIRED", "ABANDONED"], start=1)
+
+
+class Contract(ntuple("Contract", "ticker expire")):
+    def __str__(self): return f"{str(self.ticker)} @ {self.expire.strftime('%Y-%m-%d')}"
+
+class Option(ntuple("Option", "instrument position strike")):
+    def __str__(self): return f"{str(self.position.name).upper()} {str(self.instrument.name).upper()} @ ${self.strike:.02f}"
+
+class Strategy(ntuple("Strategy", "position spread instrument")):
+    def __str__(self): return "{} {} {}".format(*[str(value.name).upper() if bool(value) else "" for value in iter(self)]).strip()
+
+class Valuation(ntuple("Valuation", "apy tau npv cost")):
+    def __str__(self): return f"{self.tau:.0f} @ {self.apy * 100:.0f}%\n${self.npv:,.0f}\n${self.cost:,.0f}"
+
+class Target(ntuple("Target", "index status current contract options strategy valuation size")):
+    pass
+
+class Action(ntuple("Action", "name status index")):
+    def __init_subclass__(cls, status): cls.__status__ = status
+    def __new__(cls, index): return super().__new__(cls, cls.__name__, cls.__status__, index)
+    def __str__(self): return f"{int(self.index):.0f}|{int(self.status):.0f}"
+
+
+#    def __new__(cls, index, row):
+#        assert isinstance(row, dict)
+#        contract = Contract(row["ticker"], row["expire"])
+#        options = {option: row.get(str(option), np.NaN) for option in list(Securities.Options)}
+#        options = [Option(option.instrument, option.position, strike) for option, strike in options.items() if not np.isnan(strike)]
+#        strategy = Strategies[str(row["strategy"])]
+#        strategy = Strategy(strategy.position, strategy.spread, strategy.instrument)
+#        valuation = Valuation(row["apy"], row["tau"], row["npv"], row["cost"])
+#        return super().__new__(cls, index, row["status"], row["current"], contract, options, strategy, valuation, row["size"])
+
+#    @property
+#    def table(self):
+#        contract = dict(ticker=self.contract.ticker, expire=self.contract.expire)
+#        options = {Securities[(option.instrument, option.position)]: option.strike for option in self.options}
+#        strategy = Strategies[(self.strategy.spread, self.strategy.instrument, self.strategy.position)]
+#        valuations = dict(apy=self.valuation.apy, tau=self.valuation.tau, npv=self.valuation.npv, cost=self.valuation.cost)
+#        row = dict(index=self.index, status=self.status, current=self.current, size=self.size, strategy=str(strategy))
+#        row = row | contract | options | valuations
+#        dataframe = pd.DataFrame([row]).set_index("index", drop=True, inplace=False)
+#        return dataframe
 
 
 class TargetsQuery(ntuple("Query", "current ticker expire targets")):
-    def __str__(self): return "{}|{}, {:.0f}".format(self.ticker, self.expire.strftime("%Y-%m-%d"), len(self.targets.index))
+    def __str__(self): return f"{self.ticker}|{self.expire.strftime('%Y-%m-%d')}, {len(self.targets.index):.0f}"
 
 
 class TargetCalculator(Processor):
@@ -61,7 +106,7 @@ class TargetCalculator(Processor):
         targets["npv"] = targets["npv"].round(2)
         targets["current"] = query.current
         query = TargetsQuery(query.current, query.ticker, query.expire, targets)
-        LOGGER.info("Targets: {}[{}]".format(repr(self), str(query)))
+        LOGGER.info(f"Targets: {repr(self)}[{str(query)}]")
         yield query
 
 
@@ -71,21 +116,16 @@ class TargetWriter(Writer):
         assert isinstance(targets, pd.DataFrame)
         if bool(targets.empty):
             return
-        self.write(targets, *args, **kwargs)
-        LOGGER.info("Targets: {}[{}]".format(repr(self), str(self.destination)))
+        self.destination.write(targets, *args, **kwargs)
+        LOGGER.info(f"Targets: {repr(self)}[{str(self.destination)}]")
         print(self.destination.table)
 
 
-class TargetReader(Reader):
-    def execute(self, *args, **kwargs):
-        pass
-
-
 class TargetTable(DataframeTable):
-    def __str__(self): return "{:,.02f}%, ${:,.0f}|${:,.0f}, {:.0f}|{:.0f}".format(self.apy * 100, self.npv, self.cost, *self.tau)
+    def __str__(self): return f"{self.apy * 100:,.02f}%, ${self.npv:,.0f}|${self.cost:,.0f}, {self.tau[0]:.0f}|{self.tau[-1]:.0f}"
 
     def execute(self, dataframe, *args, funds=None, tenure=None, **kwargs):
-        dataframe["status"] = Status.PROSPECTED
+        dataframe["status"] = Status.PROSPECTS
         dataframe = super().execute(dataframe, *args, **kwargs)
         dataframe = dataframe.where(dataframe["current"] - Datetime.now() < tenure) if tenure is not None else dataframe
         dataframe = dataframe.dropna(axis=0, how="all")
@@ -120,87 +160,80 @@ class TargetTable(DataframeTable):
     def size(self): return self.table["size"].sum()
 
 
-class TargetTerminal(object):
-    def __repr__(self): return self.name
+#    def execute(self, targets, *args, tenure=None, **kwargs):
+#        titles = [str(status.name).upper() for status in Status]
+#        columns = ODict([(title, []) for title in titles])
+#        for status, target in self.generator(targets):
+#            title = str(status.name).upper()
+#            termtime = (target.current - Datetime.now())
+#            lifetime = min(tenure - termtime, 0) if tenure is not None else None
+#            size = target.size
+#            header = self.header(target.strategy)
+#            body = self.body(target.stock, target.options, target.valuation)
+#            footer = self.footer("Accept", "Reject")
+#            frame = self.frame()
+#            columns[title].append(frame)
+#        columns = [self.column(title, frames) for title, frames in columns.items()]
+#        return self.window(repr(self), columns=columns)
+
+class Pursue(Action, status=Status.PURSING): pass
+class Placed(Action, status=Status.PENDING): pass
+class Success(Action, status=Status.ACQUIRED): pass
+class Failure(Action, status=Status.ABANDONED): pass
+class Abandon(Action, status=Status.ABANDONED): pass
+
+class TargetTerminal(Terminal):
     def __init__(self, *args, **kwargs):
-        self.__name = kwargs.get("name", self.__class__.__name__)
-        self.__horizontal = "  /  "
-        self.__vertical = "\n"
+        super().__init__(*args, **kwargs)
+        prospects = {Status.PROSPECTS: [Pursue, Abandon]}
+        placed = {Status.PURSING: [Placed, Abandon]}
+        pending = {Status.PENDING: [Success, Failure]}
+        actions = prospects | placed | pending
+        self.__actions = actions
 
-    def __call__(self, *args, **kwargs):
-        self.execute(*args, **kwargs)
-
-    def execute(self, *args, **kwargs):
-        columns = [str(member.name).lower().title() for member in Status]
-        columns = ODict([(string, [self.create(*args, **kwargs) for _ in range(count + 5)]) for count, string in enumerate(columns)])
-        columns = [self.column(title, *args, frames=frames, **kwargs) for title, frames in columns.items()]
-        window = self.window(repr(self), columns=columns)
+    def process(self, *args, **kwargs):
+        time.sleep(5)
+        targets = self.stack.read()
+        window = self.execute(targets, *args, **kwargs)
         while True:
             event, values = window.read()
             if event == gui.WINDOW_CLOSED:
                 break
+            print(event)
+            print(values)
         window.close()
 
-    def create(self, *args, **kwargs):
-        header = self.header("strategy", "size")
-        securities = [self.security("instrument", "position", "strike"), self.security("instrument", "position", "strike")]
-        strategy = self.strategy("ticker", "expire", *securities)
-        valuation = self.valuation("apy", "tau", "npv", "cost")
-        body = self.body(strategy, valuation)
-        footer = self.footer("current", "accept", "reject")
-        frame = self.frame(header, body, footer)
-        return frame
+    def execute(self, *args, tenure=None, **kwargs):
+        pass
 
     @staticmethod
-    def header(strategy, size):
-        left = gui.Text(strategy, font="Arial 10", size=(25, 1))
-        right = gui.Text(size, font="Arial 10", size=(10, 1))
-        return [left, gui.VerticalSeparator(), right]
-
-    @staticmethod
-    def body(strategy, valuation):
-        left = gui.Text(strategy, font="Arial 10", size=(25, 3))
-        right = gui.Text(valuation, font="Arial 10", size=(10, 3))
-        return [left, gui.VerticalSeparator(), right]
-
-    @staticmethod
-    def footer(current, accept, reject):
-        current = gui.Text(current, font="Arial 10", size=(25, 3))
-        accept = gui.Button(accept, font="Arial 8")
-        reject = gui.Button(reject, font="Arial 8")
-        return [current, gui.VerticalSeparator(), accept, reject]
-
-    @staticmethod
-    def frame(header, body, footer):
+    def frame(strategy, contract, options, valuation, actions=[]):
+        assert isinstance(actions, list)
+        header = gui.Text(str(strategy), font="Arial 10 bold", size=(22, 1))
+        securities = list(map(str, [contract] + list(options)))
+        securities = gui.Text("\n".join(securities), font="Arial 10", size=(22, 3))
+        valuation = gui.Text(valuation, font="Arial 10")
+        body = [securities, gui.VerticalSeparator(), valuation]
+        footer = [gui.Button(action.name, key=str(action), font="Arial 8") for action in actions]
         layout = [header, [gui.HorizontalSeparator()], body, [gui.HorizontalSeparator()], footer]
-        return gui.Frame("", layout, size=(335, 135))
+        return gui.Frame("", layout, size=(310, 140))
 
     @staticmethod
-    def column(title, *args, frames=[], **kwargs):
+    def column(title, frames=[]):
         title = gui.Text(title, font="Arial, 10 bold")
         layout = [[frame] for frame in iter(frames)]
-        scrollable = gui.Column(layout, vertical_alignment="top", scrollable=True, vertical_scroll_only=True, size=(350, 865))
+        scrollable = gui.Column(layout, vertical_alignment="top", scrollable=True, vertical_scroll_only=True, size=(325, 875))
         layout = [[title], [gui.HorizontalSeparator()], [scrollable]]
-        column = gui.Column(layout, vertical_alignment="top")
-        return column
+        return gui.Column(layout, vertical_alignment="top")
 
     @staticmethod
-    def window(title, *args, columns=[], **kwargs):
+    def window(title, columns=[]):
         columns = [[column, gui.VerticalSeparator()] for column in columns]
         layout = list(chain(*columns))[:-1]
-        window = gui.Window(title, [layout])
-        return window
-
-    def security(self, instrument, position, strike): return str(self.horizontal).join([instrument, position, strike])
-    def strategy(self, ticker, expire, *securities): return str(self.vertical).join([str(self.horizontal).join([ticker, expire]), *securities])
-    def valuation(self, apy, tau, npv, cost): return str(self.vertical).join([str(self.horizontal).join([apy, tau]), npv, cost])
+        return gui.Window(title, [layout])
 
     @property
-    def horizontal(self): return self.__horizontal
-    @property
-    def vertical(self): return self.__vertical
-    @property
-    def name(self): return self.__name
+    def actions(self): return self.__actions
 
 
 

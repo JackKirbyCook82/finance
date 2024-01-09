@@ -43,8 +43,8 @@ class DateRange(ntuple("DateRange", "minimum maximum")):
         return super().__new__(cls, min(dates), max(dates)) if dates else None
 
     def __contains__(self, date): return self.minimum <= date <= self.maximum
-    def __repr__(self): return "{}({}, {})".format(self.__class__.__name__, repr(self.minimum), repr(self.maximum))
-    def __str__(self): return "{}|{}".format(str(self.minimum), str(self.maximum))
+    def __repr__(self): return f"{self.__class__.__name__}({repr(self.minimum)}, {repr(self.maximum)})"
+    def __str__(self): return f"{str(self.minimum)}|{str(self.maximum)}"
     def __bool__(self): return self.minimum < self.maximum
     def __len__(self): return (self.maximum - self.minimum).days
 
@@ -78,6 +78,8 @@ class SecuritiesMeta(type):
     def integer(cls, index): return {int(security): security for security in iter(cls)}[index]
     @retrieve.register(str)
     def string(cls, string): return {str(security): security for security in iter(cls)}[str(string).lower()]
+    @retrieve.register(tuple)
+    def value(cls, value): return {(security.instrument, security.postion): security for security in iter(cls)}[value]
 
     @property
     def Stocks(cls): return iter([StockLong, StockShort])
@@ -160,7 +162,7 @@ class SecurityQuery(ntuple("Query", "current ticker expire stocks options")):
     def __str__(self):
         strings = {str(security.title): str(len(dataframe.index)) for security, dataframe in self.stocks.items()}
         strings.update({str(security.title): str(len(dataframe.index)) for security, dataframe in self.options.items()})
-        arguments = "{}|{}".format(self.ticker, self.expire.strftime("%Y-%m-%d"))
+        arguments = f"{self.ticker}|{self.expire.strftime('%Y-%m-%d')}"
         parameters = ", ".join(["=".join([key, value]) for key, value in strings.items()])
         return ", ".join([arguments, parameters]) if bool(parameters) else str(arguments)
 
@@ -172,7 +174,7 @@ class SecurityFilter(Processor):
         stocks = {security: self.stock(dataframe, *args, security=security, **kwargs) for security, dataframe in stocks.items()}
         options = {security: self.option(dataframe, *args, security=security, **kwargs) for security, dataframe in options.items()}
         query = SecurityQuery(query.current, query.ticker, query.expire, stocks, options)
-        LOGGER.info("Filter: {}[{}]".format(repr(self), str(query)))
+        LOGGER.info(f"Filter: {repr(self)}[{str(query)}]")
         yield query
 
     @staticmethod

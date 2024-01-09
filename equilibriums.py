@@ -34,11 +34,11 @@ LOGGER = logging.getLogger(__name__)
 
 class SupplyDemandQuery(ntuple("Query", "current ticker expire supply demand")): pass
 class EquilibriumQuery(ntuple("Query", "current ticker expire equilibrium")):
-    def __str__(self): return "{}|{}, {:.0f}".format(self.ticker, self.expire.strftime("%Y-%m-%d"), len(self.equilibrium.index))
+    def __str__(self): return f"{self.ticker}|{self.expire.strftime('%Y-%m-%d')}, {len(self.equilibrium.index):.0f}"
 
 
 class SupplyDemandFile(DataframeFile):
-    @kwargsdispatcher("data")7
+    @kwargsdispatcher("data")
     def dataheader(self, *args, data, **kwargs): raise KeyError(str(data))
     @kwargsdispatcher("data")
     def datatypes(self, *args, data, **kwargs): raise KeyError(str(data))
@@ -135,7 +135,7 @@ class EquilibriumCalculator(Processor):
         equilibrium["apy"] = equilibrium["apy"].round(2)
         equilibrium["npv"] = equilibrium["npv"].round(2)
         query = EquilibriumQuery(query.current, query.ticker, query.expire, equilibrium)
-        LOGGER.info("Equilibrium: {}[{}]".format(repr(self), str(query)))
+        LOGGER.info(f"Equilibrium: {repr(self)}[{str(query)}]")
         yield query
 
     @staticmethod
@@ -194,13 +194,13 @@ class EquilibriumWriter(Writer):
         assert isinstance(equilibrium, pd.DataFrame)
         if bool(equilibrium.empty):
             return
-        self.write(equilibrium, *args, **kwargs)
-        LOGGER.info("Equilibrium: {}[{}]".format(repr(self), str(self.destination)))
+        self.destination.write(equilibrium, *args, **kwargs)
+        LOGGER.info(f"Equilibrium: {repr(self)}[{str(self.destination)}]")
         print(self.destination.table)
 
 
 class EquilibriumTable(DataframeTable):
-    def __str__(self): return "{:,.02f}%, ${:,.0f}|${:,.0f}, {:.0f}|{:.0f}".format(self.apy * 100, self.npv, self.cost, *self.tau)
+    def __str__(self): return f"{self.apy * 100:,.02f}%, ${self.npv:,.0f}|${self.cost:,.0f}, {self.tau[0]:.0f}|{self.tau[-1]:.0f}"
 
     def execute(self, dataframe, *args, **kwargs):
         dataframe = super().execute(dataframe, *args, **kwargs)
