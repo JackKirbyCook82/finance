@@ -196,7 +196,6 @@ class EquilibriumWriter(Writer):
             return
         self.destination.write(equilibrium, *args, **kwargs)
         LOGGER.info(f"Equilibrium: {repr(self)}[{str(self.destination)}]")
-        print(self.destination.table)
 
 
 class EquilibriumTable(DataframeTable):

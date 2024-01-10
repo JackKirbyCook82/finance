@@ -6,15 +6,14 @@ Created on Sun Dec 21 2023
 
 """
 
-import time
 import logging
 import numpy as np
 import pandas as pd
 import PySimpleGUI as gui
 from enum import IntEnum
 from itertools import chain
+from functools import total_ordering
 from datetime import datetime as Datetime
-from collections import OrderedDict as ODict
 from collections import namedtuple as ntuple
 
 from support.pipelines import Processor, Writer, Terminal
@@ -26,7 +25,7 @@ from finance.valuations import Valuations
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["TargetCalculator", "TargetWriter", "TargetTerminal", "TargetTable"]
+__all__ = ["TargetCalculator", "TargetWriter", "TargetTable", "TargetTerminal"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
@@ -35,47 +34,40 @@ LOGGER = logging.getLogger(__name__)
 Status = IntEnum("Status", ["PROSPECTS", "PURSING", "PENDING", "ACQUIRED", "ABANDONED"], start=1)
 
 
-class Contract(ntuple("Contract", "ticker expire")):
+class Product(ntuple("Product", "ticker date expire")):
     def __str__(self): return f"{str(self.ticker)} @ {self.expire.strftime('%Y-%m-%d')}"
 
 class Option(ntuple("Option", "instrument position strike")):
     def __str__(self): return f"{str(self.position.name).upper()} {str(self.instrument.name).upper()} @ ${self.strike:.02f}"
 
-class Strategy(ntuple("Strategy", "position spread instrument")):
-    def __str__(self): return "{} {} {}".format(*[str(value.name).upper() if bool(value) else "" for value in iter(self)]).strip()
+class Strategy(ntuple("Strategy", "spread instrument position")):
+    def __str__(self):
+        position = str(self.position.name).upper() if bool(self.position) else ""
+        instrument = str(self.instrument.name).upper() if bool(self.instrument) else ""
+        return " ".join([position, str(self.spread.name).upper(), instrument]).strip()
 
+@total_ordering
 class Valuation(ntuple("Valuation", "apy tau npv cost")):
     def __str__(self): return f"{self.tau:.0f} @ {self.apy * 100:.0f}%\n${self.npv:,.0f}\n${self.cost:,.0f}"
+    def __eq__(self, other): return self.apy == other.apy
+    def __lt__(self, other): return self.apy < other.apy
 
-class Target(ntuple("Target", "index status current contract options strategy valuation size")):
-    pass
+@total_ordering
+class Target(ntuple("Target", "identity current product options strategy valuation size")):
+    def __str__(self): return f"{self.valuation.tau:.0f} @ {self.valuation.apy * 100:,.02f}%, ${self.valuation.npv:,.0f}|${self.valuation.cost:,.0f}, {self.size:.0f}"
+    def __eq__(self, other): return self.valuation == other.valuation
+    def __lt__(self, other): return self.valuation < other.valuation
 
-class Action(ntuple("Action", "name status index")):
-    def __init_subclass__(cls, status): cls.__status__ = status
-    def __new__(cls, index): return super().__new__(cls, cls.__name__, cls.__status__, index)
-    def __str__(self): return f"{int(self.index):.0f}|{int(self.status):.0f}"
-
-
-#    def __new__(cls, index, row):
-#        assert isinstance(row, dict)
-#        contract = Contract(row["ticker"], row["expire"])
-#        options = {option: row.get(str(option), np.NaN) for option in list(Securities.Options)}
-#        options = [Option(option.instrument, option.position, strike) for option, strike in options.items() if not np.isnan(strike)]
-#        strategy = Strategies[str(row["strategy"])]
-#        strategy = Strategy(strategy.position, strategy.spread, strategy.instrument)
-#        valuation = Valuation(row["apy"], row["tau"], row["npv"], row["cost"])
-#        return super().__new__(cls, index, row["status"], row["current"], contract, options, strategy, valuation, row["size"])
-
-#    @property
-#    def table(self):
-#        contract = dict(ticker=self.contract.ticker, expire=self.contract.expire)
-#        options = {Securities[(option.instrument, option.position)]: option.strike for option in self.options}
-#        strategy = Strategies[(self.strategy.spread, self.strategy.instrument, self.strategy.position)]
-#        valuations = dict(apy=self.valuation.apy, tau=self.valuation.tau, npv=self.valuation.npv, cost=self.valuation.cost)
-#        row = dict(index=self.index, status=self.status, current=self.current, size=self.size, strategy=str(strategy))
-#        row = row | contract | options | valuations
-#        dataframe = pd.DataFrame([row]).set_index("index", drop=True, inplace=False)
-#        return dataframe
+    def frame(self, actions):
+        assert isinstance(actions, list)
+        header = gui.Text(str(self.strategy), font="Arial 10 bold", size=(22, 1))
+        securities = list(map(str, [self.product] + list(self.options)))
+        securities = gui.Text("\n".join(securities), font="Arial 10", size=(22, 3))
+        valuation = gui.Text(self.valuation, font="Arial 10")
+        body = [securities, gui.VerticalSeparator(), valuation]
+        footer = [gui.Button(action.name, key=str(action), font="Arial 8") for action in actions]
+        layout = [header, [gui.HorizontalSeparator()], body, [gui.HorizontalSeparator()], footer]
+        return gui.Frame("", layout, size=(310, 140))
 
 
 class TargetsQuery(ntuple("Query", "current ticker expire targets")):
@@ -122,7 +114,8 @@ class TargetWriter(Writer):
 
 
 class TargetTable(DataframeTable):
-    def __str__(self): return f"{self.apy * 100:,.02f}%, ${self.npv:,.0f}|${self.cost:,.0f}, {self.tau[0]:.0f}|{self.tau[-1]:.0f}"
+    def __str__(self): return f"{self.tau[0]:.0f}|{self.tau[-1]:.0f} @ {self.apy * 100:,.02f}%, ${self.npv:,.0f}|${self.cost:,.0f}, {self.size:.0f}"
+    def __iter__(self): return ((index, record) for index, record in self.table.to_dict("records", index=True).items())
 
     def execute(self, dataframe, *args, funds=None, tenure=None, **kwargs):
         dataframe["status"] = Status.PROSPECTS
@@ -144,8 +137,23 @@ class TargetTable(DataframeTable):
         dataframe["npv"] = dataframe["npv"].round(2)
         return dataframe
 
+    @staticmethod
+    def parser(index, record):
+        assert isinstance(record, dict)
+        strategy = Strategies[str(record["strategy"])]
+        strategy = Strategy(strategy.spread, strategy.instrument, strategy.position)
+        product = Product(record["ticker"], record["date"], record["expire"])
+        valuation = Valuations(record["apy"], record["tau"], record["npv"], record["cost"])
+        options = {option: record.get(str(option), np.NaN) for option in list(Securities.Options)}
+        options = [Option(option.instrument, option.position, strike) for option, strike in options.items() if not np.isnan(strike)]
+        target = Target(index, record["current"], product, options, strategy, valuation, record["size"])
+        return target
+
+    def records(self, exclude=[]): return ((index, record) for index, record in iter(self) if not bool(exclude) or index not in exclude)
+    def targets(self, exclude=[]): return (self.parser(index, record) for index, record in self.records(exclude=exclude))
+
     @property
-    def header(self): return ["status", "current", "strategy", "ticker", "date", "expire"] + list(map(str, Securities.Options)) + ["apy", "npv", "cost", "tau", "size"]
+    def header(self): return ["current", "strategy", "ticker", "date", "expire"] + list(map(str, Securities.Options)) + ["apy", "npv", "cost", "tau", "size"]
     @property
     def weights(self): return (self.table["cost"] * self.table["size"]) / (self.table["cost"] @ self.table["size"])
     @property
@@ -160,69 +168,27 @@ class TargetTable(DataframeTable):
     def size(self): return self.table["size"].sum()
 
 
-#    def execute(self, targets, *args, tenure=None, **kwargs):
-#        titles = [str(status.name).upper() for status in Status]
-#        columns = ODict([(title, []) for title in titles])
-#        for status, target in self.generator(targets):
-#            title = str(status.name).upper()
-#            termtime = (target.current - Datetime.now())
-#            lifetime = min(tenure - termtime, 0) if tenure is not None else None
-#            size = target.size
-#            header = self.header(target.strategy)
-#            body = self.body(target.stock, target.options, target.valuation)
-#            footer = self.footer("Accept", "Reject")
-#            frame = self.frame()
-#            columns[title].append(frame)
-#        columns = [self.column(title, frames) for title, frames in columns.items()]
-#        return self.window(repr(self), columns=columns)
-
-class Pursue(Action, status=Status.PURSING): pass
-class Placed(Action, status=Status.PENDING): pass
-class Success(Action, status=Status.ACQUIRED): pass
-class Failure(Action, status=Status.ABANDONED): pass
-class Abandon(Action, status=Status.ABANDONED): pass
-
 class TargetTerminal(Terminal):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        prospects = {Status.PROSPECTS: [Pursue, Abandon]}
-        placed = {Status.PURSING: [Placed, Abandon]}
-        pending = {Status.PENDING: [Success, Failure]}
-        actions = prospects | placed | pending
-        self.__actions = actions
-
     def process(self, *args, **kwargs):
+        import time
         time.sleep(5)
-        targets = self.stack.read()
-        window = self.execute(targets, *args, **kwargs)
+        titles = [str(status.name).upper() for status in Status]
+        columns = [self.column(title) for title in titles]
+        window = self.window(repr(self), columns)
+        window.Maximize()
         while True:
             event, values = window.read()
             if event == gui.WINDOW_CLOSED:
                 break
-            print(event)
-            print(values)
         window.close()
 
-    def execute(self, *args, tenure=None, **kwargs):
+    def execute(self, *args, **kwargs):
         pass
 
     @staticmethod
-    def frame(strategy, contract, options, valuation, actions=[]):
-        assert isinstance(actions, list)
-        header = gui.Text(str(strategy), font="Arial 10 bold", size=(22, 1))
-        securities = list(map(str, [contract] + list(options)))
-        securities = gui.Text("\n".join(securities), font="Arial 10", size=(22, 3))
-        valuation = gui.Text(valuation, font="Arial 10")
-        body = [securities, gui.VerticalSeparator(), valuation]
-        footer = [gui.Button(action.name, key=str(action), font="Arial 8") for action in actions]
-        layout = [header, [gui.HorizontalSeparator()], body, [gui.HorizontalSeparator()], footer]
-        return gui.Frame("", layout, size=(310, 140))
-
-    @staticmethod
-    def column(title, frames=[]):
+    def column(title):
         title = gui.Text(title, font="Arial, 10 bold")
-        layout = [[frame] for frame in iter(frames)]
-        scrollable = gui.Column(layout, vertical_alignment="top", scrollable=True, vertical_scroll_only=True, size=(325, 875))
+        scrollable = gui.Column([[]], vertical_alignment="top", scrollable=True, vertical_scroll_only=True, size=(332, 1000))
         layout = [[title], [gui.HorizontalSeparator()], [scrollable]]
         return gui.Column(layout, vertical_alignment="top")
 
@@ -230,10 +196,7 @@ class TargetTerminal(Terminal):
     def window(title, columns=[]):
         columns = [[column, gui.VerticalSeparator()] for column in columns]
         layout = list(chain(*columns))[:-1]
-        return gui.Window(title, [layout])
-
-    @property
-    def actions(self): return self.__actions
+        return gui.Window(title, [layout], resizable=True, finalize=True)
 
 
 
