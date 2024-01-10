@@ -9,14 +9,12 @@ Created on Sun Dec 21 2023
 import logging
 import numpy as np
 import pandas as pd
-import PySimpleGUI as gui
 from enum import IntEnum
-from itertools import chain
 from functools import total_ordering
 from datetime import datetime as Datetime
 from collections import namedtuple as ntuple
 
-from support.pipelines import Processor, Writer, Terminal
+from support.pipelines import Processor, Writer
 from support.tables import DataframeTable
 
 from finance.securities import Securities
@@ -25,7 +23,7 @@ from finance.valuations import Valuations
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["TargetCalculator", "TargetWriter", "TargetTable", "TargetTerminal"]
+__all__ = ["TargetCalculator", "TargetWriter", "TargetTable"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
@@ -57,17 +55,6 @@ class Target(ntuple("Target", "identity current product options strategy valuati
     def __str__(self): return f"{self.valuation.tau:.0f} @ {self.valuation.apy * 100:,.02f}%, ${self.valuation.npv:,.0f}|${self.valuation.cost:,.0f}, {self.size:.0f}"
     def __eq__(self, other): return self.valuation == other.valuation
     def __lt__(self, other): return self.valuation < other.valuation
-
-    def frame(self, actions):
-        assert isinstance(actions, list)
-        header = gui.Text(str(self.strategy), font="Arial 10 bold", size=(22, 1))
-        securities = list(map(str, [self.product] + list(self.options)))
-        securities = gui.Text("\n".join(securities), font="Arial 10", size=(22, 3))
-        valuation = gui.Text(self.valuation, font="Arial 10")
-        body = [securities, gui.VerticalSeparator(), valuation]
-        footer = [gui.Button(action.name, key=str(action), font="Arial 8") for action in actions]
-        layout = [header, [gui.HorizontalSeparator()], body, [gui.HorizontalSeparator()], footer]
-        return gui.Frame("", layout, size=(310, 140))
 
 
 class TargetsQuery(ntuple("Query", "current ticker expire targets")):
@@ -166,37 +153,6 @@ class TargetTable(DataframeTable):
     def apy(self): return self.table["apy"] @ self.weights
     @property
     def size(self): return self.table["size"].sum()
-
-
-class TargetTerminal(Terminal):
-    def process(self, *args, **kwargs):
-        import time
-        time.sleep(5)
-        titles = [str(status.name).upper() for status in Status]
-        columns = [self.column(title) for title in titles]
-        window = self.window(repr(self), columns)
-        window.Maximize()
-        while True:
-            event, values = window.read()
-            if event == gui.WINDOW_CLOSED:
-                break
-        window.close()
-
-    def execute(self, *args, **kwargs):
-        pass
-
-    @staticmethod
-    def column(title):
-        title = gui.Text(title, font="Arial, 10 bold")
-        scrollable = gui.Column([[]], vertical_alignment="top", scrollable=True, vertical_scroll_only=True, size=(332, 1000))
-        layout = [[title], [gui.HorizontalSeparator()], [scrollable]]
-        return gui.Column(layout, vertical_alignment="top")
-
-    @staticmethod
-    def window(title, columns=[]):
-        columns = [[column, gui.VerticalSeparator()] for column in columns]
-        layout = list(chain(*columns))[:-1]
-        return gui.Window(title, [layout], resizable=True, finalize=True)
 
 
 
