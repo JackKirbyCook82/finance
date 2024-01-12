@@ -201,8 +201,8 @@ class EquilibriumWriter(Writer):
 class EquilibriumTable(DataframeTable):
     def __str__(self): return f"{self.apy * 100:,.02f}%, ${self.npv:,.0f}|${self.cost:,.0f}, {self.tau[0]:.0f}|{self.tau[-1]:.0f}"
 
-    def execute(self, dataframe, *args, **kwargs):
-        dataframe = super().execute(dataframe, *args, **kwargs)
+    def write(self, dataframe, *args, **kwargs):
+        dataframe = super().write(dataframe, *args, **kwargs)
         dataframe["size"] = dataframe["size"].apply(np.floor).astype(np.int32)
         dataframe["tau"] = dataframe["tau"].astype(np.int32)
         dataframe["apy"] = dataframe["apy"].round(2)
