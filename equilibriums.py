@@ -196,18 +196,18 @@ class EquilibriumWriter(Writer):
             return
         self.destination.write(equilibrium, *args, **kwargs)
         LOGGER.info(f"Equilibrium: {repr(self)}[{str(self.destination)}]")
+        print(self.destination.table)
 
 
 class EquilibriumTable(DataframeTable):
     def __str__(self): return f"{self.apy * 100:,.02f}%, ${self.npv:,.0f}|${self.cost:,.0f}, {self.tau[0]:.0f}|{self.tau[-1]:.0f}"
 
     def write(self, dataframe, *args, **kwargs):
-        dataframe = super().write(dataframe, *args, **kwargs)
-        dataframe["size"] = dataframe["size"].apply(np.floor).astype(np.int32)
-        dataframe["tau"] = dataframe["tau"].astype(np.int32)
-        dataframe["apy"] = dataframe["apy"].round(2)
-        dataframe["npv"] = dataframe["npv"].round(2)
-        return dataframe
+        super().write(dataframe, *args, **kwargs)
+        self.table["size"] = self.table["size"].apply(np.floor).astype(np.int32)
+        self.table["tau"] = self.table["tau"].astype(np.int32)
+        self.table["apy"] = self.table["apy"].round(2)
+        self.table["npv"] = self.table["npv"].round(2)
 
     @property
     def header(self): return ["strategy", "ticker", "date", "expire"] + list(map(str, Securities.Options)) + ["apy", "npv", "cost", "size", "tau"]
