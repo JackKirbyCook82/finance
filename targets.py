@@ -181,6 +181,13 @@ class TargetWindow(Window):
         self.__purchased = TargetTable("purchased", height=40, width=10, events=True)
         self.__feed = feed
 
+    def layout(self, *args, **kwargs):
+        prospect = gui.Tab(repr(self.prospect), self.prospect.layout)
+        pending = gui.Tab(repr(self.pending), self.pending.layout)
+        purchased = gui.Tab(repr(self.purchased), self.purchased.layout)
+        group = gui.TabGroup([[prospect, pending, purchased]])
+        return [[group]]
+
     def process(self, *args, **kwargs):
         pass
 
