@@ -17,7 +17,7 @@ from collections import namedtuple as ntuple
 
 from support.tables import DataframeTable
 from support.pipelines import Processor, Writer
-from support.windows import Window, Table, Column, Justify
+from support.windows import Window, Textual, Tabular, Format, Column, Justify
 
 from finance.securities import Securities
 from finance.strategies import Strategies
@@ -31,7 +31,7 @@ __license__ = ""
 
 
 LOGGER = logging.getLogger(__name__)
-Status = IntEnum("Status", ["PROSPECTS", "PENDING", "PURCHASED"], start=1)
+Status = IntEnum("Status", ["PROSPECT", "PENDING", "PURCHASED"], start=1)
 
 
 class Strategy(ntuple("Strategy", "spread instrument position")):
@@ -41,7 +41,7 @@ class Strategy(ntuple("Strategy", "spread instrument position")):
         return " ".join([position, str(self.spread.name).upper(), instrument]).strip()
 
 class Product(ntuple("Product", "ticker expire")):
-    def __str__(self): return f"{str(self.ticker).upper()} @ {self.expire.strftime('%Y-%m-%d')}"
+    def __str__(self): return f"{str(self.ticker).upper()}, {self.expire.strftime('%Y-%m-%d')}"
 
 class Option(ntuple("Option", "instrument position strike")):
     def __str__(self): return f"{str(self.position.name).upper()} {str(self.instrument.name).upper()} @ ${self.strike:.02f}"
@@ -54,9 +54,9 @@ class Valuation(ntuple("Valuation", "profit tau value cost")):
 
 @total_ordering
 class Target(ntuple("Target", "identity current strategy product options valuation size")):
-    def __str__(self): return f"{self.valuation.tau:.0f} @ {self.valuation.profit * 100:,.02f}%, ${self.valuation.value:,.0f}|${self.valuation.cost:,.0f}, {self.size:,.0f}"
     def __eq__(self, other): return self.valuation == other.valuation
     def __lt__(self, other): return self.valuation < other.valuation
+    def __hash__(self): return self.identity
 
     def __init__(self, *args, status, **kwargs): self.__status = status
     def __new__(cls, identity, current, product, strategy, options, valuation, size, *args, **kwargs):
@@ -135,7 +135,7 @@ class TargetTable(DataframeTable):
         self.table["npv"] = self.table["npv"].round(2)
 
     @staticmethod
-    def parser(index, record):
+    def parser(identity, record):
         assert isinstance(record, dict)
         strategy = Strategies[str(record["strategy"])]
         strategy = Strategy(strategy.spread, strategy.instrument, strategy.position)
@@ -143,7 +143,7 @@ class TargetTable(DataframeTable):
         valuation = Valuation(record["apy"], record["tau"], record["npv"], record["cost"])
         options = {option: record.get(str(option), np.NaN) for option in list(Securities.Options)}
         options = [Option(option.instrument, option.position, strike) for option, strike in options.items() if not np.isnan(strike)]
-        target = Target(index, record["current"], strategy, product, options, valuation, record["size"], status=Status.PROSPECTS)
+        target = Target(identity, record["current"], strategy, product, options, valuation, record["size"], status=Status.PROSPECT)
         return target
 
     @property
@@ -162,37 +162,67 @@ class TargetTable(DataframeTable):
     def size(self): return self.table["size"].sum()
 
 
-class TargetTable(Table):
-    strategy = Column("strategy", 10, Justify.LEFT, lambda target: str(target.strategy))
-    ticker = Column("ticker", 10, Justify.LEFT, lambda target: str(target.product.ticker).upper())
-    expire = Column("expire", 10, Justify.LEFT, lambda target: target.product.expire.strftime("%Y-%m-%d"))
-    options = Column("options", 30, Justify.LEFT, lambda target: "\n".join(list(map(str, target.options))))
-    profit = Column("profit", 5, Justify.CENTER, lambda target: f"{target.valuation.profit * 100:.0f}%/YR @ {target.valuation.tau:.0f}|DAYS")
-    value = Column("value", 5, Justify.CENTER, lambda target: f"${target.valuation.value:,.0f}")
-    cost = Column("cost", 5, Justify.CENTER, lambda target: f"${target.valuation.cost:,.0f}")
-    size = Column("size", 5, Justify.CENTER, lambda target: f"{target.size}:,.0f|CNT")
+class TargetTabular(Tabular):
+    strategy = Column("strategy", 15, lambda target: str(target.strategy))
+    ticker = Column("ticker", 10, lambda target: str(target.product.ticker).upper())
+    expire = Column("expire", 10, lambda target: target.product.expire.strftime("%Y-%m-%d"))
+    options = Column("options", 20, lambda target: "\n".join(list(map(str, target.options))))
+    profit = Column("profit", 20, lambda target: f"{target.valuation.profit * 100:.0f}% / YR @ {target.valuation.tau:.0f} DAYS")
+    value = Column("value", 10, lambda target: f"${target.valuation.value:,.0f}")
+    cost = Column("cost", 10, lambda target: f"${target.valuation.cost:,.0f}")
+    size = Column("size", 10, lambda target: f"{target.size:,.0f} CNT")
+
+    def execute(self, rows, *args, **kwargs):
+        return [[parser(row) for name, parser in self.columns.items()] for row in rows]
+
+
+class LeftTextual(Textual):
+    strategy = Format("strategy", 10, lambda target: str(target.strategy))
+    product = Format("product", 10, lambda target: str(target.product))
+    options = Format("options", 10, lambda target: "\n".join(list(map(str, target.options))))
+
+    def execute(self, content, *args, **kwargs):
+        return "\n".join([parser(content) for name, parser in self.formats.items()])
+
+
+class RightTextual(Textual):
+    valuation = Format("valuation", 10, lambda target: str(target.valuation).replace(" ,", "\n"))
+    size = Format("size", 10, lambda target: f"{target.size:,.0f} CNT")
+
+    def execute(self, content, *args, **kwargs):
+        return "\n".join([parser(content) for name, parser in self.formats.items()])
 
 
 class TargetWindow(Window):
     def __init__(self, *args, feed, **kwargs):
         super().__init__(*args, **kwargs)
-        self.__prospect = TargetTable("prospect", height=40, width=10, events=True)
-        self.__pending = TargetTable("pending", height=40, width=10, events=True)
-        self.__purchased = TargetTable("purchased", height=40, width=10, events=True)
+        self.__prospect = TargetTabular(name="prospect", justify=Justify.LEFT, height=40, events=True)
+        self.__pending = TargetTabular(name="pending", justify=Justify.LEFT, height=40, events=True)
+        self.__purchased = TargetTabular(name="purchased", justify=Justify.LEFT, height=40, events=True)
+        self.__targets = list()
         self.__feed = feed
 
     def layout(self, *args, **kwargs):
-        prospect = gui.Tab(repr(self.prospect), self.prospect.layout)
-        pending = gui.Tab(repr(self.pending), self.pending.layout)
-        purchased = gui.Tab(repr(self.purchased), self.purchased.layout)
-        group = gui.TabGroup([[prospect, pending, purchased]])
-        return [[group]]
+        tabulars = {tabular.name: tabular for tabular in (self.prospect, self.pending, self.purchased)}
+        tables = {name: gui.Table([[]], key=str(tabular), **tabular.parameters) for name, tabular in tabulars.items()}
+        tabs = [gui.Tab(name, [[table]], key=f"--{name}|tab--") for name, table in tables.items()]
+        return [[gui.TabGroup([tabs], key="--tab|group--")]]
 
-    def process(self, *args, **kwargs):
-        pass
-
-    def execute(self, *args, **kwargs):
+    def refresh(self, *args, **kwargs):
         targets = list(iter(self.feed))
+        targets = set(self.targets + targets)
+        targets = sorted(list(targets), reverse=True)
+        key = str(self.prospect)
+        rows = self.prospect(targets)
+        self.window[key].update(rows)
+        self.targets = targets
+
+    def execute(self, event, handles, *args, **kwargs):
+        if event is None:
+            return
+        for index in handles[event]:
+            target = self.targets[index]
+
 
     @property
     def prospect(self): return self.__prospect
@@ -201,7 +231,32 @@ class TargetWindow(Window):
     @property
     def purchased(self): return self.__purchased
     @property
+    def targets(self): return self.__targets
+    @targets.setter
+    def targets(self, targets): self.__targets = targets
+    @property
     def feed(self): return self.__feed
+
+
+class ContentWindow(Window):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.__left = LeftTextual(name="left")
+        self.__right = RightTextual(name="right")
+
+    def layout(self, target, *args, **kwargs):
+        left = self.left(target, *args, **kwargs)
+        right = self.right(target, *args, **kwargs)
+        return [[left, gui.VerticalSeparator(), right]]
+
+    def refresh(self, *args, **kwargs): pass
+    def execute(self, *args, **kwargs): pass
+
+    @property
+    def left(self): return self.__left
+    @property
+    def right(self): return self.__right
+
 
 
 
