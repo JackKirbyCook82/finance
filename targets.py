@@ -228,7 +228,7 @@ class ContentWindow(Window):
     def right(self): return self.__right
 
 
-class TargetDriver(Driver):
+class TargetDriver(Driver, window=ContentsWindow):
     pass
 
 
