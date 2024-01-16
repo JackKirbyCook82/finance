@@ -17,7 +17,7 @@ from collections import namedtuple as ntuple
 
 from support.tables import DataframeTable
 from support.pipelines import Processor, Writer
-from support.windows import Driver, Window, Text, Table, Format, Column, Justify
+from support.windows import Window, Text, Table, Format, Column, Justify
 
 from finance.securities import Securities
 from finance.strategies import Strategies
@@ -25,7 +25,7 @@ from finance.valuations import Valuations
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["TargetCalculator", "TargetWriter", "TargetTable", "TargetDriver"]
+__all__ = ["TargetCalculator", "TargetWriter", "TargetTable", "TargetTerminal"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
@@ -162,7 +162,7 @@ class TargetTable(DataframeTable):
     def size(self): return self.table["size"].sum()
 
 
-class ContentTable(Table, justify=Justify.LEFT, height=40, events=True):
+class ContentsTable(Table, justify=Justify.LEFT, height=40, events=True):
     strategy = Column("strategy", 15, lambda target: str(target.strategy))
     ticker = Column("ticker", 10, lambda target: str(target.product.ticker).upper())
     expire = Column("expire", 10, lambda target: target.product.expire.strftime("%Y-%m-%d"))
@@ -192,16 +192,21 @@ class RightText(Text):
         return [["\n".join([parser(content) for name, parser in formats.items() if name in ("valuation", "size")])]]
 
 
-class TargetWindow(Window):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.__prospect = ContentTable(*args, name="prospect", rows=[], **kwargs)
-        self.__pending = ContentTable(*args, name="pending", rows=[], **kwargs)
-        self.__purchased = ContentTable(*args, name="purchased", rows=[], **kwargs)
+class TargetsWindow(Window):
+    def __init__(self, *args, name, **kwargs):
+        prospect = ContentsTable(*args, name="prospect", rows=[], **kwargs)
+        pending = ContentsTable(*args, name="pending", rows=[], **kwargs)
+        purchased = ContentsTable(*args, name="purchased", rows=[], **kwargs)
+        tables = [prospect, pending, purchased]
+        super().__init__(*args, name=name, tables=tables, **kwargs)
+        self.__prospect = prospect
+        self.__pending = pending
+        self.__purchased = purchased
 
-    def layout(self, *args, **kwargs):
-        tables = {table.name: table for table in (self.prospect, self.pending, self.purchased)}
-        tabs = [gui.Tab(name, [[table]], key=f"--{name}|tab--") for name, table in tables.items()]
+    @staticmethod
+    def layout(*args, tables, **kwargs):
+        assert isinstance(tables, list)
+        tabs = [gui.Tab(repr(table), [[table.element]], key=f"--{repr(table)}|tab--") for table in tables]
         return [[gui.TabGroup([tabs], key="--tab|group--")]]
 
     @property
@@ -212,40 +217,55 @@ class TargetWindow(Window):
     def purchased(self): return self.__purchased
 
 
-class ContentWindow(Window):
-    def __init__(self, *args, target, **kwargs):
-        super().__init__(*args, **kwargs)
+class TargetWindow(Window):
+    def __init__(self, *args, name, target, **kwargs):
         assert isinstance(target, Target)
-        self.__left = LeftText(*args, name="left", content=target, **kwargs)
-        self.__right = RightText(*args, name="right", content=target, **kwargs)
+        Texts = ntuple("Texts", "left right")
+        left = LeftText(*args, name="left", content=target, **kwargs)
+        right = RightText(*args, name="right", content=target, **kwargs)
+        texts = Texts(left, right)
+        super().__init__(*args, name=name, texts=texts, **kwargs)
 
-    def layout(self, *args, **kwargs):
-        return [[self.left, gui.VerticalSeparator(), self.right]]
+    @staticmethod
+    def layout(*args, texts, **kwargs):
+        return [[texts.left.element, gui.VerticalSeparator(), texts.right.element]]
+
+
+class TargetTerminal(object):
+    def __repr__(self): return self.name
+    def __init__(self, *args, feed, **kwargs):
+        self.__name = kwargs.get("name", self.__class__.__name__)
+        self.__targets = list()
+        self.__feed = feed
+
+    def __call__(self, *args, **kwargs):
+        targets_window = TargetsWindow(*args, name="targets", **kwargs)
+        targets = list(iter(self.feed))
+        targets = set(self.targets + targets)
+        targets = sorted(list(targets), reverse=True)
+        targets_window.prospect(*args, rows=targets, **kwargs)
+        self.targets = targets
+        while True:
+            window, event, handles = gui.read_all_windows()
+            print(event, handles)
+            if event == gui.WINDOW_CLOSED:
+                break
+            if event is None:
+                continue
+            for index in handles[event]:
+                target = self.targets[index]
+                target_window = TargetWindow(*args, name="target", target=target, **kwargs)
 
     @property
-    def left(self): return self.__left
+    def targets(self): return self.__targets
+    @targets.setter
+    def targets(self, targets): self.__targets = targets
     @property
-    def right(self): return self.__right
+    def feed(self): return self.__feed
+    @property
+    def name(self): return self.__name
 
 
-class TargetDriver(Driver, window=TargetWindow):
-    pass
-
-
-#    def refresh(self, *args, **kwargs):
-#        targets = list(iter(self.feed))
-#        targets = set(self.targets + targets)
-#        targets = sorted(list(targets), reverse=True)
-#        key = str(self.prospect)
-#        rows = self.prospect(targets)
-#        self.window[key].update(rows)
-#        self.targets = targets
-
-#    def execute(self, event, handles, *args, **kwargs):
-#        if event is None:
-#            return
-#        for index in handles[event]:
-#            target = self.targets[index]
 
 
 
