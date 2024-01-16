@@ -17,7 +17,7 @@ from collections import namedtuple as ntuple
 
 from support.tables import DataframeTable
 from support.pipelines import Processor, Writer
-from support.windows import Window, Text, Table, Format, Column, Justify
+from support.windows import Windows, Window, Text, Table, Format, Column, Justify
 
 from finance.securities import Securities
 from finance.strategies import Strategies
@@ -238,23 +238,21 @@ class TargetTerminal(object):
         self.__targets = list()
         self.__feed = feed
 
+    def __enter__(self): return self
+    def __exit__(self, error_type, error_value, error_traceback):
+        self.window.close()
+
     def __call__(self, *args, **kwargs):
-        targets_window = TargetsWindow(*args, name="targets", **kwargs)
-        targets = list(iter(self.feed))
-        targets = set(self.targets + targets)
-        targets = sorted(list(targets), reverse=True)
-        targets_window.prospect(*args, rows=targets, **kwargs)
-        self.targets = targets
-        while True:
-            window, event, handles = gui.read_all_windows()
-            print(event, handles)
-            if event == gui.WINDOW_CLOSED:
-                break
-            if event is None:
-                continue
-            for index in handles[event]:
-                target = self.targets[index]
-                target_window = TargetWindow(*args, name="target", target=target, **kwargs)
+        with Windows() as windows:
+            windows["targets"] = TargetsWindow(*args, name="targets", **kwargs)
+            targets = list(iter(self.feed))
+            targets = set(self.targets + targets)
+            targets = sorted(list(targets), reverse=True)
+            windows["targets"].prospect(*args, rows=targets, **kwargs)
+            self.targets = targets
+            while True:
+                XXX = windows(*args, **kwargs)
+
 
     @property
     def targets(self): return self.__targets
