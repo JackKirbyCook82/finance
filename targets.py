@@ -162,7 +162,7 @@ class TargetTable(DataframeTable):
     def size(self): return self.table["size"].sum()
 
 
-class ContentsTable(Table, justify=Justify.LEFT, height=40, events=True):
+class ContentTable(Table, justify=Justify.LEFT, height=40, events=True):
     strategy = Column("strategy", 15, lambda target: str(target.strategy))
     ticker = Column("ticker", 10, lambda target: str(target.product.ticker).upper())
     expire = Column("expire", 10, lambda target: target.product.expire.strftime("%Y-%m-%d"))
@@ -192,12 +192,12 @@ class RightText(Text):
         return [["\n".join([parser(content) for name, parser in formats.items() if name in ("valuation", "size")])]]
 
 
-class ContentsWindow(Window):
+class TargetWindow(Window):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.__prospect = ContentsTable(*args, name="prospect", rows=[], **kwargs)
-        self.__pending = ContentsTable(*args, name="pending", rows=[], **kwargs)
-        self.__purchased = ContentsTable(*args, name="purchased", rows=[], **kwargs)
+        self.__prospect = ContentTable(*args, name="prospect", rows=[], **kwargs)
+        self.__pending = ContentTable(*args, name="pending", rows=[], **kwargs)
+        self.__purchased = ContentTable(*args, name="purchased", rows=[], **kwargs)
 
     def layout(self, *args, **kwargs):
         tables = {table.name: table for table in (self.prospect, self.pending, self.purchased)}
@@ -228,7 +228,7 @@ class ContentWindow(Window):
     def right(self): return self.__right
 
 
-class TargetDriver(Driver, window=ContentsWindow):
+class TargetDriver(Driver, window=TargetWindow):
     pass
 
 
