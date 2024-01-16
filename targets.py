@@ -17,7 +17,7 @@ from collections import namedtuple as ntuple
 
 from support.tables import DataframeTable
 from support.pipelines import Processor, Writer
-from support.windows import Window, Textual, Tabular, Format, Column, Justify
+from support.windows import Driver, Window, Text, Table, Format, Column, Justify
 
 from finance.securities import Securities
 from finance.strategies import Strategies
@@ -25,7 +25,7 @@ from finance.valuations import Valuations
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["TargetCalculator", "TargetWriter", "TargetTable", "TargetWindow"]
+__all__ = ["TargetCalculator", "TargetWriter", "TargetTable", "TargetDriver"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
@@ -162,7 +162,7 @@ class TargetTable(DataframeTable):
     def size(self): return self.table["size"].sum()
 
 
-class TargetTabular(Tabular):
+class ContentsTable(Table, justify=Justify.LEFT, height=40, events=True):
     strategy = Column("strategy", 15, lambda target: str(target.strategy))
     ticker = Column("ticker", 10, lambda target: str(target.product.ticker).upper())
     expire = Column("expire", 10, lambda target: target.product.expire.strftime("%Y-%m-%d"))
@@ -172,57 +172,37 @@ class TargetTabular(Tabular):
     cost = Column("cost", 10, lambda target: f"${target.valuation.cost:,.0f}")
     size = Column("size", 10, lambda target: f"{target.size:,.0f} CNT")
 
-    def execute(self, rows, *args, **kwargs):
-        return [[parser(row) for name, parser in self.columns.items()] for row in rows]
 
-
-class LeftTextual(Textual):
+class LeftText(Text):
     strategy = Format("strategy", 10, lambda target: str(target.strategy))
     product = Format("product", 10, lambda target: str(target.product))
     options = Format("options", 10, lambda target: "\n".join(list(map(str, target.options))))
 
-    def execute(self, content, *args, **kwargs):
-        return "\n".join([parser(content) for name, parser in self.formats.items()])
+    @staticmethod
+    def layout(*args, content, formats={}, **kwargs):
+        return [["\n".join([parser(content) for name, parser in formats.items() if name in ("strategy", "product", "options")])]]
 
 
-class RightTextual(Textual):
+class RightText(Text):
     valuation = Format("valuation", 10, lambda target: str(target.valuation).replace(" ,", "\n"))
     size = Format("size", 10, lambda target: f"{target.size:,.0f} CNT")
 
-    def execute(self, content, *args, **kwargs):
-        return "\n".join([parser(content) for name, parser in self.formats.items()])
+    @staticmethod
+    def layout(*args, content, formats={}, **kwargs):
+        return [["\n".join([parser(content) for name, parser in formats.items() if name in ("valuation", "size")])]]
 
 
-class TargetWindow(Window):
-    def __init__(self, *args, feed, **kwargs):
+class ContentsWindow(Window):
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.__prospect = TargetTabular(name="prospect", justify=Justify.LEFT, height=40, events=True)
-        self.__pending = TargetTabular(name="pending", justify=Justify.LEFT, height=40, events=True)
-        self.__purchased = TargetTabular(name="purchased", justify=Justify.LEFT, height=40, events=True)
-        self.__targets = list()
-        self.__feed = feed
+        self.__prospect = ContentsTable(*args, name="prospect", rows=[], **kwargs)
+        self.__pending = ContentsTable(*args, name="pending", rows=[], **kwargs)
+        self.__purchased = ContentsTable(*args, name="purchased", rows=[], **kwargs)
 
     def layout(self, *args, **kwargs):
-        tabulars = {tabular.name: tabular for tabular in (self.prospect, self.pending, self.purchased)}
-        tables = {name: gui.Table([[]], key=str(tabular), **tabular.parameters) for name, tabular in tabulars.items()}
+        tables = {table.name: table for table in (self.prospect, self.pending, self.purchased)}
         tabs = [gui.Tab(name, [[table]], key=f"--{name}|tab--") for name, table in tables.items()]
         return [[gui.TabGroup([tabs], key="--tab|group--")]]
-
-    def refresh(self, *args, **kwargs):
-        targets = list(iter(self.feed))
-        targets = set(self.targets + targets)
-        targets = sorted(list(targets), reverse=True)
-        key = str(self.prospect)
-        rows = self.prospect(targets)
-        self.window[key].update(rows)
-        self.targets = targets
-
-    def execute(self, event, handles, *args, **kwargs):
-        if event is None:
-            return
-        for index in handles[event]:
-            target = self.targets[index]
-
 
     @property
     def prospect(self): return self.__prospect
@@ -230,32 +210,44 @@ class TargetWindow(Window):
     def pending(self): return self.__pending
     @property
     def purchased(self): return self.__purchased
-    @property
-    def targets(self): return self.__targets
-    @targets.setter
-    def targets(self, targets): self.__targets = targets
-    @property
-    def feed(self): return self.__feed
 
 
 class ContentWindow(Window):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, target, **kwargs):
         super().__init__(*args, **kwargs)
-        self.__left = LeftTextual(name="left")
-        self.__right = RightTextual(name="right")
+        assert isinstance(target, Target)
+        self.__left = LeftText(*args, name="left", content=target, **kwargs)
+        self.__right = RightText(*args, name="right", content=target, **kwargs)
 
-    def layout(self, target, *args, **kwargs):
-        left = self.left(target, *args, **kwargs)
-        right = self.right(target, *args, **kwargs)
-        return [[left, gui.VerticalSeparator(), right]]
-
-    def refresh(self, *args, **kwargs): pass
-    def execute(self, *args, **kwargs): pass
+    def layout(self, *args, **kwargs):
+        return [[self.left, gui.VerticalSeparator(), self.right]]
 
     @property
     def left(self): return self.__left
     @property
     def right(self): return self.__right
+
+
+class TargetDriver(Driver):
+    pass
+
+
+#    def refresh(self, *args, **kwargs):
+#        targets = list(iter(self.feed))
+#        targets = set(self.targets + targets)
+#        targets = sorted(list(targets), reverse=True)
+#        key = str(self.prospect)
+#        rows = self.prospect(targets)
+#        self.window[key].update(rows)
+#        self.targets = targets
+
+#    def execute(self, event, handles, *args, **kwargs):
+#        if event is None:
+#            return
+#        for index in handles[event]:
+#            target = self.targets[index]
+
+
 
 
 
