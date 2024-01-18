@@ -18,7 +18,7 @@ from collections import namedtuple as ntuple
 
 from support.tables import DataframeTable
 from support.pipelines import Processor, Writer
-from support.windows import Windows, Window, Frame, Table, Text, Column, Justify
+from support.windows import Windows, Window, Table, Frame, Button, Text, Column, Justify
 
 from finance.securities import Securities
 from finance.strategies import Strategies
@@ -184,7 +184,6 @@ class LeftContentFrame(Frame):
         options = [[option] for option in options]
         return [[strategy], [product], *options]
 
-
 class RightContentFrame(Frame):
     size = Text("size", "Arial 12 bold", lambda target: f"{target.size:,.0f} CNT")
     valuations = Text("valuations", "Arial 10", lambda target: list(str(target.valuation).split(", ")))
@@ -195,10 +194,16 @@ class RightContentFrame(Frame):
         return [[size], *valuations, [gui.Text("")]]
 
 
+class PursueButton(Button): pass
+class PendingButton(Button): pass
+class SuccessButton(Button): pass
+class FailureButton(Button): pass
+
+
 class TargetsWindow(Window):
     def __init__(self, *args, name, key, **kwargs):
-        prospect = ContentsTable(*args, name="Prospect", key="--prospect|table--", content=[], **kwargs)
-        pending = ContentsTable(*args, name="Pending", key="--pending|table--", content=[], **kwargs)
+        prospect = ContentsTable(*args, name="Prospect", content=[], **kwargs)
+        pending = ContentsTable(*args, name="Pending", content=[], **kwargs)
         elements = dict(prospect=prospect.element, pending=pending.element)
         super().__init__(*args, name=name, key=key, **elements, **kwargs)
         self.__prospect = prospect
@@ -207,8 +212,8 @@ class TargetsWindow(Window):
     @staticmethod
     def layout(*args, prospect, pending, **kwargs):
         tables = dict(prospect=prospect, pending=pending)
-        tabs = [gui.Tab(name, [[table]], key=f"--{name}|tab--") for name, table in tables.items()]
-        return [[gui.TabGroup([tabs], key="--tab|group")]]
+        tabs = [gui.Tab(name, [[table]]) for name, table in tables.items()]
+        return [[gui.TabGroup([tabs])]]
 
     @property
     def prospect(self): return self.__prospect
@@ -219,22 +224,32 @@ class TargetsWindow(Window):
 class TargetWindow(Window, ABC):
     def __init__(self, *args, name, key, content, **kwargs):
         assert isinstance(content, Target)
-        left = LeftContentFrame(*args, name="Left", key="--left|frame--", content=content, **kwargs)
-        right = RightContentFrame(*args, name="Right", key="--right|frame--", content=content, **kwargs)
+        left = LeftContentFrame(*args, name="Left", content=content, **kwargs)
+        right = RightContentFrame(*args, name="Right", content=content, **kwargs)
         elements = dict(left=left.element, right=right.element)
         super().__init__(*args, name=name, key=key, **elements, **kwargs)
 
 class ProspectTargetWindow(TargetWindow):
+    def __init__(self, *args, name, key, **kwargs):
+        pursue = PursueButton(*args, name="Pursue", **kwargs)
+        pending = PendingButton(*args, name="Pending", **kwargs)
+        elements = dict(pursue=pursue.element, pending=pending.element)
+        super().__init__(*args, name=name, key=key, **elements, **kwargs)
+
     @staticmethod
-    def layout(*args, left, right, **kwargs):
-        buttons = [gui.Button("Pursue", key="--prospect|pursue--"), gui.Button("Abandon", key="--prospect|abandon--")]
-        return [[left, gui.VerticalSeparator(), right], buttons]
+    def layout(*args, left, right, pursue, pending, **kwargs):
+        return [[left, gui.VerticalSeparator(), right], [pursue, pending]]
 
 class PendingTargetWindow(TargetWindow):
+    def __init__(self, *args, name, key, **kwargs):
+        success = SuccessButton(*args, name="Success", **kwargs)
+        failure = FailureButton(*args, name="Failure", **kwargs)
+        elements = dict(pursue=success.element, pending=failure.element)
+        super().__init__(*args, name=name, key=key, **elements, **kwargs)
+
     @staticmethod
-    def layout(*args, left, right, **kwargs):
-        buttons = [gui.Button("Success", key="--pending|success--"), gui.Button("Failure", key="--pending|failure--")]
-        return [[left, gui.VerticalSeparator(), right], buttons]
+    def layout(*args, left, right, success, failure, **kwargs):
+        return [[left, gui.VerticalSeparator(), right], [success, failure]]
 
 
 class TargetTerminal(object):
@@ -253,26 +268,24 @@ class TargetTerminal(object):
             main = TargetsWindow(*args, name="Targets", key="--targets--", **kwargs)
             main.prospect(*args, content=self.targets, **kwargs)
             windows[str(main)] = main
-            while bool(windows):
-                instance, event, values = gui.read_all_windows()
 
-                print(event, values)
-
-                window = windows[instance.metadata]
-                if event == gui.WINDOW_CLOSED:
-                    window.stop()
-                if event == str(main.prospect):
-                    for index in values[event]:
-                        target = self.targets[index]
-                        key = f"--prospect|window|{index:.0f}--"
-                        window = ProspectTargetWindow(*args, name="Target", key=key, content=target, **kwargs)
-                        windows[str(window)] = window
-                if event == str(main.pending):
-                    for index in values[event]:
-                        target = self.targets[index]
-                        key = f"--pending|window|{index:.0f}--"
-                        window = PendingTargetWindow(*args, name="Target", key=key, content=target, **kwargs)
-                        windows[str(window)] = window
+#            while bool(windows):
+#                instance, event, values = gui.read_all_windows()
+#                window = windows[instance.metadata]
+#                if event == gui.WINDOW_CLOSED:
+#                    window.stop()
+#                if event == str(main.prospect):
+#                    for index in values[event]:
+#                        target = self.targets[index]
+#                        key = f"--prospect|window|{index:.0f}--"
+#                        window = ProspectTargetWindow(*args, name="Target", key=key, content=target, **kwargs)
+#                        windows[str(window)] = window
+#                if event == str(main.pending):
+#                    for index in values[event]:
+#                        target = self.targets[index]
+#                        key = f"--pending|window|{index:.0f}--"
+#                        window = PendingTargetWindow(*args, name="Target", key=key, content=target, **kwargs)
+#                        windows[str(window)] = window
 
     @property
     def targets(self): return self.__targets
