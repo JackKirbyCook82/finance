@@ -18,7 +18,7 @@ from collections import namedtuple as ntuple
 
 from support.tables import DataframeTable
 from support.pipelines import Processor, Writer
-from support.windows import Windows, Window, Table, Frame, Button, Text, Column, Justify
+from support.windows import Window, Table, Frame, Button, Text, Column, Justify
 
 from finance.securities import Securities
 from finance.strategies import Strategies
@@ -26,13 +26,13 @@ from finance.valuations import Valuations
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["TargetCalculator", "TargetWriter", "TargetTable", "TargetTerminal"]
+__all__ = ["TargetsCalculator", "TargetsWriter", "TargetsTable", "TargetsTerminal"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
 
 LOGGER = logging.getLogger(__name__)
-Status = IntEnum("Status", ["PROSPECT", "PENDING"], start=1)
+Status = IntEnum("Status", ["PROSPECTED", "PENDING", "PURCHASED", "ABANDONED"], start=1)
 
 
 class Strategy(ntuple("Strategy", "spread instrument position")):
@@ -74,7 +74,7 @@ class TargetsQuery(ntuple("Query", "current ticker expire targets")):
     def __str__(self): return f"{self.ticker}|{self.expire.strftime('%Y-%m-%d')}, {len(self.targets.index):.0f}"
 
 
-class TargetCalculator(Processor):
+class TargetsCalculator(Processor):
     def __init__(self, *args, name=None, valuation=Valuations.Arbitrage.Minimum, **kwargs):
         super().__init__(*args, name=name, **kwargs)
         self.valuation = valuation
@@ -102,7 +102,7 @@ class TargetCalculator(Processor):
         yield query
 
 
-class TargetWriter(Writer):
+class TargetsWriter(Writer):
     def execute(self, content, *args, **kwargs):
         targets = content.targets if isinstance(content, TargetsQuery) else content
         assert isinstance(targets, pd.DataFrame)
@@ -113,7 +113,7 @@ class TargetWriter(Writer):
         print(self.destination.table)
 
 
-class TargetTable(DataframeTable):
+class TargetsTable(DataframeTable):
     def __str__(self): return f"{self.tau[0]:.0f}|{self.tau[-1]:.0f} @ {self.apy * 100:,.02f}%, ${self.npv:,.0f}|${self.cost:,.0f}, {self.size:.0f}"
     def __iter__(self): return (self.parser(index, record) for index, record in super().__iter__())
 
@@ -144,7 +144,7 @@ class TargetTable(DataframeTable):
         valuation = Valuation(record["apy"], record["tau"], record["npv"], record["cost"])
         options = {option: record.get(str(option), np.NaN) for option in list(Securities.Options)}
         options = [Option(option.instrument, option.position, strike) for option, strike in options.items() if not np.isnan(strike)]
-        target = Target(identity, record["current"], strategy, product, options, valuation, record["size"], status=Status.PROSPECT)
+        target = Target(identity, record["current"], strategy, product, options, valuation, record["size"], status=Status.PROSPECTED)
         return target
 
     @property
@@ -173,8 +173,11 @@ class ContentsTable(Table, justify=Justify.LEFT, height=40, events=True):
     cost = Column("cost", 10, lambda target: f"${target.valuation.cost:,.0f}")
     size = Column("size", 10, lambda target: f"{target.size:,.0f} CNT")
 
+class ProspectTable(ContentsTable): pass
+class PendingTable(ContentsTable): pass
 
-class LeftContentFrame(Frame):
+
+class DetailFrame(Frame):
     strategy = Text("strategy", "Arial 12 bold", lambda target: str(target.strategy))
     product = Text("product", "Arial 10", lambda target: str(target.product))
     options = Text("options", "Arial 10", lambda target: list(map(str, target.options)))
@@ -184,7 +187,7 @@ class LeftContentFrame(Frame):
         options = [[option] for option in options]
         return [[strategy], [product], *options]
 
-class RightContentFrame(Frame):
+class ValueFrame(Frame):
     size = Text("size", "Arial 12 bold", lambda target: f"{target.size:,.0f} CNT")
     valuations = Text("valuations", "Arial 10", lambda target: list(str(target.valuation).split(", ")))
 
@@ -194,20 +197,99 @@ class RightContentFrame(Frame):
         return [[size], *valuations, [gui.Text("")]]
 
 
-class PursueButton(Button): pass
-class PendingButton(Button): pass
+class AdoptButton(Button): pass
+class AbandonButton(Button): pass
 class SuccessButton(Button): pass
 class FailureButton(Button): pass
 
 
+class TargetWindow(Window, ABC):
+    def __init__(self, *args, name, target, **kwargs):
+        assert isinstance(target, Target)
+        detail = DetailFrame(*args, name="Detail", content=target, **kwargs)
+        value = ValueFrame(*args, name="Value", content=target, **kwargs)
+        elements = dict(detail=detail.element, value=value.element)
+        super().__init__(*args, name=name, **elements, **kwargs)
+        self.__target = target
+
+    @staticmethod
+    def layout(*args, detail, value, positive, negative, **kwargs):
+        return [[detail, gui.VerticalSeparator(), value], [positive, negative]]
+
+    @property
+    def target(self): return self.__target
+
+
+class ProspectWindow(TargetWindow):
+    def __init__(self, *args, name, **kwargs):
+        adopt = AdoptButton(*args, name="Adopt", **kwargs)
+        abandon = AbandonButton(*args, name="Abandon", **kwargs)
+        elements = dict(positive=adopt.element, negative=abandon.element)
+        super().__init__(*args, name=name, **elements, **kwargs)
+
+    @AdoptButton.click
+    def click_adopt(self, *args, **kwargs):
+        self.target.status = Status.PENDING
+        self.close()
+
+    @AbandonButton.click
+    def click_abandon(self, *args, **kwargs):
+        self.target.status = Status.ABANDONED
+        self.close()
+
+
+class PendingWindow(TargetWindow):
+    def __init__(self, *args, name, **kwargs):
+        success = SuccessButton(*args, name="Success", **kwargs)
+        failure = FailureButton(*args, name="Failure", **kwargs)
+        elements = dict(positive=success.element, negative=failure.element)
+        super().__init__(*args, name=name, **elements, **kwargs)
+
+    @SuccessButton.click
+    def click_success(self, *args, **kwargs):
+        self.target.status = Status.PURCHASED
+        self.close()
+
+    @FailureButton.click
+    def click_failure(self, *args, **kwargs):
+        self.target.status = Status.ABANDONED
+        self.close()
+
+
 class TargetsWindow(Window):
-    def __init__(self, *args, name, key, **kwargs):
-        prospect = ContentsTable(*args, name="Prospect", content=[], **kwargs)
-        pending = ContentsTable(*args, name="Pending", content=[], **kwargs)
+    def __init__(self, *args, name, targets=[], **kwargs):
+        prospect = [target for target in self.targets if target.status == Status.PROSPECTED]
+        pending = [target for target in self.targets if target.status == Status.PENDING]
+        prospect = ContentsTable(*args, name="Prospect", content=prospect, **kwargs)
+        pending = ContentsTable(*args, name="Pending", content=pending, **kwargs)
         elements = dict(prospect=prospect.element, pending=pending.element)
-        super().__init__(*args, name=name, key=key, **elements, **kwargs)
+        super().__init__(*args, name=name, **elements, **kwargs)
         self.__prospect = prospect
         self.__pending = pending
+        self.__targets = targets
+
+    def update(self, targets=[]):
+        targets = set(self.targets + targets)
+        targets = sorted(list(targets), reverse=True)
+        self.targets = targets
+
+    def refresh(self):
+        prospect = [target for target in self.targets if target.status == Status.PROSPECTED]
+        pending = [target for target in self.targets if target.status == Status.PENDING]
+        self.prospect.update(content=prospect)
+        self.pending.update(content=pending)
+
+    @ProspectTable.select
+    def select_prospect(self, *args, indexes=[], **kwargs):
+        for index in indexes:
+            target = self.targets[index]
+            return ProspectWindow(name="Prospect", target=target)
+
+    @PendingTable.select
+    def select_pending(self, *args, indexes=[], **kwargs):
+        for index in indexes:
+            target = self.targets[index]
+            return PendingWindow(name="Pending", target=target)
 
     @staticmethod
     def layout(*args, prospect, pending, **kwargs):
@@ -216,59 +298,31 @@ class TargetsWindow(Window):
         return [[gui.TabGroup([tabs])]]
 
     @property
+    def targets(self): return self.__targets
+    @targets.setter
+    def targets(self, targets): self.__targets = targets
+    @property
     def prospect(self): return self.__prospect
     @property
     def pending(self): return self.__pending
 
 
-class TargetWindow(Window, ABC):
-    def __init__(self, *args, name, key, content, **kwargs):
-        assert isinstance(content, Target)
-        left = LeftContentFrame(*args, name="Left", content=content, **kwargs)
-        right = RightContentFrame(*args, name="Right", content=content, **kwargs)
-        elements = dict(left=left.element, right=right.element)
-        super().__init__(*args, name=name, key=key, **elements, **kwargs)
-
-class ProspectTargetWindow(TargetWindow):
-    def __init__(self, *args, name, key, **kwargs):
-        pursue = PursueButton(*args, name="Pursue", **kwargs)
-        pending = PendingButton(*args, name="Pending", **kwargs)
-        elements = dict(pursue=pursue.element, pending=pending.element)
-        super().__init__(*args, name=name, key=key, **elements, **kwargs)
-
-    @staticmethod
-    def layout(*args, left, right, pursue, pending, **kwargs):
-        return [[left, gui.VerticalSeparator(), right], [pursue, pending]]
-
-class PendingTargetWindow(TargetWindow):
-    def __init__(self, *args, name, key, **kwargs):
-        success = SuccessButton(*args, name="Success", **kwargs)
-        failure = FailureButton(*args, name="Failure", **kwargs)
-        elements = dict(pursue=success.element, pending=failure.element)
-        super().__init__(*args, name=name, key=key, **elements, **kwargs)
-
-    @staticmethod
-    def layout(*args, left, right, success, failure, **kwargs):
-        return [[left, gui.VerticalSeparator(), right], [success, failure]]
-
-
-class TargetTerminal(object):
+class TargetsTerminal(object):
     def __repr__(self): return self.name
     def __init__(self, *args, feed, **kwargs):
         self.__name = kwargs.get("name", self.__class__.__name__)
-        self.__targets = list()
         self.__feed = feed
 
     def __call__(self, *args, **kwargs):
         targets = list(iter(self.feed))
-        targets = set(self.targets + targets)
-        targets = sorted(list(targets), reverse=True)
-        self.targets = targets
-        with Windows() as windows:
-            main = TargetsWindow(*args, name="Targets", key="--targets--", **kwargs)
-            main.prospect(*args, content=self.targets, **kwargs)
-            windows[str(main)] = main
+        window = TargetsWindow(name="Targets", targets=targets)
 
+#        while bool(window):
+#            pass
+#        with Windows() as windows:
+#            main = TargetsWindow(*args, name="Targets", key="--targets--", **kwargs)
+#            main.prospect(*args, content=self.targets, **kwargs)
+#            windows[str(main)] = main
 #            while bool(windows):
 #                instance, event, values = gui.read_all_windows()
 #                window = windows[instance.metadata]
@@ -287,10 +341,6 @@ class TargetTerminal(object):
 #                        window = PendingTargetWindow(*args, name="Target", key=key, content=target, **kwargs)
 #                        windows[str(window)] = window
 
-    @property
-    def targets(self): return self.__targets
-    @targets.setter
-    def targets(self, targets): self.__targets = targets
     @property
     def feed(self): return self.__feed
     @property
