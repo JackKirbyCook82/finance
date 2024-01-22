@@ -141,7 +141,7 @@ class TargetsTable(DataframeTable):
         valuation = Valuation(record["apy"], record["tau"], record["npv"], record["cost"])
         options = {option: record.get(str(option), np.NaN) for option in list(Securities.Options)}
         options = [Option(option.instrument, option.position, strike) for option, strike in options.items() if not np.isnan(strike)]
-        target = Target(identity, record["current"], strategy, product, options, valuation, record["size"], status=TargetStatus.PROSPECTED)
+        target = Target(int(identity), record["current"], strategy, product, options, valuation, record["size"], status=TargetStatus.PROSPECTED)
         return target
 
     @property
