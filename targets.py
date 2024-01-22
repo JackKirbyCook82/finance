@@ -9,8 +9,6 @@ Created on Sun Dec 21 2023
 import logging
 import numpy as np
 import pandas as pd
-import PySimpleGUI as gui
-from abc import ABC
 from enum import IntEnum
 from functools import total_ordering
 from datetime import datetime as Datetime
@@ -18,7 +16,6 @@ from collections import namedtuple as ntuple
 
 from support.tables import DataframeTable
 from support.pipelines import Processor, Writer
-from support.windows import Window, Table, Frame, Button, Text, Column, Justify
 
 from finance.securities import Securities
 from finance.strategies import Strategies
@@ -26,13 +23,13 @@ from finance.valuations import Valuations
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["TargetsCalculator", "TargetsWriter", "TargetsTable", "TargetsTerminal"]
+__all__ = ["TargetStatus", "TargetsCalculator", "TargetsWriter", "TargetsTable"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
 
 LOGGER = logging.getLogger(__name__)
-Status = IntEnum("Status", ["PROSPECTED", "PENDING", "PURCHASED", "ABANDONED"], start=1)
+TargetStatus = IntEnum("Status", ["PROSPECTED", "PENDING", "PURCHASED", "ABANDONED"], start=1)
 
 
 class Strategy(ntuple("Strategy", "spread instrument position")):
@@ -55,9 +52,9 @@ class Valuation(ntuple("Valuation", "profit tau value cost")):
 
 @total_ordering
 class Target(ntuple("Target", "identity current strategy product options valuation size")):
+    def __str__(self): return f"{self.strategy}, {self.product}, {self.valuation}, {self.status.name}"
     def __eq__(self, other): return self.valuation == other.valuation
     def __lt__(self, other): return self.valuation < other.valuation
-    def __hash__(self): return self.identity
 
     def __init__(self, *args, status, **kwargs): self.__status = status
     def __new__(cls, identity, current, product, strategy, options, valuation, size, *args, **kwargs):
@@ -144,7 +141,7 @@ class TargetsTable(DataframeTable):
         valuation = Valuation(record["apy"], record["tau"], record["npv"], record["cost"])
         options = {option: record.get(str(option), np.NaN) for option in list(Securities.Options)}
         options = [Option(option.instrument, option.position, strike) for option, strike in options.items() if not np.isnan(strike)]
-        target = Target(identity, record["current"], strategy, product, options, valuation, record["size"], status=Status.PROSPECTED)
+        target = Target(identity, record["current"], strategy, product, options, valuation, record["size"], status=TargetStatus.PROSPECTED)
         return target
 
     @property
@@ -161,193 +158,6 @@ class TargetsTable(DataframeTable):
     def apy(self): return self.table["apy"] @ self.weights
     @property
     def size(self): return self.table["size"].sum()
-
-
-class ContentsTable(Table, justify=Justify.LEFT, height=40, events=True):
-    strategy = Column("strategy", 15, lambda target: str(target.strategy))
-    ticker = Column("ticker", 10, lambda target: str(target.product.ticker).upper())
-    expire = Column("expire", 10, lambda target: target.product.expire.strftime("%Y-%m-%d"))
-    options = Column("options", 20, lambda target: "\n".join(list(map(str, target.options))))
-    profit = Column("profit", 20, lambda target: f"{target.valuation.profit * 100:.0f}% / YR @ {target.valuation.tau:.0f} DAYS")
-    value = Column("value", 10, lambda target: f"${target.valuation.value:,.0f}")
-    cost = Column("cost", 10, lambda target: f"${target.valuation.cost:,.0f}")
-    size = Column("size", 10, lambda target: f"{target.size:,.0f} CNT")
-
-class ProspectTable(ContentsTable): pass
-class PendingTable(ContentsTable): pass
-
-
-class DetailFrame(Frame):
-    strategy = Text("strategy", "Arial 12 bold", lambda target: str(target.strategy))
-    product = Text("product", "Arial 10", lambda target: str(target.product))
-    options = Text("options", "Arial 10", lambda target: list(map(str, target.options)))
-
-    @staticmethod
-    def layout(*args, strategy, product, options, **kwargs):
-        options = [[option] for option in options]
-        return [[strategy], [product], *options]
-
-class ValueFrame(Frame):
-    size = Text("size", "Arial 12 bold", lambda target: f"{target.size:,.0f} CNT")
-    valuations = Text("valuations", "Arial 10", lambda target: list(str(target.valuation).split(", ")))
-
-    @staticmethod
-    def layout(*args, valuations, size, **kwargs):
-        valuations = [[valuation] for valuation in valuations]
-        return [[size], *valuations, [gui.Text("")]]
-
-
-class AdoptButton(Button): pass
-class AbandonButton(Button): pass
-class SuccessButton(Button): pass
-class FailureButton(Button): pass
-
-
-class TargetWindow(Window, ABC):
-    def __init__(self, *args, name, target, **kwargs):
-        assert isinstance(target, Target)
-        detail = DetailFrame(*args, name="Detail", content=target, **kwargs)
-        value = ValueFrame(*args, name="Value", content=target, **kwargs)
-        elements = dict(detail=detail.element, value=value.element)
-        super().__init__(*args, name=name, **elements, **kwargs)
-        self.__target = target
-
-    @staticmethod
-    def layout(*args, detail, value, positive, negative, **kwargs):
-        return [[detail, gui.VerticalSeparator(), value], [positive, negative]]
-
-    @property
-    def target(self): return self.__target
-
-
-class ProspectWindow(TargetWindow):
-    def __init__(self, *args, name, **kwargs):
-        adopt = AdoptButton(*args, name="Adopt", **kwargs)
-        abandon = AbandonButton(*args, name="Abandon", **kwargs)
-        elements = dict(positive=adopt.element, negative=abandon.element)
-        super().__init__(*args, name=name, **elements, **kwargs)
-
-    @AdoptButton.click
-    def click_adopt(self, *args, **kwargs):
-        self.target.status = Status.PENDING
-        self.close()
-
-    @AbandonButton.click
-    def click_abandon(self, *args, **kwargs):
-        self.target.status = Status.ABANDONED
-        self.close()
-
-
-class PendingWindow(TargetWindow):
-    def __init__(self, *args, name, **kwargs):
-        success = SuccessButton(*args, name="Success", **kwargs)
-        failure = FailureButton(*args, name="Failure", **kwargs)
-        elements = dict(positive=success.element, negative=failure.element)
-        super().__init__(*args, name=name, **elements, **kwargs)
-
-    @SuccessButton.click
-    def click_success(self, *args, **kwargs):
-        self.target.status = Status.PURCHASED
-        self.close()
-
-    @FailureButton.click
-    def click_failure(self, *args, **kwargs):
-        self.target.status = Status.ABANDONED
-        self.close()
-
-
-class TargetsWindow(Window):
-    def __init__(self, *args, name, targets=[], **kwargs):
-        prospect = [target for target in self.targets if target.status == Status.PROSPECTED]
-        pending = [target for target in self.targets if target.status == Status.PENDING]
-        prospect = ContentsTable(*args, name="Prospect", content=prospect, **kwargs)
-        pending = ContentsTable(*args, name="Pending", content=pending, **kwargs)
-        elements = dict(prospect=prospect.element, pending=pending.element)
-        super().__init__(*args, name=name, **elements, **kwargs)
-        self.__prospect = prospect
-        self.__pending = pending
-        self.__targets = targets
-
-    def update(self, targets=[]):
-        targets = set(self.targets + targets)
-        targets = sorted(list(targets), reverse=True)
-        self.targets = targets
-
-    def refresh(self):
-        prospect = [target for target in self.targets if target.status == Status.PROSPECTED]
-        pending = [target for target in self.targets if target.status == Status.PENDING]
-        self.prospect.update(content=prospect)
-        self.pending.update(content=pending)
-
-    @ProspectTable.select
-    def select_prospect(self, *args, indexes=[], **kwargs):
-        for index in indexes:
-            target = self.targets[index]
-            return ProspectWindow(name="Prospect", target=target)
-
-    @PendingTable.select
-    def select_pending(self, *args, indexes=[], **kwargs):
-        for index in indexes:
-            target = self.targets[index]
-            return PendingWindow(name="Pending", target=target)
-
-    @staticmethod
-    def layout(*args, prospect, pending, **kwargs):
-        tables = dict(prospect=prospect, pending=pending)
-        tabs = [gui.Tab(name, [[table]]) for name, table in tables.items()]
-        return [[gui.TabGroup([tabs])]]
-
-    @property
-    def targets(self): return self.__targets
-    @targets.setter
-    def targets(self, targets): self.__targets = targets
-    @property
-    def prospect(self): return self.__prospect
-    @property
-    def pending(self): return self.__pending
-
-
-class TargetsTerminal(object):
-    def __repr__(self): return self.name
-    def __init__(self, *args, feed, **kwargs):
-        self.__name = kwargs.get("name", self.__class__.__name__)
-        self.__feed = feed
-
-    def __call__(self, *args, **kwargs):
-        targets = list(iter(self.feed))
-        window = TargetsWindow(name="Targets", targets=targets)
-
-#        while bool(window):
-#            pass
-#        with Windows() as windows:
-#            main = TargetsWindow(*args, name="Targets", key="--targets--", **kwargs)
-#            main.prospect(*args, content=self.targets, **kwargs)
-#            windows[str(main)] = main
-#            while bool(windows):
-#                instance, event, values = gui.read_all_windows()
-#                window = windows[instance.metadata]
-#                if event == gui.WINDOW_CLOSED:
-#                    window.stop()
-#                if event == str(main.prospect):
-#                    for index in values[event]:
-#                        target = self.targets[index]
-#                        key = f"--prospect|window|{index:.0f}--"
-#                        window = ProspectTargetWindow(*args, name="Target", key=key, content=target, **kwargs)
-#                        windows[str(window)] = window
-#                if event == str(main.pending):
-#                    for index in values[event]:
-#                        target = self.targets[index]
-#                        key = f"--pending|window|{index:.0f}--"
-#                        window = PendingTargetWindow(*args, name="Target", key=key, content=target, **kwargs)
-#                        windows[str(window)] = window
-
-    @property
-    def feed(self): return self.__feed
-    @property
-    def name(self): return self.__name
-
-
-
 
 
 
