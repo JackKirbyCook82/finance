@@ -50,11 +50,10 @@ class Valuation(ntuple("Valuation", "profit tau value cost")):
     def __eq__(self, other): return self.profit == other.profit
     def __lt__(self, other): return self.profit < other.profit
 
-@total_ordering
 class Target(ntuple("Target", "identity current strategy product options valuation size")):
     def __str__(self): return f"{self.strategy}, {self.product}, {self.valuation}, {self.status.name}"
-    def __eq__(self, other): return self.valuation == other.valuation
-    def __lt__(self, other): return self.valuation < other.valuation
+    def __eq__(self, other): return bool(self.identity == other.identity)
+    def __hash__(self): return hash(self.identity)
 
     def __init__(self, *args, status, **kwargs): self.__status = status
     def __new__(cls, identity, current, product, strategy, options, valuation, size, *args, **kwargs):
