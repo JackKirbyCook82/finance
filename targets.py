@@ -29,8 +29,17 @@ __license__ = ""
 
 
 LOGGER = logging.getLogger(__name__)
-TargetStatus = IntEnum("Status", ["PROSPECTED", "PENDING", "PURCHASED", "ABANDONED"], start=1)
+TargetStatus = IntEnum("Status", ["PROSPECT", "PENDING", "PURCHASED", "ABANDONED"], start=1)
 
+
+@total_ordering
+class Profitability(ntuple("Return", "apy tau")):
+    def __str__(self): return f"{self.apy * 100:.0f}% / YR, {self.tau:.0f} DAYS"
+    def __eq__(self, other): return self.apy == other.apy
+    def __lt__(self, other): return self.apy < other.apy
+
+class Valuation(ntuple("Valuation", "profit cost")):
+    def __str__(self): return f"${self.profit:,.0f}, ${self.cost:,.0f}"
 
 class Strategy(ntuple("Strategy", "spread instrument position")):
     def __str__(self):
@@ -44,26 +53,9 @@ class Product(ntuple("Product", "ticker expire")):
 class Option(ntuple("Option", "instrument position strike")):
     def __str__(self): return f"{str(self.position.name).upper()} {str(self.instrument.name).upper()} @ ${self.strike:.02f}"
 
-@total_ordering
-class Valuation(ntuple("Valuation", "profit tau value cost")):
-    def __str__(self): return f"{self.tau:.0f} Days @ {self.profit * 100:.0f}% / YR, ${self.value:,.0f} | ${self.cost:,.0f}"
-    def __eq__(self, other): return self.profit == other.profit
-    def __lt__(self, other): return self.profit < other.profit
-
-class Target(ntuple("Target", "identity current strategy product options valuation size")):
-    def __str__(self): return f"{self.strategy}, {self.product}, {self.valuation}, {self.status.name}"
-    def __eq__(self, other): return bool(self.identity == other.identity)
-    def __hash__(self): return hash(self.identity)
-
-    def __init__(self, *args, status, **kwargs): self.__status = status
-    def __new__(cls, identity, current, product, strategy, options, valuation, size, *args, **kwargs):
-        instance = super().__new__(cls, identity, current, product, strategy, options, valuation, size)
-        return instance
-
-    @property
-    def status(self): return self.__status
-    @status.setter
-    def status(self, status): self.__status = status
+class Target(ntuple("Target", "index status current strategy product options profitability valuation size")):
+    def __eq__(self, other): return bool(self.index == other.index)
+    def __hash__(self): return hash(self.index)
 
 
 class TargetsQuery(ntuple("Query", "current ticker expire targets")):
@@ -92,6 +84,7 @@ class TargetsCalculator(Processor):
         targets["tau"] = targets["tau"].astype(np.int32)
         targets["apy"] = targets["apy"].round(2)
         targets["npv"] = targets["npv"].round(2)
+        targets["status"] = TargetStatus.PROSPECT
         targets["current"] = query.current
         query = TargetsQuery(query.current, query.ticker, query.expire, targets)
         LOGGER.info(f"Targets: {repr(self)}[{str(query)}]")
@@ -111,40 +104,51 @@ class TargetsWriter(Writer):
 
 class TargetsTable(DataframeTable):
     def __str__(self): return f"{self.tau[0]:.0f}|{self.tau[-1]:.0f} @ {self.apy * 100:,.02f}%, ${self.npv:,.0f}|${self.cost:,.0f}, {self.size:.0f}"
-    def __iter__(self): return (self.parser(index, record) for index, record in super().__iter__())
+    def __setitem__(self, key, value): self.table.at[key] = value
+    def __getitem__(self, key): return self.table.loc[key]
 
-    def write(self, dataframe, *args, funds=None, tenure=None, **kwargs):
-        super().write(dataframe, *args, **kwargs)
-        self.table = self.table.where(self.table["current"] - Datetime.now() < tenure) if tenure is not None else self.table
-        self.table = self.table.dropna(axis=0, how="all")
-        self.table = self.table.sort_values("apy", axis=0, ascending=False, inplace=False, ignore_index=False)
+    def read(self, *args, **kwargs):
+        records = super().read(list, *args, **kwargs)
+        return [self.parser(index, record) for (index, record) in records]
+
+    def write(self, dataframe, *args, **kwargs):
+        with self.mutex:
+            super().write(dataframe, *args, **kwargs)
+
+    def append(self, dataframe, *args, funds=None, tenure=None, **kwargs):
+        dataframe = super().append(dataframe, *args, **kwargs)
+        dataframe = dataframe.where(dataframe["current"] - Datetime.now() < tenure) if tenure is not None else dataframe
+        dataframe = dataframe.dropna(axis=0, how="all")
+        dataframe = dataframe.sort_values("apy", axis=0, ascending=False, inplace=False, ignore_index=False)
         if funds is not None:
-            columns = [column for column in self.table.columns if column != "size"]
-            expanded = self.table.loc[self.table.index.repeat(self.table["size"])][columns]
+            columns = [column for column in dataframe.columns if column != "size"]
+            expanded = dataframe.loc[dataframe.index.repeat(dataframe["size"])][columns]
             expanded = expanded.where(expanded["cost"].cumsum() <= funds)
             expanded = expanded.dropna(axis=0, how="all")
-            self.table["size"] = expanded.index.value_counts()
-            self.table = self.table.where(self.table["size"].notna())
-            self.table = self.table.dropna(axis=0, how="all")
-        self.table["size"] = self.table["size"].apply(np.floor).astype(np.int32)
-        self.table["tau"] = self.table["tau"].astype(np.int32)
-        self.table["apy"] = self.table["apy"].round(2)
-        self.table["npv"] = self.table["npv"].round(2)
+            dataframe["size"] = expanded.index.value_counts()
+            dataframe = dataframe.where(dataframe["size"].notna())
+            dataframe = dataframe.dropna(axis=0, how="all")
+        dataframe["size"] = dataframe["size"].apply(np.floor).astype(np.int32)
+        dataframe["tau"] = dataframe["tau"].astype(np.int32)
+        dataframe["apy"] = dataframe["apy"].round(2)
+        dataframe["npv"] = dataframe["npv"].round(2)
+        return dataframe
 
     @staticmethod
-    def parser(identity, record):
+    def parser(index, record):
         assert isinstance(record, dict)
         strategy = Strategies[str(record["strategy"])]
         strategy = Strategy(strategy.spread, strategy.instrument, strategy.position)
         product = Product(record["ticker"], record["expire"])
-        valuation = Valuation(record["apy"], record["tau"], record["npv"], record["cost"])
+        profitability = Profitability(record["apy"], record["tau"])
+        valuation = Valuation(record["npv"], record["cost"])
         options = {option: record.get(str(option), np.NaN) for option in list(Securities.Options)}
         options = [Option(option.instrument, option.position, strike) for option, strike in options.items() if not np.isnan(strike)]
-        target = Target(int(identity), record["current"], strategy, product, options, valuation, record["size"], status=TargetStatus.PROSPECTED)
+        target = Target(int(index), record["status"], record["current"], strategy, product, options, profitability, valuation, record["size"])
         return target
 
     @property
-    def header(self): return ["current", "strategy", "ticker", "date", "expire"] + list(map(str, Securities.Options)) + ["apy", "npv", "cost", "tau", "size"]
+    def header(self): return ["status", "current", "strategy", "ticker", "date", "expire"] + list(map(str, Securities.Options)) + ["apy", "npv", "cost", "tau", "size"]
     @property
     def weights(self): return (self.table["cost"] * self.table["size"]) / (self.table["cost"] @ self.table["size"])
     @property
