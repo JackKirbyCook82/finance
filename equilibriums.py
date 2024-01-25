@@ -202,12 +202,13 @@ class EquilibriumWriter(Writer):
 class EquilibriumTable(DataframeTable):
     def __str__(self): return f"{self.apy * 100:,.02f}%, ${self.npv:,.0f}|${self.cost:,.0f}, {self.tau[0]:.0f}|{self.tau[-1]:.0f}"
 
-    def write(self, dataframe, *args, **kwargs):
-        super().write(dataframe, *args, **kwargs)
-        self.table["size"] = self.table["size"].apply(np.floor).astype(np.int32)
-        self.table["tau"] = self.table["tau"].astype(np.int32)
-        self.table["apy"] = self.table["apy"].round(2)
-        self.table["npv"] = self.table["npv"].round(2)
+    def execute(self, dataframe, *args, **kwargs):
+        dataframe = super().append(dataframe, *args, **kwargs)
+        dataframe["size"] = dataframe["size"].apply(np.floor).astype(np.int32)
+        dataframe["tau"] = dataframe["tau"].astype(np.int32)
+        dataframe["apy"] = dataframe["apy"].round(2)
+        dataframe["npv"] = dataframe["npv"].round(2)
+        return dataframe
 
     @property
     def header(self): return ["strategy", "ticker", "date", "expire"] + list(map(str, Securities.Options)) + ["apy", "npv", "cost", "size", "tau"]

@@ -103,19 +103,12 @@ class TargetsWriter(Writer):
 
 
 class TargetsTable(DataframeTable):
+    def __iter__(self): return (self.parser(index, record) for (index, record) in self.read(list))
     def __str__(self): return f"{self.tau[0]:.0f}|{self.tau[-1]:.0f} @ {self.apy * 100:,.02f}%, ${self.npv:,.0f}|${self.cost:,.0f}, {self.size:.0f}"
     def __setitem__(self, key, value): self.table.at[key] = value
     def __getitem__(self, key): return self.table.loc[key]
 
-    def read(self, *args, **kwargs):
-        records = super().read(list, *args, **kwargs)
-        return [self.parser(index, record) for (index, record) in records]
-
-    def write(self, dataframe, *args, **kwargs):
-        with self.mutex:
-            super().write(dataframe, *args, **kwargs)
-
-    def append(self, dataframe, *args, funds=None, tenure=None, **kwargs):
+    def execute(self, dataframe, *args, funds=None, tenure=None, **kwargs):
         dataframe = super().append(dataframe, *args, **kwargs)
         dataframe = dataframe.where(dataframe["current"] - Datetime.now() < tenure) if tenure is not None else dataframe
         dataframe = dataframe.dropna(axis=0, how="all")
