@@ -14,8 +14,9 @@ from functools import total_ordering
 from datetime import datetime as Datetime
 from collections import namedtuple as ntuple
 
+from support.pipelines import Processor, Consumer
 from support.tables import DataframeTable
-from support.pipelines import Processor, Writer
+from support.files import DataframeFile
 
 from finance.securities import Securities
 from finance.strategies import Strategies
@@ -23,7 +24,7 @@ from finance.valuations import Valuations
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["TargetStatus", "TargetsCalculator", "TargetsWriter", "TargetsTable"]
+__all__ = ["TargetStatus", "TargetsCalculator", "TargetsWriter", "TargetsFile", "TargetsTable"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
@@ -63,14 +64,10 @@ class TargetsQuery(ntuple("Query", "current ticker expire targets")):
 
 
 class TargetsCalculator(Processor):
-    def __init__(self, *args, name=None, valuation=Valuations.Arbitrage.Minimum, **kwargs):
-        super().__init__(*args, name=name, **kwargs)
-        self.valuation = valuation
-
     def execute(self, query, *args, liquidity=None, apy=None, **kwargs):
-        if not bool(query.valuations) or bool(query.valuations[self.valuation].empty):
+        if not bool(query.arbitrages) or all([dataframe.empty for dataframe in query.arbitrages.values()]):
             return
-        targets = query.valuations[self.valuation]
+        targets = query.arbitrages[Valuations.Arbitrage.Minimum]
         liquidity = liquidity if liquidity is not None else 1
         targets["size"] = (targets["size"] * liquidity).apply(np.floor).astype(np.int32)
         targets = targets.where(targets["apy"] >= apy) if apy is not None else targets
@@ -91,15 +88,13 @@ class TargetsCalculator(Processor):
         yield query
 
 
-class TargetsWriter(Writer):
-    def execute(self, content, *args, **kwargs):
-        targets = content.targets if isinstance(content, TargetsQuery) else content
-        assert isinstance(targets, pd.DataFrame)
-        if bool(targets.empty):
-            return
-        self.destination.write(targets, *args, **kwargs)
-        LOGGER.info(f"Targets: {repr(self)}[{str(self.destination)}]")
-        print(self.destination.table)
+class TargetsFile(DataframeFile):
+    @staticmethod
+    def dataheader(*args, **kwargs): return ["current", "strategy", "ticker", "date", "expire"] + list(map(str, Securities.Options)) + ["apy", "npv", "cost", "tau", "size"]
+    @staticmethod
+    def datatypes(*args, **kwargs): return {"apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.int32, "tau": np.int32}
+    @staticmethod
+    def datetypes(*args, **kwargs): return ["current", "date", "expire"]
 
 
 class TargetsTable(DataframeTable):
@@ -109,7 +104,7 @@ class TargetsTable(DataframeTable):
     def __getitem__(self, key): return self.table.loc[key]
 
     def execute(self, dataframe, *args, funds=None, tenure=None, **kwargs):
-        dataframe = super().append(dataframe, *args, **kwargs)
+        dataframe = super().execute(dataframe, *args, **kwargs)
         dataframe = dataframe.where(dataframe["current"] - Datetime.now() < tenure) if tenure is not None else dataframe
         dataframe = dataframe.dropna(axis=0, how="all")
         dataframe = dataframe.sort_values("apy", axis=0, ascending=False, inplace=False, ignore_index=False)
@@ -154,6 +149,27 @@ class TargetsTable(DataframeTable):
     def apy(self): return self.table["apy"] @ self.weights
     @property
     def size(self): return self.table["size"].sum()
+
+
+class TargetsWriter(Consumer):
+    def __init__(self, *args, table, file, **kwargs):
+        assert isinstance(table, TargetsTable) and isinstance(file, TargetsFile)
+        super().__init__(*args, **kwargs)
+        self.table = table
+        self.file = file
+
+    def execute(self, content, *args, **kwargs):
+        targets = content.targets if isinstance(content, TargetsQuery) else content
+        assert isinstance(targets, pd.DataFrame)
+        if bool(targets.empty):
+            return
+        targets_file = self.file.path("targets.csv")
+        self.file.write(targets, file=targets_file, mode="a")
+        LOGGER.info("Saved: {}[{}]".format(repr(self), str(targets_file)))
+        self.table.write(targets, *args, **kwargs)
+        LOGGER.info(f"Targets: {repr(self)}[{str(self.table)}]")
+
+
 
 
 

@@ -9,10 +9,9 @@ Created on Weds Jul 19 2023
 import numpy as np
 from enum import IntEnum
 from collections import namedtuple as ntuple
-from collections import OrderedDict as ODict
 
 from support.calculations import Calculation, equation, source, constant
-from support.dispatchers import kwargsdispatcher, typedispatcher
+from support.dispatchers import typedispatcher
 from support.pipelines import Processor
 
 from finance.securities import Positions, Instruments, Securities
@@ -55,6 +54,8 @@ class StrategiesMeta(type):
     def string(cls, string): return {str(strategy): strategy for strategy in iter(cls)}[str(string).lower()]
     @retrieve.register(tuple)
     def value(cls, value): return {str(strategy): strategy for strategy in iter(cls)}[value]
+    @retrieve.register(tuple)
+    def value(cls, value): return {(strategy.spread, strategy.instrument, strategy.postion): strategy for strategy in iter(cls)}[value]
 
     class Strangle:
         Long = StrangleLong
@@ -85,7 +86,9 @@ class StrategyCalculation(Calculation):
         yield self.τ(**feeds, fees=fees)
         yield self.x(**feeds, fees=fees)
         yield self.wo(**feeds, fees=fees)
-        yield self.wτ(**feeds, fees=fees)
+        yield self.wτn(**feeds, fees=fees)
+        yield self.wτx(**feeds, fees=fees)
+        yield self.wτo(**feeds, fees=fees)
         yield self.sμ(**feeds)
 
 class StrangleCalculation(StrategyCalculation): pass
@@ -96,38 +99,48 @@ class StrangleLongCalculation(StrangleCalculation):
     τ = equation("τ", "tau", np.int16, domain=("pα.τ", "cα.τ"), function=lambda τpα, τcα: τpα)
     x = equation("x", "size", np.int64, domain=("pα.x", "cα.x"), function=lambda xpα, xcα: np.minimum(xpα, xcα))
     wo = equation("wo", "spot", np.float32, domain=("pα.w", "cα.w", "ε"), function=lambda wpα, wcα, ε: - (wpα + wcα) * 100 - ε)
-    wτ = equation("wτ", "future", np.float32, domain=("pα.k", "cα.k", "ε"), function=lambda kpα, kcα, ε: np.maximum(kpα - kcα, 0) * 100 - ε)
+    wτn = equation("wτn", "minimum", np.float32, domain=("pα.k", "cα.k", "ε"), function=lambda kpα, kcα, ε: np.maximum(kpα - kcα, 0) * 100 - ε)
+    wτx = equation("wτx", "maximum", np.float32, domain=("pα.k", "cα.k", "ε"), function=lambda kpα, kcα, ε: np.Inf * 100 - ε)
+    wτo = equation("wτo", "current", np.float32, domain=("pα.k", "cα.k", "sμ", "ε"), function=lambda kpα, kcα, sμ, ε: (np.maximum(kpα - sμ, 0) + np.maximum(sμ - kcα, 0)) * 100 - ε)
 
 class VerticalPutCalculation(VerticalCalculation):
     τ = equation("τ", "tau", np.int16, domain=("pα.τ", "pβ.τ"), function=lambda τpα, τpβ: τpα)
     x = equation("x", "size", np.int64, domain=("pα.x", "pβ.x"), function=lambda xpα, xpβ: np.minimum(xpα, xpβ))
     wo = equation("wo", "spot", np.float32, domain=("pα.w", "pβ.w", "ε"), function=lambda wpα, wpβ, ε: (wpβ - wpα) * 100 - ε)
-    wτ = equation("wτ", "future", np.float32, domain=("pα.k", "pβ.k", "ε"), function=lambda kpα, kpβ, ε: np.minimum(kpα - kpβ, 0) * 100 - ε)
+    wτn = equation("wτn", "minimum", np.float32, domain=("pα.k", "pβ.k", "ε"), function=lambda kpα, kpβ, ε: np.minimum(kpα - kpβ, 0) * 100 - ε)
+    wτx = equation("wτx", "maximum", np.float32, domain=("pα.k", "pβ.k", "ε"), function=lambda kpα, kpβ, ε: np.maximum(kpα - kpβ, 0) * 100 - ε)
+    wτo = equation("wτo", "current", np.float32, domain=("pα.k", "pβ.k", "sμ", "ε"), function=lambda kpα, kpβ, sμ, ε: (np.maximum(kpα - sμ, 0) - np.maximum(kpβ - sμ, 0)) * 100 - ε)
 
 class VerticalCallCalculation(VerticalCalculation):
     τ = equation("τ", "tau", np.int16, domain=("cα.τ", "cβ.τ"), function=lambda τcα, τcβ: τcα)
     x = equation("x", "size", np.int64, domain=("cα.x", "cβ.x"), function=lambda xcα, xcβ: np.minimum(xcα, xcβ))
     wo = equation("wo", "spot", np.float32, domain=("cα.w", "cβ.w", "ε"), function=lambda wcα, wcβ, ε: (wcβ - wcα) * 100 - ε)
-    wτ = equation("wτ", "future", np.float32, domain=("cα.k", "cβ.k", "ε"), function=lambda kcα, kcβ, ε: + np.minimum(kcβ - kcα, 0) * 100 - ε)
+    wτn = equation("wτn", "minimum", np.float32, domain=("cα.k", "cβ.k", "ε"), function=lambda kcα, kcβ, ε: np.minimum(kcβ - kcα, 0) * 100 - ε)
+    wτx = equation("wτx", "maximum", np.float32, domain=("cα.k", "cβ.k", "ε"), function=lambda kcα, kcβ, ε: np.maximum(kcβ - kcα, 0) * 100 - ε)
+    wτo = equation("wτo", "current", np.float32, domain=("cα.k", "cβ.k", "sμ", "ε"), function=lambda kcα, kcβ, sμ, ε: (np.maximum(sμ - kcα, 0) - np.maximum(sμ - kcβ, 0)) * 100 - ε)
 
 class CollarLongCalculation(CollarCalculation):
     τ = equation("τ", "tau", np.int16, domain=("pα.τ", "cβ.τ"), function=lambda τpα, τcβ: τpα)
     x = equation("x", "size", np.int64, domain=("pα.x", "cβ.x"), function=lambda xpα, xcβ: np.minimum(xpα, xcβ))
     wo = equation("wo", "spot", np.float32, domain=("pα.w", "cβ.w", "sα.w", "ε"), function=lambda wpα, wcβ, wsα, ε: (wcβ - wpα - wsα) * 100 - ε)
-    wτ = equation("wτ", "future", np.float32, domain=("pα.k", "cβ.k", "ε"), function=lambda kpα, kcβ, ε: + np.minimum(kpα, kcβ) * 100 - ε)
+    wτn = equation("wτn", "minimum", np.float32, domain=("pα.k", "cβ.k", "ε"), function=lambda kpα, kcβ, ε: np.minimum(kpα, kcβ) * 100 - ε)
+    wτx = equation("wτx", "maximum", np.float32, domain=("pα.k", "cβ.k", "ε"), function=lambda kpα, kcβ, ε: np.maximum(kpα, kcβ) * 100 - ε)
+    wτo = equation("wτo", "current", np.float32, domain=("pα.k", "cβ.k", "sμ", "ε"), function=lambda kpα, kcβ, sμ, ε: (np.maximum(kpα - sμ, 0) - np.maximum(sμ - kcβ, 0) + sμ) * 100 - ε)
 
 class CollarShortCalculation(CollarCalculation):
     τ = equation("τ", "tau", np.int16, domain=("pβ.τ", "cα.τ"), function=lambda τpβ, τcα: τpβ)
     x = equation("x", "size", np.int64, domain=("pβ.x", "cα.x"), function=lambda xpβ, xcα: np.minimum(xpβ, xcα))
     wo = equation("wo", "spot", np.float32, domain=("pβ.w", "cα.w", "sβ.w", "ε"), function=lambda wpβ, wcα, wsβ, ε: (wpβ - wcα + wsβ) * 100 - ε)
-    wτ = equation("wτ", "future", np.float32, domain=("pβ.k", "cα.k", "ε"), function=lambda kpβ, kcα, ε: + np.minimum(-kpβ, -kcα) * 100 - ε)
+    wτn = equation("wτn", "minimum", np.float32, domain=("pβ.k", "cα.k", "ε"), function=lambda kpβ, kcα, ε: np.minimum(-kpβ, -kcα) * 100 - ε)
+    wτx = equation("wτx", "maximum", np.float32, domain=("pβ.k", "cα.k", "ε"), function=lambda kpβ, kcα, ε: np.maximum(-kpβ, -kcα) * 100 - ε)
+    wτo = equation("wτo", "current", np.float32, domain=("pβ.k", "cα.k", "sμ", "ε"), function=lambda kpβ, kcα, sμ, ε: (np.maximum(sμ - kcα, 0) - np.maximum(kpβ - sμ, 0) - sμ) * 100 - ε)
 
 
 class CalculationsMeta(type):
     def __iter__(cls):
-        contents = {Strategies.Vertical.Put: VerticalPutCalculation, Strategies.Vertical.Call: VerticalCallCalculation}
-        contents.update({Strategies.Collar.Long: CollarLongCalculation, Strategies.Collar.Short: CollarShortCalculation})
-        contents.update({Strategies.Strangle.Long: StrangleLongCalculation})
+        contents = {VerticalPut: VerticalPutCalculation, VerticalCall: VerticalCallCalculation}
+        contents.update({CollarLong: CollarLongCalculation, CollarShort: CollarShortCalculation})
+        contents.update({StrangleLong: StrangleLongCalculation})
         return ((key, value) for key, value in contents.items())
 
     class Strangle:
@@ -138,6 +151,13 @@ class CalculationsMeta(type):
     class Vertical:
         Put = VerticalPutCalculation
         Call = VerticalCallCalculation
+
+    @property
+    def Strangles(cls): return iter({StrangleLong: StrangleLongCalculation}.items())
+    @property
+    def Collars(cls): return iter({CollarLong: CollarLongCalculation, CollarShort: CollarShortCalculation}.items())
+    @property
+    def Verticals(cls): return iter({VerticalPut: VerticalPutCalculation, VerticalCall: VerticalCallCalculation}.items())
 
 class Calculations(object, metaclass=CalculationsMeta):
     pass
@@ -150,17 +170,16 @@ class StrategyQuery(ntuple("Query", "current ticker expire strategies")):
 class StrategyCalculator(Processor):
     def __init__(self, *args, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
-        strategies = kwargs.get("calculations", ODict(list(Calculations)).keys())
-        calculations = ODict([(strategy, calculation(*args, **kwargs)) for strategy, calculation in iter(Calculations) if strategy in strategies])
-        self.__calculations = calculations
+        calculations = {strategy: calculation(*args, **kwargs) for (strategy, calculation) in iter(Calculations)}
+        self.calculations = calculations
 
     def execute(self, query, *args, **kwargs):
-        stocks = {security: dataset for security, dataset in query.stocks.items()}
-        options = {security: dataset for security, dataset in query.options.items()}
+        stocks = {security: dataset for security, dataset in query.stocks.items() if dataset["price"].size > 0}
+        options = {security: dataset for security, dataset in query.options.items() if dataset["price"].size > 0}
         if not bool(stocks) or not bool(options) or len(stocks) != 2:
             return
-        stocks = {security: self.parser(dataset, *args, security=security, **kwargs) for security, dataset in stocks.items()}
-        options = {security: self.parser(dataset, *args, security=security, **kwargs) for security, dataset in options.items()}
+        stocks = {security: self.stocks(dataset, *args, security=security, **kwargs) for security, dataset in stocks.items()}
+        options = {security: self.options(dataset, *args, security=security, **kwargs) for security, dataset in options.items()}
         function = lambda strategy: all([security in list(stocks.keys()) + list(options.keys()) for security in strategy.securities])
         calculations = {strategy: calculation for strategy, calculation in self.calculations.items() if function(strategy)}
         strategies = {strategy: calculation(stocks | options, *args, **kwargs) for strategy, calculation in calculations.items()}
@@ -168,20 +187,13 @@ class StrategyCalculator(Processor):
             return
         yield StrategyQuery(query.current, query.ticker, query.expire, strategies)
 
-    @kwargsdispatcher("security")
-    def parser(self, dataset, *args, security, **kwargs): raise ValueError(str(security))
-
-    @parser.register.value(*list(Securities.Stocks))
-    def stock(self, dataset, *args, **kwargs): return dataset
-
-    @parser.register.value(*list(Securities.Options))
-    def option(self, dataset, *args, security, **kwargs):
+    @staticmethod
+    def stocks(dataset, *args, **kwargs): return dataset
+    @staticmethod
+    def options(dataset, *args, security, **kwargs):
         dataset = dataset.rename({"strike": str(security)})
         dataset["strike"] = dataset[str(security)].expand_dims(["ticker", "date", "expire"])
         return dataset
-
-    @property
-    def calculations(self): return self.__calculations
 
 
 

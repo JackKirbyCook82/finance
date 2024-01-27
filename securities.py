@@ -15,17 +15,16 @@ from enum import IntEnum
 from itertools import chain
 from datetime import date as Date
 from datetime import datetime as Datetime
-from collections import OrderedDict as ODict
 from collections import namedtuple as ntuple
 
 from support.dispatchers import typedispatcher, kwargsdispatcher
 from support.calculations import Calculation, equation, source
-from support.pipelines import Processor, Reader, Writer
+from support.pipelines import Producer, Processor, Consumer
 from support.files import DataframeFile
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["DateRange", "Instruments", "Positions", "Security", "Securities", "Calculations", "SecurityFile", "SecurityReader", "SecurityWriter", "SecurityFilter", "SecurityParser", "SecurityCalculator"]
+__all__ = ["DateRange", "Instruments", "Positions", "Security", "Securities", "Calculations", "SecurityFile", "SecurityReader", "SecurityWriter", "SecurityFilter", "SecurityCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
@@ -138,9 +137,9 @@ class CallShortCalculation(CallCalculation, ShortCalculation): pass
 
 class CalculationsMeta(type):
     def __iter__(cls):
-        contents = {Securities.Stock.Long: StockLongCalculation, Securities.Stock.Short: StockShortCalculation}
-        contents.update({Securities.Option.Put.Long: PutLongCalculation, Securities.Option.Put.Short: PutShortCalculation})
-        contents.update({Securities.Option.Call.Long: CallLongCalculation, Securities.Option.Call.Short: CallShortCalculation})
+        contents = {StockLong: StockLongCalculation, StockShort: StockShortCalculation}
+        contents.update({PutLong: PutLongCalculation, PutShort: PutShortCalculation})
+        contents.update({CallLong: CallLongCalculation, CallShort: CallShortCalculation})
         return ((key, value) for key, value in contents.items())
 
     class Stock:
@@ -153,6 +152,15 @@ class CalculationsMeta(type):
         class Call:
             Long = CallLongCalculation
             Short = CallShortCalculation
+
+    @property
+    def Stocks(cls): return iter({StockLong: StockLongCalculation, StockShort: StockShortCalculation}.items())
+    @property
+    def Options(cls): return iter({PutLong: PutLongCalculation, PutShort: PutShortCalculation, CallLong: CallLongCalculation, CallShort: CallShortCalculation}.items())
+    @property
+    def Puts(cls): return iter({PutLong: PutLongCalculation, PutShort: PutShortCalculation}.items())
+    @property
+    def Calls(cls): return iter({CallLong: CallLongCalculation, CallShort: CallShortCalculation}.items())
 
 class Calculations(object, metaclass=CalculationsMeta):
     pass
@@ -171,14 +179,14 @@ class SecurityFilter(Processor):
     def execute(self, query, *args, **kwargs):
         stocks = {security: dataframe for security, dataframe in query.stocks.items() if not bool(dataframe.empty)}
         options = {security: dataframe for security, dataframe in query.options.items() if not bool(dataframe.empty)}
-        stocks = {security: self.stock(dataframe, *args, security=security, **kwargs) for security, dataframe in stocks.items()}
-        options = {security: self.option(dataframe, *args, security=security, **kwargs) for security, dataframe in options.items()}
+        stocks = {security: self.stocks(dataframe, *args, **kwargs) for security, dataframe in stocks.items()}
+        options = {security: self.options(dataframe, *args, **kwargs) for security, dataframe in options.items()}
         query = SecurityQuery(query.current, query.ticker, query.expire, stocks, options)
         LOGGER.info(f"Filter: {repr(self)}[{str(query)}]")
         yield query
 
     @staticmethod
-    def stock(dataframe, *args, size=None, volume=None, **kwargs):
+    def stocks(dataframe, *args, size=None, volume=None, **kwargs):
         dataframe = dataframe.where(dataframe["size"] >= size) if bool(size) else dataframe
         dataframe = dataframe.where(dataframe["volume"] >= volume) if bool(volume) else dataframe
         dataframe = dataframe.dropna(axis=0, how="all")
@@ -186,7 +194,7 @@ class SecurityFilter(Processor):
         return dataframe
 
     @staticmethod
-    def option(dataframe, *args, size=None, interest=None, volume=None, **kwargs):
+    def options(dataframe, *args, size=None, interest=None, volume=None, **kwargs):
         dataframe = dataframe.where(dataframe["size"] >= size) if bool(size) else dataframe
         dataframe = dataframe.where(dataframe["interest"] >= interest) if bool(interest) else dataframe
         dataframe = dataframe.where(dataframe["volume"] >= volume) if bool(volume) else dataframe
@@ -195,46 +203,32 @@ class SecurityFilter(Processor):
         return dataframe
 
 
-class SecurityParser(Processor):
+class SecurityCalculator(Processor):
+    def __init__(self, *args, name=None, **kwargs):
+        super().__init__(*args, name=name, **kwargs)
+        calculations = {strategy: calculation(*args, **kwargs) for (strategy, calculation) in iter(Calculations)}
+        self.calculations = calculations
+
     def execute(self, query, *args, **kwargs):
-        stocks = {security: dataframe for security, dataframe in query.stocks.items() if not bool(dataframe.empty)}
-        options = {security: dataframe for security, dataframe in query.options.items() if not bool(dataframe.empty)}
-        stocks = {security: self.stock(dataframe, *args, security=security, **kwargs) for security, dataframe in stocks.items()}
-        options = {security: self.option(dataframe, *args, security=security, **kwargs) for security, dataframe in options.items()}
-        query = SecurityQuery(query.current, query.ticker, query.expire, stocks, options)
-        yield query
+        stocks = {security: self.stocks(dataframe, *args, **kwargs) for security, dataframe in query.stocks.items()}
+        options = {security: self.options(dataframe, *args, **kwargs) for security, dataframe in query.options.items()}
+        stocks = {security: self.calculations[security](dataframe, *args, **kwargs) for security, dataframe in stocks.items()}
+        options = {security: self.calculations[security](dataframe, *args, **kwargs) for security, dataframe in options.items()}
+        yield SecurityQuery(query.current, query.ticker, query.expire, stocks, options)
 
     @staticmethod
-    def stock(dataframe, *args, **kwargs):
+    def stocks(dataframe, *args, **kwargs):
         dataframe = dataframe.drop_duplicates(subset=["ticker", "date"], keep="last", inplace=False)
         dataframe = dataframe.set_index(["ticker", "date"], inplace=False, drop=True)
         dataset = xr.Dataset.from_dataframe(dataframe[["price", "size"]])
         return dataset
 
     @staticmethod
-    def option(dataframe, *args, **kwargs):
+    def options(dataframe, *args, **kwargs):
         dataframe = dataframe.drop_duplicates(subset=["ticker", "date", "expire", "strike"], keep="last", inplace=False)
         dataframe = dataframe.set_index(["ticker", "date", "expire", "strike"], inplace=False, drop=True)
         dataset = xr.Dataset.from_dataframe(dataframe[["price", "size"]])
         return dataset
-
-
-class SecurityCalculator(Processor):
-    def __init__(self, *args, name=None, **kwargs):
-        super().__init__(*args, name=name, **kwargs)
-        securities = kwargs.get("calculations", ODict(list(Calculations)).keys())
-        calculations = ODict([(security, calculation(*args, **kwargs)) for security, calculation in iter(Calculations) if security in securities])
-        self.__calculations = calculations
-
-    def execute(self, query, *args, **kwargs):
-        stocks = {security: dataframe for security, dataframe in query.stocks.items()}
-        options = {security: dataframe for security, dataframe in query.options.items()}
-        stocks = {security: self.calculations[security](dataframe, *args, **kwargs) for security, dataframe in stocks.items()}
-        options = {security: self.calculations[security](dataframe, *args, **kwargs) for security, dataframe in options.items()}
-        yield SecurityQuery(query.current, query.ticker, query.expire, stocks, options)
-
-    @property
-    def calculations(self): return self.__calculations
 
 
 class SecurityFile(DataframeFile):
@@ -259,7 +253,12 @@ class SecurityFile(DataframeFile):
     def datetypes_stocks(self, *args, **kwargs): return ["date"]
 
 
-class SecurityWriter(Writer):
+class SecurityWriter(Consumer):
+    def __init__(self, *args, file, **kwargs):
+        assert isinstance(file, SecurityFile)
+        super().__init__(*args, **kwargs)
+        self.file = file
+
     def execute(self, query, *args, **kwargs):
         stocks, options = query.stocks, query.options
         if not bool(stocks) or all([dataframe.empty for dataframe in stocks.values()]):
@@ -267,30 +266,35 @@ class SecurityWriter(Writer):
         if not bool(options) or all([dataframe.empty for dataframe in options.values()]):
             return
         current_name = str(query.current.strftime("%Y%m%d_%H%M%S"))
-        current_folder = self.destination.path(current_name)
+        current_folder = self.file.path(current_name)
         if not os.path.isdir(current_folder):
             os.mkdir(current_folder)
         ticker_expire_name = "_".join([str(query.ticker), str(query.expire.strftime("%Y%m%d"))])
-        ticker_expire_folder = self.destination.path(current_name, ticker_expire_name)
+        ticker_expire_folder = self.file.path(current_name, ticker_expire_name)
         if not os.path.isdir(ticker_expire_folder):
             os.mkdir(ticker_expire_folder)
         for security, dataframe in chain(stocks.items(), options.items()):
             security_name = str(security).replace("|", "_") + ".csv"
-            security_file = self.destination.path(current_name, ticker_expire_name, security_name)
-            self.destination.write(dataframe, file=security_file, data=security, mode="w")
+            security_file = self.file.path(current_name, ticker_expire_name, security_name)
+            self.file.write(dataframe, file=security_file, data=security, mode="w")
             LOGGER.info("Saved: {}[{}]".format(repr(self), str(security_file)))
 
 
-class SecurityReader(Reader):
+class SecurityReader(Producer):
+    def __init__(self, *args, file, **kwargs):
+        assert isinstance(file, SecurityFile)
+        super().__init__(*args, **kwargs)
+        self.file = file
+
     def execute(self, *args, tickers=None, expires=None, dates=None, **kwargs):
         TickerExpire = ntuple("TickerExpire", "ticker expire")
         function = lambda foldername: Datetime.strptime(foldername, "%Y%m%d_%H%M%S")
-        current_folders = list(self.source.directory())
+        current_folders = list(self.file.directory())
         for current_name in sorted(current_folders, key=function, reverse=False):
             current = function(current_name)
             if dates is not None and current.date() not in dates:
                 continue
-            ticker_expire_folders = list(self.source.directory(current_name))
+            ticker_expire_folders = list(self.file.directory(current_name))
             for ticker_expire_name in ticker_expire_folders:
                 ticker_expire = TickerExpire(*str(ticker_expire_name).split("_"))
                 ticker = str(ticker_expire.ticker).upper()
@@ -300,11 +304,11 @@ class SecurityReader(Reader):
                 if expires is not None and expire not in expires:
                     continue
                 filenames = {security: str(security).replace("|", "_") + ".csv" for security in list(Securities.Stocks)}
-                files = {security: self.source.path(current_name, ticker_expire_name, filename) for security, filename in filenames.items()}
-                stocks = {security: self.source.read(file=file, data=security) for security, file in files.items()}
+                files = {security: self.file.path(current_name, ticker_expire_name, filename) for security, filename in filenames.items()}
+                stocks = {security: self.file.read(file=file, data=security) for security, file in files.items()}
                 filenames = {security: str(security).replace("|", "_") + ".csv" for security in list(Securities.Options)}
-                files = {security: self.source.path(current_name, ticker_expire_name, filename) for security, filename in filenames.items()}
-                options = {security: self.source.read(file=file, data=security) for security, file in files.items()}
+                files = {security: self.file.path(current_name, ticker_expire_name, filename) for security, filename in filenames.items()}
+                options = {security: self.file.read(file=file, data=security) for security, file in files.items()}
                 yield SecurityQuery(current, ticker, expire, stocks, options)
 
 
