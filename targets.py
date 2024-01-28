@@ -70,9 +70,10 @@ class TargetsCalculator(Processor):
         targets = query.arbitrages[Valuations.Arbitrage.Minimum]
         liquidity = liquidity if liquidity is not None else 1
         targets["size"] = (targets["size"] * liquidity).apply(np.floor).astype(np.int32)
+        targets = targets.where(targets["size"] > 0)
         targets = targets.where(targets["apy"] >= apy) if apy is not None else targets
-        targets = targets.sort_values("apy", axis=0, ascending=False, inplace=False, ignore_index=False)
         targets = targets.dropna(axis=0, how="all")
+        targets = targets.sort_values("apy", axis=0, ascending=False, inplace=False, ignore_index=False)
         if bool(targets.empty):
             return
         assert targets["apy"].min() > 0 and targets["size"].min() > 0
@@ -98,8 +99,8 @@ class TargetsFile(DataframeFile):
 
 
 class TargetsTable(DataframeTable):
-    def __iter__(self): return (self.parser(index, record) for (index, record) in self.read(list))
     def __str__(self): return f"{self.tau[0]:.0f}|{self.tau[-1]:.0f} @ {self.apy * 100:,.02f}%, ${self.npv:,.0f}|${self.cost:,.0f}, {self.size:.0f}"
+    def __iter__(self): return (self.parser(index, record) for (index, record) in self.read(list))
     def __setitem__(self, key, value): self.table.at[key] = value
     def __getitem__(self, key): return self.table.loc[key]
 

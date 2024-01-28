@@ -180,7 +180,6 @@ class ValuationFilter(Processor):
                 dataframes = {valuation: dataframe.reset_index(drop=True, inplace=False) for valuation, dataframe in dataframes.items()}
         return dataframes
 
-
 class ValuationFile(DataframeFile):
     @staticmethod
     def dataheader(*args, **kwargs): return ["strategy", "ticker", "date", "expire"] + list(map(str, Securities.Options)) + ["apy", "npv", "cost", "tau", "size"]
