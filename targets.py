@@ -14,23 +14,21 @@ from functools import total_ordering
 from datetime import datetime as Datetime
 from collections import namedtuple as ntuple
 
-from support.pipelines import Processor, Consumer
+from support.pipelines import Consumer, Processor
 from support.tables import DataframeTable
 from support.files import DataframeFile
 
-from finance.securities import Securities
-from finance.strategies import Strategies
-from finance.valuations import Valuations
+from finance.variables import Securities, Strategies, Valuations
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["TargetStatus", "TargetsCalculator", "TargetsWriter", "TargetsFile", "TargetsTable"]
+__all__ = ["TargetsCalculator", "TargetsSaver", "TargetsFile", "TargetsTable"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
 
 LOGGER = logging.getLogger(__name__)
-TargetStatus = IntEnum("Status", ["PROSPECT", "PENDING", "PURCHASED", "ABANDONED"], start=1)
+Status = IntEnum("Status", ["PROSPECT", "PENDING", "PURCHASED", "ABANDONED"], start=1)
 
 
 @total_ordering
@@ -59,11 +57,11 @@ class Target(ntuple("Target", "index status current strategy product options pro
     def __hash__(self): return hash(self.index)
 
 
-class TargetsQuery(ntuple("Query", "current ticker expire targets")):
-    def __str__(self): return f"{self.ticker}|{self.expire.strftime('%Y-%m-%d')}, {len(self.targets.index):.0f}"
+class TargetsQuery(ntuple("Query", "current contract targets")):
+    def __str__(self): return f"{self.contract.ticker}|{self.contract.expire.strftime('%Y-%m-%d')}, {len(self.targets.index):.0f}"
 
 
-class TargetsCalculator(Processor):
+class TargetsCalculator(Processor, title="Calculated"):
     def execute(self, query, *args, liquidity=None, apy=None, **kwargs):
         if not bool(query.arbitrages) or all([dataframe.empty for dataframe in query.arbitrages.values()]):
             return
@@ -82,9 +80,9 @@ class TargetsCalculator(Processor):
         targets["tau"] = targets["tau"].astype(np.int32)
         targets["apy"] = targets["apy"].round(2)
         targets["npv"] = targets["npv"].round(2)
-        targets["status"] = TargetStatus.PROSPECT
+        targets["status"] = Status.PROSPECT
         targets["current"] = query.current
-        query = TargetsQuery(query.current, query.ticker, query.expire, targets)
+        query = TargetsQuery(query.current, query.contract, targets)
         LOGGER.info(f"Targets: {repr(self)}[{str(query)}]")
         yield query
 
@@ -152,12 +150,11 @@ class TargetsTable(DataframeTable):
     def size(self): return self.table["size"].sum()
 
 
-class TargetsWriter(Consumer):
-    def __init__(self, *args, table, file, **kwargs):
-        assert isinstance(table, TargetsTable) and isinstance(file, TargetsFile)
+class TargetsSaver(Consumer, title="Saved"):
+    def __init__(self, *args, table, **kwargs):
         super().__init__(*args, **kwargs)
+        assert isinstance(table, TargetsTable)
         self.table = table
-        self.file = file
 
     def execute(self, content, *args, **kwargs):
         targets = content.targets if isinstance(content, TargetsQuery) else content

@@ -10,65 +10,23 @@ import os
 import logging
 import numpy as np
 import pandas as pd
-from enum import IntEnum
 from datetime import datetime as Datetime
-from collections import OrderedDict as ODict
 from collections import namedtuple as ntuple
 
 from support.calculations import Calculation, equation, source, constant
-from support.dispatchers import kwargsdispatcher, typedispatcher
 from support.pipelines import Producer, Processor, Consumer
 from support.files import DataframeFile
 
-from finance.securities import Securities
+from finance.variables import Securities, Valuations, Contract
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["Valuation", "Valuations", "Calculations", "ValuationFile", "ValuationReader", "ValuationWriter", "ValuationFilter", "ValuationCalculator"]
+__all__ = ["ValuationLoader", "ValuationSaver", "ValuationFilter", "ValuationCalculator", "ValuationFile"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
 
 LOGGER = logging.getLogger(__name__)
-Basis = IntEnum("Basis", ["ARBITRAGE"], start=1)
-Scenarios = IntEnum("Scenarios", ["MINIMUM", "MAXIMUM", "CURRENT"], start=1)
-
-
-class Valuation(ntuple("Valuation", "basis scenario")):
-    def __str__(self): return "|".join([str(value.name).lower() for value in self if bool(value)])
-    def __int__(self): return int(self.basis) * 10 + int(self.scenario) * 1
-
-    @property
-    def title(self): return "|".join([str(string).title() for string in str(self).split("|")])
-
-MinimumArbitrage = Valuation(Basis.ARBITRAGE, Scenarios.MINIMUM)
-MaximumArbitrage = Valuation(Basis.ARBITRAGE, Scenarios.MAXIMUM)
-CurrentArbitrage = Valuation(Basis.ARBITRAGE, Scenarios.CURRENT)
-
-
-class ValuationsMeta(type):
-    def __iter__(cls): return iter([MinimumArbitrage, MaximumArbitrage, CurrentArbitrage])
-    def __getitem__(cls, indexkey): return cls.retrieve(indexkey)
-
-    @typedispatcher
-    def retrieve(cls, indexkey): raise TypeError(type(indexkey).__name__)
-    @retrieve.register(int)
-    def integer(cls, index): return {int(valuation): valuation for valuation in iter(cls)}[index]
-    @retrieve.register(str)
-    def string(cls, string): return {int(valuation): valuation for valuation in iter(cls)}[str(string).lower()]
-    @retrieve.register(tuple)
-    def value(cls, value): return {(valuation.basis, valuation.scenario): valuation for valuation in iter(cls)}[value]
-
-    @property
-    def Arbitrages(cls): return iter([MinimumArbitrage, MaximumArbitrage, CurrentArbitrage])
-
-    class Arbitrage:
-        Minimum = MinimumArbitrage
-        Maximum = MaximumArbitrage
-        Current = CurrentArbitrage
-
-class Valuations(object, metaclass=ValuationsMeta):
-    pass
 
 
 class ValuationCalculation(Calculation):
@@ -104,7 +62,7 @@ class CurrentArbitrageCalculation(ArbitrageCalculation):
 
 class CalculationsMeta(type):
     def __iter__(cls):
-        contents = {MinimumArbitrage: MinimumArbitrageCalculation, MaximumArbitrage: MaximumArbitrageCalculation, CurrentArbitrage: CurrentArbitrageCalculation}
+        contents = {Valuations.MinimumArbitrage: MinimumArbitrageCalculation, Valuations.MaximumArbitrage: MaximumArbitrageCalculation, Valuations.CurrentArbitrage: CurrentArbitrageCalculation}
         return ((key, value) for key, value in contents.items())
 
     class Arbitrage:
@@ -113,21 +71,21 @@ class CalculationsMeta(type):
         Current = CurrentArbitrageCalculation
 
     @property
-    def Arbitrages(cls): return iter({MinimumArbitrage: MinimumArbitrageCalculation, MaximumArbitrage: MaximumArbitrageCalculation, CurrentArbitrage: MaximumArbitrageCalculation}.items())
+    def Arbitrages(cls): return iter({Valuations.MinimumArbitrage: MinimumArbitrageCalculation, Valuations.MaximumArbitrage: MaximumArbitrageCalculation, Valuations.CurrentArbitrage: MaximumArbitrageCalculation}.items())
 
 class Calculations(object, metaclass=CalculationsMeta):
     pass
 
 
-class ValuationQuery(ntuple("Query", "current ticker expire arbitrages")):
+class ValuationQuery(ntuple("Query", "current contract arbitrages")):
     def __str__(self):
         strings = {str(valuation.title): str(len(dataframe.index)) for valuation, dataframe in self.arbitrages.items()}
-        arguments = f"{self.ticker}|{self.expire.strftime('%Y-%m-%d')}"
+        arguments = f"{self.contract.ticker}|{self.contract.expire.strftime('%Y-%m-%d')}"
         parameters = ", ".join(["=".join([key, value]) for key, value in strings.items()])
         return ", ".join([arguments, parameters]) if bool(parameters) else str(arguments)
 
 
-class ValuationCalculator(Processor):
+class ValuationCalculator(Processor, title="Calculated"):
     def __init__(self, *args, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
         self.calculations = {valuation: calculation(*args, **kwargs) for (valuation, calculation) in iter(Calculations)}
@@ -140,7 +98,7 @@ class ValuationCalculator(Processor):
         arbitrages = self.arbitrage({valuation: dataframe for valuation, dataframe in valuations.items() if valuation in list(Valuations.Arbitrages)}, *args, **kwargs)
         if not bool(arbitrages):
             return
-        yield ValuationQuery(query.current, query.ticker, query.expire, arbitrages)
+        yield ValuationQuery(query.current, query.contract, arbitrages)
 
     @staticmethod
     def calculate(strategies, calculation, *args, **kwargs):
@@ -154,18 +112,18 @@ class ValuationCalculator(Processor):
 
     @staticmethod
     def arbitrage(valuations, *args, **kwargs):
-        mask = valuations[MinimumArbitrage]["apy"] > 0
+        mask = valuations[Valuations.MinimumArbitrage]["apy"] > 0
         valuations = {valuation: dataframe[mask] for valuation, dataframe in valuations.items()}
         valuations = {valuation: dataframe.dropna(axis=0, how="all") for valuation, dataframe in valuations.items()}
         valuations = {valuation: dataframe.reset_index(drop=True, inplace=False) for valuation, dataframe in valuations.items()}
         return valuations
 
 
-class ValuationFilter(Processor):
+class ValuationFilter(Processor, title="Filtered"):
     def execute(self, query, *args, **kwargs):
         arbitrages = {valuation: dataframe for valuation, dataframe in query.arbitrages.items()}
         arbitrages = self.arbitrage(arbitrages, *args, **kwargs)
-        query = ValuationQuery(query.current, query.ticker, query.expire, arbitrages)
+        query = ValuationQuery(query.current, query.contract, arbitrages)
         LOGGER.info(f"Filter: {repr(self)}[{str(query)}]")
         yield query
 
@@ -174,7 +132,7 @@ class ValuationFilter(Processor):
         criteria = dict(size=size, apy=apy)
         for key, value in criteria.items():
             if value is not None:
-                mask = dataframes[MinimumArbitrage][key] > value
+                mask = dataframes[Valuations.MinimumArbitrage][key] > value
                 dataframes = {valuation: dataframe[mask] for valuation, dataframe in dataframes.items()}
                 dataframes = {valuation: dataframe.dropna(axis=0, how="all") for valuation, dataframe in dataframes.items()}
                 dataframes = {valuation: dataframe.reset_index(drop=True, inplace=False) for valuation, dataframe in dataframes.items()}
@@ -189,12 +147,7 @@ class ValuationFile(DataframeFile):
     def datetypes(*args, **kwargs): return ["date", "expire"]
 
 
-class ValuationWriter(Consumer):
-    def __init__(self, *args, file, **kwargs):
-        assert isinstance(file, ValuationFile)
-        super().__init__(*args, **kwargs)
-        self.file = file
-
+class ValuationSaver(Consumer, title="Saved"):
     def execute(self, query, *args, **kwargs):
         valuations = query.arbitrages
         if not bool(valuations) or all([dataframe.empty for dataframe in valuations.values()]):
@@ -203,7 +156,7 @@ class ValuationWriter(Consumer):
         current_folder = self.file.path(current_name)
         if not os.path.isdir(current_folder):
             os.mkdir(current_folder)
-        ticker_expire_name = "_".join([str(query.ticker), str(query.expire.strftime("%Y%m%d"))])
+        ticker_expire_name = "_".join([str(query.contract.ticker), str(query.contract.expire.strftime("%Y%m%d"))])
         ticker_expire_folder = self.file.path(current_name, ticker_expire_name)
         if not os.path.isdir(ticker_expire_folder):
             os.mkdir(ticker_expire_folder)
@@ -214,12 +167,7 @@ class ValuationWriter(Consumer):
             LOGGER.info("Saved: {}[{}]".format(repr(self), str(valuation_file)))
 
 
-class ValuationReader(Producer):
-    def __init__(self, *args, file, **kwargs):
-        assert isinstance(file, ValuationFile)
-        super().__init__(*args, **kwargs)
-        self.file = file
-
+class ValuationLoader(Producer, title="Loaded"):
     def execute(self, *args, tickers=None, expires=None, dates=None, **kwargs):
         TickerExpire = ntuple("TickerExpire", "ticker expire")
         function = lambda foldername: Datetime.strptime(foldername, "%Y%m%d_%H%M%S")
@@ -240,7 +188,8 @@ class ValuationReader(Producer):
                 filenames = {valuation: str(valuation).replace("|", "_") + ".csv" for valuation in list(Valuations)}
                 files = {valuation: self.file.path(current_name, ticker_expire_name, filename) for valuation, filename in filenames.items()}
                 valuations = {valuation: self.file.read(file=file, data=valuation) for valuation, file in files.items() if os.path.isfile(file)}
-                yield ValuationQuery(current, ticker, expire, valuations)
+                contract = Contract(ticker, expire)
+                yield ValuationQuery(current, contract, valuations)
 
 
 

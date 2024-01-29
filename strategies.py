@@ -7,67 +7,18 @@ Created on Weds Jul 19 2023
 """
 
 import numpy as np
-from enum import IntEnum
 from collections import namedtuple as ntuple
 
 from support.calculations import Calculation, equation, source, constant
-from support.dispatchers import typedispatcher
 from support.pipelines import Processor
 
-from finance.securities import Positions, Instruments, Securities
+from finance.variables import Securities, Strategies
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["Strategy", "Strategies", "Calculations", "StrategyCalculator"]
+__all__ = ["StrategyCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
-
-
-Spreads = IntEnum("Strategy", ["STRANGLE", "COLLAR", "VERTICAL"], start=1)
-class Strategy(ntuple("Strategy", "spread instrument position")):
-    def __new__(cls, spread, instrument, position, *args, **kwargs): return super().__new__(cls, spread, instrument, position)
-    def __init__(self, *args, **kwargs): self.__securities = kwargs["securities"]
-    def __str__(self): return "|".join([str(value.name).lower() for value in self if bool(value)])
-    def __int__(self): return int(self.spread) * 100 + int(self.instrument) * 10 + int(self.position) * 1
-
-    @property
-    def title(self): return "|".join([str(string).title() for string in str(self).split("|")])
-    @property
-    def securities(self): return self.__securities
-
-StrangleLong = Strategy(Spreads.STRANGLE, 0, Positions.LONG, securities=[Securities.Option.Put.Long, Securities.Option.Call.Long])
-CollarLong = Strategy(Spreads.COLLAR, 0, Positions.LONG, securities=[Securities.Option.Put.Long, Securities.Option.Call.Short, Securities.Stock.Long])
-CollarShort = Strategy(Spreads.COLLAR, 0, Positions.SHORT, securities=[Securities.Option.Call.Long, Securities.Option.Put.Short, Securities.Stock.Short])
-VerticalPut = Strategy(Spreads.VERTICAL, Instruments.PUT, 0, securities=[Securities.Option.Put.Long, Securities.Option.Put.Short])
-VerticalCall = Strategy(Spreads.VERTICAL, Instruments.CALL, 0, securities=[Securities.Option.Call.Long, Securities.Option.Call.Short])
-
-
-class StrategiesMeta(type):
-    def __iter__(cls): return iter([StrangleLong, CollarLong, CollarShort, VerticalPut, VerticalCall])
-    def __getitem__(cls, indexkey): return cls.retrieve(indexkey)
-
-    @typedispatcher
-    def retrieve(cls, indexkey): raise TypeError(type(indexkey).__name__)
-    @retrieve.register(int)
-    def integer(cls, index): return {int(strategy): strategy for strategy in iter(cls)}[index]
-    @retrieve.register(str)
-    def string(cls, string): return {str(strategy): strategy for strategy in iter(cls)}[str(string).lower()]
-    @retrieve.register(tuple)
-    def value(cls, value): return {str(strategy): strategy for strategy in iter(cls)}[value]
-    @retrieve.register(tuple)
-    def value(cls, value): return {(strategy.spread, strategy.instrument, strategy.postion): strategy for strategy in iter(cls)}[value]
-
-    class Strangle:
-        Long = StrangleLong
-    class Collar:
-        Long = CollarLong
-        Short = CollarShort
-    class Vertical:
-        Put = VerticalPut
-        Call = VerticalCall
-
-class Strategies(object, metaclass=StrategiesMeta):
-    pass
 
 
 class StrategyCalculation(Calculation):
@@ -138,9 +89,9 @@ class CollarShortCalculation(CollarCalculation):
 
 class CalculationsMeta(type):
     def __iter__(cls):
-        contents = {VerticalPut: VerticalPutCalculation, VerticalCall: VerticalCallCalculation}
-        contents.update({CollarLong: CollarLongCalculation, CollarShort: CollarShortCalculation})
-        contents.update({StrangleLong: StrangleLongCalculation})
+        contents = {Strategies.VerticalPut: VerticalPutCalculation, Strategies.VerticalCall: VerticalCallCalculation}
+        contents.update({Strategies.CollarLong: CollarLongCalculation, Strategies.CollarShort: CollarShortCalculation})
+        contents.update({Strategies.StrangleLong: StrangleLongCalculation})
         return ((key, value) for key, value in contents.items())
 
     class Strangle:
@@ -153,21 +104,21 @@ class CalculationsMeta(type):
         Call = VerticalCallCalculation
 
     @property
-    def Strangles(cls): return iter({StrangleLong: StrangleLongCalculation}.items())
+    def Strangles(cls): return iter({Strategies.StrangleLong: StrangleLongCalculation}.items())
     @property
-    def Collars(cls): return iter({CollarLong: CollarLongCalculation, CollarShort: CollarShortCalculation}.items())
+    def Collars(cls): return iter({Strategies.CollarLong: CollarLongCalculation, Strategies.CollarShort: CollarShortCalculation}.items())
     @property
-    def Verticals(cls): return iter({VerticalPut: VerticalPutCalculation, VerticalCall: VerticalCallCalculation}.items())
+    def Verticals(cls): return iter({Strategies.VerticalPut: VerticalPutCalculation, Strategies.VerticalCall: VerticalCallCalculation}.items())
 
 class Calculations(object, metaclass=CalculationsMeta):
     pass
 
 
-class StrategyQuery(ntuple("Query", "current ticker expire strategies")):
-    def __str__(self): return f"{self.ticker}|{self.expire.strftime('%Y-%m-%d')}"
+class StrategyQuery(ntuple("Query", "current contract strategies")):
+    def __str__(self): return f"{self.contract.ticker}|{self.contract.expire.strftime('%Y-%m-%d')}"
 
 
-class StrategyCalculator(Processor):
+class StrategyCalculator(Processor, title="Calculated"):
     def __init__(self, *args, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
         calculations = {strategy: calculation(*args, **kwargs) for (strategy, calculation) in iter(Calculations)}
@@ -185,7 +136,7 @@ class StrategyCalculator(Processor):
         strategies = {strategy: calculation(stocks | options, *args, **kwargs) for strategy, calculation in calculations.items()}
         if not bool(strategies):
             return
-        yield StrategyQuery(query.current, query.ticker, query.expire, strategies)
+        yield StrategyQuery(query.current, query.contract, strategies)
 
     @staticmethod
     def stocks(dataset, *args, **kwargs): return dataset

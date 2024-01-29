@@ -11,97 +11,25 @@ import logging
 import numpy as np
 import xarray as xr
 from abc import ABC
-from enum import IntEnum
 from itertools import chain
-from datetime import date as Date
 from datetime import datetime as Datetime
 from collections import namedtuple as ntuple
 
-from support.dispatchers import typedispatcher, kwargsdispatcher
+from support.dispatchers import kwargsdispatcher
 from support.calculations import Calculation, equation, source
 from support.pipelines import Producer, Processor, Consumer
 from support.files import DataframeFile
 
+from finance.variables import Securities, Contract
+
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["DateRange", "Instruments", "Positions", "Security", "Securities", "Calculations", "SecurityFile", "SecurityReader", "SecurityWriter", "SecurityFilter", "SecurityCalculator"]
+__all__ = ["SecurityLoader", "SecuritySaver", "SecurityFilter", "SecurityCalculator", "SecurityFile"]
 __copyright__ = "Copyright 2023,SE Jack Kirby Cook"
 __license__ = ""
 
 
 LOGGER = logging.getLogger(__name__)
-Instruments = IntEnum("Instruments", ["PUT", "CALL", "STOCK"], start=1)
-Positions = IntEnum("Positions", ["LONG", "SHORT"], start=1)
-
-
-class DateRange(ntuple("DateRange", "minimum maximum")):
-    def __new__(cls, dates):
-        assert isinstance(dates, list)
-        assert all([isinstance(date, Date) for date in dates])
-        dates = [date if isinstance(date, Date) else date.date() for date in dates]
-        return super().__new__(cls, min(dates), max(dates)) if dates else None
-
-    def __contains__(self, date): return self.minimum <= date <= self.maximum
-    def __repr__(self): return f"{self.__class__.__name__}({repr(self.minimum)}, {repr(self.maximum)})"
-    def __str__(self): return f"{str(self.minimum)}|{str(self.maximum)}"
-    def __bool__(self): return self.minimum < self.maximum
-    def __len__(self): return (self.maximum - self.minimum).days
-
-
-class Security(ntuple("Security", "instrument position")):
-    def __new__(cls, instrument, position, *args, **kwargs): return super().__new__(cls, instrument, position)
-    def __init__(self, *args, payoff, **kwargs): self.__payoff = payoff
-    def __str__(self): return "|".join([str(value.name).lower() for value in self if bool(value)])
-    def __int__(self): return int(self.instrument) * 10 + int(self.position) * 1
-
-    @property
-    def title(self): return "|".join([str(string).title() for string in str(self).split("|")])
-    @property
-    def payoff(self): return self.__payoff
-
-StockLong = Security(Instruments.STOCK, Positions.LONG, payoff=lambda x: np.copy(x))
-StockShort = Security(Instruments.STOCK, Positions.SHORT, payoff=lambda x: - np.copy(x))
-PutLong = Security(Instruments.PUT, Positions.LONG, payoff=lambda x, k: np.maximum(k - x, 0))
-PutShort = Security(Instruments.PUT, Positions.SHORT, payoff=lambda x, k: - np.maximum(k - x, 0))
-CallLong = Security(Instruments.CALL, Positions.LONG, payoff=lambda x, k: np.maximum(x - k, 0))
-CallShort = Security(Instruments.CALL, Positions.SHORT, payoff=lambda x, k: - np.maximum(x - k, 0))
-
-
-class SecuritiesMeta(type):
-    def __iter__(cls): return iter([StockLong, StockShort, PutLong, PutShort, CallLong, CallShort])
-    def __getitem__(cls, indexkey): return cls.retrieve(indexkey)
-
-    @typedispatcher
-    def retrieve(cls, indexkey): raise TypeError(type(indexkey).__name__)
-    @retrieve.register(int)
-    def integer(cls, index): return {int(security): security for security in iter(cls)}[index]
-    @retrieve.register(str)
-    def string(cls, string): return {str(security): security for security in iter(cls)}[str(string).lower()]
-    @retrieve.register(tuple)
-    def value(cls, value): return {(security.instrument, security.postion): security for security in iter(cls)}[value]
-
-    @property
-    def Stocks(cls): return iter([StockLong, StockShort])
-    @property
-    def Options(cls): return iter([PutLong, PutShort, CallLong, CallShort])
-    @property
-    def Puts(cls): return iter([PutLong, PutShort])
-    @property
-    def Calls(cls): return iter([CallLong, CallShort])
-
-    class Stock:
-        Long = StockLong
-        Short = StockShort
-    class Option:
-        class Put:
-            Long = PutLong
-            Short = PutShort
-        class Call:
-            Long = CallLong
-            Short = CallShort
-
-class Securities(object, metaclass=SecuritiesMeta):
-    pass
 
 
 class PositionCalculation(Calculation, ABC): pass
@@ -137,9 +65,9 @@ class CallShortCalculation(CallCalculation, ShortCalculation): pass
 
 class CalculationsMeta(type):
     def __iter__(cls):
-        contents = {StockLong: StockLongCalculation, StockShort: StockShortCalculation}
-        contents.update({PutLong: PutLongCalculation, PutShort: PutShortCalculation})
-        contents.update({CallLong: CallLongCalculation, CallShort: CallShortCalculation})
+        contents = {Securities.StockLong: StockLongCalculation, Securities.StockShort: StockShortCalculation}
+        contents.update({Securities.PutLong: PutLongCalculation, Securities.PutShort: PutShortCalculation})
+        contents.update({Securities.CallLong: CallLongCalculation, Securities.CallShort: CallShortCalculation})
         return ((key, value) for key, value in contents.items())
 
     class Stock:
@@ -154,34 +82,34 @@ class CalculationsMeta(type):
             Short = CallShortCalculation
 
     @property
-    def Stocks(cls): return iter({StockLong: StockLongCalculation, StockShort: StockShortCalculation}.items())
+    def Stocks(cls): return iter({Securities.StockLong: StockLongCalculation, Securities.StockShort: StockShortCalculation}.items())
     @property
-    def Options(cls): return iter({PutLong: PutLongCalculation, PutShort: PutShortCalculation, CallLong: CallLongCalculation, CallShort: CallShortCalculation}.items())
+    def Options(cls): return iter({Securities.PutLong: PutLongCalculation, Securities.PutShort: PutShortCalculation, Securities.allLong: CallLongCalculation, Securities.CallShort: CallShortCalculation}.items())
     @property
-    def Puts(cls): return iter({PutLong: PutLongCalculation, PutShort: PutShortCalculation}.items())
+    def Puts(cls): return iter({Securities.PutLong: PutLongCalculation, Securities.PutShort: PutShortCalculation}.items())
     @property
-    def Calls(cls): return iter({CallLong: CallLongCalculation, CallShort: CallShortCalculation}.items())
+    def Calls(cls): return iter({Securities.CallLong: CallLongCalculation, Securities.CallShort: CallShortCalculation}.items())
 
 class Calculations(object, metaclass=CalculationsMeta):
     pass
 
 
-class SecurityQuery(ntuple("Query", "current ticker expire stocks options")):
+class SecurityQuery(ntuple("Query", "current contract stocks options")):
     def __str__(self):
         strings = {str(security.title): str(len(dataframe.index)) for security, dataframe in self.stocks.items()}
         strings.update({str(security.title): str(len(dataframe.index)) for security, dataframe in self.options.items()})
-        arguments = f"{self.ticker}|{self.expire.strftime('%Y-%m-%d')}"
+        arguments = f"{self.contract.ticker}|{self.contract.expire.strftime('%Y-%m-%d')}"
         parameters = ", ".join(["=".join([key, value]) for key, value in strings.items()])
         return ", ".join([arguments, parameters]) if bool(parameters) else str(arguments)
 
 
-class SecurityFilter(Processor):
+class SecurityFilter(Processor, title="Filtered"):
     def execute(self, query, *args, **kwargs):
         stocks = {security: dataframe for security, dataframe in query.stocks.items() if not bool(dataframe.empty)}
         options = {security: dataframe for security, dataframe in query.options.items() if not bool(dataframe.empty)}
         stocks = {security: self.stocks(dataframe, *args, **kwargs) for security, dataframe in stocks.items()}
         options = {security: self.options(dataframe, *args, **kwargs) for security, dataframe in options.items()}
-        query = SecurityQuery(query.current, query.ticker, query.expire, stocks, options)
+        query = SecurityQuery(query.current, query.contract, stocks, options)
         LOGGER.info(f"Filter: {repr(self)}[{str(query)}]")
         yield query
 
@@ -203,7 +131,7 @@ class SecurityFilter(Processor):
         return dataframe
 
 
-class SecurityCalculator(Processor):
+class SecurityCalculator(Processor, title="Calculated"):
     def __init__(self, *args, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
         calculations = {strategy: calculation(*args, **kwargs) for (strategy, calculation) in iter(Calculations)}
@@ -214,7 +142,7 @@ class SecurityCalculator(Processor):
         options = {security: self.options(dataframe, *args, **kwargs) for security, dataframe in query.options.items()}
         stocks = {security: self.calculations[security](dataframe, *args, **kwargs) for security, dataframe in stocks.items()}
         options = {security: self.calculations[security](dataframe, *args, **kwargs) for security, dataframe in options.items()}
-        yield SecurityQuery(query.current, query.ticker, query.expire, stocks, options)
+        yield SecurityQuery(query.current, query.contract, stocks, options)
 
     @staticmethod
     def stocks(dataframe, *args, **kwargs):
@@ -253,7 +181,7 @@ class SecurityFile(DataframeFile):
     def datetypes_stocks(self, *args, **kwargs): return ["date"]
 
 
-class SecurityWriter(Consumer):
+class SecuritySaver(Consumer, title="Saved"):
     def __init__(self, *args, file, **kwargs):
         assert isinstance(file, SecurityFile)
         super().__init__(*args, **kwargs)
@@ -269,7 +197,7 @@ class SecurityWriter(Consumer):
         current_folder = self.file.path(current_name)
         if not os.path.isdir(current_folder):
             os.mkdir(current_folder)
-        ticker_expire_name = "_".join([str(query.ticker), str(query.expire.strftime("%Y%m%d"))])
+        ticker_expire_name = "_".join([str(query.contract.ticker), str(query.contract.expire.strftime("%Y%m%d"))])
         ticker_expire_folder = self.file.path(current_name, ticker_expire_name)
         if not os.path.isdir(ticker_expire_folder):
             os.mkdir(ticker_expire_folder)
@@ -277,10 +205,9 @@ class SecurityWriter(Consumer):
             security_name = str(security).replace("|", "_") + ".csv"
             security_file = self.file.path(current_name, ticker_expire_name, security_name)
             self.file.write(dataframe, file=security_file, data=security, mode="w")
-            LOGGER.info("Saved: {}[{}]".format(repr(self), str(security_file)))
 
 
-class SecurityReader(Producer):
+class SecurityLoader(Producer, title="Loaded"):
     def __init__(self, *args, file, **kwargs):
         assert isinstance(file, SecurityFile)
         super().__init__(*args, **kwargs)
@@ -309,7 +236,8 @@ class SecurityReader(Producer):
                 filenames = {security: str(security).replace("|", "_") + ".csv" for security in list(Securities.Options)}
                 files = {security: self.file.path(current_name, ticker_expire_name, filename) for security, filename in filenames.items()}
                 options = {security: self.file.read(file=file, data=security) for security, file in files.items()}
-                yield SecurityQuery(current, ticker, expire, stocks, options)
+                contract = Contract(ticker, expire)
+                yield SecurityQuery(current, contract, stocks, options)
 
 
 
