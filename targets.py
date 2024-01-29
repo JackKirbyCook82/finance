@@ -151,10 +151,11 @@ class TargetsTable(DataframeTable):
 
 
 class TargetsSaver(Consumer, title="Saved"):
-    def __init__(self, *args, table, **kwargs):
+    def __init__(self, *args, table, file, **kwargs):
         super().__init__(*args, **kwargs)
         assert isinstance(table, TargetsTable)
         self.table = table
+        self.file = file
 
     def execute(self, content, *args, **kwargs):
         targets = content.targets if isinstance(content, TargetsQuery) else content

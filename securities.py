@@ -65,9 +65,9 @@ class CallShortCalculation(CallCalculation, ShortCalculation): pass
 
 class CalculationsMeta(type):
     def __iter__(cls):
-        contents = {Securities.StockLong: StockLongCalculation, Securities.StockShort: StockShortCalculation}
-        contents.update({Securities.PutLong: PutLongCalculation, Securities.PutShort: PutShortCalculation})
-        contents.update({Securities.CallLong: CallLongCalculation, Securities.CallShort: CallShortCalculation})
+        contents = {Securities.Stock.Long: StockLongCalculation, Securities.Stock.Short: StockShortCalculation}
+        contents.update({Securities.Option.Put.Long: PutLongCalculation, Securities.Option.Put.Short: PutShortCalculation})
+        contents.update({Securities.Option.Call.Long: CallLongCalculation, Securities.Option.Call.Short: CallShortCalculation})
         return ((key, value) for key, value in contents.items())
 
     class Stock:
@@ -82,13 +82,13 @@ class CalculationsMeta(type):
             Short = CallShortCalculation
 
     @property
-    def Stocks(cls): return iter({Securities.StockLong: StockLongCalculation, Securities.StockShort: StockShortCalculation}.items())
+    def Stocks(cls): return iter({Securities.Stock.Long: StockLongCalculation, Securities.Stock.Short: StockShortCalculation}.items())
     @property
-    def Options(cls): return iter({Securities.PutLong: PutLongCalculation, Securities.PutShort: PutShortCalculation, Securities.allLong: CallLongCalculation, Securities.CallShort: CallShortCalculation}.items())
+    def Options(cls): return iter({Securities.Option.Put.Long: PutLongCalculation, Securities.Option.Put.Short: PutShortCalculation, Securities.Option.Call.Long: CallLongCalculation, Securities.Option.Call.Short: CallShortCalculation}.items())
     @property
-    def Puts(cls): return iter({Securities.PutLong: PutLongCalculation, Securities.PutShort: PutShortCalculation}.items())
+    def Puts(cls): return iter({Securities.Option.Put.Long: PutLongCalculation, Securities.Option.Put.Short: PutShortCalculation}.items())
     @property
-    def Calls(cls): return iter({Securities.CallLong: CallLongCalculation, Securities.CallShort: CallShortCalculation}.items())
+    def Calls(cls): return iter({Securities.Option.Call.Long: CallLongCalculation, Securities.Option.Call.Short: CallShortCalculation}.items())
 
 class Calculations(object, metaclass=CalculationsMeta):
     pass

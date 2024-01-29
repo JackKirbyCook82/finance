@@ -62,7 +62,7 @@ class CurrentArbitrageCalculation(ArbitrageCalculation):
 
 class CalculationsMeta(type):
     def __iter__(cls):
-        contents = {Valuations.MinimumArbitrage: MinimumArbitrageCalculation, Valuations.MaximumArbitrage: MaximumArbitrageCalculation, Valuations.CurrentArbitrage: CurrentArbitrageCalculation}
+        contents = {Valuations.Arbitrage.Minimum: MinimumArbitrageCalculation, Valuations.Arbitrage.Maximum: MaximumArbitrageCalculation, Valuations.Arbitrage.Current: CurrentArbitrageCalculation}
         return ((key, value) for key, value in contents.items())
 
     class Arbitrage:
@@ -71,7 +71,7 @@ class CalculationsMeta(type):
         Current = CurrentArbitrageCalculation
 
     @property
-    def Arbitrages(cls): return iter({Valuations.MinimumArbitrage: MinimumArbitrageCalculation, Valuations.MaximumArbitrage: MaximumArbitrageCalculation, Valuations.CurrentArbitrage: MaximumArbitrageCalculation}.items())
+    def Arbitrages(cls): return iter({Valuations.Minimum.Arbitrage: MinimumArbitrageCalculation, Valuations.Maximum.Arbitrage: MaximumArbitrageCalculation, Valuations.Current.Arbitrage: MaximumArbitrageCalculation}.items())
 
 class Calculations(object, metaclass=CalculationsMeta):
     pass
@@ -112,7 +112,7 @@ class ValuationCalculator(Processor, title="Calculated"):
 
     @staticmethod
     def arbitrage(valuations, *args, **kwargs):
-        mask = valuations[Valuations.MinimumArbitrage]["apy"] > 0
+        mask = valuations[Valuations.Arbitrage.Minimum]["apy"] > 0
         valuations = {valuation: dataframe[mask] for valuation, dataframe in valuations.items()}
         valuations = {valuation: dataframe.dropna(axis=0, how="all") for valuation, dataframe in valuations.items()}
         valuations = {valuation: dataframe.reset_index(drop=True, inplace=False) for valuation, dataframe in valuations.items()}
@@ -132,7 +132,7 @@ class ValuationFilter(Processor, title="Filtered"):
         criteria = dict(size=size, apy=apy)
         for key, value in criteria.items():
             if value is not None:
-                mask = dataframes[Valuations.MinimumArbitrage][key] > value
+                mask = dataframes[Valuations.Arbitrage.Minimum][key] > value
                 dataframes = {valuation: dataframe[mask] for valuation, dataframe in dataframes.items()}
                 dataframes = {valuation: dataframe.dropna(axis=0, how="all") for valuation, dataframe in dataframes.items()}
                 dataframes = {valuation: dataframe.reset_index(drop=True, inplace=False) for valuation, dataframe in dataframes.items()}
@@ -148,6 +148,11 @@ class ValuationFile(DataframeFile):
 
 
 class ValuationSaver(Consumer, title="Saved"):
+    def __init__(self, *args, file, **kwargs):
+        assert isinstance(file, ValuationFile)
+        super().__init__(*args, **kwargs)
+        self.file = file
+
     def execute(self, query, *args, **kwargs):
         valuations = query.arbitrages
         if not bool(valuations) or all([dataframe.empty for dataframe in valuations.values()]):
@@ -168,6 +173,11 @@ class ValuationSaver(Consumer, title="Saved"):
 
 
 class ValuationLoader(Producer, title="Loaded"):
+    def __init__(self, *args, file, **kwargs):
+        assert isinstance(file, ValuationFile)
+        super().__init__(*args, **kwargs)
+        self.file = file
+
     def execute(self, *args, tickers=None, expires=None, dates=None, **kwargs):
         TickerExpire = ntuple("TickerExpire", "ticker expire")
         function = lambda foldername: Datetime.strptime(foldername, "%Y%m%d_%H%M%S")

@@ -89,9 +89,9 @@ class CollarShortCalculation(CollarCalculation):
 
 class CalculationsMeta(type):
     def __iter__(cls):
-        contents = {Strategies.VerticalPut: VerticalPutCalculation, Strategies.VerticalCall: VerticalCallCalculation}
-        contents.update({Strategies.CollarLong: CollarLongCalculation, Strategies.CollarShort: CollarShortCalculation})
-        contents.update({Strategies.StrangleLong: StrangleLongCalculation})
+        contents = {Strategies.Vertical.Put: VerticalPutCalculation, Strategies.Vertical.Call: VerticalCallCalculation}
+        contents.update({Strategies.Collar.Long: CollarLongCalculation, Strategies.Collar.Short: CollarShortCalculation})
+        contents.update({Strategies.Strangle.Long: StrangleLongCalculation})
         return ((key, value) for key, value in contents.items())
 
     class Strangle:
@@ -104,11 +104,11 @@ class CalculationsMeta(type):
         Call = VerticalCallCalculation
 
     @property
-    def Strangles(cls): return iter({Strategies.StrangleLong: StrangleLongCalculation}.items())
+    def Strangles(cls): return iter({Strategies.Strangle.Long: StrangleLongCalculation}.items())
     @property
-    def Collars(cls): return iter({Strategies.CollarLong: CollarLongCalculation, Strategies.CollarShort: CollarShortCalculation}.items())
+    def Collars(cls): return iter({Strategies.Collar.Long: CollarLongCalculation, Strategies.Collar.Short: CollarShortCalculation}.items())
     @property
-    def Verticals(cls): return iter({Strategies.VerticalPut: VerticalPutCalculation, Strategies.VerticalCall: VerticalCallCalculation}.items())
+    def Verticals(cls): return iter({Strategies.Vertical.Put: VerticalPutCalculation, Strategies.Vertical.Call: VerticalCallCalculation}.items())
 
 class Calculations(object, metaclass=CalculationsMeta):
     pass

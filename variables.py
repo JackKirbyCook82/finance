@@ -82,9 +82,9 @@ CollarLong = Strategy(Spreads.COLLAR, 0, Positions.LONG, securities=[PutLong, Ca
 CollarShort = Strategy(Spreads.COLLAR, 0, Positions.SHORT, securities=[CallLong, PutShort, StockShort])
 VerticalPut = Strategy(Spreads.VERTICAL, Instruments.PUT, 0, securities=[PutLong, PutShort])
 VerticalCall = Strategy(Spreads.VERTICAL, Instruments.CALL, 0, securities=[CallLong, CallShort])
-MinimumArbitrage = Valuation(Basis.ARBITRAGE, Scenarios.MINIMUM)
-MaximumArbitrage = Valuation(Basis.ARBITRAGE, Scenarios.MAXIMUM)
-CurrentArbitrage = Valuation(Basis.ARBITRAGE, Scenarios.CURRENT)
+ArbitrageMinimum = Valuation(Basis.ARBITRAGE, Scenarios.MINIMUM)
+ArbitrageMaximum = Valuation(Basis.ARBITRAGE, Scenarios.MAXIMUM)
+ArbitrageCurrent = Valuation(Basis.ARBITRAGE, Scenarios.CURRENT)
 
 
 class SecuritiesMeta(type):
@@ -147,7 +147,7 @@ class StrategiesMeta(type):
 
 
 class ValuationsMeta(type):
-    def __iter__(cls): return iter([MinimumArbitrage, MaximumArbitrage, CurrentArbitrage])
+    def __iter__(cls): return iter([ArbitrageMinimum, ArbitrageMaximum, ArbitrageCurrent])
     def __getitem__(cls, indexkey): return cls.retrieve(indexkey)
 
     @typedispatcher
@@ -160,12 +160,12 @@ class ValuationsMeta(type):
     def value(cls, value): return {(valuation.basis, valuation.scenario): valuation for valuation in iter(cls)}[value]
 
     @property
-    def Arbitrages(cls): return iter([MinimumArbitrage, MaximumArbitrage, CurrentArbitrage])
+    def Arbitrages(cls): return iter([ArbitrageMinimum, ArbitrageMaximum, ArbitrageCurrent])
 
     class Arbitrage:
-        Minimum = MinimumArbitrage
-        Maximum = MaximumArbitrage
-        Current = CurrentArbitrage
+        Minimum = ArbitrageMinimum
+        Maximum = ArbitrageMaximum
+        Current = ArbitrageCurrent
 
 
 class Securities(object, metaclass=SecuritiesMeta): pass
