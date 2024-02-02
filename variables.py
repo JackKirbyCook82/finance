@@ -13,18 +13,21 @@ from collections import namedtuple as ntuple
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["DateRange", "Contract", "Securities", "Instruments", "Positions", "Strategies", "Valuations"]
+__all__ = ["DateRange", "Contract", "Instruments", "Options", "Positions", "Securities", "Strategies", "Valuations"]
 __copyright__ = "Copyright 2023,SE Jack Kirby Cook"
 __license__ = ""
 
 
-Contract = ntuple("Contract", "ticker expire")
 Instruments = IntEnum("Instruments", ["PUT", "CALL", "STOCK"], start=1)
+Options = IntEnum("Options", ["PUT", "CALL"], start=1)
 Positions = IntEnum("Positions", ["LONG", "SHORT"], start=1)
 Spreads = IntEnum("Strategy", ["STRANGLE", "COLLAR", "VERTICAL"], start=1)
 Basis = IntEnum("Basis", ["ARBITRAGE"], start=1)
 Scenarios = IntEnum("Scenarios", ["MINIMUM", "MAXIMUM", "CURRENT"], start=1)
 
+
+class Contract(ntuple("Contract", "ticker expire")):
+    def __str__(self): return f"{str(self.ticker).upper()}, {self.expire.strftime('%Y-%m-%d')}"
 
 class DateRange(ntuple("DateRange", "minimum maximum")):
     def __new__(cls, dates):
@@ -40,35 +43,18 @@ class DateRange(ntuple("DateRange", "minimum maximum")):
     def __len__(self): return (self.maximum - self.minimum).days
 
 
-class Security(ntuple("Security", "instrument position")):
-    def __new__(cls, instrument, position, *args, **kwargs): return super().__new__(cls, instrument, position)
+class Variable(object):
     def __str__(self): return "|".join([str(value.name).lower() for value in self if bool(value)])
-    def __int__(self): return int(self.instrument) * 10 + int(self.position) * 1
+    def __int__(self): return sum([int(value) * (10 ** index) for index, value in enumerate(self)])
+    def __hash__(self): return hash(tuple(self))
 
     @property
     def title(self): return "|".join([str(string).title() for string in str(self).split("|")])
-    @property
-    def payoff(self): return self.__payoff
 
 
-class Strategy(ntuple("Strategy", "spread instrument position")):
-    def __new__(cls, spread, instrument, position, *args, **kwargs): return super().__new__(cls, spread, instrument, position)
-    def __init__(self, *args, **kwargs): self.__securities = kwargs["securities"]
-    def __str__(self): return "|".join([str(value.name).lower() for value in self if bool(value)])
-    def __int__(self): return int(self.spread) * 100 + int(self.instrument) * 10 + int(self.position) * 1
-
-    @property
-    def title(self): return "|".join([str(string).title() for string in str(self).split("|")])
-    @property
-    def securities(self): return self.__securities
-
-
-class Valuation(ntuple("Valuation", "basis scenario")):
-    def __str__(self): return "|".join([str(value.name).lower() for value in self if bool(value)])
-    def __int__(self): return int(self.basis) * 10 + int(self.scenario) * 1
-
-    @property
-    def title(self): return "|".join([str(string).title() for string in str(self).split("|")])
+class Security(Variable, ntuple("Security", "instrument position")): pass
+class Strategy(Variable, ntuple("Strategy", "spread instrument position")): pass
+class Valuation(Variable, ntuple("Valuation", "basis scenario")): pass
 
 
 StockLong = Security(Instruments.STOCK, Positions.LONG)
@@ -77,29 +63,32 @@ PutLong = Security(Instruments.PUT, Positions.LONG)
 PutShort = Security(Instruments.PUT, Positions.SHORT)
 CallLong = Security(Instruments.CALL, Positions.LONG,)
 CallShort = Security(Instruments.CALL, Positions.SHORT)
-StrangleLong = Strategy(Spreads.STRANGLE, 0, Positions.LONG, securities=[PutLong, CallLong])
-CollarLong = Strategy(Spreads.COLLAR, 0, Positions.LONG, securities=[PutLong, CallShort, StockLong])
-CollarShort = Strategy(Spreads.COLLAR, 0, Positions.SHORT, securities=[CallLong, PutShort, StockShort])
-VerticalPut = Strategy(Spreads.VERTICAL, Instruments.PUT, 0, securities=[PutLong, PutShort])
-VerticalCall = Strategy(Spreads.VERTICAL, Instruments.CALL, 0, securities=[CallLong, CallShort])
+StrangleLong = Strategy(Spreads.STRANGLE, 0, Positions.LONG)
+CollarLong = Strategy(Spreads.COLLAR, 0, Positions.LONG)
+CollarShort = Strategy(Spreads.COLLAR, 0, Positions.SHORT)
+VerticalPut = Strategy(Spreads.VERTICAL, Instruments.PUT, 0)
+VerticalCall = Strategy(Spreads.VERTICAL, Instruments.CALL, 0)
 ArbitrageMinimum = Valuation(Basis.ARBITRAGE, Scenarios.MINIMUM)
 ArbitrageMaximum = Valuation(Basis.ARBITRAGE, Scenarios.MAXIMUM)
 ArbitrageCurrent = Valuation(Basis.ARBITRAGE, Scenarios.CURRENT)
 
 
-class SecuritiesMeta(type):
-    def __iter__(cls): return iter([StockLong, StockShort, PutLong, PutShort, CallLong, CallShort])
-    def __getitem__(cls, indexkey): return cls.retrieve(indexkey)
+class VariablesMeta(type):
+    def __init_subclass__(mcs, *args, variables, **kwargs): mcs.variables = variables
+    def __getitem__(cls, value): return cls.get(value)
+    def __iter__(cls): return iter(type(cls).variables)
 
     @typedispatcher
-    def retrieve(cls, indexkey): raise TypeError(type(indexkey).__name__)
-    @retrieve.register(int)
-    def integer(cls, index): return {int(security): security for security in iter(cls)}[index]
-    @retrieve.register(str)
-    def string(cls, string): return {str(security): security for security in iter(cls)}[str(string).lower()]
-    @retrieve.register(tuple)
-    def value(cls, value): return {(security.instrument, security.postion): security for security in iter(cls)}[value]
+    def get(cls, key): raise TypeError(type(key).__name__)
+    @get.register(tuple)
+    def hashable(cls, hashable): return {hash(value): value for value in iter(cls)}[hash(hashable)]
+    @get.register(str)
+    def string(cls, string): return {str(value): value for value in iter(cls)}[str(string).lower()]
+    @get.register(int)
+    def integer(cls, integer): return {int(value): value for value in iter(cls)}[int(integer)]
 
+
+class SecuritiesMeta(VariablesMeta, variables=[StockLong, StockShort, PutLong, PutShort, CallLong, CallShort]):
     @property
     def Stocks(cls): return iter([StockLong, StockShort])
     @property
@@ -121,20 +110,13 @@ class SecuritiesMeta(type):
             Short = CallShort
 
 
-class StrategiesMeta(type):
-    def __iter__(cls): return iter([StrangleLong, CollarLong, CollarShort, VerticalPut, VerticalCall])
-    def __getitem__(cls, indexkey): return cls.retrieve(indexkey)
-
-    @typedispatcher
-    def retrieve(cls, indexkey): raise TypeError(type(indexkey).__name__)
-    @retrieve.register(int)
-    def integer(cls, index): return {int(strategy): strategy for strategy in iter(cls)}[index]
-    @retrieve.register(str)
-    def string(cls, string): return {str(strategy): strategy for strategy in iter(cls)}[str(string).lower()]
-    @retrieve.register(tuple)
-    def value(cls, value): return {str(strategy): strategy for strategy in iter(cls)}[value]
-    @retrieve.register(tuple)
-    def value(cls, value): return {(strategy.spread, strategy.instrument, strategy.postion): strategy for strategy in iter(cls)}[value]
+class StrategiesMeta(VariablesMeta, variables=[StrangleLong, CollarLong, CollarShort, VerticalPut, VerticalCall]):
+    @property
+    def Strangles(cls): return iter([StrangleLong])
+    @property
+    def Collars(cls): return iter([CollarLong, CollarShort])
+    @property
+    def Verticals(cls): return iter([VerticalPut, VerticalCall])
 
     class Strangle:
         Long = StrangleLong
@@ -146,19 +128,7 @@ class StrategiesMeta(type):
         Call = VerticalCall
 
 
-class ValuationsMeta(type):
-    def __iter__(cls): return iter([ArbitrageMinimum, ArbitrageMaximum, ArbitrageCurrent])
-    def __getitem__(cls, indexkey): return cls.retrieve(indexkey)
-
-    @typedispatcher
-    def retrieve(cls, indexkey): raise TypeError(type(indexkey).__name__)
-    @retrieve.register(int)
-    def integer(cls, index): return {int(valuation): valuation for valuation in iter(cls)}[index]
-    @retrieve.register(str)
-    def string(cls, string): return {int(valuation): valuation for valuation in iter(cls)}[str(string).lower()]
-    @retrieve.register(tuple)
-    def value(cls, value): return {(valuation.basis, valuation.scenario): valuation for valuation in iter(cls)}[value]
-
+class ValuationsMeta(VariablesMeta, variables=[ArbitrageMinimum, ArbitrageMaximum, ArbitrageCurrent]):
     @property
     def Arbitrages(cls): return iter([ArbitrageMinimum, ArbitrageMaximum, ArbitrageCurrent])
 
@@ -171,5 +141,6 @@ class ValuationsMeta(type):
 class Securities(object, metaclass=SecuritiesMeta): pass
 class Strategies(object, metaclass=StrategiesMeta): pass
 class Valuations(object, metaclass=ValuationsMeta): pass
+
 
 
