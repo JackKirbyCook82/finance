@@ -81,7 +81,7 @@ class SecurityParser(Processor):
         return dataset
 
     @staticmethod
-    def options(dataframe, *args, security, **kwargs):
+    def options(dataframe, *args, **kwargs):
         dataframe = dataframe.drop_duplicates(subset=["date", "ticker", "expire", "strike"], keep="last", inplace=False)
         dataframe = dataframe.set_index(["date", "ticker", "expire", "strike"], inplace=False, drop=True)
         dataset = xr.Dataset.from_dataframe(dataframe[["price", "size"]])
@@ -121,13 +121,11 @@ class SecurityLoader(Producer, title="Loaded"):
         super().__init__(*args, **kwargs)
         self.file = file
 
-    def execute(self, *args, tickers=None, expires=None, dates=None, **kwargs):
+    def execute(self, *args, tickers=None, expires=None, **kwargs):
         function = lambda foldername: Datetime.strptime(foldername, "%Y%m%d_%H%M%S")
         inquiry_folders = list(self.file.directory())
         for inquiry_name in sorted(inquiry_folders, key=function, reverse=False):
             inquiry = function(inquiry_name)
-            if dates is not None and inquiry.date() not in dates:
-                continue
             contract_folders = list(self.file.directory(inquiry_name))
             for contract_name in contract_folders:
                 contract = Contract(*str(contract_name).split("_"))

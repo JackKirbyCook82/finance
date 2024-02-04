@@ -10,15 +10,14 @@ import logging
 import numpy as np
 from datetime import datetime as Datetime
 
-from support.files import DataframeFile
 from support.tables import DataframeTable
-from support.pipelines import CycleRoutine, Consumer
+from support.pipelines import Consumer
 
 from finance.variables import Securities, Valuations
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["AcquisitionWriter", "AcquisitionSaver", "AcquisitionFile", "AcquisitionTable"]
+__all__ = ["AcquisitionWriter", "AcquisitionTable"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
@@ -51,23 +50,6 @@ class AcquisitionWriter(Consumer):
         targets["apy"] = targets["apy"].round(2)
         targets["npv"] = targets["npv"].round(2)
         targets["inquiry"] = query.inquiry
-
-
-class AcquisitionSaver(CycleRoutine):
-    def __init__(self, *args, table, file, **kwargs):
-        assert isinstance(table, AcquisitionTable)
-        super().__init__(*args, **kwargs)
-        self.table = table
-        self.file = file
-
-    def execute(self, *args, **kwargs):
-        pass
-
-
-class AcquisitionFile(DataframeFile):
-    def dataheader(self, *args, **kwargs): pass
-    def datatypes(self, *args, **kwargs): pass
-    def datetypes(self, *args, **kwargs): pass
 
 
 class AcquisitionTable(DataframeTable):

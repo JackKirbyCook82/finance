@@ -7,9 +7,11 @@ Created on Sun Jan 28 2024
 """
 
 from enum import IntEnum
-from support.dispatchers import typedispatcher
 from datetime import date as Date
+from functools import total_ordering
 from collections import namedtuple as ntuple
+
+from support.dispatchers import typedispatcher
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -21,13 +23,16 @@ __license__ = ""
 Instruments = IntEnum("Instruments", ["PUT", "CALL", "STOCK"], start=1)
 Options = IntEnum("Options", ["PUT", "CALL"], start=1)
 Positions = IntEnum("Positions", ["LONG", "SHORT"], start=1)
-Spreads = IntEnum("Strategy", ["STRANGLE", "COLLAR", "VERTICAL"], start=1)
+Spreads = IntEnum("Strategy", ["COLLAR", "VERTICAL"], start=1)
 Basis = IntEnum("Basis", ["ARBITRAGE"], start=1)
 Scenarios = IntEnum("Scenarios", ["MINIMUM", "MAXIMUM", "CURRENT"], start=1)
 
-
+@total_ordering
 class Contract(ntuple("Contract", "ticker expire")):
     def __str__(self): return f"{str(self.ticker).upper()}, {self.expire.strftime('%Y-%m-%d')}"
+    def __eq__(self, other): return self.ticker == other.ticker and self.expire == other.expire
+    def __lt__(self, other): return self.ticker < other.ticker and self.expire < other.expire
+
 
 class DateRange(ntuple("DateRange", "minimum maximum")):
     def __new__(cls, dates):
@@ -63,7 +68,6 @@ PutLong = Security(Instruments.PUT, Positions.LONG)
 PutShort = Security(Instruments.PUT, Positions.SHORT)
 CallLong = Security(Instruments.CALL, Positions.LONG,)
 CallShort = Security(Instruments.CALL, Positions.SHORT)
-StrangleLong = Strategy(Spreads.STRANGLE, 0, Positions.LONG)
 CollarLong = Strategy(Spreads.COLLAR, 0, Positions.LONG)
 CollarShort = Strategy(Spreads.COLLAR, 0, Positions.SHORT)
 VerticalPut = Strategy(Spreads.VERTICAL, Instruments.PUT, 0)
@@ -110,16 +114,12 @@ class SecuritiesMeta(VariablesMeta, variables=[StockLong, StockShort, PutLong, P
             Short = CallShort
 
 
-class StrategiesMeta(VariablesMeta, variables=[StrangleLong, CollarLong, CollarShort, VerticalPut, VerticalCall]):
-    @property
-    def Strangles(cls): return iter([StrangleLong])
+class StrategiesMeta(VariablesMeta, variables=[CollarLong, CollarShort, VerticalPut, VerticalCall]):
     @property
     def Collars(cls): return iter([CollarLong, CollarShort])
     @property
     def Verticals(cls): return iter([VerticalPut, VerticalCall])
 
-    class Strangle:
-        Long = StrangleLong
     class Collar:
         Long = CollarLong
         Short = CollarShort

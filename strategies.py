@@ -42,16 +42,8 @@ class StrategyCalculation(Calculation):
         yield self.wτx(**feeds, fees=fees)
         yield self.wτo(**feeds, fees=fees)
 
-class StrangleCalculation(StrategyCalculation): pass
 class VerticalCalculation(StrategyCalculation): pass
 class CollarCalculation(StrategyCalculation): pass
-
-class StrangleLongCalculation(StrangleCalculation):
-    x = equation("x", "size", np.int64, domain=("pα.x", "cα.x"), function=lambda xpα, xcα: np.minimum(xpα, xcα))
-    wo = equation("wo", "spot", np.float32, domain=("pα.w", "cα.w", "ε"), function=lambda wpα, wcα, ε: - (wpα + wcα) * 100 - ε)
-    wτn = equation("wτn", "minimum", np.float32, domain=("pα.k", "cα.k", "ε"), function=lambda kpα, kcα, ε: np.maximum(kpα - kcα, 0) * 100 - ε)
-    wτx = equation("wτx", "maximum", np.float32, domain=("pα.k", "cα.k", "ε"), function=lambda kpα, kcα, ε: np.Inf * 100 - ε)
-    wτo = equation("wτo", "current", np.float32, domain=("pα.k", "cα.k", "sμ", "ε"), function=lambda kpα, kcα, sμ, ε: (np.maximum(kpα - sμ, 0) + np.maximum(sμ - kcα, 0)) * 100 - ε)
 
 class VerticalPutCalculation(VerticalCalculation):
     x = equation("x", "size", np.int64, domain=("pα.x", "pβ.x"), function=lambda xpα, xpβ: np.minimum(xpα, xpβ))
@@ -89,13 +81,11 @@ class StrategyQuery(ntuple("Query", "inquiry contract strategies")):
 class StrategyCalculator(Processor, title="Calculated"):
     def __init__(self, *args, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
-        strategies = {Strategies.Strangle.Long: [Securities.Option.Put.Long, Securities.Option.Call.Long]}
-        strategies.update({Strategies.Collar.Long: [Securities.Option.Put.Long, Securities.Option.Call.Short, Securities.Stock.Long]})
+        strategies = {Strategies.Collar.Long: [Securities.Option.Put.Long, Securities.Option.Call.Short, Securities.Stock.Long]}
         strategies.update({Strategies.Collar.Short: [Securities.Option.Call.Long, Securities.Option.Put.Short, Securities.Stock.Short]})
         strategies.update({Strategies.Vertical.Put: [Securities.Option.Put.Long, Securities.Option.Put.Short]})
         strategies.update({Strategies.Vertical.Call: [Securities.Option.Call.Long, Securities.Option.Call.Short]})
-        calculations = {Strategies.Strangle.Long: StrangleLongCalculation}
-        calculations.update({Strategies.Collar.Long: CollarLongCalculation, Strategies.Collar.Short: CollarShortCalculation})
+        calculations = {Strategies.Collar.Long: CollarLongCalculation, Strategies.Collar.Short: CollarShortCalculation}
         calculations.update({Strategies.Vertical.Put: VerticalPutCalculation, Strategies.Vertical.Call: VerticalCallCalculation})
         calculations = {security: calculation(*args, **kwargs) for security, calculation in calculations.items()}
         self.strategies = strategies
