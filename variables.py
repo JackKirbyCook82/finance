@@ -23,15 +23,9 @@ __license__ = ""
 Instruments = IntEnum("Instruments", ["PUT", "CALL", "STOCK"], start=1)
 Options = IntEnum("Options", ["PUT", "CALL"], start=1)
 Positions = IntEnum("Positions", ["LONG", "SHORT"], start=1)
-Spreads = IntEnum("Strategy", ["COLLAR", "VERTICAL"], start=1)
+Spreads = IntEnum("Strategy", ["STRANGLE", "COLLAR", "VERTICAL"], start=1)
 Basis = IntEnum("Basis", ["ARBITRAGE"], start=1)
-Scenarios = IntEnum("Scenarios", ["MINIMUM", "MAXIMUM", "CURRENT"], start=1)
-
-@total_ordering
-class Contract(ntuple("Contract", "ticker expire")):
-    def __str__(self): return f"{str(self.ticker).upper()}, {self.expire.strftime('%Y-%m-%d')}"
-    def __eq__(self, other): return self.ticker == other.ticker and self.expire == other.expire
-    def __lt__(self, other): return self.ticker < other.ticker and self.expire < other.expire
+Scenarios = IntEnum("Scenarios", ["CURRENT", "MINIMUM", "MAXIMUM"], start=1)
 
 
 class DateRange(ntuple("DateRange", "minimum maximum")):
@@ -48,18 +42,34 @@ class DateRange(ntuple("DateRange", "minimum maximum")):
     def __len__(self): return (self.maximum - self.minimum).days
 
 
+@total_ordering
+class Contract(ntuple("Contract", "ticker expire")):
+    def __str__(self): return f"{str(self.ticker).upper()}, {self.expire.strftime('%Y-%m-%d')}"
+    def __eq__(self, other): return self.ticker == other.ticker and self.expire == other.expire
+    def __lt__(self, other): return self.ticker < other.ticker and self.expire < other.expire
+
+
+# @total_ordering
+# class Stock(ntuple("Stock", "position strike")):
+#     def __eq__(self, other): return self.strike == other.strike
+#     def __lt__(self, other): return self.strike < other.strike
+# @total_ordering
+# class Option(ntuple("Option", "instrument position strike")):
+#     def __eq__(self, other): return self.strike == other.strike
+#     def __lt__(self, other): return self.strike < other.strike
+
+
 class Variable(object):
-    def __str__(self): return "|".join([str(value.name).lower() for value in self if bool(value)])
-    def __int__(self): return sum([int(value) * (10 ** index) for index, value in enumerate(self)])
+    def __str__(self): return "|".join([str(value.name).lower() for value in self if value is not None])
     def __hash__(self): return hash(tuple(self))
 
     @property
     def title(self): return "|".join([str(string).title() for string in str(self).split("|")])
 
 
-class Security(Variable, ntuple("Security", "instrument position")): pass
 class Strategy(Variable, ntuple("Strategy", "spread instrument position")): pass
 class Valuation(Variable, ntuple("Valuation", "basis scenario")): pass
+class Security(Variable, ntuple("Security", "instrument position")): pass
 
 
 StockLong = Security(Instruments.STOCK, Positions.LONG)
@@ -68,10 +78,10 @@ PutLong = Security(Instruments.PUT, Positions.LONG)
 PutShort = Security(Instruments.PUT, Positions.SHORT)
 CallLong = Security(Instruments.CALL, Positions.LONG,)
 CallShort = Security(Instruments.CALL, Positions.SHORT)
-CollarLong = Strategy(Spreads.COLLAR, 0, Positions.LONG)
-CollarShort = Strategy(Spreads.COLLAR, 0, Positions.SHORT)
-VerticalPut = Strategy(Spreads.VERTICAL, Instruments.PUT, 0)
-VerticalCall = Strategy(Spreads.VERTICAL, Instruments.CALL, 0)
+CollarLong = Strategy(Spreads.COLLAR, None, Positions.LONG)
+CollarShort = Strategy(Spreads.COLLAR, None, Positions.SHORT)
+VerticalPut = Strategy(Spreads.VERTICAL, Instruments.PUT, None)
+VerticalCall = Strategy(Spreads.VERTICAL, Instruments.CALL, None)
 ArbitrageMinimum = Valuation(Basis.ARBITRAGE, Scenarios.MINIMUM)
 ArbitrageMaximum = Valuation(Basis.ARBITRAGE, Scenarios.MAXIMUM)
 ArbitrageCurrent = Valuation(Basis.ARBITRAGE, Scenarios.CURRENT)
@@ -88,8 +98,6 @@ class VariablesMeta(type):
     def hashable(cls, hashable): return {hash(value): value for value in iter(cls)}[hash(hashable)]
     @get.register(str)
     def string(cls, string): return {str(value): value for value in iter(cls)}[str(string).lower()]
-    @get.register(int)
-    def integer(cls, integer): return {int(value): value for value in iter(cls)}[int(integer)]
 
 
 class SecuritiesMeta(VariablesMeta, variables=[StockLong, StockShort, PutLong, PutShort, CallLong, CallShort]):
