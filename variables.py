@@ -49,16 +49,6 @@ class Contract(ntuple("Contract", "ticker expire")):
     def __lt__(self, other): return self.ticker < other.ticker and self.expire < other.expire
 
 
-# @total_ordering
-# class Stock(ntuple("Stock", "position strike")):
-#     def __eq__(self, other): return self.strike == other.strike
-#     def __lt__(self, other): return self.strike < other.strike
-# @total_ordering
-# class Option(ntuple("Option", "instrument position strike")):
-#     def __eq__(self, other): return self.strike == other.strike
-#     def __lt__(self, other): return self.strike < other.strike
-
-
 class Variable(object):
     def __str__(self): return "|".join([str(value.name).lower() for value in self if value is not None])
     def __hash__(self): return hash(tuple(self))
@@ -82,9 +72,9 @@ CollarLong = Strategy(Spreads.COLLAR, None, Positions.LONG)
 CollarShort = Strategy(Spreads.COLLAR, None, Positions.SHORT)
 VerticalPut = Strategy(Spreads.VERTICAL, Instruments.PUT, None)
 VerticalCall = Strategy(Spreads.VERTICAL, Instruments.CALL, None)
+ArbitrageCurrent = Valuation(Basis.ARBITRAGE, Scenarios.CURRENT)
 ArbitrageMinimum = Valuation(Basis.ARBITRAGE, Scenarios.MINIMUM)
 ArbitrageMaximum = Valuation(Basis.ARBITRAGE, Scenarios.MAXIMUM)
-ArbitrageCurrent = Valuation(Basis.ARBITRAGE, Scenarios.CURRENT)
 
 
 class VariablesMeta(type):
@@ -95,7 +85,7 @@ class VariablesMeta(type):
     @typedispatcher
     def get(cls, key): raise TypeError(type(key).__name__)
     @get.register(tuple)
-    def hashable(cls, hashable): return {hash(value): value for value in iter(cls)}[hash(hashable)]
+    def hash(cls, content): return {hash(value): value for value in iter(cls)}[hash(content)]
     @get.register(str)
     def string(cls, string): return {str(value): value for value in iter(cls)}[str(string).lower()]
 
@@ -141,9 +131,9 @@ class ValuationsMeta(VariablesMeta, variables=[ArbitrageMinimum, ArbitrageMaximu
     def Arbitrages(cls): return iter([ArbitrageMinimum, ArbitrageMaximum, ArbitrageCurrent])
 
     class Arbitrage:
+        Current = ArbitrageCurrent
         Minimum = ArbitrageMinimum
         Maximum = ArbitrageMaximum
-        Current = ArbitrageCurrent
 
 
 class Securities(object, metaclass=SecuritiesMeta): pass
