@@ -6,6 +6,9 @@ Created on Sun Jan 28 2024
 
 """
 
+import numpy as np
+import pandas as pd
+import xarray as xr
 from enum import IntEnum
 from datetime import date as Date
 from functools import total_ordering
@@ -15,7 +18,7 @@ from support.dispatchers import typedispatcher
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["DateRange", "Contract", "Instruments", "Options", "Positions", "Securities", "Strategies", "Valuations"]
+__all__ = ["DateRange", "Query", "Contract", "Instruments", "Options", "Positions", "Securities", "Strategies", "Basis", "Valuations"]
 __copyright__ = "Copyright 2023,SE Jack Kirby Cook"
 __license__ = ""
 
@@ -25,7 +28,7 @@ Options = IntEnum("Options", ["PUT", "CALL"], start=1)
 Positions = IntEnum("Positions", ["LONG", "SHORT"], start=1)
 Spreads = IntEnum("Strategy", ["STRANGLE", "COLLAR", "VERTICAL"], start=1)
 Basis = IntEnum("Basis", ["ARBITRAGE"], start=1)
-Scenarios = IntEnum("Scenarios", ["CURRENT", "MINIMUM", "MAXIMUM"], start=1)
+Scenarios = IntEnum("Scenarios", ["MARTINGALE", "MINIMUM", "MAXIMUM"], start=1)
 
 
 class DateRange(ntuple("DateRange", "minimum maximum")):
@@ -40,6 +43,20 @@ class DateRange(ntuple("DateRange", "minimum maximum")):
     def __str__(self): return f"{str(self.minimum)}|{str(self.maximum)}"
     def __bool__(self): return self.minimum < self.maximum
     def __len__(self): return (self.maximum - self.minimum).days
+
+
+class Query(ntuple("Query", "inquiry contract contents")):
+    def __str__(self): return f"{self.contract.ticker}|{self.contract.expire.strftime('%Y-%m-%d')}|{len(self):.0f}"
+    def __len__(self): return self.size(self.contents)
+
+    @typedispatcher
+    def size(self, contents): raise TypeError(type(contents).__name__)
+    @size.register(dict)
+    def mapping(self, mapping): return sum([self.size(contents) for contents in mapping.values()])
+    @size.register(xr.Dataset)
+    def dataset(self, dataset): return [np.count_nonzero(~np.isnan(dataarray.values)) for dataarray in dataset.data_vars.items()]
+    @size.register(pd.DataFrame)
+    def dataframe(self, dataframe): return len(dataframe.index)
 
 
 @total_ordering
@@ -57,9 +74,11 @@ class Variable(object):
     def title(self): return "|".join([str(string).title() for string in str(self).split("|")])
 
 
-class Strategy(Variable, ntuple("Strategy", "spread instrument position")): pass
 class Valuation(Variable, ntuple("Valuation", "basis scenario")): pass
 class Security(Variable, ntuple("Security", "instrument position")): pass
+class Strategy(Variable, ntuple("Strategy", "spread instrument position")):
+    def __new__(cls, spread, instrument, position, *args, **kwargs): return super().__new__(cls, spread, instrument, position)
+    def __init__(self, *args, securities, **kwargs): self.securities = securities
 
 
 StockLong = Security(Instruments.STOCK, Positions.LONG)
@@ -68,11 +87,11 @@ PutLong = Security(Instruments.PUT, Positions.LONG)
 PutShort = Security(Instruments.PUT, Positions.SHORT)
 CallLong = Security(Instruments.CALL, Positions.LONG,)
 CallShort = Security(Instruments.CALL, Positions.SHORT)
-CollarLong = Strategy(Spreads.COLLAR, None, Positions.LONG)
-CollarShort = Strategy(Spreads.COLLAR, None, Positions.SHORT)
-VerticalPut = Strategy(Spreads.VERTICAL, Instruments.PUT, None)
-VerticalCall = Strategy(Spreads.VERTICAL, Instruments.CALL, None)
-ArbitrageCurrent = Valuation(Basis.ARBITRAGE, Scenarios.CURRENT)
+CollarLong = Strategy(Spreads.COLLAR, None, Positions.LONG, options=[PutLong, CallShort])
+CollarShort = Strategy(Spreads.COLLAR, None, Positions.SHORT, options=[CallLong, PutShort])
+VerticalPut = Strategy(Spreads.VERTICAL, Instruments.PUT, None, options=[PutLong, PutShort])
+VerticalCall = Strategy(Spreads.VERTICAL, Instruments.CALL, None, options=[CallLong, CallShort])
+ArbitrageMartingale = Valuation(Basis.ARBITRAGE, Scenarios.MARTINGALE)
 ArbitrageMinimum = Valuation(Basis.ARBITRAGE, Scenarios.MINIMUM)
 ArbitrageMaximum = Valuation(Basis.ARBITRAGE, Scenarios.MAXIMUM)
 
@@ -126,12 +145,12 @@ class StrategiesMeta(VariablesMeta, variables=[CollarLong, CollarShort, Vertical
         Call = VerticalCall
 
 
-class ValuationsMeta(VariablesMeta, variables=[ArbitrageMinimum, ArbitrageMaximum, ArbitrageCurrent]):
+class ValuationsMeta(VariablesMeta, variables=[ArbitrageMinimum, ArbitrageMaximum, ArbitrageMartingale]):
     @property
-    def Arbitrages(cls): return iter([ArbitrageMinimum, ArbitrageMaximum, ArbitrageCurrent])
+    def Arbitrages(cls): return iter([ArbitrageMinimum, ArbitrageMaximum, ArbitrageMartingale])
 
     class Arbitrage:
-        Current = ArbitrageCurrent
+        Martingale = ArbitrageMartingale
         Minimum = ArbitrageMinimum
         Maximum = ArbitrageMaximum
 

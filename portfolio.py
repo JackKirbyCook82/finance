@@ -1,105 +1,65 @@
 # -*- coding: utf-8 -*-
 """
-Created on Thurs Fed 1 202
+Created on Thurs Feb 8 2024
 @name:   Portfolio Objects
 @author: Jack Kirby Cook
 
 """
 
-import os
-import logging
 import numpy as np
-from datetime import datetime as Datetime
-from collections import namedtuple as ntuple
 
-from support.pipelines import Producer, Processor, Consumer
-from support.files import DataframeFile
+from support.calculations import equation, source
 
-from finance.variables import Contract, Securities
+from finance.variables import Securities
+from finance.strategies import StrategyCalculation
+from finance.valuations import ValuationCalculation
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["PortfolioLoader", "PortfolioSaver", "PortfolioCalculator", "PortfolioFile"]
+__all__ = []
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = ""
 
 
-LOGGER = logging.getLogger(__name__)
+class StrategyCalculation(StrategyCalculation):
+    pα = source("pα", str(Securities.Option.Put.Long), position=str(Securities.Option.Put.Long), variables={"ws": "entry", "Δo": "quantity"}, destination=True)
+    pβ = source("pβ", str(Securities.Option.Put.Short), position=str(Securities.Option.Put.Short), variables={"ws": "entry", "Δo": "quantity"}, destination=True)
+    cα = source("cα", str(Securities.Option.Call.Long), position=str(Securities.Option.Call.Long), variables={"ws": "entry", "Δo": "quantity"}, destination=True)
+    cβ = source("cβ", str(Securities.Option.Call.Short), position=str(Securities.Option.Call.Short), variables={"ws": "entry", "Δo": "quantity"}, destination=True)
+
+    def execute(self, feeds, *args, fees, **kwargs):
+        yield self.qo(**feeds, fees=fees)
+        yield self.Δo(**feeds, fees=fees)
+        yield self.ws(**feeds, fees=fees)
+        yield self.wo(**feeds, fees=fees)
+        yield self.wτn(**feeds, fees=fees)
+        yield self.wτx(**feeds, fees=fees)
+        yield self.wτi(**feeds, fees=fees)
 
 
-class PortfolioQuery(ntuple("Query", "inquiry contract options")):
-    def __str__(self):
-        pass
+class VerticalCalculation(StrategyCalculation): pass
+class CollarCalculation(StrategyCalculation): pass
+
+class VerticalPutCalculation(StrategyCalculation.Vertical.Call, VerticalCalculation):
+    ws = equation("ws", "entry", np.float32, domain=("pα.ws", "pβ.ws"), function=lambda wpα, wpβ: -(wpα + wpβ))
+    Δo = equation("Δo", "quantity", np.int32, domain=("pα.Δo", "pβ.Δo"), function=lambda Δpα, Δpβ: np.minimum(Δpα, Δpβ))
+
+class VerticalCallCalculation(StrategyCalculation.Vertical.Put, VerticalCalculation):
+    ws = equation("ws", "entry", np.float32, domain=("cα.ws", "cβ.ws"), function=lambda wcα, wcβ: -(wcα + wcβ))
+    Δo = equation("Δo", "quantity", np.int32, domain=("cα.Δo", "cβ.Δo"), function=lambda Δcα, Δcβ: np.minimum(Δcα, Δcβ))
+
+class CollarLongCalculation(StrategyCalculation.Collar.Long, CollarCalculation):
+    ws = equation("ws", "entry", np.float32, domain=("pα.ws", "cβ.ws"), function=lambda wpα, wcβ: -(wpα + wcβ))
+    Δo = equation("Δo", "quantity", np.int32, domain=("pα.Δo", "cβ.Δo"), function=lambda Δpα, Δcβ: np.minimum(Δpα, Δcβ))
+
+class CollarShortCalculation(StrategyCalculation.Collar.Short, CollarCalculation):
+    ws = equation("ws", "entry", np.float32, domain=("cα.ws", "pβ.ws"), function=lambda wcα, wpβ: -(wcα + wpβ))
+    Δo = equation("Δo", "quantity", np.int32, domain=("cα.Δo", "pβ.Δo"), function=lambda Δcα, Δpβ: np.minimum(Δcα, Δpβ))
 
 
-class PortfolioCalculator(Processor):
-    def execute(self, query, *args, **kwargs):
-        pass
+class ValuationCalculation(ValuationCalculation):
+    Λ = source("Λ", "valuation", position=0, variables={"ws": "entry", "Δo": "quantity"})
 
-#    def groupings(self, indexes):
-#        if not indexes:
-#            yield []
-#            return
-#        for group in (((indexes[0],) + pairs) for pairs in combinations(indexes[1:], 1)):
-#            for groups in self.groupings([pair for pair in indexes if pair not in group]):
-#                yield [group] + groups
-
-
-class PortfolioSaver(Consumer, title="Saved"):
-    def __init__(self, *args, file, **kwargs):
-        assert isinstance(file, PortfolioFile)
-        super().__init__(*args, **kwargs)
-        self.file = file
-
-    def execute(self, query, *args, **kwargs):
-        options = query.options
-        if not bool(options) or all([dataframe.empty for dataframe in options.values()]):
-            return
-        inquiry_name = str(query.inquiry.strftime("%Y%m%d_%H%M%S"))
-        inquiry_folder = self.file.path(inquiry_name)
-        if not os.path.isdir(inquiry_folder):
-            os.mkdir(inquiry_folder)
-        contract_name = "_".join([str(query.contract.ticker), str(query.contract.expire.strftime("%Y%m%d"))])
-        contract_folder = self.file.path(inquiry_name, contract_name)
-        if not os.path.isdir(contract_folder):
-            os.mkdir(contract_folder)
-        for security, dataframe in options.items():
-            security_name = str(security).replace("|", "_") + ".csv"
-            security_file = self.file.path(inquiry_name, contract_name, security_name)
-            self.file.write(dataframe, file=security_file, data=security, mode="w")
-            LOGGER.info("Saved: {}[{}]".format(repr(self), str(security_file)))
-
-
-class PortfolioLoader(Producer, title="Loaded"):
-    def __init__(self, *args, file, **kwargs):
-        assert isinstance(file, PortfolioFile)
-        super().__init__(*args, **kwargs)
-        self.file = file
-
-    def execute(self, *args, **kwargs):
-        function = lambda foldername: Datetime.strptime(foldername, "%Y%m%d_%H%M%S")
-        inquiry_folders = list(self.file.directory())
-        for inquiry_name in sorted(inquiry_folders, key=function, reverse=False):
-            inquiry = function(inquiry_name)
-            contract_folders = list(self.file.directory(inquiry_name))
-            for contract_name in contract_folders:
-                contract = Contract(*str(contract_name).split("_"))
-                ticker = str(contract.ticker).upper()
-                expire = Datetime.strptime(os.path.splitext(contract.expire)[0], "%Y%m%d").date()
-                filenames = {security: str(security).replace("|", "_") + ".csv" for security in list(Securities.Options)}
-                files = {security: self.file.path(inquiry_name, contract_name, filename) for security, filename in filenames.items()}
-                options = {security: self.file.read(file=file) for security, file in files.items()}
-                contract = Contract(ticker, expire)
-                yield PortfolioQuery(inquiry, contract, options)
-
-
-class PortfolioFile(DataframeFile):
-    @staticmethod
-    def dataheader(*args, **kwargs): return ["date", "ticker", "expire", "strike", "price", "size", "volume", "interest", "quantity", "paid", "cost"]
-    @staticmethod
-    def datatypes(*args, **kwargs): return {"strike": np.float32, "price": np.float32, "size": np.int32, "volume": np.int64, "interest": np.int32, "quantity": np.int16, "paid": np.float32, "cost": np.float32}
-    @staticmethod
-    def datetypes(*args, **kwargs): return ["date", "expire"]
 
 
 
