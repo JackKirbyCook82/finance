@@ -6,9 +6,6 @@ Created on Sun Jan 28 2024
 
 """
 
-import numpy as np
-import pandas as pd
-import xarray as xr
 from enum import IntEnum
 from datetime import date as Date
 from functools import total_ordering
@@ -18,17 +15,18 @@ from support.dispatchers import typedispatcher
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["DateRange", "Query", "Contract", "Instruments", "Options", "Positions", "Securities", "Strategies", "Basis", "Valuations"]
+__all__ = ["DateRange", "Query", "Contract", "Instruments", "Positions", "Options", "Securities", "Spreads", "Strategies", "Valuations", "Scenarios", "References"]
 __copyright__ = "Copyright 2023,SE Jack Kirby Cook"
-__license__ = ""
+__license__ = "MIT License"
 
 
 Instruments = IntEnum("Instruments", ["PUT", "CALL", "STOCK"], start=1)
 Options = IntEnum("Options", ["PUT", "CALL"], start=1)
 Positions = IntEnum("Positions", ["LONG", "SHORT"], start=1)
 Spreads = IntEnum("Strategy", ["STRANGLE", "COLLAR", "VERTICAL"], start=1)
-Basis = IntEnum("Basis", ["ARBITRAGE"], start=1)
+Valuations = IntEnum("Valuation", ["ARBITRAGE"], start=1)
 Scenarios = IntEnum("Scenarios", ["MARTINGALE", "MINIMUM", "MAXIMUM"], start=1)
+References = IntEnum("References", ["ENTRY", "SPOT"], start=1)
 
 
 class DateRange(ntuple("DateRange", "minimum maximum")):
@@ -45,18 +43,23 @@ class DateRange(ntuple("DateRange", "minimum maximum")):
     def __len__(self): return (self.maximum - self.minimum).days
 
 
-class Query(ntuple("Query", "inquiry contract contents")):
-    def __str__(self): return f"{self.contract.ticker}|{self.contract.expire.strftime('%Y-%m-%d')}|{len(self):.0f}"
-    def __len__(self): return self.size(self.contents)
+class QueryMeta(type):
+    def __init__(cls, *args, fields=[], **kwargs):
+        cls.__fields__ = getattr(cls, "__fields__", set()) | set(fields)
 
-    @typedispatcher
-    def size(self, contents): raise TypeError(type(contents).__name__)
-    @size.register(dict)
-    def mapping(self, mapping): return sum([self.size(contents) for contents in mapping.values()])
-    @size.register(xr.Dataset)
-    def dataset(self, dataset): return [np.count_nonzero(~np.isnan(dataarray.values)) for dataarray in dataset.data_vars.items()]
-    @size.register(pd.DataFrame)
-    def dataframe(self, dataframe): return len(dataframe.index)
+    def __call__(cls, inquiry, contract, *args, **kwargs):
+        fields = {field: kwargs.get(field, None) for field in cls.__fields__}
+        instance = super(QueryMeta, cls).__call__(inquiry, contract, fields)
+        return instance
+
+class Query(ntuple("Query", "inquiry contract fields"), metaclass=QueryMeta):
+    def __str__(self): return f"{self.contract.ticker}|{self.contract.expire.strftime('%Y-%m-%d')}"
+    def __getattr__(self, field): return self.fields.get(field, None)
+
+    def __call__(self, *args, **kwargs):
+        fields = {key: kwargs[key] for key, value in self.fields.keys() if key in kwargs.keys()}
+        fields = self.fields | fields
+        return type(self)(self.inquiry, self.contract, *args, **fields, **kwargs)
 
 
 @total_ordering
@@ -74,7 +77,6 @@ class Variable(object):
     def title(self): return "|".join([str(string).title() for string in str(self).split("|")])
 
 
-class Valuation(Variable, ntuple("Valuation", "basis scenario")): pass
 class Security(Variable, ntuple("Security", "instrument position")): pass
 class Strategy(Variable, ntuple("Strategy", "spread instrument position")):
     def __new__(cls, spread, instrument, position, *args, **kwargs): return super().__new__(cls, spread, instrument, position)
@@ -91,9 +93,6 @@ CollarLong = Strategy(Spreads.COLLAR, None, Positions.LONG, options=[PutLong, Ca
 CollarShort = Strategy(Spreads.COLLAR, None, Positions.SHORT, options=[CallLong, PutShort])
 VerticalPut = Strategy(Spreads.VERTICAL, Instruments.PUT, None, options=[PutLong, PutShort])
 VerticalCall = Strategy(Spreads.VERTICAL, Instruments.CALL, None, options=[CallLong, CallShort])
-ArbitrageMartingale = Valuation(Basis.ARBITRAGE, Scenarios.MARTINGALE)
-ArbitrageMinimum = Valuation(Basis.ARBITRAGE, Scenarios.MINIMUM)
-ArbitrageMaximum = Valuation(Basis.ARBITRAGE, Scenarios.MAXIMUM)
 
 
 class VariablesMeta(type):
@@ -145,19 +144,8 @@ class StrategiesMeta(VariablesMeta, variables=[CollarLong, CollarShort, Vertical
         Call = VerticalCall
 
 
-class ValuationsMeta(VariablesMeta, variables=[ArbitrageMinimum, ArbitrageMaximum, ArbitrageMartingale]):
-    @property
-    def Arbitrages(cls): return iter([ArbitrageMinimum, ArbitrageMaximum, ArbitrageMartingale])
-
-    class Arbitrage:
-        Martingale = ArbitrageMartingale
-        Minimum = ArbitrageMinimum
-        Maximum = ArbitrageMaximum
-
-
 class Securities(object, metaclass=SecuritiesMeta): pass
 class Strategies(object, metaclass=StrategiesMeta): pass
-class Valuations(object, metaclass=ValuationsMeta): pass
 
 
 

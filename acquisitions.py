@@ -19,10 +19,8 @@ __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
 __all__ = ["AcquisitionWriter", "AcquisitionTable"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
-__license__ = ""
-
-
-LOGGER = logging.getLogger(__name__)
+__license__ = "MIT License"
+__logger__ = logging.getLogger(__name__)
 
 
 class AcquisitionWriter(Consumer):

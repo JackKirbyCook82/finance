@@ -17,105 +17,115 @@ from support.dispatchers import kwargsdispatcher
 from support.pipelines import Producer, Processor, Consumer
 from support.calculations import Calculation, equation, source, constant
 
-from finance.variables import Query, Contract, Securities, Valuations, Basis
+from finance.variables import Query, Contract, Securities, Valuations
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["ValuationQuery", "ValuationCalculation", "ValuationLoader", "ValuationSaver", "ValuationFilter", "ValuationCalculator", "ValuationFile"]
+__all__ = ["ValuationCalculation", "ValuationFilter", "ValuationCalculator", "ValuationLoader", "ValuationSaver", "ValuationFile"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
-__license__ = ""
+__license__ = "MIT License"
+__logger__ = logging.getLogger(__name__)
 
 
-LOGGER = logging.getLogger(__name__)
-
-
+valuations_variables = {"to": "date", "tτ": "expire", "qo": "size", "Δo": "quantity"}
 class ValuationCalculation(Calculation):
-    Λ = source("Λ", "valuation", position=0, variables={"to": "date", "tτ": "expire", "qo": "size", "wo": "spot"})
+    v = source("v", "valuation", position=0, variables=valuations_variables)
     ρ = constant("ρ", "discount", position="discount")
 
-    tau = equation("τau", "tau", np.int32, domain=("Λ.to", "Λ.tτ"), function=lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
-    inc = equation("inc", "income", np.float32, domain=("Λ.vo", "Λ.vτ"), function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
-    exp = equation("exp", "cost", np.float32, domain=("Λ.vo", "Λ.vτ"), function=lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0))
-    apy = equation("apy", "apy", np.float32, domain=("τau", "r"), function=lambda τ, r: np.power(r + 1, np.power(τ / 365, -1)) - 1)
-    npv = equation("npv", "npv", np.float32, domain=("τau", "π", "ρ"), function=lambda τ, π, ρ: π * np.power(ρ / 365 + 1, τ))
+    τ = equation("τ", "tau", np.int32, domain=("v.to", "v.tτ"), function=lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
     π = equation("π", "profit", np.float32, domain=("inc", "exp"), function=lambda inc, exp: inc - exp)
     r = equation("r", "return", np.float32, domain=("π", "exp"), function=lambda π, exp: π / exp)
+    inc = equation("inc", "income", np.float32, domain=("v.vo", "v.vτ"), function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
+    exp = equation("exp", "cost", np.float32, domain=("v.vo", "v.vτ"), function=lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0))
+    apy = equation("apy", "apy", np.float32, domain=("τ", "r"), function=lambda τ, r: np.power(r + 1, np.power(τ / 365, -1)) - 1)
+    npv = equation("npv", "npv", np.float32, domain=("τ", "π", "ρ"), function=lambda τ, π, ρ: π * np.power(ρ / 365 + 1, τ))
 
     def execute(self, feed, *args, discount, **kwargs):
         yield self.tau(feed, discount=discount)
         yield self.exp(feed, discount=discount)
         yield self.npv(feed, discount=discount)
         yield self.apy(feed, discount=discount)
-        yield self["Λ"].qo(feed)
+        yield self["v"].qo(feed)
+        yield self["v"].Δo(feed)
+
 
 class ArbitrageCalculation(ValuationCalculation):
-    Λ = source("Λ", "arbitrage", position=0, variables={"vs": "entry", "vo": "spot", "vτ": "future"})
+    v = source("v", "arbitrage", position=0, variables={"vo": "reference", "vτ": "future"})
+
+class SpotCalculation(ValuationCalculation):
+    v = source("v", "spot", position=0, variables={"vo": "spot"})
+
+class EntryCalculation(ValuationCalculation):
+    v = source("v", "entry", position=0, variables={"vo": "entry"})
 
 class MinimumArbitrageCalculation(ArbitrageCalculation):
-    Λ = source("Λ", "minimum", position=0, variables={"vτ": "minimum"})
+    v = source("v", "minimum", position=0, variables={"vτ": "minimum"})
 
 class MaximumArbitrageCalculation(ArbitrageCalculation):
-    Λ = source("Λ", "maximum", position=0, variables={"vτ": "maximum"})
+    v = source("v", "maximum", position=0, variables={"vτ": "maximum"})
 
 class MartingaleArbitrageCalculation(ArbitrageCalculation):
-    Λ = source("Λ", "martingale", position=0, variables={"vτ": "martingale"})
+    v = source("v", "martingale", position=0, variables={"vτ": "martingale"})
 
 
-class ValuationQuery(Query): pass
+class ValuationQuery(Query, fields=["valuation", "valuations"]): pass
 class ValuationCalculator(Processor, title="Calculated"):
     def __init__(self, *args, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
         arbitrage = {Valuations.Arbitrage.Minimum: MinimumArbitrageCalculation, Valuations.Arbitrage.Maximum: MaximumArbitrageCalculation, Valuations.Arbitrage.Martingale: MartingaleArbitrageCalculation}
         arbitrage = {valuation: calculation(*args, **kwargs) for valuation, calculation in arbitrage.items()}
-        self.calculations = {Basis.ARBITRAGE: arbitrage}
+        self.calculations = {Valuations.ARBITRAGE: arbitrage}
 
     def execute(self, query, *args, **kwargs):
         strategies = query.strategies
-        for basis, calculations in self.calculations.items():
-            valuations = {valuation: calculation(strategies, *args, **kwargs) for valuation, calculation in calculations.items()}
-            for valuation, dataset in valuations.items():
-                dataset.expand_dims({"valuation": str(valuation)})
-            valuations = {valuation: dataset.to_dataframe() for valuation, dataset in valuations.items()}
-            valuations = {valuation: dataset.reset_index(drop=False, inplace=False) for valuation, dataset in valuations.items()}
-            valuations = self.calculation(valuations, *args, basis=basis, **kwargs)
+        for valuation, calculations in self.calculations.items():
+            valuations = {scenario: calculation(strategies, *args, **kwargs) for scenario, calculation in calculations.items()}
+            for scenario, dataset in valuations.items():
+                dataset.expand_dims({"scenario": str(scenario)})
+            valuations = {scenario: dataset.to_dataframe() for scenario, dataset in valuations.items()}
+            valuations = {scenario: dataset.reset_index(drop=False, inplace=False) for scenario, dataset in valuations.items()}
+            valuations = self.calculate(valuations, *args, valuation=valuation, **kwargs)
+            valuations["valuations"] = str(valuations)
             if bool(valuations.empty):
                 continue
-            yield ValuationQuery(query.inquiry, query.contract, basis, valuations)
+            yield ValuationQuery(query.inquiry, query.contract, valuation, valuations)
 
-    @kwargsdispatcher("basis")
-    def calculation(self, *args, basis, **kwargs): raise ValueError(str(basis.name).lower())
+    @kwargsdispatcher("valuation")
+    def calculate(self, *args, valuation, **kwargs): raise ValueError(str(valuation.name).lower())
 
-    @calculation.register(Basis.ARBITRAGE)
-    def arbitrage(self, valuations, *args, **kwargs):
-        mask = valuations[Valuations.Arbitrage.Minimum]["apy"] > 0
-        valuations = {valuation: dataframe[mask] for valuation, dataframe in valuations.items()}
-        valuations = {valuation: dataframe.dropna(axis=0, how="all") for valuation, dataframe in valuations.items()}
-        valuations = {valuation: dataframe.reset_index(drop=True, inplace=False) for valuation, dataframe in valuations.items()}
-        valuations = pd.concat(list(valuations.values()), axis=0).reset_index(drop=True, inplace=False)
-        return valuations
+    @calculate.register(Valuations.ARBITRAGE)
+    def arbitrage(self, dataframes, *args, **kwargs):
+        mask = dataframes[Valuations.Arbitrage.Minimum]["apy"] > 0
+        dataframes = [dataframe[mask].dropna(axis=0, how="all") for valuation, dataframe in dataframes.values()]
+        dataframe = pd.concat(dataframes, axis=0).reset_index(drop=True, inplace=False)
+        return dataframe
 
 
 class ValuationFilter(Processor, title="Filtered"):
-    def execute(self, query, *args, size=None, apy=None, **kwargs):
-        criteria = {key: value for key, value in dict(size=size, apy=apy) if value is not None}
-        valuations = self.filter(query.valuations, *args, basis=query.basis, criteria=criteria, **kwargs)
-        query = ValuationQuery(query.inquiry, query.contract, query.basis, valuations)
-        LOGGER.info(f"Filter: {repr(self)}[{str(query)}]")
+    def execute(self, query, *args, **kwargs):
+        valuations = query.valuations
+        valuations = {valuation: self.filter(dataframe, *args, valuation=valuation, **kwargs) for valuation, dataframe in valuations.items()}
+        query = query(valuations=valuations)
+        __logger__.info(f"Filter: {repr(self)}[{str(query)}]")
         yield query
 
-    @kwargsdispatcher("basis")
-    def filter(self, *args, basis, **kwargs): raise ValueError(str(basis.name).lower())
+    @kwargsdispatcher("valuation")
+    def filter(self, *args, valuation, **kwargs): raise ValueError(str(valuation.name).lower())
 
-    @filter.register(Basis.ARBITRAGE)
-    def arbitrage(self, valuations, *args, criteria={}, **kwargs):
-        valuations = {valuation: dataframe for valuation, dataframe in iter(valuations.groupby("valuation"))}
-        for key, value in criteria.items():
-            mask = valuations[Valuations.Arbitrage.Minimum][key] > value
-            valuations = {valuation: dataframe[mask] for valuation, dataframe in valuations.items()}
-            valuations = {valuation: dataframe.dropna(axis=0, how="all") for valuation, dataframe in valuations.items()}
-            valuations = {valuation: dataframe.reset_index(drop=True, inplace=False) for valuation, dataframe in valuations.items()}
-        valuations = pd.concat(list(valuations.values()), axis=0).reset_index(drop=True, inplace=False)
-        return valuations
+    @filter.register(Valuations.ARBITRAGE)
+    def arbitrage(self, dataframes, *args, **kwargs):
+        dataframes = {scenario: dataframe for scenario, dataframe in iter(dataframes.groupby("scenario"))}
+        mask = self.mask(dataframes[str(Scenarios.MINIMUM)], *args, **kwargs)
+        dataframes = [dataframe.where(mask).dropna(axis=0, how="all") for dataframe in dataframes.values()]
+        dataframe = pd.concat(dataframes, axis=0).reset_index(drop=True, inplace=False)
+        return dataframe
+
+    @staticmethod
+    def mask(dataframe, *args, size=None, apy=None, **kwargs):
+        mask = (dataframe["size"].notna() & dataframe["apy"].notna())
+        mask = (mask & dataframe["size"] >= size) if size is not None else mask
+        mask = (mask & dataframe["apy"] >= apy) if apy is not None else mask
+        return mask
 
 
 class ValuationSaver(Consumer, title="Saved"):
@@ -134,10 +144,11 @@ class ValuationSaver(Consumer, title="Saved"):
         contract_folder = self.file.path(contract_name)
         if not os.path.isdir(contract_folder):
             os.mkdir(contract_folder)
-        basis_name = str(query.basis.name).lower()
-        basis_file = self.file.path(inquiry_name, contract_name, basis_name + ".csv")
-        self.file.write(valuations, file=basis_file, mode="w")
-        LOGGER.info("Saved: {}[{}]".format(repr(self), str(basis_file)))
+        for valuation in valuations:
+            valuation_name = str(valuation.name).lower()
+            valuation_file = self.file.path(inquiry_name, contract_name, valuation_name + ".csv")
+            self.file.write(valuations, file=valuation_file, mode="w")
+            __logger__.info("Saved: {}[{}]".format(repr(self), str(valuation_file)))
 
 
 class ValuationLoader(Producer, title="Loaded"):
@@ -161,18 +172,16 @@ class ValuationLoader(Producer, title="Loaded"):
                 expire = Datetime.strptime(os.path.splitext(contract.expire)[0], "%Y%m%d").date()
                 if expires is not None and expire not in expires:
                     continue
-                basis_filenames = list(self.file.directory(contract_name))
-                for basis_filename in basis_filenames:
-                    basis_name = str(basis_filename).split(".")[0]
-                    basis = Basis[str(basis_name)]
-                    basis_file = self.file.path(inquiry_name, contract_name, basis_name + ".csv")
-                    valuations = self.file.read(file=basis_file)
-                    yield ValuationQuery(inquiry, contract, basis, valuations)
+                for valuation in list(Valuations):
+                    valuation_name = str(valuation.name).lower()
+                    valuation_file = self.file.path(inquiry_name, contract_name, valuation_name + ".csv")
+                    valuations = self.file.read(file=valuation_file)
+                    yield ValuationQuery(inquiry, contract, valuation, valuations)
 
 
 class ValuationFile(DataframeFile):
     @staticmethod
-    def dataheader(*args, **kwargs): return ["strategy", "valuation", "ticker", "expire", "date"] + list(map(str, Securities.Options)) + ["apy", "npv", "cost", "tau", "size"]
+    def dataheader(*args, **kwargs): return ["strategy", "valuation", "scenario", "ticker", "expire", "date"] + list(map(str, Securities.Options)) + ["apy", "npv", "cost", "tau", "size"]
     @staticmethod
     def datatypes(*args, **kwargs): return {"apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.int32, "tau": np.int32}
     @staticmethod
