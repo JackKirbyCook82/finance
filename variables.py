@@ -15,7 +15,7 @@ from support.dispatchers import typedispatcher
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["DateRange", "Query", "Contract", "Instruments", "Positions", "Options", "Securities", "Spreads", "Strategies", "Valuations", "Scenarios", "References"]
+__all__ = ["DateRange", "Query", "Contract", "Instruments", "Positions", "Options", "Securities", "Spreads", "Strategies", "Valuations", "Scenarios"]
 __copyright__ = "Copyright 2023,SE Jack Kirby Cook"
 __license__ = "MIT License"
 
@@ -26,7 +26,6 @@ Positions = IntEnum("Positions", ["LONG", "SHORT"], start=1)
 Spreads = IntEnum("Strategy", ["STRANGLE", "COLLAR", "VERTICAL"], start=1)
 Valuations = IntEnum("Valuation", ["ARBITRAGE"], start=1)
 Scenarios = IntEnum("Scenarios", ["MARTINGALE", "MINIMUM", "MAXIMUM"], start=1)
-References = IntEnum("References", ["ENTRY", "SPOT"], start=1)
 
 
 class DateRange(ntuple("DateRange", "minimum maximum")):
@@ -44,6 +43,9 @@ class DateRange(ntuple("DateRange", "minimum maximum")):
 
 
 class QueryMeta(type):
+    def __new__(mcs, name, bases, attrs, *args, **kwargs):
+        return super(QueryMeta, mcs).__new__(mcs, name, bases, attrs)
+
     def __init__(cls, *args, fields=[], **kwargs):
         cls.__fields__ = getattr(cls, "__fields__", set()) | set(fields)
 
@@ -54,12 +56,11 @@ class QueryMeta(type):
 
 class Query(ntuple("Query", "inquiry contract fields"), metaclass=QueryMeta):
     def __str__(self): return f"{self.contract.ticker}|{self.contract.expire.strftime('%Y-%m-%d')}"
-    def __getattr__(self, field): return self.fields.get(field, None)
+    def __getattr__(self, field): return self.fields[field] if field in self.fields.keys() else super().__getattr__(field)
 
     def __call__(self, *args, **kwargs):
-        fields = {key: kwargs[key] for key, value in self.fields.keys() if key in kwargs.keys()}
-        fields = self.fields | fields
-        return type(self)(self.inquiry, self.contract, *args, **fields, **kwargs)
+        fields = {key: kwargs.get(key, value) for key, value in self.fields.items()}
+        return type(self)(self.inquiry, self.contract, *args, **kwargs | fields)
 
 
 @total_ordering
@@ -89,10 +90,10 @@ PutLong = Security(Instruments.PUT, Positions.LONG)
 PutShort = Security(Instruments.PUT, Positions.SHORT)
 CallLong = Security(Instruments.CALL, Positions.LONG,)
 CallShort = Security(Instruments.CALL, Positions.SHORT)
-CollarLong = Strategy(Spreads.COLLAR, None, Positions.LONG, options=[PutLong, CallShort])
-CollarShort = Strategy(Spreads.COLLAR, None, Positions.SHORT, options=[CallLong, PutShort])
-VerticalPut = Strategy(Spreads.VERTICAL, Instruments.PUT, None, options=[PutLong, PutShort])
-VerticalCall = Strategy(Spreads.VERTICAL, Instruments.CALL, None, options=[CallLong, CallShort])
+CollarLong = Strategy(Spreads.COLLAR, None, Positions.LONG, securities=[PutLong, CallShort])
+CollarShort = Strategy(Spreads.COLLAR, None, Positions.SHORT, securities=[CallLong, PutShort])
+VerticalPut = Strategy(Spreads.VERTICAL, Instruments.PUT, None, securities=[PutLong, PutShort])
+VerticalCall = Strategy(Spreads.VERTICAL, Instruments.CALL, None, securities=[CallLong, CallShort])
 
 
 class VariablesMeta(type):

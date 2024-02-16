@@ -9,6 +9,7 @@ Created on Weds Jul 19 2023
 import os
 import logging
 import numpy as np
+import pandas as pd
 import xarray as xr
 from datetime import datetime as Datetime
 
@@ -29,6 +30,7 @@ class SecurityQuery(Query, fields=["securities"]): pass
 class SecurityFilter(Processor, title="Filtered"):
     def execute(self, query, *args, **kwargs):
         securities = query.securities
+        assert isinstance(securities, pd.DataFrame)
         mask = self.mask(securities, *args, **kwargs)
         securities = securities.where(mask).dropna(axis=0, how="all")
         securities = securities.reset_index(drop=True, inplace=False)
@@ -37,49 +39,46 @@ class SecurityFilter(Processor, title="Filtered"):
         yield query
 
     @staticmethod
-    def mask(dataframe, *args, size=0, interest=0, volume=0, **kwargs):
+    def mask(dataframe, *args, size=None, interest=None, volume=None, **kwargs):
         mask = (dataframe["size"].notna() & dataframe["interest"].notna() & dataframe["volume"].notna())
-        mask = (mask & dataframe["size"] >= size) if size is not None else mask
-        mask = (mask & dataframe["interest"] >= interest) if interest is not None else mask
-        mask = (mask & dataframe["volume"] >= volume) if volume is not None else volume
+        mask = (mask & (dataframe["size"] >= size)) if size is not None else mask
+        mask = (mask & (dataframe["interest"] >= interest)) if interest is not None else mask
+        mask = (mask & (dataframe["volume"] >= volume)) if volume is not None else mask
         return mask
 
 
 class SecurityParser(Processor, title="Parsed"):
     def execute(self, query, *args, **kwargs):
         securities = query.securities
-        securities = self.parse(securities, *args, **kwargs)
+        assert isinstance(securities, pd.DataFrame)
+        index = ["date", "ticker", "expire", "strike"]
+        securities = securities.drop_duplicates(subset=["security", "date", "ticker", "expire", "strike"], keep="last", inplace=False)
+        securities = {security: dataframe.drop("security", axis=1, inplace=False) for security, dataframe in iter(securities.groupby("security"))}
+        securities = {security: dataframe.set_index(index, inplace=False, drop=True) for security, dataframe in securities.items()}
+        securities = {security: xr.Dataset.from_dataframe(dataframe) for security, dataframe in securities.items()}
         query = query(securities=securities)
         yield query
-
-    @staticmethod
-    def parse(dataframe, *args, **kwargs):
-        index = ["date", "ticker", "expire", "strike"]
-        dataframe = dataframe.drop_duplicates(subset=["security", "date", "ticker", "expire", "strike"], keep="last", inplace=False)
-        dataframe = {security: dataframe.drop("security", axis=1, inplace=False) for security, dataframe in iter(dataframe.groupby("security"))}
-        dataframe = {security: dataframe.set_index(index, inplace=False, drop=True) for security, dataframe in dataframe.items()}
-        dataframe = {security: xr.Dataset.from_dataframe(dataframe) for security, dataframe in dataframe.items()}
-        return dataframe
 
 
 class SecuritySaver(Consumer, title="Saved"):
     def __init__(self, *args, file, **kwargs):
         assert isinstance(file, SecurityFile)
         super().__init__(*args, **kwargs)
-        self.__file = file
+        self.file = file
 
     def execute(self, query, *args, **kwargs):
         securities = query.securities
+        assert isinstance(securities, pd.DataFrame)
         inquiry_name = str(query.inquiry.strftime("%Y%m%d_%H%M%S"))
-        inquiry_folder = self.file.path(inquiry_name)
-        if not os.path.isdir(inquiry_folder):
-            os.mkdir(inquiry_folder)
         contract_name = "_".join([str(query.contract.ticker), str(query.contract.expire.strftime("%Y%m%d"))])
+        inquiry_folder = self.file.path(inquiry_name)
         contract_folder = self.file.path(inquiry_name, contract_name)
-        if not os.path.isdir(contract_folder):
-            os.mkdir(contract_folder)
         securities_file = self.file.path(inquiry_name, contract_name, "securities.csv")
         if securities is not None and not securities.empty:
+            if not os.path.isdir(inquiry_folder):
+                os.mkdir(inquiry_folder)
+            if not os.path.isdir(contract_folder):
+                os.mkdir(contract_folder)
             self.file.write(securities, file=securities_file, filemode="w")
             __logger__.info("Saved: {}[{}]".format(repr(self), str(securities_file)))
 
@@ -88,7 +87,7 @@ class SecurityLoader(Producer, title="Loaded"):
     def __init__(self, *args, file, **kwargs):
         assert isinstance(file, SecurityFile)
         super().__init__(*args, **kwargs)
-        self.__file = file
+        self.file = file
 
     def execute(self, *args, tickers=None, expires=None, **kwargs):
         function = lambda foldername: Datetime.strptime(foldername, "%Y%m%d_%H%M%S")
@@ -97,23 +96,24 @@ class SecurityLoader(Producer, title="Loaded"):
             inquiry = function(inquiry_name)
             contract_names = self.file.directory(inquiry_name)
             for contract_name in contract_names:
-                contract = Contract(*str(contract_name).split("_"))
-                ticker = str(contract.ticker).upper()
+                ticker, expire = str(os.path.splitext(contract_name)[0]).split("_")
+                ticker = str(ticker).upper()
                 if tickers is not None and ticker not in tickers:
                     continue
-                expire = Datetime.strptime(os.path.splitext(contract.expire)[0], "%Y%m%d").date()
+                expire = Datetime.strptime(expire, "%Y%m%d").date()
                 if expires is not None and expire not in expires:
                     continue
                 securities_file = self.file.path(inquiry_name, contract_name, "securities.csv")
+                contract = Contract(ticker, expire)
                 securities = self.file.read(file=securities_file) if os.path.isfile(securities_file) else None
                 yield SecurityQuery(inquiry, contract, securities=securities)
 
 
 class SecurityFile(DataframeFile):
     @staticmethod
-    def dataheader(*args, **kwargs): return ["security", "ticker", "expire", "strike", "date", "price", "underlying", "size", "volume", "interest", "entry", "quantity"]
+    def dataheader(*args, **kwargs): return ["security", "ticker", "expire", "strike", "date", "price", "underlying", "size", "volume", "interest"]
     @staticmethod
-    def datatypes(*args, **kwargs): return {"strike": np.float32, "price": np.float3, "underlying": np.float32, "size": np.int32, "volume": np.int64, "interest": np.int32, "entry": np.float32, "quantity": np.int32}
+    def datatypes(*args, **kwargs): return {"strike": np.float32, "price": np.float32, "underlying": np.float32, "size": np.int32, "volume": np.int64, "interest": np.int32}
     @staticmethod
     def datetypes(*args, **kwargs): return ["expire", "date"]
 
