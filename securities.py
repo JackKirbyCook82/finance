@@ -16,7 +16,7 @@ from datetime import datetime as Datetime
 from support.files import DataframeFile
 from support.pipelines import Producer, Processor, Consumer
 
-from finance.variables import Query, Contract
+from finance.variables import Query, Contract, Securities
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -30,10 +30,12 @@ class SecurityQuery(Query, fields=["securities"]): pass
 class SecurityFilter(Processor, title="Filtered"):
     def execute(self, query, *args, **kwargs):
         securities = query.securities
-        assert isinstance(securities, pd.DataFrame)
-        mask = self.mask(securities, *args, **kwargs)
-        securities = securities.where(mask).dropna(axis=0, how="all")
-        securities = securities.reset_index(drop=True, inplace=False)
+        assert isinstance(securities, dict)
+        assert all([isinstance(dataframe, pd.DataFrame) for dataframe in securities.values()])
+        securities = {security: dataframe for security, dataframe in securities.items() if not dataframe.empty}
+        mask = {security: self.mask(dataframe, *args, **kwargs) for security, dataframe in securities.items()}
+        securities = {security: dataframe.where(mask[security]).dropna(axis=0, how="all") for security, dataframe in securities.items()}
+        securities = {security: dataframe.reset_index(drop=True, inplace=False) for security, dataframe in securities.items()}
         query = query(securities=securities)
         __logger__.info(f"Filter: {repr(self)}|{str(query)}[{len(securities.index):.0f}]")
         yield query
@@ -50,10 +52,12 @@ class SecurityFilter(Processor, title="Filtered"):
 class SecurityParser(Processor, title="Parsed"):
     def execute(self, query, *args, **kwargs):
         securities = query.securities
-        assert isinstance(securities, pd.DataFrame)
+        assert isinstance(securities, dict)
+        assert all([isinstance(dataframe, pd.DataFrame) for dataframe in securities.values()])
+        securities = {security: dataframe for security, dataframe in securities.items() if not dataframe.empty}
         index = ["date", "ticker", "expire", "strike"]
-        securities = securities.drop_duplicates(subset=["security", "date", "ticker", "expire", "strike"], keep="last", inplace=False)
-        securities = {security: dataframe.drop("security", axis=1, inplace=False) for security, dataframe in iter(securities.groupby("security"))}
+        securities = {security: dataframe.drop_duplicates(subset=["security", "date", "ticker", "expire", "strike"], keep="last", inplace=False) for security, dataframe in securities.items()}
+        securities = {security: dataframe.drop("security", axis=1, inplace=False) for security, dataframe in securities.items()}
         securities = {security: dataframe.set_index(index, inplace=False, drop=True) for security, dataframe in securities.items()}
         securities = {security: xr.Dataset.from_dataframe(dataframe) for security, dataframe in securities.items()}
         query = query(securities=securities)
@@ -68,17 +72,21 @@ class SecuritySaver(Consumer, title="Saved"):
 
     def execute(self, query, *args, **kwargs):
         securities = query.securities
-        assert isinstance(securities, pd.DataFrame)
+        assert isinstance(securities, dict)
+        assert all([isinstance(dataframe, pd.DataFrame) for dataframe in securities.values()])
+        securities = {security: dataframe for security, dataframe in securities.items() if not dataframe.empty}
         inquiry_name = str(query.inquiry.strftime("%Y%m%d_%H%M%S"))
         contract_name = "_".join([str(query.contract.ticker), str(query.contract.expire.strftime("%Y%m%d"))])
         inquiry_folder = self.file.path(inquiry_name)
         contract_folder = self.file.path(inquiry_name, contract_name)
-        securities_file = self.file.path(inquiry_name, contract_name, "securities.csv")
-        if securities is not None and not securities.empty:
+        if bool(securities):
             if not os.path.isdir(inquiry_folder):
                 os.mkdir(inquiry_folder)
             if not os.path.isdir(contract_folder):
                 os.mkdir(contract_folder)
+        for security, dataframe in securities.items():
+            security_name = str(security.name).lower() + ".csv"
+            securities_file = self.file.path(inquiry_name, contract_name, security_name)
             self.file.write(securities, file=securities_file, filemode="w")
             __logger__.info("Saved: {}[{}]".format(repr(self), str(securities_file)))
 
@@ -87,6 +95,7 @@ class SecurityLoader(Producer, title="Loaded"):
     def __init__(self, *args, file, **kwargs):
         assert isinstance(file, SecurityFile)
         super().__init__(*args, **kwargs)
+        self.securities = list(Securities.Options)
         self.file = file
 
     def execute(self, *args, tickers=None, expires=None, **kwargs):
@@ -103,10 +112,12 @@ class SecurityLoader(Producer, title="Loaded"):
                 expire = Datetime.strptime(expire, "%Y%m%d").date()
                 if expires is not None and expire not in expires:
                     continue
-                securities_file = self.file.path(inquiry_name, contract_name, "securities.csv")
-                contract = Contract(ticker, expire)
-                securities = self.file.read(file=securities_file) if os.path.isfile(securities_file) else None
-                yield SecurityQuery(inquiry, contract, securities=securities)
+                for security in self.securities:
+                    security_name = str(security.name).lower() + ".csv"
+                    securities_file = self.file.path(inquiry_name, contract_name, security_name)
+                    contract = Contract(ticker, expire)
+                    securities = self.file.read(file=securities_file) if os.path.isfile(securities_file) else None
+                    yield SecurityQuery(inquiry, contract, securities=securities)
 
 
 class SecurityFile(DataframeFile):

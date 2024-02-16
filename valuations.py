@@ -86,12 +86,13 @@ class ValuationCalculator(Processor, title="Calculated"):
 class ValuationFilter(Processor, title="Filtered"):
     def __init__(self, *args, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
-        self.filters = {Valuations.ARBITRAGE: Scenarios.MINIMUM}
+        self.valuations = {Valuations.ARBITRAGE: Scenarios.MINIMUM}
 
     def execute(self, query, *args, **kwargs):
         valuation, valuations = query.valuation, query.valuations
         assert isinstance(valuations, xr.Dataset)
-        mask = self.mask(valuations, *args, scenario=self.filters[valuation], **kwargs)
+        scenario = self.valuations[valuation]
+        mask = self.mask(valuations, *args, scenario=scenario, **kwargs)
         valuations = valuations.where(mask, drop=False)
         query = query(valuation=valuation, valuations=valuations)
         __logger__.info(f"Filter: {repr(self)}[{str(query)}]")
@@ -127,9 +128,10 @@ class ValuationSaver(Consumer, title="Saved"):
         valuation, valuations = query.valuation, query.valuations
         inquiry_name = str(query.inquiry.strftime("%Y%m%d_%H%M%S"))
         contract_name = "_".join([str(query.contract.ticker), str(query.contract.expire.strftime("%Y%m%d"))])
+        valuation_name = str(self.valuation.name).lower() + ".csv"
         inquiry_folder = self.file.path(inquiry_name)
         contract_folder = self.file.path(inquiry_folder, contract_name)
-        valuation_file = self.file.path(inquiry_name, contract_name, "valuations.csv")
+        valuation_file = self.file.path(inquiry_name, contract_name, valuation_name)
         if valuations is not None and not valuations.empty:
             if not os.path.isdir(inquiry_folder):
                 os.mkdir(inquiry_folder)
@@ -140,9 +142,10 @@ class ValuationSaver(Consumer, title="Saved"):
 
 
 class ValuationLoader(Producer, title="Loaded"):
-    def __init__(self, *args, file, **kwargs):
+    def __init__(self, *args, file, valuation, **kwargs):
         assert isinstance(file, ValuationFile)
         super().__init__(*args, **kwargs)
+        self.valuation = valuation
         self.file = file
 
     def execute(self, *args, tickers=None, expires=None, **kwargs):
@@ -160,9 +163,10 @@ class ValuationLoader(Producer, title="Loaded"):
                 expire = Datetime.strptime(os.path.splitext(contract.expire)[0], "%Y%m%d").date()
                 if expires is not None and expire not in expires:
                     continue
-                valuation_file = self.file.path(inquiry_name, contract_name, "valuations.csv")
+                valuation_name = str(self.valuation.name).lower() + ".csv"
+                valuation_file = self.file.path(inquiry_name, contract_name, valuation_name)
                 valuations = self.file.read(file=valuation_file)
-                yield ValuationQuery(inquiry, contract, valuations)
+                yield ValuationQuery(inquiry, contract, valuation=self.valuation, valuations=valuations)
 
 
 class ValuationFile(DataframeFile):
