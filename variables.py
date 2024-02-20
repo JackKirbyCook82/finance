@@ -25,7 +25,7 @@ Options = IntEnum("Options", ["PUT", "CALL"], start=1)
 Positions = IntEnum("Positions", ["LONG", "SHORT"], start=1)
 Spreads = IntEnum("Strategy", ["STRANGLE", "COLLAR", "VERTICAL"], start=1)
 Valuations = IntEnum("Valuation", ["ARBITRAGE"], start=1)
-Scenarios = IntEnum("Scenarios", ["MARTINGALE", "MINIMUM", "MAXIMUM"], start=1)
+Scenarios = IntEnum("Scenarios", ["MINIMUM", "MAXIMUM"], start=1)
 
 
 class DateRange(ntuple("DateRange", "minimum maximum")):
@@ -42,32 +42,29 @@ class DateRange(ntuple("DateRange", "minimum maximum")):
     def __len__(self): return (self.maximum - self.minimum).days
 
 
-class QueryMeta(type):
-    def __new__(mcs, name, bases, attrs, *args, **kwargs):
-        return super(QueryMeta, mcs).__new__(mcs, name, bases, attrs)
-
-    def __init__(cls, *args, fields=[], **kwargs):
-        cls.__fields__ = getattr(cls, "__fields__", set()) | set(fields)
-
-    def __call__(cls, inquiry, contract, *args, **kwargs):
-        fields = {field: kwargs.get(field, None) for field in cls.__fields__}
-        instance = super(QueryMeta, cls).__call__(inquiry, contract, fields)
-        return instance
-
-class Query(ntuple("Query", "inquiry contract fields"), metaclass=QueryMeta):
-    def __str__(self): return f"{self.contract.ticker}|{self.contract.expire.strftime('%Y-%m-%d')}"
-    def __getattr__(self, field): return self.fields[field] if field in self.fields.keys() else super().__getattr__(field)
-
-    def __call__(self, *args, **kwargs):
-        fields = {key: kwargs.get(key, value) for key, value in self.fields.items()}
-        return type(self)(self.inquiry, self.contract, *args, **kwargs | fields)
-
-
 @total_ordering
 class Contract(ntuple("Contract", "ticker expire")):
     def __str__(self): return f"{str(self.ticker).upper()}, {self.expire.strftime('%Y-%m-%d')}"
     def __eq__(self, other): return self.ticker == other.ticker and self.expire == other.expire
     def __lt__(self, other): return self.ticker < other.ticker and self.expire < other.expire
+
+
+class Query(object):
+    def __str__(self): return f"{self.contract.ticker}|{self.contract.expire.strftime('%Y-%m-%d')}"
+    def __init__(self, inquiry, contract, **fields):
+        self.__inquiry = inquiry
+        self.__contract = contract
+        self.__fields = fields
+
+    def __getattr__(self, field): return self.fields[field] if field in self.fields.keys() else super().__getattr__(field)
+    def __call__(self, **fields): return Query(self.inquiry, self.contract, self.fields | fields)
+
+    @property
+    def inquiry(self): return self.__inquiry
+    @property
+    def contract(self): return self.__contract
+    @property
+    def fields(self): return self.__fields
 
 
 class Variable(object):
@@ -78,10 +75,18 @@ class Variable(object):
     def title(self): return "|".join([str(string).title() for string in str(self).split("|")])
 
 
-class Security(Variable, ntuple("Security", "instrument position")): pass
+class Security(Variable, ntuple("Security", "instrument position")):
+    def __invert__(self):
+        position = Positions.LONG if self.position is Positions.SHORT else Positions.SHORT
+        return Securities[(self.instrument, position)]
+
+
 class Strategy(Variable, ntuple("Strategy", "spread instrument position")):
     def __new__(cls, spread, instrument, position, *args, **kwargs): return super().__new__(cls, spread, instrument, position)
     def __init__(self, *args, securities, **kwargs): self.securities = securities
+    def __invert__(self):
+        position = (Positions.LONG if self.position is Positions.SHORT else Positions.SHORT) if self.position is not None else None
+        return Strategies[(self.spread, self.instrument, position)]
 
 
 StockLong = Security(Instruments.STOCK, Positions.LONG)
@@ -129,6 +134,14 @@ class SecuritiesMeta(VariablesMeta, variables=[StockLong, StockShort, PutLong, P
         class Call:
             Long = CallLong
             Short = CallShort
+    class Long:
+        Stock = StockLong
+        Put = PutLong
+        Call = CallLong
+    class Short:
+        Stock = StockShort
+        Put = PutShort
+        Call = CallShort
 
 
 class StrategiesMeta(VariablesMeta, variables=[CollarLong, CollarShort, VerticalPut, VerticalCall]):
