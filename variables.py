@@ -6,20 +6,23 @@ Created on Sun Jan 28 2024
 
 """
 
+from abc import ABC
 from enum import IntEnum
 from datetime import date as Date
 from functools import total_ordering
 from collections import namedtuple as ntuple
+from collections import OrderedDict as ODict
 
 from support.dispatchers import typedispatcher
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["DateRange", "Query", "Contract", "Instruments", "Positions", "Options", "Securities", "Spreads", "Strategies", "Valuations", "Scenarios"]
+__all__ = ["DateRange", "Query", "Contract", "Actions", "Instruments", "Positions", "Options", "Securities", "Spreads", "Strategies", "Valuations", "Scenarios"]
 __copyright__ = "Copyright 2023,SE Jack Kirby Cook"
 __license__ = "MIT License"
 
 
+Actions = IntEnum("Actions", ["OPEN", "CLOSE"], start=1)
 Instruments = IntEnum("Instruments", ["PUT", "CALL", "STOCK"], start=1)
 Options = IntEnum("Options", ["PUT", "CALL"], start=1)
 Positions = IntEnum("Positions", ["LONG", "SHORT"], start=1)
@@ -57,7 +60,7 @@ class Query(object):
         self.__fields = fields
 
     def __getattr__(self, field): return self.fields[field] if field in self.fields.keys() else super().__getattr__(field)
-    def __call__(self, **fields): return Query(self.inquiry, self.contract, self.fields | fields)
+    def __call__(self, **fields): return Query(self.inquiry, self.contract, **self.fields | fields)
 
     @property
     def inquiry(self): return self.__inquiry
@@ -67,26 +70,28 @@ class Query(object):
     def fields(self): return self.__fields
 
 
-class Variable(object):
+class Variable(ABC):
     def __str__(self): return "|".join([str(value.name).lower() for value in self if value is not None])
     def __hash__(self): return hash(tuple(self))
+    def __invert__(self):
+        fields = ODict([(key, value) for key, value in zip(self.keys(), self.values())])
+        fields.update({"position": Positions.LONG if self.position is Positions.SHORT else Positions.SHORT})
+        return type(self)(*list(fields.values()))
 
     @property
     def title(self): return "|".join([str(string).title() for string in str(self).split("|")])
+    @classmethod
+    def fields(cls): return list(cls._fields)
+
+    def items(self): return list(zip(self.keys(), self.values()))
+    def keys(self): return list(self._fields)
+    def values(self): return list(self)
 
 
-class Security(Variable, ntuple("Security", "instrument position")):
-    def __invert__(self):
-        position = Positions.LONG if self.position is Positions.SHORT else Positions.SHORT
-        return Securities[(self.instrument, position)]
-
-
+class Security(Variable, ntuple("Security", "instrument position")): pass
 class Strategy(Variable, ntuple("Strategy", "spread instrument position")):
     def __new__(cls, spread, instrument, position, *args, **kwargs): return super().__new__(cls, spread, instrument, position)
     def __init__(self, *args, securities, **kwargs): self.securities = securities
-    def __invert__(self):
-        position = (Positions.LONG if self.position is Positions.SHORT else Positions.SHORT) if self.position is not None else None
-        return Strategies[(self.spread, self.instrument, position)]
 
 
 StockLong = Security(Instruments.STOCK, Positions.LONG)
