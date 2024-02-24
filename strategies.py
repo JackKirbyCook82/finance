@@ -32,13 +32,12 @@ class StrategyCalculation(Calculation, ABC):
     wτx = equation("wτx", "maximum", np.float32, domain=("yτx", "ε"), function=lambda yτx, ε: yτx * 100 - ε)
     wo = equation("wo", "spot", np.float32, domain=("yo", "ε"), function=lambda yo, ε: yo * 100 - ε)
     ε = constant("ε", "fees", position="fees")
-    registry = dict()
 
     def __init_subclass__(cls, *args, **kwargs):
         strategy = kwargs.get("strategy", getattr(cls, "strategy", None))
         action = kwargs.get("action", getattr(cls, "action", None))
         if all([strategy is not None, action is not None]):
-            cls.registry[(strategy, action)] = cls
+            cls.registry[action] = cls.registry.get(action, {}) | {strategy: cls}
         if strategy is not None:
             cls.strategy = strategy
         if action is not None:
@@ -120,11 +119,12 @@ class CloseCollarShortCalculation(CloseStrategyCalculation, CollarShortCalculati
 
 
 class StrategyCalculator(Processor, title="Calculated"):
-    def __init__(self, *args, name=None, **kwargs):
+    def __init__(self, *args, name=None, action, **kwargs):
         super().__init__(*args, name=name, **kwargs)
-        calculations = {strategy: calculation for (strategy, action), calculation in StrategyCalculation.registry.items() if action == kwargs["action"]}
+        calculations = {strategy: calculation for strategy, calculation in StrategyCalculation[action].items()}
         calculations = {strategy: calculation(*args, **kwargs) for strategy, calculation in calculations.items()}
         self.calculations = calculations
+        self.action = action
 
     def execute(self, query, *args, **kwargs):
         securities = query.securities
@@ -132,7 +132,7 @@ class StrategyCalculator(Processor, title="Calculated"):
         options = {option: dataset for option, dataset in self.options(securities, *args, **kwargs)}
         sizes = {option: np.count_nonzero(~np.isnan(dataset["size"].values)) for option, dataset in options.items()}
         for strategy, calculation in self.calculations.items():
-            if not all([sizes[str(security)] > 0 for security in strategy.securities]):
+            if not all([str(security) in sizes.keys() and sizes[str(security)] > 0 for security in strategy.securities]):
                 return
             strategies = calculation(options, *args, **kwargs)
             strategies = strategies.assign_coords({"strategy": str(strategy)})

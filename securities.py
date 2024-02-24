@@ -33,10 +33,10 @@ SCOPE_VARS = {"ticker": str, "expire": np.datetime64, "date": np.datetime64}
 class SecurityFilter(Filter):
     def execute(self, query, *args, **kwargs):
         securities = query.securities
-        prior = self.size(securities)
+        prior = len(securities.index)
         mask = self.mask(securities, *args, **kwargs)
         securities = self.filter(securities, *args, mask=mask, **kwargs)
-        post = self.size(securities)
+        post = len(securities.index)
         query = query(securities=securities)
         __logger__.info(f"Filter: {repr(self)}|{str(query)}[{prior:.0f}|{post:.0f}]")
         yield query
