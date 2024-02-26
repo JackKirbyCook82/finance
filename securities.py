@@ -25,12 +25,11 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-COLUMNS_VARS = {"price": np.float32, "underlying": np.float32, "size": np.int32, "volume": np.int64, "interest": np.int32, "quantity": np.int32}
-INDEX_VARS = {"instrument": str, "position": str, "strike": np.float32}
-SCOPE_VARS = {"ticker": str, "expire": np.datetime64, "date": np.datetime64}
+INDEX = {"instrument": str, "position": str, "ticker": str, "expire": np.datetime64, "strike": np.float32, "date": np.datetime64}
+COLUMNS = {"price": np.float32, "underlying": np.float32, "size": np.int32, "volume": np.int64, "interest": np.int32, "quantity": np.int32}
 
 
-class SecurityFilter(Filter):
+class SecurityFilter(Filter, index=INDEX, columns=COLUMNS):
     def execute(self, query, *args, **kwargs):
         securities = query.securities
         prior = len(securities.index)
@@ -42,7 +41,7 @@ class SecurityFilter(Filter):
         yield query
 
 
-class SecurityParser(Parser, index=list(INDEX_VARS.keys()), scope=list(SCOPE_VARS.keys()), columns=list(COLUMNS_VARS.keys())):
+class SecurityParser(Parser, index=INDEX, columns=COLUMNS):
     def execute(self, query, *args, **kwargs):
         securities = query.securities
         securities = self.parse(securities, *args, **kwargs)
@@ -50,7 +49,7 @@ class SecurityParser(Parser, index=list(INDEX_VARS.keys()), scope=list(SCOPE_VAR
         yield query
 
 
-class SecurityFile(DataframeFile, header=INDEX_VARS | SCOPE_VARS | COLUMNS_VARS): pass
+class SecurityFile(DataframeFile, index=INDEX, columns=COLUMNS): pass
 class SecuritySaver(Saver):
     def execute(self, query, *args, **kwargs):
         securities = query.securities
@@ -58,22 +57,26 @@ class SecuritySaver(Saver):
         if bool(securities.empty):
             return
         inquiry_name = str(query.inquiry.strftime("%Y%m%d_%H%M%S"))
-        inquiry_folder = self.file.path(inquiry_name)
+        inquiry_folder = self.path(inquiry_name)
         if not os.path.isdir(inquiry_folder):
             os.mkdir(inquiry_folder)
         contract_name = "_".join([str(query.contract.ticker), str(query.contract.expire.strftime("%Y%m%d"))])
-        contract_file = self.file.path(inquiry_name, contract_name + ".csv")
-        self.file.write(securities, file=contract_file, filemode="w")
-        __logger__.info("Saved: {}[{}]".format(repr(self), str(contract_file)))
+        contract_folder = self.path(inquiry_name, contract_name)
+        if not os.path.isdir(contract_folder):
+            os.mkdir(contract_folder)
+        security_file = self.path(inquiry_name, contract_name, "security.csv")
+        securities = self.parse(securities, *args, **kwargs)
+        self.write(securities, file=security_file, filemode="w")
+        __logger__.info("Saved: {}[{}]".format(repr(self), str(security_file)))
 
 
 class SecurityLoader(Loader):
     def execute(self, *args, tickers=None, expires=None, **kwargs):
         function = lambda foldername: Datetime.strptime(foldername, "%Y%m%d_%H%M%S")
-        inquiry_folders = self.file.directory()
+        inquiry_folders = self.directory()
         for inquiry_name in sorted(inquiry_folders, key=function, reverse=False):
             inquiry = function(inquiry_name)
-            contract_filenames = self.file.directory(inquiry_name)
+            contract_filenames = self.directory(inquiry_name)
             for contract_filename in contract_filenames:
                 contract_name = os.path.splitext(contract_filename)[0]
                 ticker, expire = str(contract_name).split("_")
@@ -84,8 +87,9 @@ class SecurityLoader(Loader):
                 if expires is not None and expire not in expires:
                     continue
                 contract = Contract(ticker, expire)
-                contract_file = self.file.path(inquiry_name, contract_filename)
-                securities = self.file.read(file=contract_file)
+                contract_file = self.path(inquiry_name, contract_filename)
+                securities = self.read(file=contract_file)
+                securities = self.parse(securities, *args, **kwargs)
                 yield Query(inquiry, contract, securities=securities)
 
 

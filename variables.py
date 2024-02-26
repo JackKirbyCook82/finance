@@ -11,13 +11,12 @@ from enum import IntEnum
 from datetime import date as Date
 from functools import total_ordering
 from collections import namedtuple as ntuple
-from collections import OrderedDict as ODict
 
 from support.dispatchers import typedispatcher
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["DateRange", "Query", "Contract", "Actions", "Instruments", "Positions", "Options", "Securities", "Spreads", "Strategies", "Valuations", "Scenarios"]
+__all__ = ["DateRange", "Query", "Contract", "Variable", "Actions", "Instruments", "Positions", "Options", "Securities", "Spreads", "Strategies", "Valuations", "Scenarios"]
 __copyright__ = "Copyright 2023,SE Jack Kirby Cook"
 __license__ = "MIT License"
 
@@ -73,10 +72,6 @@ class Query(object):
 class Variable(ABC):
     def __str__(self): return "|".join([str(value.name).lower() for value in self if value is not None])
     def __hash__(self): return hash(tuple(self))
-    def __invert__(self):
-        fields = ODict([(key, value) for key, value in zip(self.keys(), self.values())])
-        fields.update({"position": Positions.LONG if self.position is Positions.SHORT else Positions.SHORT})
-        return type(self)(*list(fields.values()))
 
     @property
     def title(self): return "|".join([str(string).title() for string in str(self).split("|")])

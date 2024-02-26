@@ -6,17 +6,21 @@ Created on Weds Jul 19 2023
 
 """
 
+import os
 import logging
 import numpy as np
+import pandas as pd
 import xarray as xr
 from abc import ABC
+from datetime import datetime as Datetime
+from collections import OrderedDict as ODict
 
 from support.files import DataframeFile
-from support.pipelines import Processor
+from support.processes import Calculator
 from support.processes import Saver, Loader, Filter, Parser
 from support.calculations import Calculation, equation, source, constant
 
-from finance.variables import Securities, Valuations, Actions, Scenarios
+from finance.variables import Query, Contract, Securities, Valuations, Actions, Scenarios
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -26,53 +30,39 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-COLUMNS_VARS = {"apy": np.float32, "npv": np.float32, "tau": np.int32, "size": np.int32, "quantity": np.int32}
-INDEX_VARS = {"strategy": str, "valuation": str, "scenario": str} | {option: str for option in list(map(str, Securities.Options))}
-SCOPE_VARS = {"ticker": str, "expire": np.datetime64, "date": np.datetime64}
-OPEN_VARS = {"to": "date", "tτ": "expire", "qo": "size"}
-CLOSE_VARS = {"to": "date", "tτ": "expire", "qo": "size", "Δo": "quantity"}
+INDEX = {"strategy": str, "valuation": str, "scenario": str} | {"ticker": str, "expire": np.datetime64, "date": np.datetime64} | {option: str for option in list(map(str, Securities.Options))}
+COLUMNS = {"income": np.float32, "cost": np.float32, "apy": np.float32, "npv": np.float32, "tau": np.int32, "size": np.int32, "quantity": np.int32}
+OPEN = {"to": "date", "tτ": "expire", "qo": "size"}
+CLOSE = {"to": "date", "tτ": "expire", "qo": "size", "Δo": "quantity"}
 
 
-class ValuationCalculation(Calculation, ABC):
+class ValuationCalculation(Calculation, ABC, fields=["action", "valuation", "scenario"]):
+    inc = equation("inc", "income", np.float32, domain=("v.vo", "v.vτ"), function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
+    exp = equation("exp", "cost", np.float32, domain=("v.vo", "v.vτ"), function=lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0))
     tau = equation("tau", "tau", np.int32, domain=("v.to", "v.tτ"), function=lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
-    npv = equation("npv", "npv", np.float32, domain=("v.vo", "v.vτ", "tau", "ρ"), function=lambda vo, vτ, tau, ρ: vo + np.divide(vτ, np.power(1 + ρ, tau / 365)))
-    irr = equation("irr", "irr", np.float32, domain=("v.vo", "v.vτ", "tau"), function=lambda vo, vτ, tau: np.power(-np.divide(vτ, vo), np.power(tau, -1)))
+    npv = equation("npv", "npv", np.float32, domain=("inc", "exp", "tau", "ρ"), function=lambda inc, exp, tau, ρ: np.divide(inc, np.power(1 + ρ, tau / 365)) - exp)
+    irr = equation("irr", "irr", np.float32, domain=("inc", "exp", "tau"), function=lambda inc, exp, tau: np.power(np.divide(inc, exp), np.power(tau, -1)) - 1)
     apy = equation("apy", "apy", np.float32, domain=("irr", "tau"), function=lambda irr, tau: np.power(irr + 1, np.power(tau / 365, -1)) - 1)
     ρ = constant("ρ", "discount", position="discount")
 
-    def __init_subclass__(cls, *args, **kwargs):
-        valuation = kwargs.get("valuation", getattr(cls, "valuation", None))
-        scenario = kwargs.get("scenario", getattr(cls, "scenario", None))
-        action = kwargs.get("action", getattr(cls, "action", None))
-        if all([valuation is not None, scenario is not None, action is not None]):
-            valuations = cls.registry.get(action, {})
-            scenarios = valuations.get(valuation, {})
-            scenarios.update({scenario: cls})
-            valuations.update({valuation: scenarios})
-            cls.registry.update({action: valuations})
-        if valuation is not None:
-            cls.valuation = valuation
-        if scenario is not None:
-            cls.scenario = scenario
-        if action is not None:
-            cls.action = action
-
 
 class OpenValuationCalculation(ValuationCalculation, action=Actions.OPEN):
-    v = source("v", "valuation", position=0, variables=OPEN_VARS)
+    v = source("v", "valuation", position=0, variables=OPEN)
 
     def execute(self, feed, *args, discount, **kwargs):
         yield self.npv(feed, discount=discount)
+        yield self.exp(feed)
         yield self.apy(feed)
         yield self.tau(feed)
         yield self["v"].qo(feed)
 
 
 class CloseValuationCalculation(ValuationCalculation, action=Actions.CLOSE):
-    v = source("v", "valuation", position=0, variables=CLOSE_VARS)
+    v = source("v", "valuation", position=0, variables=CLOSE)
 
     def execute(self, feed, *args, discount, **kwargs):
         yield self.npv(feed, discount=discount)
+        yield self.exp(feed)
         yield self.apy(feed)
         yield self.tau(feed)
         yield self["v"].qo(feed)
@@ -95,25 +85,22 @@ class OpenMaximumCalculation(OpenValuationCalculation, MaximumArbitrageCalculati
 class CloseMaximumCalculation(CloseValuationCalculation, MaximumArbitrageCalculation): pass
 
 
-class ValuationCalculator(Processor, title="Calculated"):
-    def __init__(self, *args, name=None, action, valuation, **kwargs):
-        super().__init__(*args, name=name, **kwargs)
-        calculations = {scenario: calculation for scenario, calculation in ValuationCalculation[action][valuation].items()}
-        calculations = {scenario: calculation(*args, **kwargs) for scenario, calculation in calculations.items()}
-        self.calculations = calculations
+class ValuationCalculator(Calculator, calculations=ODict(list(ValuationCalculation))):
+    def __init__(self, *args, valuation, **kwargs):
+        super().__init__(*args, **kwargs)
         self.valuation = valuation
-        self.action = action
 
     def execute(self, query, *args, **kwargs):
         strategies = query.strategies
         assert isinstance(strategies, xr.Dataset)
-        valuations = {scenario: calculation(strategies, *args, **kwargs) for scenario, calculation in self.calculations.items()}
+        calculations = {variable.scenario: calculation for variable, calculation in self.calculations.items()}
+        valuations = {scenario: calculation(strategies, *args, **kwargs) for scenario, calculation in calculations.items()}
         valuations = [dataset.assign_coords({"scenario": str(scenario.name).lower()}).expand_dims("scenario") for scenario, dataset in valuations.items()]
         valuations = xr.concat(valuations, dim="scenario").assign_coords({"valuation": str(self.valuation.name).lower()})
         yield query(valuations=valuations)
 
 
-class ValuationFilter(Filter):
+class ValuationFilter(Filter, index=INDEX, columns=COLUMNS):
     def __init__(self, *args, scenario, **kwargs):
         super().__init__(*args, **kwargs)
         self.scenario = scenario
@@ -125,44 +112,76 @@ class ValuationFilter(Filter):
         mask = valuations.sel({"scenario": scenario})
         mask = self.mask(mask, *args, **kwargs)
         mask = xr.broadcast(mask, valuations)[0]
-
-        print(valuations)
-
         valuations = self.filter(valuations, *args, mask=mask, **kwargs)
-
-        print(valuations)
-        raise Exception()
-
         post = np.count_nonzero(~np.isnan(valuations["size"].values))
         query = query(valuations=valuations)
         __logger__.info(f"Filter: {repr(self)}|{str(query)}[{prior:.0f}|{post:.0f}]")
         yield query
 
 
-class ValuationParser(Parser, index=list(INDEX_VARS.keys()), scope=list(SCOPE_VARS.keys()), columns=list(COLUMNS_VARS.keys())):
+class ValuationParser(Parser, index=INDEX, columns=COLUMNS):
     def execute(self, query, *args, **kwargs):
         valuations = query.valuations
         valuations = self.parse(valuations, *args, **kwargs)
-        valuations = valuations.reset_index(drop=False, inplace=False)
-
-        print(valuations.where(valuations["scenario"] == "minimum").dropna(how="all", inplace=False))
-        print(valuations.where(valuations["scenario"] == "maximum").dropna(how="all", inplace=False))
-
-        raise Exception()
-
         query = query(valuations=valuations)
         yield query
 
 
-class ValuationFile(DataframeFile, header=INDEX_VARS | SCOPE_VARS | COLUMNS_VARS): pass
+class ValuationFile(DataframeFile, index=INDEX, columns=COLUMNS): pass
 class ValuationSaver(Saver):
     def execute(self, query, *args, **kwargs):
-        pass
+        valuations = query.valuations
+        assert isinstance(valuations, pd.DataFrame)
+        if bool(valuations.empty):
+            return
+        inquiry_name = str(query.inquiry.strftime("%Y%m%d_%H%M%S"))
+        inquiry_folder = self.path(inquiry_name)
+        if not os.path.isdir(inquiry_folder):
+            os.mkdir(inquiry_folder)
+        contract_name = "_".join([str(query.contract.ticker), str(query.contract.expire.strftime("%Y%m%d"))])
+        contract_folder = self.path(inquiry_name, contract_name)
+        if not os.path.isdir(contract_folder):
+            os.mkdir(contract_folder)
+        valuation_file = self.path(inquiry_name, contract_name, "valuation.csv")
+        securities = self.parse(valuations, *args, **kwargs)
+        self.write(securities, file=valuation_file, filemode="w")
+        __logger__.info("Saved: {}[{}]".format(repr(self), str(valuation_file)))
 
 
 class ValuationLoader(Loader):
-    def execute(self, query, *args, **kwargs):
-        yield
+    def execute(self, *args, tickers=None, expires=None, **kwargs):
+        function = lambda foldername: Datetime.strptime(foldername, "%Y%m%d_%H%M%S")
+        inquiry_folders = self.directory()
+        for inquiry_name in sorted(inquiry_folders, key=function, reverse=False):
+            inquiry = function(inquiry_name)
+            contract_filenames = self.directory(inquiry_name)
+            for contract_filename in contract_filenames:
+                contract_name = os.path.splitext(contract_filename)[0]
+                ticker, expire = str(contract_name).split("_")
+                ticker = str(ticker).upper()
+                if tickers is not None and ticker not in tickers:
+                    continue
+                expire = Datetime.strptime(expire, "%Y%m%d").date()
+                if expires is not None and expire not in expires:
+                    continue
+                contract = Contract(ticker, expire)
+                contract_file = self.path(inquiry_name, contract_filename)
+                valuations = self.read(file=contract_file)
+                valuations = self.parse(valuations, *args, **kwargs)
+                yield Query(inquiry, contract, valuations=valuations)
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
