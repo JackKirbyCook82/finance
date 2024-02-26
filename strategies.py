@@ -24,8 +24,8 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-OPEN_VARIABLES = {"k": "strike", "yo": "price", "xo": "underlying", "qo": "size"}
-CLOSE_VARIABLES = {"k": "strike", "yo": "price", "xo": "underlying", "qo": "size", "Δs": "quantity"}
+OPEN = {"k": "strike", "yo": "price", "xo": "underlying", "qo": "size"}
+CLOSE = {"k": "strike", "yo": "price", "xo": "underlying", "qo": "size", "Δs": "quantity"}
 
 
 class StrategyCalculation(Calculation, ABC, fields=["action", "strategy"]):
@@ -36,10 +36,10 @@ class StrategyCalculation(Calculation, ABC, fields=["action", "strategy"]):
 
 
 class OpenStrategyCalculation(StrategyCalculation, action=Actions.OPEN):
-    pα = source("pα", str(Securities.Option.Put.Long), position=str(Securities.Option.Put.Long), variables=OPEN_VARIABLES, destination=True)
-    pβ = source("pβ", str(Securities.Option.Put.Short), position=str(Securities.Option.Put.Short), variables=OPEN_VARIABLES, destination=True)
-    cα = source("cα", str(Securities.Option.Call.Long), position=str(Securities.Option.Call.Long), variables=OPEN_VARIABLES, destination=True)
-    cβ = source("cβ", str(Securities.Option.Call.Short), position=str(Securities.Option.Call.Short), variables=OPEN_VARIABLES, destination=True)
+    pα = source("pα", str(Securities.Option.Put.Long), position=str(Securities.Option.Put.Long), variables=OPEN, destination=True)
+    pβ = source("pβ", str(Securities.Option.Put.Short), position=str(Securities.Option.Put.Short), variables=OPEN, destination=True)
+    cα = source("cα", str(Securities.Option.Call.Long), position=str(Securities.Option.Call.Long), variables=OPEN, destination=True)
+    cβ = source("cβ", str(Securities.Option.Call.Short), position=str(Securities.Option.Call.Short), variables=OPEN, destination=True)
 
     def execute(self, feeds, *args, fees, **kwargs):
         yield self.wτn(**feeds, fees=fees)
@@ -49,10 +49,10 @@ class OpenStrategyCalculation(StrategyCalculation, action=Actions.OPEN):
 
 
 class CloseStrategyCalculation(StrategyCalculation, action=Actions.CLOSE):
-    pα = source("pα", str(Securities.Option.Put.Long), position=str(Securities.Option.Put.Long), variables=CLOSE_VARIABLES, destination=True)
-    pβ = source("pβ", str(Securities.Option.Put.Short), position=str(Securities.Option.Put.Short), variables=CLOSE_VARIABLES, destination=True)
-    cα = source("cα", str(Securities.Option.Call.Long), position=str(Securities.Option.Call.Long), variables=CLOSE_VARIABLES, destination=True)
-    cβ = source("cβ", str(Securities.Option.Call.Short), position=str(Securities.Option.Call.Short), variables=CLOSE_VARIABLES, destination=True)
+    pα = source("pα", str(Securities.Option.Put.Long), position=str(Securities.Option.Put.Long), variables=CLOSE, destination=True)
+    pβ = source("pβ", str(Securities.Option.Put.Short), position=str(Securities.Option.Put.Short), variables=CLOSE, destination=True)
+    cα = source("cα", str(Securities.Option.Call.Long), position=str(Securities.Option.Call.Long), variables=CLOSE, destination=True)
+    cβ = source("cβ", str(Securities.Option.Call.Short), position=str(Securities.Option.Call.Short), variables=CLOSE, destination=True)
 
     def execute(self, feeds, *args, fees, **kwargs):
         yield self.wτn(**feeds, fees=fees)

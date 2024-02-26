@@ -16,8 +16,7 @@ from datetime import datetime as Datetime
 from collections import OrderedDict as ODict
 
 from support.files import DataframeFile
-from support.processes import Calculator
-from support.processes import Saver, Loader, Filter, Parser
+from support.processes import Calculator, Saver, Loader, Filter, Parser
 from support.calculations import Calculation, equation, source, constant
 
 from finance.variables import Query, Contract, Securities, Valuations, Actions, Scenarios
@@ -149,24 +148,20 @@ class ValuationSaver(Saver):
 
 
 class ValuationLoader(Loader):
-    def execute(self, *args, tickers=None, expires=None, **kwargs):
+    def execute(self, *args, **kwargs):
         function = lambda foldername: Datetime.strptime(foldername, "%Y%m%d_%H%M%S")
         inquiry_folders = self.directory()
         for inquiry_name in sorted(inquiry_folders, key=function, reverse=False):
             inquiry = function(inquiry_name)
-            contract_filenames = self.directory(inquiry_name)
-            for contract_filename in contract_filenames:
-                contract_name = os.path.splitext(contract_filename)[0]
+            contract_names = self.directory(inquiry_name)
+            for contract_name in contract_names:
+                contract_name = os.path.splitext(contract_name)[0]
                 ticker, expire = str(contract_name).split("_")
                 ticker = str(ticker).upper()
-                if tickers is not None and ticker not in tickers:
-                    continue
                 expire = Datetime.strptime(expire, "%Y%m%d").date()
-                if expires is not None and expire not in expires:
-                    continue
                 contract = Contract(ticker, expire)
-                contract_file = self.path(inquiry_name, contract_filename)
-                valuations = self.read(file=contract_file)
+                valuation_file = self.path(inquiry_name, contract_name, "valuations.csv")
+                valuations = self.read(file=valuation_file)
                 valuations = self.parse(valuations, *args, **kwargs)
                 yield Query(inquiry, contract, valuations=valuations)
 

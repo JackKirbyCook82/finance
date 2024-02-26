@@ -71,24 +71,20 @@ class SecuritySaver(Saver):
 
 
 class SecurityLoader(Loader):
-    def execute(self, *args, tickers=None, expires=None, **kwargs):
+    def execute(self, *args, **kwargs):
         function = lambda foldername: Datetime.strptime(foldername, "%Y%m%d_%H%M%S")
-        inquiry_folders = self.directory()
-        for inquiry_name in sorted(inquiry_folders, key=function, reverse=False):
+        inquiry_names = self.directory()
+        for inquiry_name in sorted(inquiry_names, key=function, reverse=False):
             inquiry = function(inquiry_name)
-            contract_filenames = self.directory(inquiry_name)
-            for contract_filename in contract_filenames:
-                contract_name = os.path.splitext(contract_filename)[0]
+            contract_names = self.directory(inquiry_name)
+            for contract_name in contract_names:
+                contract_name = os.path.splitext(contract_name)[0]
                 ticker, expire = str(contract_name).split("_")
                 ticker = str(ticker).upper()
-                if tickers is not None and ticker not in tickers:
-                    continue
                 expire = Datetime.strptime(expire, "%Y%m%d").date()
-                if expires is not None and expire not in expires:
-                    continue
                 contract = Contract(ticker, expire)
-                contract_file = self.path(inquiry_name, contract_filename)
-                securities = self.read(file=contract_file)
+                security_file = self.path(inquiry_name, contract_name, "security.csv")
+                securities = self.read(file=security_file)
                 securities = self.parse(securities, *args, **kwargs)
                 yield Query(inquiry, contract, securities=securities)
 

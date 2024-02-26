@@ -84,6 +84,7 @@ class Variable(ABC):
 
 
 class Security(Variable, ntuple("Security", "instrument position")): pass
+class Holding(Variable, ntuple("Holding", "instrument position")): pass
 class Strategy(Variable, ntuple("Strategy", "spread instrument position")):
     def __new__(cls, spread, instrument, position, *args, **kwargs): return super().__new__(cls, spread, instrument, position)
     def __init__(self, *args, securities, **kwargs): self.securities = securities
