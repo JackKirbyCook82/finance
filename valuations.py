@@ -11,7 +11,6 @@ import logging
 import numpy as np
 import pandas as pd
 import xarray as xr
-from abc import ABC
 from datetime import datetime as Datetime
 from collections import OrderedDict as ODict
 
@@ -19,7 +18,7 @@ from support.files import DataframeFile
 from support.processes import Calculator, Saver, Loader, Filter, Parser
 from support.calculations import Calculation, equation, source, constant
 
-from finance.variables import Query, Contract, Securities, Valuations, Actions, Scenarios
+from finance.variables import Query, Contract, Securities, Valuations, Scenarios
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -30,58 +29,36 @@ __logger__ = logging.getLogger(__name__)
 
 
 INDEX = {"strategy": str, "valuation": str, "scenario": str} | {"ticker": str, "expire": np.datetime64, "date": np.datetime64} | {option: str for option in list(map(str, Securities.Options))}
-COLUMNS = {"income": np.float32, "cost": np.float32, "apy": np.float32, "npv": np.float32, "tau": np.int32, "size": np.int32, "quantity": np.int32}
-OPEN = {"to": "date", "tτ": "expire", "qo": "size"}
-CLOSE = {"to": "date", "tτ": "expire", "qo": "size", "Δo": "quantity"}
+COLUMNS = {"cost": np.float32, "apy": np.float32, "npv": np.float32, "tau": np.int32, "size": np.int32}
+VARIABLES = {"to": "date", "tτ": "expire", "qo": "size"}
 
 
-class ValuationCalculation(Calculation, ABC, fields=["action", "valuation", "scenario"]):
+class ValuationCalculation(Calculation, fields=["valuation", "scenario"]):
     inc = equation("inc", "income", np.float32, domain=("v.vo", "v.vτ"), function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
     exp = equation("exp", "cost", np.float32, domain=("v.vo", "v.vτ"), function=lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0))
     tau = equation("tau", "tau", np.int32, domain=("v.to", "v.tτ"), function=lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
     npv = equation("npv", "npv", np.float32, domain=("inc", "exp", "tau", "ρ"), function=lambda inc, exp, tau, ρ: np.divide(inc, np.power(1 + ρ, tau / 365)) - exp)
     irr = equation("irr", "irr", np.float32, domain=("inc", "exp", "tau"), function=lambda inc, exp, tau: np.power(np.divide(inc, exp), np.power(tau, -1)) - 1)
     apy = equation("apy", "apy", np.float32, domain=("irr", "tau"), function=lambda irr, tau: np.power(irr + 1, np.power(tau / 365, -1)) - 1)
+    v = source("v", "valuation", position=0, variables=VARIABLES)
     ρ = constant("ρ", "discount", position="discount")
 
-
-class OpenValuationCalculation(ValuationCalculation, action=Actions.OPEN):
-    v = source("v", "valuation", position=0, variables=OPEN)
-
     def execute(self, feed, *args, discount, **kwargs):
+        yield self["v"].qo(feed)
         yield self.npv(feed, discount=discount)
         yield self.exp(feed)
         yield self.apy(feed)
         yield self.tau(feed)
-        yield self["v"].qo(feed)
 
 
-class CloseValuationCalculation(ValuationCalculation, action=Actions.CLOSE):
-    v = source("v", "valuation", position=0, variables=CLOSE)
-
-    def execute(self, feed, *args, discount, **kwargs):
-        yield self.npv(feed, discount=discount)
-        yield self.exp(feed)
-        yield self.apy(feed)
-        yield self.tau(feed)
-        yield self["v"].qo(feed)
-        yield self["v"].Δo(feed)
-
-
-class ArbitrageCalculation(ValuationCalculation, ABC, valuation=Valuations.ARBITRAGE):
+class ArbitrageCalculation(ValuationCalculation, valuation=Valuations.ARBITRAGE):
     v = source("v", "arbitrage", position=0, variables={"vo": "spot"})
 
-class MinimumArbitrageCalculation(ArbitrageCalculation, ABC, scenario=Scenarios.MINIMUM):
+class MinimumArbitrageCalculation(ArbitrageCalculation, scenario=Scenarios.MINIMUM):
     v = source("v", "minimum", position=0, variables={"vτ": "minimum"})
 
-class MaximumArbitrageCalculation(ArbitrageCalculation, ABC, scenario=Scenarios.MAXIMUM):
+class MaximumArbitrageCalculation(ArbitrageCalculation, scenario=Scenarios.MAXIMUM):
     v = source("v", "maximum", position=0, variables={"vτ": "maximum"})
-
-
-class OpenMinimumCalculation(OpenValuationCalculation, MinimumArbitrageCalculation): pass
-class CloseMinimumCalculation(CloseValuationCalculation, MinimumArbitrageCalculation): pass
-class OpenMaximumCalculation(OpenValuationCalculation, MaximumArbitrageCalculation): pass
-class CloseMaximumCalculation(CloseValuationCalculation, MaximumArbitrageCalculation): pass
 
 
 class ValuationCalculator(Calculator, calculations=ODict(list(ValuationCalculation))):
