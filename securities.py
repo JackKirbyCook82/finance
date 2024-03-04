@@ -13,20 +13,23 @@ import pandas as pd
 from datetime import datetime as Datetime
 
 from support.files import DataframeFile
-from support.processes import Saver, Loader, Filter, Parser
+from support.processes import Saver, Loader, Filter, Parser, Pivot
 
 from finance.variables import Query, Contract
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["SecurityFilter", "SecurityParser", "SecurityLoader", "SecuritySaver", "SecurityFile"]
+__all__ = ["SecurityFilter", "SecurityParser", "SecurityPivot", "SecurityLoader", "SecuritySaver", "SecurityFile"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
+INDEX = "strike"
+VALUES = {"price": np.float32, "underlying": np.float32, "size": np.int32, "volume": np.int64, "interest": np.int32, "quantity": np.int32}
+
 INDEX = {"instrument": str, "position": str, "ticker": str, "expire": np.datetime64, "strike": np.float32, "date": np.datetime64}
-COLUMNS = {"price": np.float32, "underlying": np.float32, "size": np.int32, "volume": np.int64, "interest": np.int32, "quantity": np.int32}
+COLUMNS =
 
 
 class SecurityFilter(Filter, index=INDEX, columns=COLUMNS):
@@ -47,6 +50,14 @@ class SecurityParser(Parser, index=INDEX, columns=COLUMNS):
         securities = self.parse(securities, *args, **kwargs)
         query = query(securities=securities)
         yield query
+
+
+class SecurityPivot(Pivot):
+    def execute(self, query, *args, **kwargs):
+        securities = query.securities
+        securities = self.pivot(securities, *args, **kwargs)
+        query = query(securities=securities)
+        return query
 
 
 class SecurityFile(DataframeFile, index=INDEX, columns=COLUMNS): pass

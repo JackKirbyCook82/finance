@@ -11,6 +11,7 @@ import xarray as xr
 from itertools import product
 from collections import OrderedDict as ODict
 
+from support.pipelines import Processor
 from support.processes import Calculator
 from support.calculations import Calculation, equation, source, constant
 
@@ -72,28 +73,18 @@ class StrategyCalculator(Calculator, calculations=ODict(list(StrategyCalculation
     def execute(self, query, *args, **kwargs):
         securities = query.securities
         assert isinstance(securities, xr.Dataset)
-        options = {option: dataset for option, dataset in self.options(securities, *args, **kwargs)}
-        sizes = {option: np.count_nonzero(~np.isnan(dataset["size"].values)) for option, dataset in options.items()}
+        sizes = {security: np.count_nonzero(~np.isnan(dataset["size"].values)) for security, dataset in securities.items()}
         calculations = {variable.strategy: calculation for variable, calculation in self.calculations.items()}
         for strategy, calculation in calculations.items():
             if not all([str(security) in sizes.keys() and sizes[str(security)] > 0 for security in strategy.securities]):
                 return
-            strategies = calculation(options, *args, **kwargs)
+            strategies = calculation(securities, *args, **kwargs)
             strategies = strategies.assign_coords({"strategy": str(strategy)})
             size = np.count_nonzero(~np.isnan(strategies["size"].values))
             if not bool(size):
                 continue
             yield query(strategies=strategies)
 
-    @staticmethod
-    def options(datasets, *args, **kwargs):
-        datasets = datasets.squeeze("date").squeeze("ticker").squeeze("expire")
-        for instrument, position in product(datasets["instrument"].values, datasets["position"].values):
-            key = f"{instrument}|{position}"
-            dataset = datasets.sel({"instrument": instrument, "position": position})
-            dataset = dataset.rename({"strike": key})
-            dataset["strike"] = dataset[key]
-            yield key, dataset
 
 
 

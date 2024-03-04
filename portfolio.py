@@ -25,7 +25,6 @@ __logger__ = logging.getLogger(__name__)
 
 INDEX = {}
 COLUMNS = {}
-CLOSE = {}
 
 
 class PortfolioCalculation(Calculation, ABC, fields=[]):
