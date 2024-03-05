@@ -11,6 +11,7 @@ from enum import IntEnum
 from datetime import date as Date
 from functools import total_ordering
 from collections import namedtuple as ntuple
+from datetime import datetime as Datetime
 
 from support.dispatchers import typedispatcher
 
@@ -53,16 +54,13 @@ class Contract(ntuple("Contract", "ticker expire")):
 
 class Query(object):
     def __str__(self): return f"{self.contract.ticker}|{self.contract.expire.strftime('%Y-%m-%d')}"
-    def __init__(self, inquiry, contract, **fields):
-        self.__inquiry = inquiry
+    def __init__(self, contract, **fields):
         self.__contract = contract
         self.__fields = fields
 
     def __getattr__(self, field): return self.fields[field] if field in self.fields.keys() else super().__getattr__(field)
     def __call__(self, **fields): return Query(self.inquiry, self.contract, **self.fields | fields)
 
-    @property
-    def inquiry(self): return self.__inquiry
     @property
     def contract(self): return self.__contract
     @property

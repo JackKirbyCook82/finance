@@ -8,10 +8,8 @@ Created on Weds Jul 19 2023
 
 import numpy as np
 import xarray as xr
-from itertools import product
 from collections import OrderedDict as ODict
 
-from support.pipelines import Processor
 from support.processes import Calculator
 from support.calculations import Calculation, equation, source, constant
 

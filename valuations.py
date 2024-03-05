@@ -6,7 +6,6 @@ Created on Weds Jul 19 2023
 
 """
 
-import os
 import logging
 import numpy as np
 import pandas as pd
@@ -14,8 +13,8 @@ import xarray as xr
 from datetime import datetime as Datetime
 from collections import OrderedDict as ODict
 
-from support.files import DataframeFile
-from support.processes import Calculator, Saver, Loader, Filter, Parser
+from support.files import DataframeFile, Header
+from support.processes import Calculator, Saver, Loader, Filter, Parser, Axes
 from support.calculations import Calculation, equation, source, constant
 
 from finance.variables import Query, Contract, Securities, Valuations, Scenarios
@@ -28,9 +27,12 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-INDEX = {"strategy": str, "valuation": str, "scenario": str} | {"ticker": str, "expire": np.datetime64, "date": np.datetime64} | {option: str for option in list(map(str, Securities.Options))}
-COLUMNS = {"cost": np.float32, "apy": np.float32, "npv": np.float32, "tau": np.int32, "size": np.int32}
-VARIABLES = {"to": "date", "tτ": "expire", "qo": "size"}
+INDEX = {option: str for option in list(map(str, Securities.Options))}
+COLUMNS = {"strategy": str, "valuation": str, "scenario": str}
+SCOPE = {"ticker": str, "expire": np.datetime64, "date": np.datetime64}
+VALUES = {"cost": np.float32, "apy": np.float32, "npv": np.float32, "tau": np.int32, "size": np.int32}
+HEADER = Header(INDEX | COLUMNS, VALUES | SCOPE)
+AXES = Axes(INDEX, COLUMNS, VALUES, SCOPE)
 
 
 class ValuationCalculation(Calculation, fields=["valuation", "scenario"]):
@@ -40,7 +42,7 @@ class ValuationCalculation(Calculation, fields=["valuation", "scenario"]):
     npv = equation("npv", "npv", np.float32, domain=("inc", "exp", "tau", "ρ"), function=lambda inc, exp, tau, ρ: np.divide(inc, np.power(1 + ρ, tau / 365)) - exp)
     irr = equation("irr", "irr", np.float32, domain=("inc", "exp", "tau"), function=lambda inc, exp, tau: np.power(np.divide(inc, exp), np.power(tau, -1)) - 1)
     apy = equation("apy", "apy", np.float32, domain=("irr", "tau"), function=lambda irr, tau: np.power(irr + 1, np.power(tau / 365, -1)) - 1)
-    v = source("v", "valuation", position=0, variables=VARIABLES)
+    v = source("v", "valuation", position=0, variables={"to": "date", "tτ": "expire", "qo": "size"})
     ρ = constant("ρ", "discount", position="discount")
 
     def execute(self, feed, *args, discount, **kwargs):
@@ -76,71 +78,65 @@ class ValuationCalculator(Calculator, calculations=ODict(list(ValuationCalculati
         yield query(valuations=valuations)
 
 
-class ValuationFilter(Filter, index=INDEX, columns=COLUMNS):
+class ValuationFilter(Filter):
     def __init__(self, *args, scenario, **kwargs):
         super().__init__(*args, **kwargs)
         self.scenario = scenario
 
     def execute(self, query, *args, **kwargs):
         valuations = query.valuations
-        prior = np.count_nonzero(~np.isnan(valuations["size"].values))
+        assert isinstance(valuations, xr.Dataset)
+        prior = self.size(valuations["size"])
         scenario = str(self.scenario.name).lower()
         mask = valuations.sel({"scenario": scenario})
         mask = self.mask(mask, *args, **kwargs)
         mask = xr.broadcast(mask, valuations)[0]
         valuations = self.filter(valuations, *args, mask=mask, **kwargs)
-        post = np.count_nonzero(~np.isnan(valuations["size"].values))
+        post = valuations["size"]
         query = query(valuations=valuations)
         __logger__.info(f"Filter: {repr(self)}|{str(query)}[{prior:.0f}|{post:.0f}]")
         yield query
 
 
-class ValuationParser(Parser, index=INDEX, columns=COLUMNS):
+class ValuationParser(Parser, axes=AXES):
     def execute(self, query, *args, **kwargs):
         valuations = query.valuations
         valuations = self.parse(valuations, *args, **kwargs)
+        if isinstance(valuations, pd.DataFrame):
+            valuations = self.clean(valuations, *args, **kwargs)
         query = query(valuations=valuations)
         yield query
 
 
-class ValuationFile(DataframeFile, index=INDEX, columns=COLUMNS): pass
+class ValuationFile(DataframeFile, header=HEADER): pass
 class ValuationSaver(Saver):
     def execute(self, query, *args, **kwargs):
         valuations = query.valuations
         assert isinstance(valuations, pd.DataFrame)
         if bool(valuations.empty):
             return
-        inquiry_name = str(query.inquiry.strftime("%Y%m%d_%H%M%S"))
-        inquiry_folder = self.path(inquiry_name)
-        if not os.path.isdir(inquiry_folder):
-            os.mkdir(inquiry_folder)
-        contract_name = "_".join([str(query.contract.ticker), str(query.contract.expire.strftime("%Y%m%d"))])
-        contract_folder = self.path(inquiry_name, contract_name)
-        if not os.path.isdir(contract_folder):
-            os.mkdir(contract_folder)
-        valuation_file = self.path(inquiry_name, contract_name, "valuation.csv")
-        securities = self.parse(valuations, *args, **kwargs)
-        self.write(securities, file=valuation_file, filemode="w")
-        __logger__.info("Saved: {}[{}]".format(repr(self), str(valuation_file)))
+        ticker = str(query.contract.ticker)
+        expire = str(query.contract.expire.strftime("%Y%m%d"))
+        content = self.parse(valuations, *args, **kwargs)
+        folder = "_".join([ticker, expire])
+        file = "valuation.csv"
+        self.write(content, folder=folder, file=file, mode="w")
 
 
 class ValuationLoader(Loader):
     def execute(self, *args, **kwargs):
-        function = lambda foldername: Datetime.strptime(foldername, "%Y%m%d_%H%M%S")
-        inquiry_folders = self.directory()
-        for inquiry_name in sorted(inquiry_folders, key=function, reverse=False):
-            inquiry = function(inquiry_name)
-            contract_names = self.directory(inquiry_name)
-            for contract_name in contract_names:
-                contract_name = os.path.splitext(contract_name)[0]
-                ticker, expire = str(contract_name).split("_")
-                ticker = str(ticker).upper()
-                expire = Datetime.strptime(expire, "%Y%m%d").date()
-                contract = Contract(ticker, expire)
-                valuation_file = self.path(inquiry_name, contract_name, "valuations.csv")
-                valuations = self.read(file=valuation_file)
-                valuations = self.parse(valuations, *args, **kwargs)
-                yield Query(inquiry, contract, valuations=valuations)
+        pass
+
+#    def execute(self, *args, **kwargs):
+#        contract_names = self.directory()
+#        contracts = list(map(Contract, contract_names))
+#        contracts = list(sorted(contracts))
+#        for contract in contracts:
+#            contract_name = "_".join([str(contract.ticker), str(contract.expire.strftime("%Y%m%d"))])
+#            valuation_file = self.path(contract_name, "valuation.csv")
+#            valuations = self.read(file=valuation_file)
+#            valuations = self.parse(valuations, *args, **kwargs)
+#            yield Query(contract, valuations=valuations)
 
 
 
