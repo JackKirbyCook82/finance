@@ -70,7 +70,6 @@ class CollarShortCalculation(StrategyCalculation, strategy=Strategies.Collar.Sho
 class StrategyCalculator(Calculator, calculations=ODict(list(StrategyCalculation))):
     def execute(self, query, *args, **kwargs):
         securities = query.securities
-        assert isinstance(securities, xr.Dataset)
         sizes = {security: np.count_nonzero(~np.isnan(dataset["size"].values)) for security, dataset in securities.items()}
         calculations = {variable.strategy: calculation for variable, calculation in self.calculations.items()}
         for strategy, calculation in calculations.items():

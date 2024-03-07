@@ -21,7 +21,7 @@ from finance.variables import Query, Contract, Securities, Valuations, Scenarios
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["ValuationCalculation", "ValuationCalculator", "ValuationFilter", "ValuationParser", "ValuationLoader", "ValuationSaver", "ValuationFile"]
+__all__ = ["ValuationCalculation", "ValuationCalculator", "ValuationFilter", "ValuationLoader", "ValuationSaver", "ValuationFile"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
@@ -31,7 +31,7 @@ INDEX = {option: str for option in list(map(str, Securities.Options))}
 COLUMNS = {"strategy": str, "valuation": str, "scenario": str}
 SCOPE = {"ticker": str, "expire": np.datetime64, "date": np.datetime64}
 VALUES = {"cost": np.float32, "apy": np.float32, "npv": np.float32, "tau": np.int32, "size": np.int32}
-HEADER = Header(INDEX | COLUMNS, VALUES | SCOPE)
+HEADER = Header(INDEX | COLUMNS | SCOPE, VALUES)
 AXES = Axes(INDEX, COLUMNS, VALUES, SCOPE)
 
 
@@ -92,7 +92,7 @@ class ValuationFilter(Filter):
         mask = self.mask(mask, *args, **kwargs)
         mask = xr.broadcast(mask, valuations)[0]
         valuations = self.filter(valuations, *args, mask=mask, **kwargs)
-        post = valuations["size"]
+        post = self.size(valuations["size"])
         query = query(valuations=valuations)
         __logger__.info(f"Filter: {repr(self)}|{str(query)}[{prior:.0f}|{post:.0f}]")
         yield query
@@ -101,9 +101,9 @@ class ValuationFilter(Filter):
 class ValuationParser(Parser, axes=AXES):
     def execute(self, query, *args, **kwargs):
         valuations = query.valuations
-        valuations = self.parse(valuations, *args, **kwargs)
-        if isinstance(valuations, pd.DataFrame):
-            valuations = self.clean(valuations, *args, **kwargs)
+        assert isinstance(valuations, xr.Dataset)
+        valuations = self.flatten(valuations, *args, **kwargs)
+        valuations = self.clean(valuations, *args, **kwargs)
         query = query(valuations=valuations)
         yield query
 
@@ -117,39 +117,22 @@ class ValuationSaver(Saver):
             return
         ticker = str(query.contract.ticker)
         expire = str(query.contract.expire.strftime("%Y%m%d"))
-        content = self.parse(valuations, *args, **kwargs)
+        valuations = self.parse(valuations, *args, **kwargs)
         folder = "_".join([ticker, expire])
-        file = "valuation.csv"
-        self.write(content, folder=folder, file=file, mode="w")
+        files = {"valuations.csv": valuations}
+        self.write(folder=folder, files=files, mode="w")
 
 
 class ValuationLoader(Loader):
     def execute(self, *args, **kwargs):
-        pass
-
-#    def execute(self, *args, **kwargs):
-#        contract_names = self.directory()
-#        contracts = list(map(Contract, contract_names))
-#        contracts = list(sorted(contracts))
-#        for contract in contracts:
-#            contract_name = "_".join([str(contract.ticker), str(contract.expire.strftime("%Y%m%d"))])
-#            valuation_file = self.path(contract_name, "valuation.csv")
-#            valuations = self.read(file=valuation_file)
-#            valuations = self.parse(valuations, *args, **kwargs)
-#            yield Query(contract, valuations=valuations)
-
-
-
-
-
-
-
-
-
-
-
-
-
+        folders = self.contents(folder=None)
+        files = ["valuations.csv"]
+        for folder, contents in self.reader(folders=folders, files=files):
+            ticker, expire = str(folder).split("_")
+            ticker = str(ticker).upper()
+            expire = Datetime.strptime(expire, "%Y%m%d")
+            contract = Contract(ticker, expire)
+            yield Query(contract, **contents)
 
 
 

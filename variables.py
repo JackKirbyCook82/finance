@@ -58,8 +58,8 @@ class Query(object):
         self.__contract = contract
         self.__fields = fields
 
-    def __getattr__(self, field): return self.fields[field] if field in self.fields.keys() else super().__getattr__(field)
-    def __call__(self, **fields): return Query(self.inquiry, self.contract, **self.fields | fields)
+    def __call__(self, **fields): return Query(self.contract, **self.fields | fields)
+    def __getattr__(self, field): return self.fields[field]
 
     @property
     def contract(self): return self.__contract
