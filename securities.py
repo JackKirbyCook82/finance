@@ -59,7 +59,8 @@ class SecurityLoader(Loader):
     def execute(self, *args, **kwargs):
         folders = self.contents(folder=None)
         files = ["securities.csv"]
-        for folder, contents in self.reader(folders=folders, files=files):
+        reader = self.reader(folders=folders, files=files)
+        for folder, contents in iter(reader):
             ticker, expire = str(folder).split("_")
             ticker = str(ticker).upper()
             expire = Datetime.strptime(expire, "%Y%m%d")
