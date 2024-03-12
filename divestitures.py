@@ -7,34 +7,46 @@ Created on Thurs Jan 31 2024
 """
 
 import logging
+import numpy as np
+import pandas as pd
 
-from support.tables import DataframeTable
-from support.pipelines import Consumer
+from support.processes import Writer
+
+from finance.variables import Securities
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["DivestitureWriter", "DivestitureTable"]
+__all__ = []
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-class DivestitureWriter(Consumer):
+VALUES = {"apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.int32, "tau": np.int32}
+SCOPE = {"strategy": str, "valuation": str, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
+INDEX = {option: str for option in list(map(str, Securities.Options))}
+COLUMNS = {"scenario": str}
+
+
+class DivestitureWriter(Writer):
+    def __init__(self, *args, valuation, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.index = list(INDEX.keys())
+        self.columns = list(COLUMNS.keys())
+        self.scope = list(SCOPE.keys())
+        self.values = list(VALUES.keys())
+        self.valuation = valuation
+
     def execute(self, query, *args, **kwargs):
-        pass
-
-
-class DivestitureTable(DataframeTable):
-    def execute(self, *args, **kwargs):
-        pass
-
-    @staticmethod
-    def parser(index, record):
-        pass
-
-    @property
-    def header(self): pass
-
+        valuations = query.valuations
+        holdings = query.holdings
+        valuation = str(self.valuation.name).lower()
+        header = dict(index=self.index, columns=self.columns, scope=self.scope, values=self.values)
+        assert isinstance(valuations, pd.DataFrame)
+        assert isinstance(holdings, pd.DataFrame)
+        mask = valuations["valuation"] == valuations
+        valuations = valuation.where(mask).dropna(axis=0, how="all")
+        valuations = self.pivot(valuations, *args, **header, delimiter=None, **kwargs)
 
 
 

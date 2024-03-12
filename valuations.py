@@ -13,8 +13,8 @@ import xarray as xr
 from datetime import datetime as Datetime
 from collections import OrderedDict as ODict
 
-from support.files import DataframeFile, Header
-from support.processes import Calculator, Saver, Loader, Filter, Parser, Axes
+from support.files import DataframeFile
+from support.processes import Calculator, Saver, Loader, Filter
 from support.calculations import Calculation, equation, source, constant
 
 from finance.variables import Query, Contract, Securities, Valuations, Scenarios
@@ -27,12 +27,8 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-INDEX = {option: str for option in list(map(str, Securities.Options))}
-COLUMNS = {"strategy": str, "valuation": str, "scenario": str}
-SCOPE = {"ticker": str, "expire": np.datetime64, "date": np.datetime64}
-VALUES = {"cost": np.float32, "apy": np.float32, "npv": np.float32, "tau": np.int32, "size": np.int32}
-HEADER = Header(INDEX | COLUMNS | SCOPE, VALUES)
-AXES = Axes(INDEX, COLUMNS, VALUES, SCOPE)
+INDEX = {option: str for option in list(map(str, Securities.Options))} | {"strategy": str, "valuation": str, "scenario": str, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
+COLUMNS = {"apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.int32, "tau": np.int32}
 
 
 class ValuationCalculation(Calculation, fields=["valuation", "scenario"]):
@@ -46,11 +42,11 @@ class ValuationCalculation(Calculation, fields=["valuation", "scenario"]):
     ρ = constant("ρ", "discount", position="discount")
 
     def execute(self, feed, *args, discount, **kwargs):
-        yield self["v"].qo(feed)
         yield self.npv(feed, discount=discount)
-        yield self.exp(feed)
         yield self.apy(feed)
+        yield self.exp(feed)
         yield self.tau(feed)
+        yield self["v"].qo(feed)
 
 
 class ArbitrageCalculation(ValuationCalculation, valuation=Valuations.ARBITRAGE):
@@ -70,45 +66,40 @@ class ValuationCalculator(Calculator, calculations=ODict(list(ValuationCalculati
 
     def execute(self, query, *args, **kwargs):
         strategies = query.strategies
+        valuation = str(self.valuation.name).lower()
         assert isinstance(strategies, xr.Dataset)
         calculations = {variable.scenario: calculation for variable, calculation in self.calculations.items()}
         valuations = {scenario: calculation(strategies, *args, **kwargs) for scenario, calculation in calculations.items()}
         valuations = [dataset.assign_coords({"scenario": str(scenario.name).lower()}).expand_dims("scenario") for scenario, dataset in valuations.items()]
-        valuations = xr.concat(valuations, dim="scenario").assign_coords({"valuation": str(self.valuation.name).lower()})
+        valuations = xr.concat(valuations, dim="scenario").assign_coords({"valuation": valuation})
         yield query(valuations=valuations)
 
 
 class ValuationFilter(Filter):
     def __init__(self, *args, scenario, **kwargs):
         super().__init__(*args, **kwargs)
+        self.index = list(INDEX.keys())
+        self.columns = list(COLUMNS.keys())
         self.scenario = scenario
 
     def execute(self, query, *args, **kwargs):
         valuations = query.valuations
+        scenario = str(self.scenario.name).lower()
         assert isinstance(valuations, xr.Dataset)
         prior = self.size(valuations["size"])
-        scenario = str(self.scenario.name).lower()
         mask = valuations.sel({"scenario": scenario})
         mask = self.mask(mask, *args, **kwargs)
         mask = xr.broadcast(mask, valuations)[0]
         valuations = self.filter(valuations, *args, mask=mask, **kwargs)
         post = self.size(valuations["size"])
+        valuations = self.flatten(valuations, *args, header=self.index + self.columns, **kwargs)
+        valuations = self.clean(valuations, *args, index=self.index, columns=self.columns, **kwargs)
         query = query(valuations=valuations)
         __logger__.info(f"Filter: {repr(self)}|{str(query)}[{prior:.0f}|{post:.0f}]")
         yield query
 
 
-class ValuationParser(Parser, axes=AXES):
-    def execute(self, query, *args, **kwargs):
-        valuations = query.valuations
-        assert isinstance(valuations, xr.Dataset)
-        valuations = self.flatten(valuations, *args, **kwargs)
-        valuations = self.clean(valuations, *args, **kwargs)
-        query = query(valuations=valuations)
-        yield query
-
-
-class ValuationFile(DataframeFile, header=HEADER): pass
+class ValuationFile(DataframeFile, header=INDEX | COLUMNS): pass
 class ValuationSaver(Saver):
     def execute(self, query, *args, **kwargs):
         valuations = query.valuations
@@ -117,7 +108,6 @@ class ValuationSaver(Saver):
             return
         ticker = str(query.contract.ticker)
         expire = str(query.contract.expire.strftime("%Y%m%d"))
-        valuations = self.parse(valuations, *args, **kwargs)
         folder = "_".join([ticker, expire])
         files = {"valuations.csv": valuations}
         self.write(folder=folder, files=files, mode="w")

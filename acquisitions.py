@@ -8,72 +8,43 @@ Created on Thurs Jan 31 2024
 
 import logging
 import numpy as np
-from datetime import datetime as Datetime
+import pandas as pd
 
-from support.tables import DataframeTable
-from support.pipelines import Consumer
+from support.processes import Writer
 
-from finance.variables import Securities, Valuations
+from finance.variables import Securities
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["AcquisitionWriter", "AcquisitionTable"]
+__all__ = []
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-class AcquisitionWriter(Consumer):
-    def __init__(self, *args, table, **kwargs):
-        assert isinstance(table, AcquisitionTable)
+VALUES = {"apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.int32, "tau": np.int32}
+SCOPE = {"strategy": str, "valuation": str, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
+INDEX = {option: str for option in list(map(str, Securities.Options))}
+COLUMNS = {"scenario": str}
+
+
+class AcquisitionWriter(Writer):
+    def __init__(self, *args, valuation, **kwargs):
         super().__init__(*args, **kwargs)
-        self.table = table
+        self.index = list(INDEX.keys())
+        self.columns = list(COLUMNS.keys())
+        self.scope = list(SCOPE.keys())
+        self.values = list(VALUES.keys())
+        self.valuation = valuation
 
-    def execute(self, query, *args, liquidity=None, apy=None, **kwargs):
-        if not bool(query.arbitrages) or all([dataframe.empty for dataframe in query.arbitrages.values()]):
-            return
-        targets = query.arbitrages[Valuations.Arbitrage.Minimum]
-        liquidity = liquidity if liquidity is not None else 1
-        targets["size"] = (targets["size"] * liquidity).apply(np.floor).astype(np.int32)
-        targets = targets.where(targets["size"] > 0)
-        targets = targets.where(targets["apy"] >= apy) if apy is not None else targets
-        targets = targets.dropna(axis=0, how="all")
-        targets = targets.sort_values("apy", axis=0, ascending=False, inplace=False, ignore_index=False)
-        if bool(targets.empty):
-            return
-        assert targets["apy"].min() > 0 and targets["size"].min() > 0
-        targets = targets.reset_index(drop=True, inplace=False)
-        targets["size"] = targets["size"].astype(np.int32)
-        targets["tau"] = targets["tau"].astype(np.int32)
-        targets["apy"] = targets["apy"].round(2)
-        targets["npv"] = targets["npv"].round(2)
-        targets["inquiry"] = query.inquiry
-
-
-class AcquisitionTable(DataframeTable):
-    def execute(self, *args, funds=None, tenure=None, **kwargs):
-        self.table = self.table.where(self.table["inquiry"] - Datetime.now() < tenure) if tenure is not None else self.table
-        self.table = self.table.dropna(axis=0, how="all")
-        self.table = self.table.sort_values("apy", axis=0, ascending=False, inplace=False, ignore_index=False)
-        if funds is not None:
-            columns = [column for column in self.table.columns if column != "size"]
-            expanded = self.table.loc[self.table.index.repeat(self.table["size"])][columns]
-            expanded = expanded.where(expanded["cost"].cumsum() <= funds)
-            expanded = expanded.dropna(axis=0, how="all")
-            self.table["size"] = expanded.index.value_counts()
-            self.table = self.table.where(self.table["size"].notna())
-            self.table = self.table.dropna(axis=0, how="all")
-        self.table["size"] = self.table["size"].apply(np.floor).astype(np.int32)
-        self.table["tau"] = self.table["tau"].astype(np.int32)
-        self.table["apy"] = self.table["apy"].round(2)
-        self.table["npv"] = self.table["npv"].round(2)
-
-    @staticmethod
-    def parser(index, record):
-        pass
-
-    @property
-    def header(self): return ["inquiry", "strategy", "ticker", "expire"] + list(map(str, Securities.Options)) + ["apy", "tau", "npv", "cost", "size"]
+    def execute(self, query, *args, **kwargs):
+        valuations = query.valuations
+        valuation = str(self.valuation.name).lower()
+        header = dict(index=self.index, columns=self.columns, scope=self.scope, values=self.values)
+        assert isinstance(valuations, pd.DataFrame)
+        mask = valuations["valuation"] == valuations
+        valuations = valuation.where(mask).dropna(axis=0, how="all")
+        valuations = self.pivot(valuations, *args, **header, delimiter=None, **kwargs)
 
 
 
