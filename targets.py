@@ -138,7 +138,7 @@ class TargetReader(CycleReader, ABC):
 
         ### ### ### ### ###
 
-        yield market
+        yield portfolio
 
     def read(self, *args, **kwargs):
         with self.table.mutex:
