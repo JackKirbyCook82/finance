@@ -24,7 +24,7 @@ __license__ = "MIT License"
 
 
 INDEX = {"instrument": str, "position": str, "strike": np.float32, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
-COLUMNS = {"price": np.float32, "underlying": np.float32, "size": np.int32, "volume": np.int64, "interest": np.int32}
+VALUES = {"price": np.float32, "underlying": np.float32, "size": np.int32, "volume": np.int64, "interest": np.int32}
 
 
 class StrategyCalculation(Calculation, fields=["strategy"]):
@@ -73,15 +73,11 @@ class CollarShortCalculation(StrategyCalculation, strategy=Strategies.Collar.Sho
 
 
 class StrategyCalculator(Calculator, calculations=ODict(list(StrategyCalculation))):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.index = list(INDEX.keys())
-        self.columns = list(COLUMNS.keys())
-
     def execute(self, query, *args, **kwargs):
+        unflatten = dict(index=list(INDEX.keys()), columns=list(VALUES.keys()))
         securities = query.securities
         assert isinstance(securities, pd.DataFrame)
-        securities = self.unflatten(securities, *args, index=self.index, columns=self.columns, **kwargs)
+        securities = self.unflatten(securities, *args, **unflatten, **kwargs)
         securities = self.parse(securities, *args, **kwargs)
         securities = ODict(list(securities))
         sizes = {security: np.count_nonzero(~np.isnan(dataset["size"].values)) for security, dataset in securities.items()}

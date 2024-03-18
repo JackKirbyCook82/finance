@@ -28,7 +28,7 @@ __logger__ = logging.getLogger(__name__)
 
 
 INDEX = {option: str for option in list(map(str, Securities.Options))} | {"strategy": str, "valuation": str, "scenario": str, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
-COLUMNS = {"apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.int32, "tau": np.int32}
+VALUES = {"apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.int32, "tau": np.int32}
 
 
 class ValuationCalculation(Calculation, fields=["valuation", "scenario"]):
@@ -62,7 +62,7 @@ class MaximumArbitrageCalculation(ArbitrageCalculation, scenario=Scenarios.MAXIM
 class ValuationCalculator(Calculator, calculations=ODict(list(ValuationCalculation))):
     def __init__(self, *args, valuation, **kwargs):
         super().__init__(*args, **kwargs)
-        self.valuation = valuation
+        self.__valuation = valuation
 
     def execute(self, query, *args, **kwargs):
         strategies = query.strategies
@@ -74,15 +74,18 @@ class ValuationCalculator(Calculator, calculations=ODict(list(ValuationCalculati
         valuations = xr.concat(valuations, dim="scenario").assign_coords({"valuation": valuation})
         yield query(valuations=valuations)
 
+    @property
+    def valuation(self): return self.__valuation
+
 
 class ValuationFilter(Filter):
     def __init__(self, *args, scenario, **kwargs):
         super().__init__(*args, **kwargs)
-        self.index = list(INDEX.keys())
-        self.columns = list(COLUMNS.keys())
-        self.scenario = scenario
+        self.__scenario = scenario
 
     def execute(self, query, *args, **kwargs):
+        flatten = dict(header=list(INDEX.keys()) + list(VALUES.keys()))
+        clean = dict(index=list(INDEX.keys()), columns=list(VALUES.keys()))
         valuations = query.valuations
         scenario = str(self.scenario.name).lower()
         assert isinstance(valuations, xr.Dataset)
@@ -92,11 +95,14 @@ class ValuationFilter(Filter):
         mask = xr.broadcast(mask, valuations)[0]
         valuations = self.filter(valuations, *args, mask=mask, **kwargs)
         post = self.size(valuations["size"])
-        valuations = self.flatten(valuations, *args, header=self.index + self.columns, **kwargs)
-        valuations = self.clean(valuations, *args, index=self.index, columns=self.columns, **kwargs)
+        valuations = self.flatten(valuations, *args, **flatten, **kwargs)
+        valuations = self.clean(valuations, *args, **clean, **kwargs)
         query = query(valuations=valuations)
         __logger__.info(f"Filter: {repr(self)}|{str(query)}[{prior:.0f}|{post:.0f}]")
         yield query
+
+    @property
+    def scenario(self): return self.__scenario
 
 
 class ValuationFile(DataframeFile, header=INDEX | COLUMNS): pass
