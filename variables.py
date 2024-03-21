@@ -6,12 +6,12 @@ Created on Sun Jan 28 2024
 
 """
 
+import pandas as pd
 from abc import ABC
 from enum import IntEnum
 from datetime import date as Date
 from functools import total_ordering
 from collections import namedtuple as ntuple
-from datetime import datetime as Datetime
 
 from support.dispatchers import typedispatcher
 
@@ -39,6 +39,7 @@ class DateRange(ntuple("DateRange", "minimum maximum")):
         return super().__new__(cls, min(dates), max(dates)) if dates else None
 
     def __contains__(self, date): return self.minimum <= date <= self.maximum
+    def __iter__(self): return (date for date in pd.date_range(start=self.minimum, end=self.maximum))
     def __repr__(self): return f"{self.__class__.__name__}({repr(self.minimum)}, {repr(self.maximum)})"
     def __str__(self): return f"{str(self.minimum)}|{str(self.maximum)}"
     def __bool__(self): return self.minimum < self.maximum
@@ -47,13 +48,14 @@ class DateRange(ntuple("DateRange", "minimum maximum")):
 
 @total_ordering
 class Contract(ntuple("Contract", "ticker expire")):
-    def __str__(self): return f"{str(self.ticker).upper()}, {self.expire.strftime('%Y-%m-%d')}"
+    def __new__(cls, contents): return super().__new__(*[contents[field] for field in cls._fields])
+    def __str__(self): return f"{str(self.ticker).upper()}|{self.expire.strftime('%Y-%m-%d')}"
     def __eq__(self, other): return self.ticker == other.ticker and self.expire == other.expire
     def __lt__(self, other): return self.ticker < other.ticker and self.expire < other.expire
 
 
 class Query(object):
-    def __str__(self): return f"{self.contract.ticker}|{self.contract.expire.strftime('%Y-%m-%d')}"
+    def __str__(self): return str(self.contract)
     def __init__(self, contract, **fields):
         self.__contract = contract
         self.__fields = fields

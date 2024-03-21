@@ -11,8 +11,9 @@ import pandas as pd
 from itertools import product
 from collections import OrderedDict as ODict
 
-from support.processes import Calculator
 from support.calculations import Calculation, equation, source, constant
+from support.processes import Calculator
+from support.pipelines import Processor
 
 from finance.variables import Securities, Strategies
 
@@ -72,7 +73,7 @@ class CollarShortCalculation(StrategyCalculation, strategy=Strategies.Collar.Sho
     yo = equation("yo", "spot", np.float32, domain=("cα.yo", "pβ.yo", "xoμ"), function=lambda ycα, ypβ, xoμ: - ycα + ypβ + xoμ)
 
 
-class StrategyCalculator(Calculator, calculations=ODict(list(StrategyCalculation))):
+class StrategyCalculator(Calculator, Processor, calculations=ODict(list(StrategyCalculation))):
     def execute(self, query, *args, **kwargs):
         unflatten = dict(index=list(INDEX.keys()), columns=list(VALUES.keys()))
         securities = query.securities

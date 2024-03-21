@@ -12,7 +12,6 @@ from abc import ABC
 from enum import IntEnum
 from collections import namedtuple as ntuple
 
-from support.processes import Writer, CycleReader, Saver, Loader
 from support.tables import DataframeTable
 from support.files import DataframeFile
 
@@ -72,7 +71,7 @@ class TargetHoldings(tuple):
     def strikes(self): pass
 
 
-class TargetWriter(Writer, ABC):
+class TargetWriter(ABC):
     def __init__(self, *args, table, valuation, priority, **kwargs):
         assert callable(priority)
         super().__init__(*args, **kwargs)
@@ -121,7 +120,7 @@ class TargetWriter(Writer, ABC):
     def table(self): return self.__table
 
 
-class TargetReader(CycleReader, ABC):
+class TargetReader(ABC):
     def __init__(self, *args, table, **kwargs):
         super().__init__(*args, **kwargs)
         self.__table = table
@@ -149,16 +148,6 @@ class TargetReader(CycleReader, ABC):
 
     @property
     def table(self): return self.__table
-
-
-class TargetSaver(Saver):
-    def execute(self, *args, **kwargs):
-        pass
-
-
-class TargetLoader(Loader):
-    def execute(self, *args, **kwargs):
-        pass
 
 
 
