@@ -9,14 +9,15 @@ Created on Weds Jul 19 2023
 import logging
 import numpy as np
 import xarray as xr
+import pandas as pd
 from collections import OrderedDict as ODict
 
 from support.calculations import Calculation, equation, source, constant
-from support.processes import Scheduler, Calculator, Filter, Saver, Loader
+from support.processes import Calculator, Filter, Saver, Loader
 from support.pipelines import Processor, Consumer
 from support.files import DataframeFile
 
-from finance.variables import Query, Contract, Securities, Valuations, Scenarios
+from finance.variables import Query, Securities, Valuations, Scenarios
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -58,12 +59,15 @@ class MaximumArbitrageCalculation(ArbitrageCalculation, scenario=Scenarios.MAXIM
     v = source("v", "maximum", position=0, variables={"vτ": "maximum"})
 
 
-class ValuationFile(DataframeFile, variables=INDEX | VALUES): pass
-class ValuationScheduler(Scheduler, Processor, variables=["ticker", "expire"]):
-    def execute(self, *args, **kwargs):
-        for contents in self.schedule(*args, **kwargs):
-            contract = Contract(contents)
-            yield Query(contract)
+class ValuationFile(DataframeFile, variables=INDEX | VALUES):
+    pass
+
+
+# class ValuationScheduler(Scheduler, Processor, variables=["ticker", "expire"]):
+#     def execute(self, *args, **kwargs):
+#         for contents in self.schedule(*args, **kwargs):
+#             contract = Contract(contents)
+#             yield Query(contract)
 
 
 class ValuationCalculator(Calculator, Processor, calculations=ODict(list(ValuationCalculation))):
@@ -114,38 +118,25 @@ class ValuationFilter(Filter, Processor):
 
 class ValuationLoader(Loader, Processor):
     def execute(self, query, *args, **kwargs):
-        pass
+        ticker = str(query.contract.ticker)
+        expire = str(query.contract.expire.strftime("%Y%m%d"))
+        folder = "_".join([ticker, expire])
+        file = "valuations.csv"
+        valuations = self.read(folder=folder, file=file)
+        yield Query(valuations=valuations)
 
 
 class ValuationSaver(Saver, Consumer):
     def execute(self, query, *args, **kwargs):
-        pass
-
-
-# class ValuationLoader(Loader, Processor):
-#     def execute(self, *args, **kwargs):
-#         folders = self.contents(folder=None)
-#         files = ["valuations.csv"]
-#         reader = self.reader(folders=folders, files=files)
-#         for folder, contents in iter(reader):
-#             ticker, expire = str(folder).split("_")
-#             ticker = str(ticker).upper()
-#             expire = Datetime.strptime(expire, "%Y%m%d")
-#             contract = Contract(ticker, expire)
-#             yield Query(contract, **contents)
-
-
-# class ValuationSaver(Saver, Consumer):
-#     def execute(self, query, *args, **kwargs):
-#         valuations = query.valuations
-#         assert isinstance(valuations, pd.DataFrame)
-#         if bool(valuations.empty):
-#             return
-#         ticker = str(query.contract.ticker)
-#         expire = str(query.contract.expire.strftime("%Y%m%d"))
-#         folder = "_".join([ticker, expire])
-#         files = {"valuations.csv": valuations}
-#         self.write(folder=folder, files=files, mode="w")
+        valuations = query.valuations
+        assert isinstance(valuations, pd.DataFrame)
+        if bool(valuations.empty):
+            return
+        ticker = str(query.contract.ticker)
+        expire = str(query.contract.expire.strftime("%Y%m%d"))
+        folder = "_".join([ticker, expire])
+        file = "valuations.csv"
+        self.write(valuations, folder=folder, file=file, mode="w")
 
 
 

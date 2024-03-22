@@ -12,17 +12,18 @@ import pandas as pd
 from collections import OrderedDict as ODict
 
 from finance.variables import Strategies
-from finance.targets import TargetHoldings, TargetWriter, TargetTable
+from finance.targets import TargetHoldings, TargetReader, TargetWriter, TargetTable
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = []
+__all__ = ["DivestitureWriter", "DivestitureReader", "DivestitureTable"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
 class DivestitureTable(TargetTable): pass
+class DivestitureReader(TargetReader): pass
 class DivestitureWriter(TargetWriter):
     def execute(self, query, *args, **kwargs):
         valuations, holdings = query.valuations, query.holdings
