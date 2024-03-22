@@ -63,6 +63,10 @@ class Query(object):
     def __call__(self, **fields): return Query(self.contract, **self.fields | fields)
     def __getattr__(self, field): return self.fields[field]
 
+    def keys(self): return self.fields.keys()
+    def values(self): return self.fields.values()
+    def items(self): return self.fields.items()
+
     @property
     def contract(self): return self.__contract
     @property

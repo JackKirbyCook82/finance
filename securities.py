@@ -9,6 +9,7 @@ Created on Weds Jul 19 2023
 import logging
 import numpy as np
 import pandas as pd
+from collections import OrderedDict as ODict
 
 from support.processes import Filter, Saver, Loader
 from support.pipelines import Processor, Consumer
@@ -57,22 +58,24 @@ class SecurityLoader(Loader, Processor):
         ticker = str(query.contract.ticker)
         expire = str(query.contract.expire.strftime("%Y%m%d"))
         folder = "_".join([ticker, expire])
-        file = "securities.csv"
-        securities = self.read(folder=folder, file=file)
-        yield Query(securities=securities)
+        files = {name: f"{name}.csv" for name in list(query.keys())}
+        contents = {name: self.read(folder=folder, file=file) for name, file in files.items()}
+        yield Query(contents)
 
 
 class SecuritySaver(Saver, Consumer):
     def execute(self, query, *args, **kwargs):
-        securities = query.securities
-        assert isinstance(securities, pd.DataFrame)
-        if bool(securities.empty):
-            return
         ticker = str(query.contract.ticker)
         expire = str(query.contract.expire.strftime("%Y%m%d"))
         folder = "_".join([ticker, expire])
-        file = "securities.csv"
-        self.write(securities, folder=folder, file=file, mode="w")
+        contents = ODict(list(query.items()))
+        assert all([isinstance(content, pd.DataFrame) for content in contents.values()])
+        contents = ODict([(name, content) for name, content in contents.items() if not bool(content.empty)])
+        if not bool(contents):
+            return
+        for name, content in contents.items():
+            file = ".".join([name, "csv"])
+            self.write(content, folder=folder, file=file, mode="w")
 
 
 

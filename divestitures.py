@@ -77,5 +77,3 @@ class DivestitureWriter(TargetWriter):
 
 
 
-
-

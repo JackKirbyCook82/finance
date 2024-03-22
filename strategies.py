@@ -105,5 +105,3 @@ class StrategyCalculator(Calculator, Processor, calculations=ODict(list(Strategy
 
 
 
-
-
