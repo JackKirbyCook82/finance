@@ -12,6 +12,7 @@ from enum import IntEnum
 from datetime import date as Date
 from functools import total_ordering
 from collections import namedtuple as ntuple
+from collections import OrderedDict as ODict
 
 from support.dispatchers import typedispatcher
 
@@ -48,24 +49,26 @@ class DateRange(ntuple("DateRange", "minimum maximum")):
 
 @total_ordering
 class Contract(ntuple("Contract", "ticker expire")):
-    def __new__(cls, contents): return super().__new__(*[contents[field] for field in cls._fields])
-    def __str__(self): return f"{str(self.ticker).upper()}|{self.expire.strftime('%Y-%m-%d')}"
+    def __new__(cls, ticker, expire=None): return super().__new__(cls, ticker, expire)
+    def __str__(self): return "|".join(list(filter([str(self.ticker).upper(), self.expire.strftime('%Y-%m-%d') if self.expire is not None else None])))
     def __eq__(self, other): return self.ticker == other.ticker and self.expire == other.expire
     def __lt__(self, other): return self.ticker < other.ticker and self.expire < other.expire
 
 
-class Query(object):
-    def __str__(self): return str(self.contract)
-    def __init__(self, contract, **fields):
+class Query(ODict):
+    def __str__(self): return f"{str(self.contract)}[{'|'.join(self.fields)}]"
+    def __getattr__(self, field): return self[field]
+
+    def __init__(self, contract, fields, *args, **kwargs):
+        assert isinstance(contract, Contract) and isinstance(fields, list)
+        contents = [(field, kwargs.get(field, None)) for field in fields]
+        super().__init__(contents)
         self.__contract = contract
         self.__fields = fields
 
-    def __call__(self, **fields): return Query(self.contract, **self.fields | fields)
-    def __getattr__(self, field): return self.fields[field]
-
-    def keys(self): return self.fields.keys()
-    def values(self): return self.fields.values()
-    def items(self): return self.fields.items()
+    def __call__(self, *args, **kwargs):
+        contents = [(key, kwargs.get(key, value)) for key, value in self.items()]
+        return Query(self.contract, self.fields, **contents)
 
     @property
     def contract(self): return self.__contract

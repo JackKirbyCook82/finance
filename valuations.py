@@ -70,7 +70,7 @@ class ValuationFile(DataframeFile, variables=INDEX | VALUES):
 #             yield Query(contract)
 
 
-class ValuationCalculator(Calculator, Processor, calculations=ODict(list(ValuationCalculation))):
+class ValuationCalculator(Calculator, Processor, calculations=ODict(list(ValuationCalculation)), title="Calculated"):
     def __init__(self, *args, valuation, **kwargs):
         super().__init__(*args, **kwargs)
         self.__valuation = valuation
@@ -89,7 +89,7 @@ class ValuationCalculator(Calculator, Processor, calculations=ODict(list(Valuati
     def valuation(self): return self.__valuation
 
 
-class ValuationFilter(Filter, Processor):
+class ValuationFilter(Filter, Processor, title="Filtered"):
     def __init__(self, *args, scenario, **kwargs):
         super().__init__(*args, **kwargs)
         self.__scenario = scenario
@@ -116,7 +116,7 @@ class ValuationFilter(Filter, Processor):
     def scenario(self): return self.__scenario
 
 
-class ValuationLoader(Loader, Processor):
+class ValuationLoader(Loader, Processor, title="Loaded"):
     def execute(self, query, *args, **kwargs):
         ticker = str(query.contract.ticker)
         expire = str(query.contract.expire.strftime("%Y%m%d"))
@@ -126,7 +126,7 @@ class ValuationLoader(Loader, Processor):
         yield Query(valuations=valuations)
 
 
-class ValuationSaver(Saver, Consumer):
+class ValuationSaver(Saver, Consumer, title="Saved"):
     def execute(self, query, *args, **kwargs):
         valuations = query.valuations
         assert isinstance(valuations, pd.DataFrame)

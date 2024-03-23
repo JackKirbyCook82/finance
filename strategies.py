@@ -73,7 +73,7 @@ class CollarShortCalculation(StrategyCalculation, strategy=Strategies.Collar.Sho
     yo = equation("yo", "spot", np.float32, domain=("cα.yo", "pβ.yo", "xoμ"), function=lambda ycα, ypβ, xoμ: - ycα + ypβ + xoμ)
 
 
-class StrategyCalculator(Calculator, Processor, calculations=ODict(list(StrategyCalculation))):
+class StrategyCalculator(Calculator, Processor, calculations=ODict(list(StrategyCalculation)), title="Calculated"):
     def execute(self, query, *args, **kwargs):
         unflatten = dict(index=list(INDEX.keys()), columns=list(VALUES.keys()))
         securities = query.securities

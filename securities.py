@@ -9,17 +9,18 @@ Created on Weds Jul 19 2023
 import logging
 import numpy as np
 import pandas as pd
+from datetime import datetime as Datetime
 from collections import OrderedDict as ODict
 
-from support.processes import Filter, Saver, Loader
-from support.pipelines import Processor, Consumer
+from support.processes import Scheduler, Directory, Filter, Saver, Loader
+from support.pipelines import Producer, Processor, Consumer
 from support.files import DataframeFile
 
-from finance.variables import Query
+from finance.variables import Contract, Query
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["SecurityFilter", "SecurityLoader", "SecuritySaver", "SecurityFile"]
+__all__ = ["SecurityDirectory", "SecurityScheduler", "SecurityFilter", "SecurityLoader", "SecuritySaver", "SecurityFile"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
@@ -29,18 +30,26 @@ INDEX = {"instrument": str, "position": str, "strike": np.float32, "ticker": str
 VALUES = {"price": np.float32, "underlying": np.float32, "size": np.int32, "volume": np.int64, "interest": np.int32, "quantity": np.int32}
 
 
-class SecurityFile(DataframeFile, variables=INDEX | VALUES):
-    pass
+class SecurityFile(DataframeFile, variables=INDEX | VALUES): pass
+class SecurityDirectory(Directory, Producer, title="Scheduled"):
+    def execute(self, *args, **kwargs):
+        for folder in self.directory:
+            ticker, expire = folder.split("_")
+            ticker, expire = str(ticker).upper(), Datetime.strptime(expire, "%Y%m%d")
+            contract = Contract(ticker, expire)
+            yield Query(contract, ["securities", "holdings"])
 
 
-# class SecurityScheduler(Scheduler, Processor, variables=["ticker", "expire"]):
-#     def execute(self, *args, **kwargs):
-#         for contents in self.schedule(*args, **kwargs):
-#             contract = Contract(contents)
-#             yield Query(contract)
+class SecurityScheduler(Scheduler, Producer, title="Scheduled"):
+    def execute(self, *args, **kwargs):
+        schedule = self.schedule(*args, **kwargs)
+        for contents in schedule:
+            contents = [contents.get(field, None) for field in ("ticker", "expire")]
+            contract = Contract(*contents)
+            yield Query(contract, ["securities", "holdings"])
 
 
-class SecurityFilter(Filter, Processor):
+class SecurityFilter(Filter, Processor, title="Filtered"):
     def execute(self, query, *args, **kwargs):
         securities = query.securities
         assert isinstance(securities, pd.DataFrame)
@@ -53,7 +62,7 @@ class SecurityFilter(Filter, Processor):
         yield query
 
 
-class SecurityLoader(Loader, Processor):
+class SecurityLoader(Loader, Processor, title="Loaded"):
     def execute(self, query, *args, **kwargs):
         ticker = str(query.contract.ticker)
         expire = str(query.contract.expire.strftime("%Y%m%d"))
@@ -63,14 +72,15 @@ class SecurityLoader(Loader, Processor):
         yield Query(contents)
 
 
-class SecuritySaver(Saver, Consumer):
+class SecuritySaver(Saver, Consumer, title="Saved"):
     def execute(self, query, *args, **kwargs):
         ticker = str(query.contract.ticker)
         expire = str(query.contract.expire.strftime("%Y%m%d"))
         folder = "_".join([ticker, expire])
         contents = ODict(list(query.items()))
-        assert all([isinstance(content, pd.DataFrame) for content in contents.values()])
-        contents = ODict([(name, content) for name, content in contents.items() if not bool(content.empty)])
+        assert all([isinstance(content, (pd.DataFrame, type(None))) for content in contents.values()])
+        contents = ODict([(name, content) for name, content in contents.items() if content is not None])
+        contents = ODict([(name, content) for name, content in contents.items() if not content.empty])
         if not bool(contents):
             return
         for name, content in contents.items():
