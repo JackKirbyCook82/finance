@@ -17,12 +17,13 @@ from support.calculations import Calculation, equation, source, constant
 from support.processes import Reader, Writer, Calculator, Filter
 from support.pipelines import Producer, Processor, Consumer
 from support.files import DataframeFile
+from support.queues import FIFOQueue
 
 from finance.variables import Securities, Valuations, Scenarios
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["ValuationCalculation", "ValuationCalculator", "ValuationFilter", "ValuationLoader", "ValuationSaver", "ValuationFile"]
+__all__ = ["ValuationCalculation", "ValuationCalculator", "ValuationFilter", "ValuationLoader", "ValuationSaver", "ValuationFile", "ValuationQueue"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
@@ -73,10 +74,14 @@ class ValuationCalculator(Calculator, Processor, calculations=ODict(list(Valuati
         valuations = {scenario: calculation(strategies, *args, **kwargs) for scenario, calculation in calculations.items()}
         valuations = [dataset.assign_coords({"scenario": str(scenario.name).lower()}).expand_dims("scenario") for scenario, dataset in valuations.items()]
         valuations = xr.concat(valuations, dim="scenario").assign_coords({"valuation": valuation})
-        yield query(valuations=valuations)
+        yield query | dict(valuations=valuations)
 
     @property
     def valuation(self): return self.__valuation
+
+
+class ValuationFile(DataframeFile, variables=INDEX | VALUES): pass
+class ValuationQueue(FIFOQueue): pass
 
 
 class ValuationFilter(Filter, Processor, title="Filtered"):
@@ -98,7 +103,7 @@ class ValuationFilter(Filter, Processor, title="Filtered"):
         post = self.size(valuations["size"])
         valuations = self.flatten(valuations, *args, **flatten, **kwargs)
         valuations = self.clean(valuations, *args, **clean, **kwargs)
-        query = query(valuations=valuations)
+        query = query | dict(valuations=valuations)
         __logger__.info(f"Filter: {repr(self)}|{str(query)}[{prior:.0f}|{post:.0f}]")
         yield query
 
@@ -106,15 +111,14 @@ class ValuationFilter(Filter, Processor, title="Filtered"):
     def scenario(self): return self.__scenario
 
 
-class ValuationFile(DataframeFile, variables=INDEX | VALUES): pass
 class ValuationLoader(Reader, Producer, title="Loaded"):
     def execute(self, query, *args, **kwargs):
         ticker = str(query.contract.ticker)
         expire = str(query.contract.expire.strftime("%Y%m%d"))
         folder = "_".join([ticker, expire])
         files = {name: os.path.join(folder, str(name) + ".csv") for name in list(query.keys())}
-        contents = {name: self.read(folder=folder, file=file) for name, file in files.items()}
-        yield query(contents)
+        contents = {name: self.read(file=file) for name, file in files.items()}
+        yield query | dict(contents)
 
 
 class ValuationSaver(Writer, Consumer, title="Saved"):

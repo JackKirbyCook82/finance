@@ -91,7 +91,7 @@ class StrategyCalculator(Calculator, Processor, calculations=ODict(list(Strategy
             size = np.count_nonzero(~np.isnan(strategies["size"].values))
             if not bool(size):
                 continue
-            yield query(strategies=strategies)
+            yield query | dict(strategies=strategies)
 
     @staticmethod
     def parse(datasets, *args, **kwargs):

@@ -12,6 +12,8 @@ from abc import ABC
 from enum import IntEnum
 from collections import namedtuple as ntuple
 
+from support.pipelines import Producer, Consumer
+from support.processes import Reader, Writer
 from support.tables import DataframeTable
 from support.files import DataframeFile
 
@@ -71,13 +73,35 @@ class TargetHoldings(tuple):
     def strikes(self): pass
 
 
-class TargetWriter(ABC):
-    def __init__(self, *args, table, valuation, priority, **kwargs):
+class TargetReader(Reader, Producer, ABC):
+    def execute(self, *args, **kwargs):
+        melt = dict(name="security", variable="strike", columns=list(map(str, Securities.Options)))
+        columns = ["security", "strike", "ticker", "expire", "date"]
+        market = self.read(*args, **kwargs)
+        if bool(market.empty):
+            return
+        portfolio = self.melt(market, *args, **melt, **kwargs)
+        portfolio = portfolio[columns]
+        portfolio["quantity"] = 1
+
+        ### ### ### ### ###
+
+        yield portfolio
+
+    def read(self, *args, **kwargs):
+        with self.table.mutex:
+            mask = self.table["status"] == TargetStatus.PURCHASED
+            dataframe = self.table.where(mask)
+            self.table.remove(dataframe, *args, **kwargs)
+            return dataframe
+
+
+class TargetWriter(Writer, Consumer, ABC):
+    def __init__(self, *args, valuation, priority, **kwargs):
         assert callable(priority)
         super().__init__(*args, **kwargs)
         self.__priority = priority
         self.__valuation = valuation
-        self.__table = table
 
     def market(self, valuations, *args, liquidity=None, apy=None, **kwargs):
         pivot = dict(columns="scenario", values=["apy", "npv", "cost", "size", "tau"])
@@ -116,38 +140,6 @@ class TargetWriter(ABC):
     def priority(self): return self.__priority
     @property
     def valuation(self): return self.__valuation
-    @property
-    def table(self): return self.__table
-
-
-class TargetReader(ABC):
-    def __init__(self, *args, table, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.__table = table
-
-    def execute(self, *args, **kwargs):
-        melt = dict(name="security", variable="strike", columns=list(map(str, Securities.Options)))
-        columns = ["security", "strike", "ticker", "expire", "date"]
-        market = self.read(*args, **kwargs)
-        if bool(market.empty):
-            return
-        portfolio = self.melt(market, *args, **melt, **kwargs)
-        portfolio = portfolio[columns]
-        portfolio["quantity"] = 1
-
-        ### ### ### ### ###
-
-        yield portfolio
-
-    def read(self, *args, **kwargs):
-        with self.table.mutex:
-            mask = self.table["status"] == TargetStatus.PURCHASED
-            dataframe = self.table.where(mask)
-            self.table.remove(dataframe, *args, **kwargs)
-            return dataframe
-
-    @property
-    def table(self): return self.__table
 
 
 
