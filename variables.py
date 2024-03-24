@@ -55,25 +55,25 @@ class Contract(ntuple("Contract", "ticker expire")):
     def __lt__(self, other): return self.ticker < other.ticker and self.expire < other.expire
 
 
-class Query(ODict):
-    def __str__(self): return f"{str(self.contract)}[{'|'.join(self.fields)}]"
-    def __getattr__(self, field): return self[field]
-
-    def __init__(self, contract, fields, *args, **kwargs):
-        assert isinstance(contract, Contract) and isinstance(fields, list)
-        contents = [(field, kwargs.get(field, None)) for field in fields]
-        super().__init__(contents)
-        self.__contract = contract
-        self.__fields = fields
-
-    def __call__(self, *args, **kwargs):
-        contents = [(key, kwargs.get(key, value)) for key, value in self.items()]
-        return Query(self.contract, self.fields, **contents)
-
-    @property
-    def contract(self): return self.__contract
-    @property
-    def fields(self): return self.__fields
+# class Query(ODict):
+#     def __str__(self): return f"{str(self.contract)}[{'|'.join(list(self.fields))}]"
+#     def __getattr__(self, field): return self[field]
+#
+#     def __init__(self, contract, fields, *args, **kwargs):
+#         assert isinstance(contract, Contract) and isinstance(fields, list)
+#         contents = [(field, kwargs.get(field, None)) for field in fields]
+#         super().__init__(contents)
+#         self.__contract = contract
+#         self.__fields = fields
+#
+#     def __call__(self, *args, **kwargs):
+#         contents = [(key, kwargs.get(key, value)) for key, value in self.items()]
+#         return Query(self.contract, self.fields, **contents)
+#
+#     @property
+#     def contract(self): return self.__contract
+#     @property
+#     def fields(self): return self.__fields
 
 
 class Variable(ABC):
