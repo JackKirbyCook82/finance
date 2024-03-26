@@ -12,13 +12,12 @@ from enum import IntEnum
 from datetime import date as Date
 from functools import total_ordering
 from collections import namedtuple as ntuple
-from collections import OrderedDict as ODict
 
 from support.dispatchers import typedispatcher
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["DateRange", "Query", "Contract", "Variable", "Actions", "Instruments", "Positions", "Options", "Securities", "Spreads", "Strategies", "Valuations", "Scenarios"]
+__all__ = ["DateRange", "Contract", "Variable", "Actions", "Instruments", "Positions", "Options", "Securities", "Spreads", "Strategies", "Valuations", "Scenarios"]
 __copyright__ = "Copyright 2023,SE Jack Kirby Cook"
 __license__ = "MIT License"
 
@@ -53,29 +52,6 @@ class Contract(ntuple("Contract", "ticker expire")):
     def __str__(self): return "|".join(list(filter([str(self.ticker).upper(), self.expire.strftime('%Y-%m-%d') if self.expire is not None else None])))
     def __eq__(self, other): return self.ticker == other.ticker and self.expire == other.expire
     def __lt__(self, other): return self.ticker < other.ticker and self.expire < other.expire
-
-
-class Query(ntuple("Query", "contract fields")):
-    def __new__(cls, contract, fields, *args, **kwargs):
-        assert isinstance(contract, Contract) and isinstance(fields, list)
-        return super().__new__(cls, contract, fields)
-
-    def __str__(self): return f"{str(self.contract)}[{'|'.join(list(self.fields))}]"
-    def __or__(self, contents): return type(self)(self.contract, self.fields, **contents)
-    def __getattr__(self, attr): return self.contents[attr]
-    def __init__(self, *args, **kwargs):
-        self.__contents = ODict([(field, kwargs.get(field, None)) for field in self.fields])
-
-    def keys(self): return self.contents.keys()
-    def values(self): return self.contents.values()
-    def items(self): return self.contents.items()
-
-    @property
-    def contract(self): return self.__contract
-    @property
-    def fields(self): return self.__fields
-    @property
-    def contents(self): return self.__contents
 
 
 class Variable(ABC):

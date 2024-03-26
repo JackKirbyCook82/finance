@@ -12,7 +12,7 @@ from abc import ABC
 from enum import IntEnum
 from collections import namedtuple as ntuple
 
-from support.pipelines import Producer, Consumer
+from support.pipelines import CycleProducer, Consumer
 from support.processes import Reader, Writer
 from support.tables import DataframeTable
 from support.files import DataframeFile
@@ -32,7 +32,12 @@ VALUES = {"apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.i
 
 
 class TargetFile(DataframeFile, header=INDEX | VALUES): pass
-class TargetTable(DataframeTable): pass
+class TargetTable(DataframeTable):
+    def read(self, *args, **kwargs):
+        pass
+
+    def write(self, content, *args, **kwargs):
+        pass
 
 
 TargetStatus = IntEnum("Status", ["PROSPECT", "PURCHASED"], start=1)
@@ -73,7 +78,7 @@ class TargetHoldings(tuple):
     def strikes(self): pass
 
 
-class TargetReader(Reader, Producer, ABC):
+class TargetReader(Reader, CycleProducer, ABC):
     def execute(self, *args, **kwargs):
         melt = dict(name="security", variable="strike", columns=list(map(str, Securities.Options)))
         columns = ["security", "strike", "ticker", "expire", "date"]
@@ -84,15 +89,15 @@ class TargetReader(Reader, Producer, ABC):
         portfolio = portfolio[columns]
         portfolio["quantity"] = 1
 
-        ### ### ### ### ###
+        ### ????? ###
 
         yield portfolio
 
     def read(self, *args, **kwargs):
-        with self.table.mutex:
-            mask = self.table["status"] == TargetStatus.PURCHASED
-            dataframe = self.table.where(mask)
-            self.table.remove(dataframe, *args, **kwargs)
+        with self.source.mutex:
+            mask = self.source.table["status"] == TargetStatus.PURCHASED
+            dataframe = self.source.table.where(mask)
+            self.source.remove(dataframe, *args, **kwargs)
             return dataframe
 
 
@@ -128,13 +133,13 @@ class TargetWriter(Writer, Consumer, ABC):
         return market
 
     def write(self, dataframe, *args, **kwargs):
-        with self.table.mutex:
-            maximum = np.max(self.table.index.values)
+        with self.source.mutex:
+            maximum = np.max(self.source.table.index.values)
             dataframe["status"] = TargetStatus.PROSPECT
             dataframe = dataframe.reset_index(drop=True, inplace=False)
             dataframe = dataframe.set_index(dataframe.index + maximum, drop=True, inplace=False)
-            self.table.write(dataframe, *args, **kwargs)
-            self.table.sort("priority", reverse=False)
+            self.source.concat(dataframe, *args, **kwargs)
+            self.source.sort("priority", reverse=False)
 
     @property
     def priority(self): return self.__priority
