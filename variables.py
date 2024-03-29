@@ -14,14 +14,10 @@ from functools import total_ordering
 from collections import namedtuple as ntuple
 
 from support.dispatchers import typedispatcher
-from support.pipelines import Producer, Consumer
-from support.processes import Reader, Writer
-from support.queues import FIFOQueue
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["DateRange", "Variable", "Actions", "Instruments", "Positions", "Options", "Securities", "Spreads", "Strategies", "Valuations", "Scenarios"]
-__all__ += ["ContractQueue", "ContractReader", "ContractWriter"]
+__all__ = ["DateRange", "Contract", "Variable", "Actions", "Instruments", "Positions", "Options", "Securities", "Spreads", "Strategies", "Valuations", "Scenarios"]
 __copyright__ = "Copyright 2023,SE Jack Kirby Cook"
 __license__ = "MIT License"
 
@@ -53,23 +49,9 @@ class DateRange(ntuple("DateRange", "minimum maximum")):
 @total_ordering
 class Contract(ntuple("Contract", "ticker expire")):
     def __new__(cls, ticker, expire=None): return super().__new__(cls, ticker, expire)
-    def __str__(self): return "|".join(list(filter([str(self.ticker).upper(), self.expire.strftime('%Y-%m-%d') if self.expire is not None else None])))
+    def __str__(self): return "|".join(list(filter(None, [str(self.ticker).upper(), self.expire.strftime('%Y-%m-%d') if self.expire is not None else None])))
     def __eq__(self, other): return self.ticker == other.ticker and self.expire == other.expire
     def __lt__(self, other): return self.ticker < other.ticker and self.expire < other.expire
-
-
-class ContractQueue(FIFOQueue): pass
-class ContractReader(Reader, Producer, title="Dequeued"):
-    def execute(self, *args, **kwargs):
-        query = self.read(*args, **kwargs)
-        assert isinstance(query["contract"], Contract)
-        yield query
-
-
-class ContractWriter(Writer, Consumer, title="Queued"):
-    def execute(self, query, *args, **kwargs):
-        assert isinstance(query["contract"], Contract)
-        self.write(query, *args, **kwargs)
 
 
 class Variable(ABC):

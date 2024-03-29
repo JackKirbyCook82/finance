@@ -6,16 +6,14 @@ Created on Weds Jul 19 2023
 
 """
 
-import os.path
 import logging
 import numpy as np
 import xarray as xr
-import pandas as pd
 from datetime import datetime as Datetime
 from collections import OrderedDict as ODict
 
 from support.calculations import Calculation, equation, source, constant
-from support.processes import Reader, Writer, Calculator, Filter
+from support.processes import Loader, Saver, Calculator, Filter
 from support.pipelines import Producer, Processor, Consumer
 from support.files import DataframeFile
 
@@ -30,10 +28,10 @@ __logger__ = logging.getLogger(__name__)
 
 
 INDEX = {option: str for option in list(map(str, Securities.Options))} | {"strategy": str, "valuation": str, "scenario": str, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
-VALUES = {"apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.int32, "tau": np.int32}
+VALUATIONS = {"apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.int32, "tau": np.int32}
 
 
-class ValuationFile(DataframeFile, variables=INDEX | VALUES):
+class ValuationFile(DataframeFile, header=INDEX | VALUATIONS, filename="valuations.csv"):
     pass
 
 
@@ -78,7 +76,7 @@ class ValuationCalculator(Calculator, Processor, calculations=ODict(list(Valuati
         valuations = {scenario: calculation(strategies, *args, **kwargs) for scenario, calculation in calculations.items()}
         valuations = [dataset.assign_coords({"scenario": str(scenario.name).lower()}).expand_dims("scenario") for scenario, dataset in valuations.items()]
         valuations = xr.concat(valuations, dim="scenario").assign_coords({"valuation": valuation})
-        yield query | dict(valuations=valuations)
+        yield query | dict(valuation=valuations)
 
     @property
     def valuation(self): return self.__valuation
@@ -90,10 +88,10 @@ class ValuationFilter(Filter, Processor, title="Filtered"):
         self.__scenario = scenario
 
     def execute(self, query, *args, **kwargs):
-        flatten = dict(header=list(INDEX.keys()) + list(VALUES.keys()))
-        clean = dict(index=list(INDEX.keys()), columns=list(VALUES.keys()))
+        flatten = dict(header=list(INDEX.keys()) + list(VALUATIONS.keys()))
+        clean = dict(index=list(INDEX.keys()), columns=list(VALUATIONS.keys()))
         contract = query["contract"]
-        valuations = query["valuations"]
+        valuations = query["valuation"]
         scenario = str(self.scenario.name).lower()
         assert isinstance(valuations, xr.Dataset)
         prior = self.size(valuations["size"])
@@ -105,43 +103,30 @@ class ValuationFilter(Filter, Processor, title="Filtered"):
         valuations = self.flatten(valuations, *args, **flatten, **kwargs)
         valuations = self.clean(valuations, *args, **clean, **kwargs)
         __logger__.info(f"Filter: {repr(self)}|{str(contract)}[{prior:.0f}|{post:.0f}]")
-        yield query | dict(valuations=valuations)
+        yield query | dict(valuation=valuations)
 
     @property
     def scenario(self): return self.__scenario
 
 
-class ValuationLoader(Reader, Producer, title="Loaded"):
+class ValuationLoader(Loader, Producer, title="Loaded"):
     def execute(self, *args, **kwargs):
-        for folder in self.directory:
+        for folder, contents in self.reader(*args, **kwargs):
             ticker, expire = str(folder).split("_")
             ticker = str(ticker).upper()
             expire = Datetime.strptime(expire, "%Y%m%d")
             contract = Contract(ticker, expire)
-            files = {field: os.path.join(folder, str(field) + ".csv") for field in ("valuations",)}
-            contents = ODict([(name, self.read(file=file)) for name, file in files.items()])
-            assert all([isinstance(content, (pd.DataFrame, type(None))) for content in contents.values()])
-            contents = {name: content for name, content in contents.items() if content is not None}
-            contents = {name: content for name, content in contents.items() if not content.empty}
-            if not bool(contents):
-                return
-            yield dict(contract=contract, **contents)
+            yield dict(contract=contract) | contents
 
 
-class ValuationSaver(Writer, Consumer, title="Saved"):
+class ValuationSaver(Saver, Consumer, title="Saved"):
     def execute(self, query, *args, **kwargs):
+        assert isinstance(query, dict)
         ticker = str(query["contract"].ticker)
         expire = str(query["contract"].expire.strftime("%Y%m%d"))
         folder = "_".join([ticker, expire])
-        contents = {field: query.get(field, None) for field in ("valuations",)}
-        assert all([isinstance(content, (pd.DataFrame, type(None))) for content in contents.values()])
-        contents = {name: content for name, content in contents.items() if content is not None}
-        contents = {name: content for name, content in contents.items() if not content.empty}
-        if not bool(contents):
-            return
-        for name, content in contents.items():
-            file = os.path.join(folder, str(name) + ".csv")
-            self.write(content, file=file, mode="w")
+        contents = {key: value for key, value in query.items() if key != "contract"}
+        self.write(contents, *args, folder=folder, mode="w", **kwargs)
 
 
 
