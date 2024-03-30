@@ -77,6 +77,10 @@ class StrategyCalculator(Calculator, Processor, calculations=ODict(list(Strategy
     def execute(self, query, *args, **kwargs):
         unflatten = dict(index=list(INDEX.keys()), columns=list(VALUES.keys()))
         securities = query.security
+
+        print(securities)
+        raise Exception()
+
         assert isinstance(securities, pd.DataFrame)
         securities = self.unflatten(securities, *args, **unflatten, **kwargs)
         securities = self.parse(securities, *args, **kwargs)

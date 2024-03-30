@@ -13,13 +13,13 @@ from datetime import datetime as Datetime
 
 from support.processes import Loader, Saver, Filter
 from support.pipelines import Producer, Processor, Consumer
-from support.files import DataframeFile
+from support.files import Archive, File
 
 from finance.variables import Contract
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["SecurityFilter", "SecurityLoader", "SecuritySaver", "SecurityFile"]
+__all__ = ["SecurityFilter", "SecurityLoader", "SecuritySaver", "SecurityArchive"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
@@ -28,10 +28,8 @@ __logger__ = logging.getLogger(__name__)
 INDEX = {"instrument": str, "position": str, "strike": np.float32, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
 SECURITIES = {"price": np.float32, "underlying": np.float32, "size": np.int32, "volume": np.int64, "interest": np.int32}
 HOLDINGS = {"quantity": np.int32}
-
-
-class SecurityFile(DataframeFile, header=INDEX | SECURITIES, filename="security.csv"): pass
-class HoldingFile(DataframeFile, header=INDEX | HOLDINGS, filename="holding.csv"): pass
+SECURITY = File("security.csv", INDEX | SECURITIES, pd.DataFrame)
+HOLDING = File("holding.csv", INDEX | HOLDINGS, pd.DataFrame)
 
 
 class SecurityFilter(Filter, Processor, title="Filtered"):
@@ -48,6 +46,7 @@ class SecurityFilter(Filter, Processor, title="Filtered"):
         yield query | dict(security=securities)
 
 
+class SecurityArchive(Archive, files=[SECURITY, HOLDING]): pass
 class SecurityLoader(Loader, Producer, title="Loaded"):
     def execute(self, *args, **kwargs):
         for folder, contents in self.reader(*args, **kwargs):
@@ -67,6 +66,7 @@ class SecuritySaver(Saver, Consumer, title="Saved"):
         assert isinstance(query, dict)
         contents = {key: value for key, value in query.items() if key != "contract"}
         assert all([isinstance(value, pd.DataFrame) for value in contents.values()])
+        contents = {key: value for key, value in contents.items() if not value.empty}
         if not bool(contents):
             return
         ticker = str(query["contract"].ticker)

@@ -8,6 +8,7 @@ Created on Weds Jul 19 2023
 
 import logging
 import numpy as np
+import pandas as pd
 import xarray as xr
 from datetime import datetime as Datetime
 from collections import OrderedDict as ODict
@@ -15,13 +16,13 @@ from collections import OrderedDict as ODict
 from support.calculations import Calculation, equation, source, constant
 from support.processes import Loader, Saver, Calculator, Filter
 from support.pipelines import Producer, Processor, Consumer
-from support.files import DataframeFile
+from support.files import Archive, File
 
 from finance.variables import Contract, Securities, Valuations, Scenarios
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["ValuationCalculation", "ValuationCalculator", "ValuationFilter", "ValuationLoader", "ValuationSaver", "ValuationFile"]
+__all__ = ["ValuationCalculation", "ValuationCalculator", "ValuationFilter", "ValuationLoader", "ValuationSaver", "ValuationArchive"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
@@ -29,10 +30,7 @@ __logger__ = logging.getLogger(__name__)
 
 INDEX = {option: str for option in list(map(str, Securities.Options))} | {"strategy": str, "valuation": str, "scenario": str, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
 VALUATIONS = {"apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.int32, "tau": np.int32}
-
-
-class ValuationFile(DataframeFile, header=INDEX | VALUATIONS, filename="valuations.csv"):
-    pass
+VALUATION = File("valuation.csv", INDEX | VALUATIONS, pd.DataFrame)
 
 
 class ValuationCalculation(Calculation, fields=["valuation", "scenario"]):
@@ -109,6 +107,7 @@ class ValuationFilter(Filter, Processor, title="Filtered"):
     def scenario(self): return self.__scenario
 
 
+class ValuationArchive(Archive, files=[VALUATION]): pass
 class ValuationLoader(Loader, Producer, title="Loaded"):
     def execute(self, *args, **kwargs):
         for folder, contents in self.reader(*args, **kwargs):
