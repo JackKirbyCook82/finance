@@ -26,7 +26,7 @@ __logger__ = logging.getLogger(__name__)
 
 
 INDEX = {"instrument": str, "position": str, "strike": np.float32, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
-SECURITIES = {"price": np.float32, "underlying": np.float32, "size": np.int32, "volume": np.int64, "interest": np.int32}
+SECURITIES = {"price": np.float32, "underlying": np.float32, "size": np.int32, "volume": np.float32, "interest": np.float32}
 HOLDINGS = {"quantity": np.int32}
 SECURITY = File("security.csv", INDEX | SECURITIES, pd.DataFrame)
 HOLDING = File("holding.csv", INDEX | HOLDINGS, pd.DataFrame)

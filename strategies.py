@@ -12,7 +12,7 @@ from itertools import product
 from collections import OrderedDict as ODict
 
 from support.calculations import Calculation, equation, source, constant
-from support.processes import Calculator
+from support.processes import Calculator, Parser
 from support.pipelines import Processor
 
 from finance.variables import Securities, Strategies
@@ -73,14 +73,10 @@ class CollarShortCalculation(StrategyCalculation, strategy=Strategies.Collar.Sho
     yτx = equation("yτx", "maximum", np.float32, domain=("cα.k", "pβ.k"), function=lambda kcα, kpβ: np.maximum(-kcα, -kpβ))
 
 
-class StrategyCalculator(Calculator, Processor, calculations=ODict(list(StrategyCalculation)), title="Calculated"):
+class StrategyCalculator(Calculator, Parser, Processor, calculations=ODict(list(StrategyCalculation)), title="Calculated"):
     def execute(self, query, *args, **kwargs):
         unflatten = dict(index=list(INDEX.keys()), columns=list(VALUES.keys()))
-        securities = query.security
-
-        print(securities)
-        raise Exception()
-
+        securities = query["security"]
         assert isinstance(securities, pd.DataFrame)
         securities = self.unflatten(securities, *args, **unflatten, **kwargs)
         securities = self.parse(securities, *args, **kwargs)
@@ -91,7 +87,6 @@ class StrategyCalculator(Calculator, Processor, calculations=ODict(list(Strategy
             if not all([str(security) in sizes.keys() and sizes[str(security)] > 0 for security in strategy.securities]):
                 return
             strategies = calculation(securities, *args, **kwargs)
-            strategies = strategies.assign_coords({"strategy": str(strategy)})
             size = np.count_nonzero(~np.isnan(strategies["size"].values))
             if not bool(size):
                 continue

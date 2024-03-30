@@ -14,7 +14,7 @@ from datetime import datetime as Datetime
 from collections import OrderedDict as ODict
 
 from support.calculations import Calculation, equation, source, constant
-from support.processes import Loader, Saver, Calculator, Filter
+from support.processes import Loader, Saver, Calculator, Filter, Parser
 from support.pipelines import Producer, Processor, Consumer
 from support.files import Archive, File
 
@@ -67,7 +67,7 @@ class ValuationCalculator(Calculator, Processor, calculations=ODict(list(Valuati
         self.__valuation = valuation
 
     def execute(self, query, *args, **kwargs):
-        strategies = query.strategies
+        strategies = query["strategy"]
         valuation = str(self.valuation.name).lower()
         assert isinstance(strategies, xr.Dataset)
         calculations = {variable.scenario: calculation for variable, calculation in self.calculations.items()}
@@ -80,7 +80,7 @@ class ValuationCalculator(Calculator, Processor, calculations=ODict(list(Valuati
     def valuation(self): return self.__valuation
 
 
-class ValuationFilter(Filter, Processor, title="Filtered"):
+class ValuationFilter(Filter, Parser, Processor, title="Filtered"):
     def __init__(self, *args, scenario, **kwargs):
         super().__init__(*args, **kwargs)
         self.__scenario = scenario
@@ -111,6 +111,10 @@ class ValuationArchive(Archive, files=[VALUATION]): pass
 class ValuationLoader(Loader, Producer, title="Loaded"):
     def execute(self, *args, **kwargs):
         for folder, contents in self.reader(*args, **kwargs):
+            assert all([isinstance(value, pd.DataFrame) for value in contents.values()])
+            contents = {key: value for key, value in contents.items() if not value.empty}
+            if not bool(contents):
+                continue
             ticker, expire = str(folder).split("_")
             ticker = str(ticker).upper()
             expire = Datetime.strptime(expire, "%Y%m%d")
@@ -121,6 +125,15 @@ class ValuationLoader(Loader, Producer, title="Loaded"):
 class ValuationSaver(Saver, Consumer, title="Saved"):
     def execute(self, query, *args, **kwargs):
         assert isinstance(query, dict)
+
+        print(query["valuation"])
+        return
+
+        contents = {key: value for key, value in query.items() if key != "contract"}
+        assert all([isinstance(value, pd.DataFrame) for value in contents.values()])
+        contents = {key: value for key, value in contents.items() if not value.empty}
+        if not bool(contents):
+            return
         ticker = str(query["contract"].ticker)
         expire = str(query["contract"].expire.strftime("%Y%m%d"))
         folder = "_".join([ticker, expire])
