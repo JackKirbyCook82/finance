@@ -7,12 +7,12 @@ Created on Weds Jul 19 2023
 """
 
 import numpy as np
-import pandas as pd
+import xarray as xr
 from itertools import product
 from collections import OrderedDict as ODict
 
 from support.calculations import Calculation, equation, source, constant
-from support.processes import Calculator, Parser
+from support.processes import Calculator
 from support.pipelines import Processor
 
 from finance.variables import Securities, Strategies
@@ -24,13 +24,7 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-INDEX = {"instrument": str, "position": str, "strike": np.float32, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
-VALUES = {"price": np.float32, "underlying": np.float32, "size": np.int32, "volume": np.int64, "interest": np.int32}
-
-
 class StrategyCalculation(Calculation, fields=["strategy"]):
-    sα = source("sα", str(Securities.Stock.Long), position=str(Securities.Stock.Long), variables={"k": "strike", "yo": "price", "xo": "underlying", "qo": "size"}, destination=True)
-    sβ = source("sβ", str(Securities.Stock.Short), position=str(Securities.Stock.Short), variables={"k": "strike", "yo": "price", "xo": "underlying", "qo": "size"}, destination=True)
     pα = source("pα", str(Securities.Option.Put.Long), position=str(Securities.Option.Put.Long), variables={"k": "strike", "yo": "price", "xo": "underlying", "qo": "size"}, destination=True)
     pβ = source("pβ", str(Securities.Option.Put.Short), position=str(Securities.Option.Put.Short), variables={"k": "strike", "yo": "price", "xo": "underlying", "qo": "size"}, destination=True)
     cα = source("cα", str(Securities.Option.Call.Long), position=str(Securities.Option.Call.Long), variables={"k": "strike", "yo": "price", "xo": "underlying", "qo": "size"}, destination=True)
@@ -62,23 +56,22 @@ class VerticalCallCalculation(StrategyCalculation, strategy=Strategies.Vertical.
 
 class CollarLongCalculation(StrategyCalculation, strategy=Strategies.Collar.Long):
     qo = equation("qo", "size", np.float32, domain=("pα.qo", "cβ.qo"), function=lambda qpα, qcβ: np.minimum(qpα, qcβ))
-    yo = equation("yo", "spot", np.float32, domain=("pα.yo", "cβ.yo", "sα.yo"), function=lambda ypα, ycβ, ysα: - ypα + ycβ - ysα)
+    yo = equation("yo", "spot", np.float32, domain=("pα.yo", "cβ.yo", "xoμ"), function=lambda ypα, ycβ, xoμ: - ypα + ycβ - xoμ)
     yτn = equation("yτn", "minimum", np.float32, domain=("pα.k", "cβ.k"), function=lambda kpα, kcβ: np.minimum(kpα, kcβ))
     yτx = equation("yτx", "maximum", np.float32, domain=("pα.k", "cβ.k"), function=lambda kpα, kcβ: np.maximum(kpα, kcβ))
+    xoμ = equation("xoμ", "underlying", np.float32, domain=("pα.xo", "cβ.xo"), function=lambda xpα, xcβ: np.mean([xpα, xcβ]))
 
 class CollarShortCalculation(StrategyCalculation, strategy=Strategies.Collar.Short):
     qo = equation("qo", "size", np.float32, domain=("cα.qo", "pβ.qo"), function=lambda qcα, qpβ: np.minimum(qcα, qpβ))
-    yo = equation("yo", "spot", np.float32, domain=("cα.yo", "pβ.yo", "sβ.yo"), function=lambda ycα, ypβ, ysβ: - ycα + ypβ + ysβ)
+    yo = equation("yo", "spot", np.float32, domain=("cα.yo", "pβ.yo", "xoμ"), function=lambda ycα, ypβ, xoμ: - ycα + ypβ + xoμ)
     yτn = equation("yτn", "minimum", np.float32, domain=("cα.k", "pβ.k"), function=lambda kcα, kpβ: np.minimum(-kcα, -kpβ))
     yτx = equation("yτx", "maximum", np.float32, domain=("cα.k", "pβ.k"), function=lambda kcα, kpβ: np.maximum(-kcα, -kpβ))
+    xoμ = equation("xoμ", "underlying", np.float32, domain=("cα.xo", "pβ.xo"), function=lambda xcα, xpβ: np.mean([xcα, xpβ]))
 
 
-class StrategyCalculator(Calculator, Parser, Processor, calculations=ODict(list(StrategyCalculation)), title="Calculated"):
+class StrategyCalculator(Calculator, Processor, calculations=ODict(list(StrategyCalculation)), title="Calculated"):
     def execute(self, query, *args, **kwargs):
-        unflatten = dict(index=list(INDEX.keys()), columns=list(VALUES.keys()))
         securities = query["security"]
-        assert isinstance(securities, pd.DataFrame)
-        securities = self.unflatten(securities, *args, **unflatten, **kwargs)
         securities = self.parse(securities, *args, **kwargs)
         securities = ODict(list(securities))
         sizes = {security: np.count_nonzero(~np.isnan(dataset["size"].values)) for security, dataset in securities.items()}
@@ -87,13 +80,16 @@ class StrategyCalculator(Calculator, Parser, Processor, calculations=ODict(list(
             if not all([str(security) in sizes.keys() and sizes[str(security)] > 0 for security in strategy.securities]):
                 return
             strategies = calculation(securities, *args, **kwargs)
+            variable = xr.Variable("strategy", [str(strategy)]).squeeze("strategy")
+            strategies = strategies.assign_coords({"strategy": variable}).expand_dims("strategy")
             size = np.count_nonzero(~np.isnan(strategies["size"].values))
             if not bool(size):
                 continue
             yield query | dict(strategy=strategies)
 
     @staticmethod
-    def parse(datasets, *args, **kwargs):
+    def parse(dataframes, *args, **kwargs):
+        datasets = xr.Dataset.from_dataframe(dataframes)
         datasets = datasets.squeeze("date").squeeze("ticker").squeeze("expire")
         for instrument, position in product(datasets["instrument"].values, datasets["position"].values):
             key = f"{instrument}|{position}"

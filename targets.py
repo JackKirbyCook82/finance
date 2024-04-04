@@ -15,7 +15,6 @@ from collections import namedtuple as ntuple
 from support.pipelines import CycleProducer, Consumer
 from support.processes import Reader, Writer
 from support.tables import DataframeTable
-from support.files import DataframeFile
 
 from finance.variables import Securities
 
@@ -25,19 +24,6 @@ __all__ = ["TargetHoldings", "TargetStatus", "TargetTable", "TargetWriter", "Tar
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
-
-
-INDEX = {option: str for option in list(map(str, Securities.Options))} | {"strategy": str, "valuation": str, "scenario": str, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
-VALUES = {"apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.int32, "tau": np.int32}
-
-
-class TargetFile(DataframeFile, header=INDEX | VALUES): pass
-class TargetTable(DataframeTable):
-    def read(self, *args, **kwargs):
-        pass
-
-    def write(self, content, *args, **kwargs):
-        pass
 
 
 TargetStatus = IntEnum("Status", ["PROSPECT", "PURCHASED"], start=1)
@@ -77,7 +63,7 @@ class TargetHoldings(tuple):
     @property
     def strikes(self): pass
 
-
+class TargetTable(DataframeTable): pass
 class TargetReader(Reader, CycleProducer, ABC):
     def execute(self, *args, **kwargs):
         melt = dict(name="security", variable="strike", columns=list(map(str, Securities.Options)))

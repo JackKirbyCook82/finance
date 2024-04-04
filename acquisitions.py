@@ -23,7 +23,11 @@ class AcquisitionTable(TargetTable): pass
 class AcquisitionReader(TargetReader): pass
 class AcquisitionWriter(TargetWriter):
     def execute(self, query, *args, **kwargs):
-        valuations = query.valuations
+        valuations = query["valuation"]
+
+        print(valuations)
+        raise Exception()
+
         assert isinstance(valuations, pd.DataFrame)
         market = self.market(valuations, *args, **kwargs)
         market = self.prioritize(market, *args, **kwargs)
