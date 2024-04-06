@@ -71,7 +71,7 @@ class Variable(ABC):
 class Security(Variable, ntuple("Security", "instrument position")): pass
 class Strategy(Variable, ntuple("Strategy", "spread instrument position")):
     def __new__(cls, spread, instrument, position, *args, **kwargs): return super().__new__(cls, spread, instrument, position)
-    def __init__(self, *args, securities, **kwargs): self.securities = securities
+    def __init__(self, *args, options=[], stocks=[], **kwargs): self.options, self.stocks = options, stocks
 
 
 StockLong = Security(Instruments.STOCK, Positions.LONG)
@@ -80,10 +80,10 @@ PutLong = Security(Instruments.PUT, Positions.LONG)
 PutShort = Security(Instruments.PUT, Positions.SHORT)
 CallLong = Security(Instruments.CALL, Positions.LONG,)
 CallShort = Security(Instruments.CALL, Positions.SHORT)
-CollarLong = Strategy(Spreads.COLLAR, None, Positions.LONG, securities=[PutLong, CallShort])
-CollarShort = Strategy(Spreads.COLLAR, None, Positions.SHORT, securities=[CallLong, PutShort])
-VerticalPut = Strategy(Spreads.VERTICAL, Instruments.PUT, None, securities=[PutLong, PutShort])
-VerticalCall = Strategy(Spreads.VERTICAL, Instruments.CALL, None, securities=[CallLong, CallShort])
+VerticalPut = Strategy(Spreads.VERTICAL, Instruments.PUT, None, options=[PutLong, PutShort])
+VerticalCall = Strategy(Spreads.VERTICAL, Instruments.CALL, None, options=[CallLong, CallShort])
+CollarLong = Strategy(Spreads.COLLAR, None, Positions.LONG, options=[PutLong, CallShort], stocks=[StockLong])
+CollarShort = Strategy(Spreads.COLLAR, None, Positions.SHORT, options=[CallLong, PutShort], stocks=[StockShort])
 
 
 class VariablesMeta(type):
@@ -100,6 +100,13 @@ class VariablesMeta(type):
 
 
 class SecuritiesMeta(VariablesMeta, variables=[StockLong, StockShort, PutLong, PutShort, CallLong, CallShort]):
+    def security(cls, instrument, position): return Securities[(cls.instrument(instrument), cls.position(position))]
+
+    @staticmethod
+    def instrument(instrument): return Instruments[str(instrument).upper()]
+    @staticmethod
+    def position(position): return Positions[str(position).upper()]
+
     @property
     def Stocks(cls): return iter([StockLong, StockShort])
     @property
@@ -130,6 +137,15 @@ class SecuritiesMeta(VariablesMeta, variables=[StockLong, StockShort, PutLong, P
 
 
 class StrategiesMeta(VariablesMeta, variables=[CollarLong, CollarShort, VerticalPut, VerticalCall]):
+    def strategy(cls, spread, instrument, position): return Strategies[(cls.spread(spread), cls.instrument(instrument), cls.position(position))]
+
+    @staticmethod
+    def spread(spread): return Spreads[str(spread).upper()]
+    @staticmethod
+    def instrument(instrument): return Instruments[str(instrument).upper()]
+    @staticmethod
+    def position(position): return Positions[str(position).upper()]
+
     @property
     def Collars(cls): return iter([CollarLong, CollarShort])
     @property

@@ -7,6 +7,7 @@ Created on Weds Jul 19 2023
 """
 
 import numpy as np
+import pandas as pd
 import xarray as xr
 from itertools import product
 from collections import OrderedDict as ODict
@@ -36,6 +37,7 @@ class StrategyCalculation(Calculation, fields=["strategy"]):
     ε = constant("ε", "fees", position="fees")
 
     def execute(self, feeds, *args, fees, **kwargs):
+        feeds = {str(key): value for key, value in feeds.items()}
         yield self.wτn(**feeds, fees=fees)
         yield self.wτx(**feeds, fees=fees)
         yield self.wo(**feeds, fees=fees)
@@ -71,32 +73,35 @@ class CollarShortCalculation(StrategyCalculation, strategy=Strategies.Collar.Sho
 
 class StrategyCalculator(Calculator, Processor, calculations=ODict(list(StrategyCalculation)), title="Calculated"):
     def execute(self, query, *args, **kwargs):
-        securities = query["security"]
-        securities = self.parse(securities, *args, **kwargs)
-        securities = ODict(list(securities))
-        sizes = {security: np.count_nonzero(~np.isnan(dataset["size"].values)) for security, dataset in securities.items()}
-        calculations = {variable.strategy: calculation for variable, calculation in self.calculations.items()}
+        stocks, options = query["stock"], query["option"]
+        function = lambda record: (Securities.security(record["instrument"], record["position"]), np.float32(np.round(record["price"], decimals=2)))
+        stocks = ODict([function(record) for record in stocks.reset_index(drop=False, inplace=False).to_dict("records")])
+        options = ODict([(option, dataset) for option, dataset in self.separate(options) if self.size(dataset["size"])])
+        calculations = ODict([(variable.strategy, calculation) for variable, calculation in self.calculations.items()])
         for strategy, calculation in calculations.items():
-            if not all([str(security) in sizes.keys() and sizes[str(security)] > 0 for security in strategy.securities]):
-                return
-            strategies = calculation(securities, *args, **kwargs)
-            variable = xr.Variable("strategy", [str(strategy)]).squeeze("strategy")
-            strategies = strategies.assign_coords({"strategy": variable}).expand_dims("strategy")
-            size = np.count_nonzero(~np.isnan(strategies["size"].values))
-            if not bool(size):
+            if not all([option in options.keys() for option in list(strategy.options)]):
+                continue
+            variables = {"strategy": str(strategy)} | {str(stock): stocks[stock] for stock in list(strategy.stocks)}
+            variables = {key: xr.Variable(key, [value]).squeeze(key) for key, value in variables.items()}
+            strategies = calculation(options, *args, **kwargs)
+            strategies = strategies.assign_coords(variables)
+            if not self.size(strategies["size"]):
                 continue
             yield query | dict(strategy=strategies)
 
     @staticmethod
-    def parse(dataframes, *args, **kwargs):
+    def separate(dataframes):
+        assert isinstance(dataframes, pd.DataFrame)
+        if dataframes.empty:
+            return
         datasets = xr.Dataset.from_dataframe(dataframes)
         datasets = datasets.squeeze("date").squeeze("ticker").squeeze("expire")
         for instrument, position in product(datasets["instrument"].values, datasets["position"].values):
-            key = f"{instrument}|{position}"
+            option = Securities[f"{instrument}|{position}"]
             dataset = datasets.sel({"instrument": instrument, "position": position})
-            dataset = dataset.rename({"strike": key})
-            dataset["strike"] = dataset[key]
-            yield key, dataset
+            dataset = dataset.rename({"strike": str(option)})
+            dataset["strike"] = dataset[str(option)]
+            yield option, dataset
 
 
 

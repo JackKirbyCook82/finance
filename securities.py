@@ -19,32 +19,31 @@ from finance.variables import Contract
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["SecurityFilter", "SecurityLoader", "SecuritySaver", "SecurityFile", "HoldingFile"]
+__all__ = ["SecurityFilter", "SecurityLoader", "SecuritySaver", "StockFile", "OptionFile"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-INDEX = {"instrument": str, "position": str, "strike": np.float32, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
-SECURITY = {"price": np.float32, "underlying": np.float32, "size": np.float32, "volume": np.float32, "interest": np.float32}
-HOLDING = {"quantity": np.int32}
+STOCK_INDEX = {"instrument": str, "position": str, "ticker": str, "date": np.datetime64}
+STOCK_COLUMNS = {"price": np.float32, "size": np.float32, "volume": np.float32}
+OPTION_INDEX = {"instrument": str, "position": str, "strike": np.float32, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
+OPTION_COLUMNS = {"price": np.float32, "underlying": np.float32, "size": np.float32, "volume": np.float32, "interest": np.float32}
 
-
-class HoldingFile(DataframeFile, name="holding", index=INDEX, columns=HOLDING): pass
-class SecurityFile(DataframeFile, name="security", index=INDEX, columns=SECURITY): pass
+class StockFile(DataframeFile, name="stock", index=STOCK_INDEX, columns=STOCK_COLUMNS): pass
+class OptionFile(DataframeFile, name="option", index=OPTION_INDEX, columns=OPTION_COLUMNS): pass
 
 
 class SecurityFilter(Filter, Processor, title="Filtered"):
     def execute(self, query, *args, **kwargs):
         assert isinstance(query, dict)
-        contract = query["contract"]
-        securities = query["security"]
-        assert isinstance(securities, pd.DataFrame)
-        prior = self.size(securities["size"], *args, **kwargs)
-        securities = self.filter(securities, *args, **kwargs)
-        post = self.size(securities["size"], *args, **kwargs)
+        contract, options = query["contract"], query["option"]
+        assert isinstance(options, pd.DataFrame)
+        prior = self.size(options["size"])
+        options = self.filter(options, *args, **kwargs)
+        post = self.size(options["size"])
         __logger__.info(f"Filter: {repr(self)}|{str(contract)}[{prior:.0f}|{post:.0f}]")
-        yield query | dict(security=securities)
+        yield query | dict(option=options)
 
 
 class SecurityLoader(Loader, Producer, title="Loaded"):
@@ -63,7 +62,7 @@ class SecuritySaver(Saver, Consumer, title="Saved"):
         ticker = str(query["contract"].ticker)
         expire = str(query["contract"].expire.strftime("%Y%m%d"))
         folder = "_".join([ticker, expire])
-        self.write(query, *args, folder=folder, mode="w", **kwargs)
+        self.write(query, *args, folder=folder, **kwargs)
 
 
 
