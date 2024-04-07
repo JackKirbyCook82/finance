@@ -26,10 +26,10 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-INDEX = {security: str for security in list(map(str, Securities))} | {"strategy": str, "valuation": str, "scenario": str, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
-COLUMNS = {"apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.float32}
+ValuationIndex = {security: str for security in list(map(str, Securities))} | {"strategy": str, "valuation": str, "scenario": str, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
+ValuationColumns = {"apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.float32}
 
-class ValuationFile(DataframeFile, name="valuation", index=INDEX, columns=COLUMNS):
+class ValuationFile(DataframeFile, variable="valuation", index=ValuationIndex, columns=ValuationColumns):
     pass
 
 

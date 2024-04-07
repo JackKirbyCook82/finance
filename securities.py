@@ -25,13 +25,13 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-STOCK_INDEX = {"instrument": str, "position": str, "ticker": str, "date": np.datetime64}
-STOCK_COLUMNS = {"price": np.float32, "size": np.float32, "volume": np.float32}
-OPTION_INDEX = {"instrument": str, "position": str, "strike": np.float32, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
-OPTION_COLUMNS = {"price": np.float32, "underlying": np.float32, "size": np.float32, "volume": np.float32, "interest": np.float32}
+StockIndex = {"instrument": str, "position": str, "ticker": str, "date": np.datetime64}
+StockColumns = {"price": np.float32, "size": np.float32, "volume": np.float32}
+OptionIndex = {"instrument": str, "position": str, "strike": np.float32, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
+OptionColumns = {"price": np.float32, "underlying": np.float32, "size": np.float32, "volume": np.float32, "interest": np.float32}
 
-class StockFile(DataframeFile, name="stock", index=STOCK_INDEX, columns=STOCK_COLUMNS): pass
-class OptionFile(DataframeFile, name="option", index=OPTION_INDEX, columns=OPTION_COLUMNS): pass
+class StockFile(DataframeFile, variable="stock", index=StockIndex, columns=StockColumns): pass
+class OptionFile(DataframeFile, variable="option", index=OptionIndex, columns=OptionColumns): pass
 
 
 class SecurityFilter(Filter, Processor, title="Filtered"):
