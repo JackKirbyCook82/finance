@@ -20,7 +20,9 @@ __logger__ = logging.getLogger(__name__)
 
 class DivestitureTable(TargetTable): pass
 class DivestitureReader(TargetReader): pass
-class DivestitureWriter(TargetWriter): pass
+class DivestitureWriter(TargetWriter):
+    def execute(self, *args, **kwargs):
+        pass
 
 
 

@@ -11,6 +11,7 @@ import numpy as np
 from abc import ABC
 from enum import IntEnum
 
+import pandas as pd
 from support.pipelines import CycleProducer, Consumer
 from support.processes import Reader, Writer
 from support.tables import DataframeTable
@@ -37,17 +38,26 @@ class TargetTable(DataframeTable): pass
 class TargetReader(Reader, CycleProducer, ABC):
     def execute(self, *args, **kwargs):
         market = self.read(*args, **kwargs)
+        if bool(market.empty):
+            return
+        contracts = ["ticker", "expire", "date"]
         securities = [security for security in list(map(str, iter(Securities))) if security in market.columns]
-        market = market.melt(id_vars=["ticker", "expire", "date"], value_vars=securities, var_name="security", value_name="strike")
+        market = market[contracts + securities].stack()
+        market = market.melt(id_vars=contracts, value_vars=securities, var_name="security", value_name="strike")
+        market["instrument"] = market["security"].apply(lambda security: str(Securities[security].instrument.name).lower())
+        market["position"] = market["security"].apply(lambda security: str(Securities[security].position.name).lower())
 
         print(market)
-        return
+        raise Exception()
+
         yield
 
     def read(self, *args, **kwargs):
         with self.source.mutex:
+            if not bool(self.source):
+                return pd.DataFrame()
             mask = self.source.table["status"] == TargetStatus.PURCHASED
-            dataframe = self.source.table.where(mask)
+            dataframe = self.source.table.where(mask).dropna(how="all", inplace=False)
             self.source.remove(dataframe, *args, **kwargs)
             return dataframe
 
@@ -76,12 +86,18 @@ class TargetWriter(Writer, Consumer, ABC):
         return dataframe
 
     def write(self, dataframe, *args, **kwargs):
+        assert isinstance(dataframe, pd.DataFrame)
+        if bool(dataframe.empty):
+            return
         dataframe["status"] = TargetStatus.PROSPECT
         dataframe = dataframe.reset_index(drop=True, inplace=False)
         with self.destination.mutex:
-            maximum = np.max(self.destination.table.index.values) if not bool(self.destination) else 0
-            dataframe = dataframe.set_index(dataframe.index + maximum + 1, drop=True, inplace=False)
-            self.destination.concat(dataframe, *args, **kwargs)
+            if not bool(self.destination):
+                self.destination.table = dataframe
+            else:
+                index = np.max(self.destination.table.index.values) + 1
+                dataframe = dataframe.set_index(dataframe.index + index, drop=True, inplace=False)
+                self.destination.concat(dataframe, *args, **kwargs)
             self.destination.sort("priority", reverse=True)
 
     @property
