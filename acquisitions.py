@@ -9,27 +9,28 @@ Created on Thurs Jan 31 2024
 import logging
 import pandas as pd
 
-from finance.targets import TargetReader, TargetWriter, TargetTable
+from support.tables import Tables
+
+from finance.holdings import HoldingWriter
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["AcquisitionWriter", "AcquisitionReader", "AcquisitionTable"]
+__all__ = ["AcquisitionWriter", "AcquisitionTable"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-class AcquisitionTable(TargetTable): pass
-class AcquisitionReader(TargetReader): pass
-class AcquisitionWriter(TargetWriter):
+class AcquisitionTable(Tables.Dataframe, variable="acquisitions"): pass
+class AcquisitionWriter(HoldingWriter):
     def execute(self, query, *args, **kwargs):
-        valuations = query["valuation"]
+        valuations = query["valuations"]
         assert isinstance(valuations, pd.DataFrame)
-        market = self.market(valuations, *args, **kwargs)
-        market = self.prioritize(market, *args, **kwargs)
-        if bool(market.empty):
+        valuations = self.market(valuations, *args, **kwargs)
+        valuations = self.prioritize(valuations, *args, **kwargs)
+        if bool(valuations.empty):
             return
-        self.write(market, *args, **kwargs)
+        self.write(valuations, *args, **kwargs)
 
 
 

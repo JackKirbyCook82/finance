@@ -9,14 +9,15 @@ Created on Weds Jul 19 2023
 import logging
 import numpy as np
 import xarray as xr
+from datetime import datetime as Datetime
 from collections import OrderedDict as ODict
 
 from support.calculations import Calculation, equation, source, constant
-from support.processes import Calculator, Filter
-from support.pipelines import Processor
-from support.files import DataframeFile
+from support.pipelines import Producer, Processor, Consumer
+from support.processes import Calculator, Loader, Saver, Filter
+from support.files import Files
 
-from finance.variables import Securities, Valuations, Scenarios
+from finance.variables import Securities, Valuations, Scenarios, Contract
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -29,8 +30,7 @@ __logger__ = logging.getLogger(__name__)
 ValuationIndex = {security: str for security in list(map(str, Securities))} | {"strategy": str, "valuation": str, "scenario": str, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
 ValuationColumns = {"apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.float32}
 
-class ValuationFile(DataframeFile, variable="valuation", index=ValuationIndex, columns=ValuationColumns):
-    pass
+class ValuationFile(Files.Dataframe, variable="valuations", index=ValuationIndex, columns=ValuationColumns): pass
 
 
 class ValuationCalculation(Calculation, fields=["valuation", "scenario"]):
@@ -66,7 +66,7 @@ class ValuationCalculator(Calculator, Processor, calculations=ODict(list(Valuati
         self.__valuation = valuation
 
     def execute(self, query, *args, **kwargs):
-        strategies = query["strategy"]
+        strategies = query["strategies"]
         valuation = str(self.valuation.name).lower()
         assert isinstance(strategies, xr.Dataset)
         calculations = {variable.scenario: calculation for variable, calculation in self.calculations.items()}
@@ -76,7 +76,7 @@ class ValuationCalculator(Calculator, Processor, calculations=ODict(list(Valuati
         valuations = valuations.drop_vars(["instrument", "position"], errors="ignore")
         valuations = valuations.expand_dims(list(set(iter(valuations.coords)) - set(iter(valuations.dims))))
         valuations = valuations.to_dataframe().dropna(how="all", inplace=False)
-        yield query | dict(valuation=valuations)
+        yield query | dict(valuations=valuations)
 
     @property
     def valuation(self): return self.__valuation
@@ -89,17 +89,38 @@ class ValuationFilter(Filter, Processor, title="Filtered"):
 
     def execute(self, query, *args, **kwargs):
         contract = query["contract"]
-        valuations = query["valuation"]
+        valuations = query["valuations"]
         scenario = str(self.scenario.name).lower()
         select = dict(scenario=scenario)
         prior = self.size(valuations["size"])
         valuations = self.filter(valuations, *args, select=select, **kwargs)
         post = self.size(valuations["size"])
         __logger__.info(f"Filter: {repr(self)}|{str(contract)}[{prior:.0f}|{post:.0f}]")
-        yield query | dict(valuation=valuations)
+        yield query | dict(valuations=valuations)
 
     @property
     def scenario(self): return self.__scenario
 
+
+class SecurityLoader(Loader, Producer, files=["valuations"], title="Loaded"):
+    def execute(self, *args, **kwargs):
+        for folder in self.directory:
+            ticker, expire = str(folder).split("_")
+            ticker = str(ticker).upper()
+            expire = Datetime.strptime(expire, "%Y%m%d")
+            contract = Contract(ticker, expire)
+            query = dict(contract=contract)
+            contents = {file: self.read(*args, folder=folder, file=file, **kwargs) for file in self.files}
+            yield query | contents
+
+
+class SecuritySaver(Saver, Consumer, files=["valuations"], title="Saved"):
+    def execute(self, query, *args, **kwargs):
+        assert isinstance(query, dict)
+        ticker = str(query["contract"].ticker)
+        expire = str(query["contract"].expire.strftime("%Y%m%d"))
+        folder = "_".join([ticker, expire])
+        for file in self.files:
+            self.write(query[file], *args, folder=folder, file=file, **kwargs)
 
 

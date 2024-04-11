@@ -73,7 +73,7 @@ class CollarShortCalculation(StrategyCalculation, strategy=Strategies.Collar.Sho
 
 class StrategyCalculator(Calculator, Processor, calculations=ODict(list(StrategyCalculation)), title="Calculated"):
     def execute(self, query, *args, **kwargs):
-        stocks, options = query["stock"], query["option"]
+        stocks, options = query["stocks"], query["options"]
         function = lambda record: (Securities.security(record["instrument"], record["position"]), np.float32(np.round(record["price"], decimals=2)))
         stocks = ODict([function(record) for record in stocks.reset_index(drop=False, inplace=False).to_dict("records")])
         options = ODict([(option, dataset) for option, dataset in self.separate(options) if self.size(dataset["size"])])
@@ -87,7 +87,7 @@ class StrategyCalculator(Calculator, Processor, calculations=ODict(list(Strategy
             strategies = strategies.assign_coords(variables)
             if not self.size(strategies["size"]):
                 continue
-            yield query | dict(strategy=strategies)
+            yield query | dict(strategies=strategies)
 
     @staticmethod
     def separate(dataframes):
