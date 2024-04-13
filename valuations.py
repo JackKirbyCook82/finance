@@ -67,7 +67,7 @@ class MaximumArbitrageCalculation(ArbitrageCalculation, scenario=Scenarios.MAXIM
 class ValuationCalculator(Calculator, Processor, calculations=ODict(list(ValuationCalculation)), title="Calculated"):
     def __init__(self, *args, valuation, **kwargs):
         super().__init__(*args, **kwargs)
-        self.__valuation = valuation
+        self.valuation = valuation
 
     def execute(self, query, *args, **kwargs):
         strategies = query["strategies"]
@@ -82,14 +82,11 @@ class ValuationCalculator(Calculator, Processor, calculations=ODict(list(Valuati
         valuations = valuations.to_dataframe().dropna(how="all", inplace=False)
         yield query | dict(valuations=valuations)
 
-    @property
-    def valuation(self): return self.__valuation
-
 
 class ValuationFilter(Filter, Processor, title="Filtered"):
     def __init__(self, *args, scenario, **kwargs):
         super().__init__(*args, **kwargs)
-        self.__scenario = scenario
+        self.scenario = scenario
 
     def execute(self, query, *args, **kwargs):
         contract = query["contract"]
@@ -102,8 +99,6 @@ class ValuationFilter(Filter, Processor, title="Filtered"):
         __logger__.info(f"Filter: {repr(self)}|{str(contract)}[{prior:.0f}|{post:.0f}]")
         yield query | dict(valuations=valuations)
 
-    @property
-    def scenario(self): return self.__scenario
 
 
 

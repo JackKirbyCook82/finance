@@ -39,10 +39,16 @@ class HoldingSaver(Saver, Consumer, title="Saved"): pass
 
 
 class HoldingReader(Reader, CycleProducer, ABC):
+    def __init_subclass__(cls, *args, variable, **kwargs): cls.variable = variable
+
     def execute(self, *args, **kwargs):
         holdings = self.read(*args, **kwargs)
         if bool(holdings.empty):
             return
+
+        print(holdings)
+        raise Exception()
+
         instrument = lambda security: str(Securities[security].instrument.name).lower()
         position = lambda security: str(Securities[security].position.name).lower()
         quantity = lambda security: holding_quantities[Securities[security]]
@@ -55,6 +61,8 @@ class HoldingReader(Reader, CycleProducer, ABC):
         holdings["quantity"] = holdings["security"].apply(quantity)
         yield dict(holdings=holdings)
 
+    @property
+    def source(self): return super().source[self.variable]
     def read(self, *args, **kwargs):
         with self.source.mutex:
             if not bool(self.source):
@@ -66,12 +74,14 @@ class HoldingReader(Reader, CycleProducer, ABC):
 
 
 class HoldingWriter(Writer, Consumer, ABC):
+    def __init_subclass__(cls, *args, variable, **kwargs): cls.variable = variable
+
     def __init__(self, *args, valuation, liquidity, priority, **kwargs):
         assert callable(liquidity) and callable(priority)
         super().__init__(*args, **kwargs)
-        self.__valuation = valuation
-        self.__liquidity = liquidity
-        self.__priority = priority
+        self.valuation = valuation
+        self.liquidity = liquidity
+        self.priority = priority
 
     def market(self, dataframe, *args, **kwargs):
         dataframe = dataframe.reset_index(drop=False, inplace=False)
@@ -88,6 +98,8 @@ class HoldingWriter(Writer, Consumer, ABC):
         dataframe = dataframe.reset_index(drop=True, inplace=False)
         return dataframe
 
+    @property
+    def destination(self): return super().destination[self.variable]
     def write(self, dataframe, *args, **kwargs):
         assert isinstance(dataframe, pd.DataFrame)
         if bool(dataframe.empty):
@@ -102,13 +114,6 @@ class HoldingWriter(Writer, Consumer, ABC):
                 dataframe = dataframe.set_index(dataframe.index + index, drop=True, inplace=False)
                 self.destination.concat(dataframe, *args, **kwargs)
             self.destination.sort("priority", reverse=True)
-
-    @property
-    def valuation(self): return self.__valuation
-    @property
-    def liquidity(self): return self.__liquidity
-    @property
-    def priority(self): return self.__priority
 
 
 
