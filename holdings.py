@@ -12,31 +12,30 @@ import pandas as pd
 from abc import ABC
 from enum import IntEnum
 
-from support.pipelines import CycleProducer, Consumer
-from support.processes import Reader, Writer, Saver
+from support.pipelines import CycleProducer, Producer, Consumer
+from support.processes import Loader, Saver, Reader, Writer
 from support.files import Files
 
 from finance.variables import Securities
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["HoldingReader", "HoldingWriter", "HoldingSaver", "HoldingFile", "HoldingStatus"]
+__all__ = ["HoldingReader", "HoldingWriter", "HoldingLoader", "HoldingSaver", "HoldingFile", "HoldingStatus"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
 HoldingStatus = IntEnum("Status", ["PROSPECT", "PURCHASED"], start=1)
-HoldingQuantities = {security: 100 for security in list(Securities.Stocks)} | {security: 1 for security in list(Securities.Options)}
-HoldingIndex = {"instrument": str, "position": str, "strike": np.float32, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
-HoldingColumns = {"quantity": np.int32}
+
+holding_quantities = {security: 100 for security in list(Securities.Stocks)} | {security: 1 for security in list(Securities.Options)}
+holding_index = {"instrument": str, "position": str, "strike": np.float32, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
+holding_columns = {"quantity": np.int32}
 
 
-class HoldingFile(Files.Dataframe, variable="holdings", index=HoldingIndex, columns=HoldingColumns): pass
-class HoldingSaver(Saver, Consumer, files=["holdings"], title="Saved"):
-    def execute(self, query, *args, **kwargs):
-        for file in self.files:
-            self.write(query[file], *args, file=file, **kwargs)
+class HoldingFile(Files.Dataframe, variable="holdings", index=holding_index, columns=holding_columns): pass
+class HoldingLoader(Loader, Producer, title="Loaded"): pass
+class HoldingSaver(Saver, Consumer, title="Saved"): pass
 
 
 class HoldingReader(Reader, CycleProducer, ABC):
@@ -46,7 +45,7 @@ class HoldingReader(Reader, CycleProducer, ABC):
             return
         instrument = lambda security: str(Securities[security].instrument.name).lower()
         position = lambda security: str(Securities[security].position.name).lower()
-        quantity = lambda security: HoldingQuantities[Securities[security]]
+        quantity = lambda security: holding_quantities[Securities[security]]
         contracts = ["ticker", "expire", "date"]
         securities = [security for security in list(map(str, iter(Securities))) if security in holdings.columns]
         holdings = holdings[contracts + securities].stack()

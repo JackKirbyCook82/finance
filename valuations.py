@@ -9,7 +9,6 @@ Created on Weds Jul 19 2023
 import logging
 import numpy as np
 import xarray as xr
-from datetime import datetime as Datetime
 from collections import OrderedDict as ODict
 
 from support.calculations import Calculation, equation, source, constant
@@ -21,16 +20,21 @@ from finance.variables import Securities, Valuations, Scenarios, Contract
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["ValuationCalculation", "ValuationCalculator", "ValuationFilter", "ValuationFile"]
+__all__ = ["ValuationLoader", "ValuationSaver", "ValuationCalculation", "ValuationCalculator", "ValuationFilter", "ValuationFile"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-ValuationIndex = {security: str for security in list(map(str, Securities))} | {"strategy": str, "valuation": str, "scenario": str, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
-ValuationColumns = {"apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.float32}
+valuation_index = {security: str for security in list(map(str, Securities))} | {"strategy": str, "valuation": str, "scenario": str, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
+valuation_columns = {"apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.float32}
+query_function = lambda folder: {"contract": Contract.fromstring(folder)}
+folder_function = lambda query: query["contract"].tostring()
 
-class ValuationFile(Files.Dataframe, variable="valuations", index=ValuationIndex, columns=ValuationColumns): pass
+
+class ValuationFile(Files.Dataframe, variable="valuations", index=valuation_index, columns=valuation_columns): pass
+class ValuationLoader(Loader, Producer, query=query_function, title="Loaded"): pass
+class ValuationSaver(Saver, Consumer, folder=folder_function, title="Saved"): pass
 
 
 class ValuationCalculation(Calculation, fields=["valuation", "scenario"]):
@@ -101,26 +105,5 @@ class ValuationFilter(Filter, Processor, title="Filtered"):
     @property
     def scenario(self): return self.__scenario
 
-
-class SecurityLoader(Loader, Producer, files=["valuations"], title="Loaded"):
-    def execute(self, *args, **kwargs):
-        for folder in self.directory:
-            ticker, expire = str(folder).split("_")
-            ticker = str(ticker).upper()
-            expire = Datetime.strptime(expire, "%Y%m%d")
-            contract = Contract(ticker, expire)
-            query = dict(contract=contract)
-            contents = {file: self.read(*args, folder=folder, file=file, **kwargs) for file in self.files}
-            yield query | contents
-
-
-class SecuritySaver(Saver, Consumer, files=["valuations"], title="Saved"):
-    def execute(self, query, *args, **kwargs):
-        assert isinstance(query, dict)
-        ticker = str(query["contract"].ticker)
-        expire = str(query["contract"].expire.strftime("%Y%m%d"))
-        folder = "_".join([ticker, expire])
-        for file in self.files:
-            self.write(query[file], *args, folder=folder, file=file, **kwargs)
 
 

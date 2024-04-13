@@ -9,7 +9,6 @@ Created on Weds Jul 19 2023
 import logging
 import numpy as np
 import pandas as pd
-from datetime import datetime as Datetime
 
 from support.pipelines import Producer, Processor, Consumer
 from support.processes import Loader, Saver, Filter
@@ -19,19 +18,24 @@ from finance.variables import Contract
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["SecurityFilter", "SecurityLoader", "SecuritySaver", "StockFile", "OptionFile"]
+__all__ = ["SecurityLoader", "SecuritySaver", "SecurityFilter", "StockFile", "OptionFile"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-StockIndex = {"instrument": str, "position": str, "ticker": str, "date": np.datetime64}
-StockColumns = {"price": np.float32, "size": np.float32, "volume": np.float32}
-OptionIndex = {"instrument": str, "position": str, "strike": np.float32, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
-OptionColumns = {"price": np.float32, "underlying": np.float32, "size": np.float32, "volume": np.float32, "interest": np.float32}
+stock_index = {"instrument": str, "position": str, "ticker": str, "date": np.datetime64}
+stock_columns = {"price": np.float32, "size": np.float32, "volume": np.float32}
+option_index = {"instrument": str, "position": str, "strike": np.float32, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
+option_columns = {"price": np.float32, "underlying": np.float32, "size": np.float32, "volume": np.float32, "interest": np.float32}
+query_function = lambda folder: {"contract": Contract.fromstring(folder)}
+folder_function = lambda query: query["contract"].tostring()
 
-class StockFile(Files.Dataframe, variable="stocks", index=StockIndex, columns=StockColumns): pass
-class OptionFile(Files.Dataframe, variable="options", index=OptionIndex, columns=OptionColumns): pass
+
+class StockFile(Files.Dataframe, variable="stocks", index=stock_index, columns=stock_columns): pass
+class OptionFile(Files.Dataframe, variable="options", index=option_index, columns=option_columns): pass
+class SecurityLoader(Loader, Producer, query=query_function, title="Loaded"): pass
+class SecuritySaver(Saver, Consumer, folder=folder_function, title="Saved"): pass
 
 
 class SecurityFilter(Filter, Processor, title="Filtered"):
@@ -44,28 +48,6 @@ class SecurityFilter(Filter, Processor, title="Filtered"):
         post = self.size(options["size"])
         __logger__.info(f"Filter: {repr(self)}|{str(contract)}[{prior:.0f}|{post:.0f}]")
         yield query | dict(options=options)
-
-
-class SecurityLoader(Loader, Producer, files=["stocks", "options"], title="Loaded"):
-    def execute(self, *args, **kwargs):
-        for folder in self.directory:
-            ticker, expire = str(folder).split("_")
-            ticker = str(ticker).upper()
-            expire = Datetime.strptime(expire, "%Y%m%d")
-            contract = Contract(ticker, expire)
-            query = dict(contract=contract)
-            contents = {file: self.read(*args, folder=folder, file=file, **kwargs) for file in self.files}
-            yield query | contents
-
-
-class SecuritySaver(Saver, Consumer, files=["stocks", "options"], title="Saved"):
-    def execute(self, query, *args, **kwargs):
-        assert isinstance(query, dict)
-        ticker = str(query["contract"].ticker)
-        expire = str(query["contract"].expire.strftime("%Y%m%d"))
-        folder = "_".join([ticker, expire])
-        for file in self.files:
-            self.write(query[file], *args, folder=folder, file=file, **kwargs)
 
 
 

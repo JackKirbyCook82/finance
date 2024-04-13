@@ -11,6 +11,7 @@ from abc import ABC
 from enum import IntEnum
 from datetime import date as Date
 from functools import total_ordering
+from datetime import datetime as Datetime
 from collections import namedtuple as ntuple
 
 from support.dispatchers import typedispatcher
@@ -48,10 +49,22 @@ class DateRange(ntuple("DateRange", "minimum maximum")):
 
 @total_ordering
 class Contract(ntuple("Contract", "ticker expire")):
-    def __new__(cls, ticker, expire=None): return super().__new__(cls, ticker, expire)
-    def __str__(self): return "|".join(list(filter(None, [str(self.ticker).upper(), self.expire.strftime('%Y-%m-%d') if self.expire is not None else None])))
+    def __str__(self): return "|".join([str(self.ticker).upper(), self.expire.strftime('%Y-%m-%d')])
     def __eq__(self, other): return self.ticker == other.ticker and self.expire == other.expire
     def __lt__(self, other): return self.ticker < other.ticker and self.expire < other.expire
+
+    def tostring(self):
+        ticker = str(self.ticker)
+        expire = str(self.expire.strftime("%Y%m%d"))
+        string = "_".join([ticker, expire])
+        return string
+
+    @classmethod
+    def fromstring(cls, string):
+        ticker, expire = str(string).split("_")
+        ticker = str(ticker).upper()
+        expire = Datetime.strptime(expire, "%Y%m%d")
+        return cls(ticker, expire)
 
 
 class Variable(ABC):
