@@ -18,7 +18,7 @@ from finance.variables import Contract
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["SecurityLoader", "SecuritySaver", "SecurityFilter", "StockFile", "OptionFile"]
+__all__ = ["SecurityLoader", "SecuritySaver", "SecurityFilter", "SecurityStockFile", "SecurityOptionFile"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
@@ -32,8 +32,8 @@ query_function = lambda folder: {"contract": Contract.fromstring(folder)}
 folder_function = lambda query: query["contract"].tostring()
 
 
-class StockFile(Files.Dataframe, variable="stocks", index=stock_index, columns=stock_columns): pass
-class OptionFile(Files.Dataframe, variable="options", index=option_index, columns=option_columns): pass
+class SecurityStockFile(Files.Dataframe, variable="stocks", index=stock_index, columns=stock_columns): pass
+class SecurityOptionFile(Files.Dataframe, variable="options", index=option_index, columns=option_columns): pass
 class SecurityLoader(Loader, Producer, query=query_function, title="Loaded"): pass
 class SecuritySaver(Saver, Consumer, folder=folder_function, title="Saved"): pass
 
