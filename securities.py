@@ -24,15 +24,15 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-INDEX = {"instrument": str, "position": str, "strike": np.float32, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
-COLUMNS = {"price": np.float32, "underlying": np.float32, "size": np.float32, "volume": np.float32, "interest": np.float32}
-QUERY = lambda folder: {"contract": Contract.fromstring(folder)}
-FOLDER = lambda query: query["contract"].tostring()
+security_index = {"instrument": str, "position": str, "strike": np.float32, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
+security_columns = {"price": np.float32, "underlying": np.float32, "size": np.float32, "volume": np.float32, "interest": np.float32}
+query_function = lambda folder: {"contract": Contract.fromstring(folder)}
+folder_function = lambda query: query["contract"].tostring()
 
 
-class SecurityFile(Files.Dataframe, variable="securities", index=INDEX, columns=COLUMNS): pass
-class SecurityLoader(Loader, Producer, query=QUERY, title="Loaded"): pass
-class SecuritySaver(Saver, Consumer, folder=FOLDER, title="Saved"): pass
+class SecurityFile(Files.Dataframe, variable="securities", index=security_index, columns=security_columns): pass
+class SecuritySaver(Saver, Consumer, folder=folder_function, title="Saved"): pass
+class SecurityLoader(Loader, Producer, query=query_function, title="Loaded"): pass
 
 
 class SecurityFilter(Filter, Processor, title="Filtered"):

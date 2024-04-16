@@ -13,12 +13,12 @@ from abc import ABC
 from enum import IntEnum
 from itertools import product
 
-from support.pipelines import CycleProducer, Producer, Processor, Consumer
+from support.pipelines import CycleProducer, Processor, Consumer
 from support.processes import Loader, Saver, Reader, Writer
 from support.tables import Tables, Options
 from support.files import Files
 
-from finance.variables import Securities, Strategies, Scenarios
+from finance.variables import Contract, Securities, Strategies, Scenarios
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -34,6 +34,8 @@ holding_formats = {(lead, lag): lambda column: f"{column:.02f}" for lead, lag in
 holding_formats.update({(lead, lag): lambda column: f"{column * 100:.02f}%" for lead, lag in product(["apy"], list(map(lambda scenario: str(scenario.name).lower(), Scenarios)))})
 holding_formats.update({("priority", ""): lambda column: f"{column * 100:.02f}"})
 holding_formats.update({("status", ""): lambda column: str(HoldingStatus(int(column)).name).lower()})
+query_function = lambda folder: {"contract": Contract.fromstring(folder)}
+folder_function = lambda query: query["contract"].tostring()
 holding_options = Options.Dataframe(rows=20, columns=25, width=1000, formats=holding_formats, numbers=lambda column: f"{column:.02f}")
 holding_index = {"instrument": str, "position": str, "strike": np.float32, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
 holding_columns = {"quantity": np.int32}
@@ -41,41 +43,65 @@ holding_columns = {"quantity": np.int32}
 
 class HoldingFile(Files.Dataframe, variable="holdings", index=holding_index, columns=holding_columns): pass
 class HoldingTable(Tables.Dataframe, options=holding_options): pass
-class HoldingLoader(Loader, Producer, title="Loaded"): pass
-class HoldingSaver(Saver, Consumer, title="Saved"): pass
-
-
-class HoldingCalculator(Processor):
-    def execute(self, query, *args, **kwargs):
-        holdings = query["holdings"]
-        assert isinstance(holdings, pd.DataFrame)
+class HoldingSaver(Saver, Consumer, folder=folder_function, title="Saved"): pass
+class HoldingLoader(Loader, CycleProducer, query=query_function, title="Loaded"): pass
 
 
 class HoldingReader(Reader, CycleProducer, ABC):
     def __init_subclass__(cls, *args, variable, **kwargs): cls.variable = variable
 
     def execute(self, *args, **kwargs):
-        holdings = self.read(*args, **kwargs)
-        index = list(holding_index.keys())
-        columns = list(holding_columns.keys())
-        if bool(holdings.empty):
+        valuations = self.read(*args, **kwargs)
+        if bool(valuations.empty):
             return
+        contract = self.contract(valuations, *args, **kwargs)
+        options = self.options(valuations, *args, **kwargs)
+        stocks = self.stocks(valuations, *args, **kwargs)
+        stocks = stocks.dropna(how="all", axis=1)
+        securities = pd.concat([contract, options, stocks], axis=1, ignore_index=False)
+        holdings = self.holdings(securities, *args, **kwargs)
+        for (ticker, expire), dataframe in iter(holdings.groupby(["ticker", "expire"])):
+            contract = Contract(ticker, expire)
+            yield dict(contract=contract, holdings=holdings)
 
-        print(holdings)
-        raise Exception()
+    @staticmethod
+    def contract(dataframe, *args, **kwargs):
+        contract = [column for column in list(holding_index.keys()) if column in dataframe.columns]
+        dataframe = dataframe.droplevel("scenario", axis=1)
+        return dataframe[contract]
 
+    @staticmethod
+    def options(dataframe, *args, **kwargs):
+        securities = list(map(str, iter(Securities)))
+        securities = [column for column in securities if column in dataframe.columns]
+        dataframe = dataframe.droplevel("scenario", axis=1)
+        return dataframe[securities]
+
+    @staticmethod
+    def stocks(dataframe, *args, **kwargs):
+        securities = list(map(str, iter(Securities.Stocks)))
+        strategies = lambda cols: list(map(str, Strategies[cols["strategy"]].stocks))
+        underlying = lambda cols: np.round(cols["underlying"], decimals=2)
+        function = lambda cols: [underlying(cols) if column in strategies(cols) else np.NaN for column in securities]
+        dataframe = dataframe.droplevel("scenario", axis=1)
+        dataframe = dataframe.apply(function, axis=1, result_type="expand")
+        dataframe.columns = securities
+        return dataframe
+
+    @staticmethod
+    def holdings(dataframe, *args, **kwargs):
         instrument = lambda security: str(Securities[security].instrument.name).lower()
         position = lambda security: str(Securities[security].position.name).lower()
-        contracts = [column for column in index if column in holdings.columns]
-        securities = [security for security in list(map(str, iter(Securities))) if security in holdings.columns]
-        holdings = holdings[contracts + securities].stack()
-        holdings = holdings.melt(id_vars=contracts, value_vars=securities, var_name="security", value_name="strike")
-        holdings["instrument"] = holdings["security"].apply(instrument)
-        holdings["position"] = holdings["security"].apply(position)
-        holdings["quantity"] = 1
-        holdings = holdings[index + columns]
-        holdings = holdings.groupby(index, as_index=False)[columns].sum()
-        yield dict(holdings=holdings)
+        securities = [security for security in list(map(str, iter(Securities))) if security in dataframe.columns]
+        contracts = [column for column in dataframe.columns if column not in securities]
+        dataframe = dataframe.melt(id_vars=contracts, value_vars=securities, var_name="security", value_name="strike")
+        dataframe["instrument"] = dataframe["security"].apply(instrument)
+        dataframe["position"] = dataframe["security"].apply(position)
+        dataframe["quantity"] = 1
+        index = list(holding_index.keys())
+        columns = list(holding_columns.keys())
+        dataframe = dataframe.groupby(index, as_index=False)[columns].sum()
+        return dataframe
 
     @property
     def source(self): return super().source[self.variable]
@@ -91,7 +117,6 @@ class HoldingReader(Reader, CycleProducer, ABC):
 
 class HoldingWriter(Writer, Consumer, ABC):
     def __init_subclass__(cls, *args, variable, **kwargs): cls.variable = variable
-
     def __init__(self, *args, valuation, liquidity, priority, **kwargs):
         assert callable(liquidity) and callable(priority)
         super().__init__(*args, **kwargs)
@@ -130,6 +155,14 @@ class HoldingWriter(Writer, Consumer, ABC):
                 dataframe = dataframe.set_index(dataframe.index + index, drop=True, inplace=False)
                 self.destination.concat(dataframe, *args, **kwargs)
             self.destination.sort("priority", reverse=True)
+
+
+class HoldingCalculator(Processor):
+    def execute(self, query, *args, **kwargs):
+        holdings = query["holdings"]
+
+        print(holdings)
+        raise Exception()
 
 
 

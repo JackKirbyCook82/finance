@@ -26,15 +26,15 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-INDEX = {security: str for security in list(map(str, Securities))} | {"strategy": str, "valuation": str, "scenario": str, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
-COLUMNS = {"apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.float32, "underlying": np.float32}
-QUERY = lambda folder: {"contract": Contract.fromstring(folder)}
-FOLDER = lambda query: query["contract"].tostring()
+valuation_index = {security: str for security in list(map(str, Securities))} | {"strategy": str, "valuation": str, "scenario": str, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
+valuation_columns = {"apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.float32, "underlying": np.float32}
+query_function = lambda folder: {"contract": Contract.fromstring(folder)}
+folder_function = lambda query: query["contract"].tostring()
 
 
-class ValuationFile(Files.Dataframe, variable="valuations", index=INDEX, columns=COLUMNS): pass
-class ValuationLoader(Loader, Producer, query=QUERY, title="Loaded"): pass
-class ValuationSaver(Saver, Consumer, folder=FOLDER, title="Saved"): pass
+class ValuationFile(Files.Dataframe, variable="valuations", index=valuation_index, columns=valuation_columns): pass
+class ValuationSaver(Saver, Consumer, folder=folder_function, title="Saved"): pass
+class ValuationLoader(Loader, Producer, query=query_function, title="Loaded"): pass
 
 
 class ValuationCalculation(Calculation, fields=["valuation", "scenario"]):
