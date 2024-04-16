@@ -11,14 +11,14 @@ import numpy as np
 import pandas as pd
 from abc import ABC
 from enum import IntEnum
-from itertools import product
+from itertools import product, chain
 
 from support.pipelines import CycleProducer, Processor, Consumer
 from support.processes import Loader, Saver, Reader, Writer
 from support.tables import Tables, Options
 from support.files import Files
 
-from finance.variables import Contract, Securities, Strategies, Scenarios
+from finance.variables import Contract, Securities, Strategies, Scenarios, Instruments, Positions
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -160,9 +160,46 @@ class HoldingWriter(Writer, Consumer, ABC):
 class HoldingCalculator(Processor):
     def execute(self, query, *args, **kwargs):
         holdings = query["holdings"]
+        stocks = self.stocks(holdings, *args, **kwargs)
+        options = self.options(holdings, *args, **kwargs)
+        virtuals = self.virtuals(stocks, *args, **kwargs)
+        securities = pd.concat([options, virtuals], axis=0)
+        return securities
 
-        print(holdings)
+    @staticmethod
+    def stocks(dataframe, *args, **kwargs):
+        stocks = str(Instruments.STOCK.name).lower()
+        stocks = dataframe.index.get_level_values("instrument") == stocks
+        stocks = dataframe.iloc[stocks]
+        return stocks
+
+    @staticmethod
+    def options(dataframe, *args, **kwargs):
+        puts = str(Instruments.PUT.name).lower()
+        calls = str(Instruments.CALL.name).lower()
+        puts = dataframe.index.get_level_values("instrument") == puts
+        calls = dataframe.index.get_level_values("instrument") == calls
+        options = dataframe.iloc[puts | calls]
+        return options
+
+    @staticmethod
+    def virtuals(dataframe, *args, **kwargs):
+        invert = lambda x: Positions.SHORT if x == Positions.LONG else Positions.LONG
+        strike = lambda x: np.round(x, 2).astype(np.float32)
+        parameters = lambda record: {"strike": strike(record["paid"])}
+        call = lambda record: {"instrument": Instruments.CALL, "position": record["position"]}
+        put = lambda record: {"instrument": Instruments.PUT, "position": invert(record["position"])}
+        left = lambda record: record | put(record) | parameters(record)
+        right = lambda record: record | call(record) | parameters(record)
+
+        print(dataframe)
         raise Exception()
+
+        virtuals = [[left(record), right(record)] for record in stocks.to_dict("records")]
+        virtuals = pd.DataFrame.from_records(list(chain(*virtuals)))
+        virtuals["strike"] = virtuals["strike"].apply(strike)
+        mask = dataframe["instrument"] != Instruments.STOCK
+
 
 
 
