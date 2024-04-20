@@ -11,10 +11,10 @@ import numpy as np
 import pandas as pd
 from abc import ABC
 from enum import IntEnum
-from itertools import product, chain
+from itertools import product
 
-from support.pipelines import CycleProducer, Processor, Consumer
-from support.processes import Loader, Saver, Reader, Writer
+from support.pipelines import Producer, Processor, Consumer
+from support.processes import Process, Loader, Saver, Reader, Writer
 from support.tables import Tables, Options
 from support.files import Files
 
@@ -44,15 +44,15 @@ holding_columns = {"quantity": np.int32}
 class HoldingFile(Files.Dataframe, variable="holdings", index=holding_index, columns=holding_columns): pass
 class HoldingTable(Tables.Dataframe, options=holding_options): pass
 class HoldingSaver(Saver, Consumer, folder=folder_function, title="Saved"): pass
-class HoldingLoader(Loader, CycleProducer, query=query_function, title="Loaded"): pass
+class HoldingLoader(Loader, Producer, query=query_function, title="Loaded"): pass
 
 
-class HoldingReader(Reader, CycleProducer, ABC):
+class HoldingReader(Reader, Producer, ABC):
     def __init_subclass__(cls, *args, variable, **kwargs): cls.variable = variable
 
     def execute(self, *args, **kwargs):
         valuations = self.read(*args, **kwargs)
-        if bool(valuations.empty):
+        if self.empty(valuations):
             return
         contract = self.contract(valuations, *args, **kwargs)
         options = self.options(valuations, *args, **kwargs)
@@ -62,7 +62,7 @@ class HoldingReader(Reader, CycleProducer, ABC):
         holdings = self.holdings(securities, *args, **kwargs)
         for (ticker, expire), dataframe in iter(holdings.groupby(["ticker", "expire"])):
             contract = Contract(ticker, expire)
-            yield dict(contract=contract, holdings=holdings)
+            yield dict(contract=contract, holdings=dataframe)
 
     @staticmethod
     def contract(dataframe, *args, **kwargs):
@@ -117,15 +117,16 @@ class HoldingReader(Reader, CycleProducer, ABC):
 
 class HoldingWriter(Writer, Consumer, ABC):
     def __init_subclass__(cls, *args, variable, **kwargs): cls.variable = variable
-    def __init__(self, *args, valuation, liquidity, priority, **kwargs):
+    def __init__(self, *args, valuation, liquidity, priority, capacity=None, **kwargs):
         assert callable(liquidity) and callable(priority)
         super().__init__(*args, **kwargs)
         self.valuation = valuation
         self.liquidity = liquidity
         self.priority = priority
+        self.capacity = capacity
 
     def market(self, dataframe, *args, **kwargs):
-        dataframe = dataframe.reset_index(drop=False, inplace=False)
+        dataframe = dataframe.reset_index(drop=True, inplace=False)
         index = set(dataframe.columns) - {"scenario", "apy", "npv", "cost"}
         dataframe = dataframe.pivot(index=index, columns="scenario")
         dataframe = dataframe.reset_index(drop=False, inplace=False)
@@ -155,51 +156,64 @@ class HoldingWriter(Writer, Consumer, ABC):
                 dataframe = dataframe.set_index(dataframe.index + index, drop=True, inplace=False)
                 self.destination.concat(dataframe, *args, **kwargs)
             self.destination.sort("priority", reverse=True)
+            if bool(self.capacity):
+                self.destination.truncate(self.capacity)
 
 
-class HoldingCalculator(Processor):
+class HoldingCalculator(Process, Processor):
     def execute(self, query, *args, **kwargs):
         holdings = query["holdings"]
+        if self.empty(holdings):
+            return
         stocks = self.stocks(holdings, *args, **kwargs)
         options = self.options(holdings, *args, **kwargs)
         virtuals = self.virtuals(stocks, *args, **kwargs)
         securities = pd.concat([options, virtuals], axis=0)
-        return securities
+        securities = securities.reset_index(drop=True, inplace=False)
+        holdings = self.holdings(securities, *args, *kwargs)
+        yield query | dict(holdings=holdings)
 
     @staticmethod
     def stocks(dataframe, *args, **kwargs):
-        stocks = str(Instruments.STOCK.name).lower()
-        stocks = dataframe.index.get_level_values("instrument") == stocks
-        stocks = dataframe.iloc[stocks]
+        stocks = dataframe["instrument"] == str(Instruments.STOCK.name).lower()
+        stocks = dataframe.where(stocks).dropna(how="all", inplace=False)
         return stocks
 
     @staticmethod
     def options(dataframe, *args, **kwargs):
-        puts = str(Instruments.PUT.name).lower()
-        calls = str(Instruments.CALL.name).lower()
-        puts = dataframe.index.get_level_values("instrument") == puts
-        calls = dataframe.index.get_level_values("instrument") == calls
-        options = dataframe.iloc[puts | calls]
+        puts = dataframe["instrument"] == str(Instruments.PUT.name).lower()
+        calls = dataframe["instrument"] == str(Instruments.CALL.name).lower()
+        options = dataframe.where(puts | calls).dropna(how="all", inplace=False)
         return options
 
     @staticmethod
     def virtuals(dataframe, *args, **kwargs):
-        invert = lambda x: Positions.SHORT if x == Positions.LONG else Positions.LONG
-        strike = lambda x: np.round(x, 2).astype(np.float32)
-        parameters = lambda record: {"strike": strike(record["paid"])}
-        call = lambda record: {"instrument": Instruments.CALL, "position": record["position"]}
-        put = lambda record: {"instrument": Instruments.PUT, "position": invert(record["position"])}
-        left = lambda record: record | put(record) | parameters(record)
-        right = lambda record: record | call(record) | parameters(record)
+        security = lambda instrument, position: dict(instrument=str(instrument.name).lower(), position=str(position.name).lower())
+        function = lambda records, instrument, position: pd.DataFrame.from_records([record | security(instrument, position) for record in records])
+        stocklong = dataframe["position"] == str(Positions.LONG.name).lower()
+        stocklong = dataframe.where(stocklong).dropna(how="all", inplace=False)
+        stockshort = dataframe["position"] == str(Positions.SHORT.name).lower()
+        stockshort = dataframe.where(stockshort).dropna(how="all", inplace=False)
+        putlong = function(stockshort.to_dict("records"), Instruments.PUT, Positions.LONG)
+        putshort = function(stocklong.to_dict("records"), Instruments.PUT, Positions.SHORT)
+        calllong = function(stocklong.to_dict("records"), Instruments.CALL, Positions.LONG)
+        callshort = function(stockshort.to_dict("records"), Instruments.CALL, Positions.SHORT)
+        virtuals = pd.concat([putlong, putshort, calllong, callshort], axis=0)
+        return virtuals
 
-        print(dataframe)
-        raise Exception()
-
-        virtuals = [[left(record), right(record)] for record in stocks.to_dict("records")]
-        virtuals = pd.DataFrame.from_records(list(chain(*virtuals)))
-        virtuals["strike"] = virtuals["strike"].apply(strike)
-        mask = dataframe["instrument"] != Instruments.STOCK
-
+    @staticmethod
+    def holdings(dataframe, *args, **kwargs):
+        factor = lambda cols: 2 * int(Positions[str(cols["position"]).upper()] is Positions.LONG) - 1
+        position = lambda cols: str(Positions.LONG.name).lower() if cols["holdings"] > 0 else str(Positions.SHORT.name).lower()
+        quantity = lambda cols: np.abs(cols["holdings"])
+        holdings = lambda cols: (cols.apply(factor, axis=1) * cols["quantity"]).sum()
+        function = lambda cols: {"position": position(cols), "quantity": quantity(cols)}
+        columns = [column for column in dataframe.columns if column not in ["position", "quantity"]]
+        dataframe = dataframe.groupby(columns, as_index=False).apply(holdings).rename(columns={None: "holdings"})
+        dataframe = dataframe.where(dataframe["holdings"] != 0).dropna(how="all", inplace=False)
+        dataframe = pd.concat([dataframe, dataframe.apply(function, axis=1, result_type="expand")], axis=1)
+        dataframe = dataframe.drop("holdings", axis=1, inplace=False)
+        return dataframe
 
 
 

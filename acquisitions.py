@@ -23,6 +23,8 @@ class AcquisitionReader(HoldingReader, variable="acquisitions"): pass
 class AcquisitionWriter(HoldingWriter, variable="acquisitions"):
     def execute(self, query, *args, **kwargs):
         valuations = query["valuations"]
+        if self.empty(valuations):
+            return
         valuations = self.market(valuations, *args, **kwargs)
         valuations = self.prioritize(valuations, *args, **kwargs)
         if bool(valuations.empty):

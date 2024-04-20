@@ -75,9 +75,15 @@ class CollarShortCalculation(StrategyCalculation, strategy=Strategies.Collar.Sho
 
 
 class StrategyCalculator(Calculator, Processor, calculations=ODict(list(StrategyCalculation)), title="Calculated"):
+    index = ["instrument", "position", "strike", "ticker", "expire", "date"]
+
     def execute(self, query, *args, **kwargs):
         securities = query["securities"]
-        securities = ODict([(security, dataset) for security, dataset in self.separate(securities) if self.size(dataset["size"])])
+        if self.empty(securities["size"]):
+            return
+        securities = ODict([(security, dataset) for security, dataset in self.parser(securities) if not self.empty(dataset["size"])])
+        if not bool(securities):
+            return
         calculations = ODict([(variable.strategy, calculation) for variable, calculation in self.calculations.items()])
         for strategy, calculation in calculations.items():
             if not all([security in securities.keys() for security in list(strategy.options)]):
@@ -89,12 +95,12 @@ class StrategyCalculator(Calculator, Processor, calculations=ODict(list(Strategy
                 continue
             yield query | dict(strategies=strategies)
 
-    @staticmethod
-    def separate(dataframes):
-        assert isinstance(dataframes, pd.DataFrame)
-        if dataframes.empty:
+    def parser(self, dataframe):
+        assert isinstance(dataframe, pd.DataFrame)
+        if bool(dataframe.empty):
             return
-        datasets = xr.Dataset.from_dataframe(dataframes)
+        dataframe = dataframe.set_index(self.index, drop=True, inplace=False)
+        datasets = xr.Dataset.from_dataframe(dataframe)
         datasets = datasets.squeeze("ticker").squeeze("expire").squeeze("date")
         for instrument, position in product(datasets["instrument"].values, datasets["position"].values):
             option = Securities[f"{instrument}|{position}"]

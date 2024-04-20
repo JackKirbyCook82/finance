@@ -72,6 +72,8 @@ class ValuationCalculator(Calculator, Processor, calculations=ODict(list(Valuati
 
     def execute(self, query, *args, **kwargs):
         strategies = query["strategies"]
+        if self.empty(strategies["size"]):
+            return
         valuation = str(self.valuation.name).lower()
         assert isinstance(strategies, xr.Dataset)
         calculations = {variable.scenario: calculation for variable, calculation in self.calculations.items()}
@@ -81,10 +83,13 @@ class ValuationCalculator(Calculator, Processor, calculations=ODict(list(Valuati
         valuations = valuations.drop_vars(["instrument", "position"], errors="ignore")
         valuations = valuations.expand_dims(list(set(iter(valuations.coords)) - set(iter(valuations.dims))))
         valuations = valuations.to_dataframe().dropna(how="all", inplace=False)
+        valuations = valuations.reset_index(drop=False, inplace=False)
         yield query | dict(valuations=valuations)
 
 
 class ValuationFilter(Filter, Processor, title="Filtered"):
+    columns = ["apy", "npv", "cost", "size"]
+
     def __init__(self, *args, scenario, **kwargs):
         super().__init__(*args, **kwargs)
         self.scenario = scenario
@@ -93,9 +98,15 @@ class ValuationFilter(Filter, Processor, title="Filtered"):
         contract = query["contract"]
         valuations = query["valuations"]
         scenario = str(self.scenario.name).lower()
-        select = dict(scenario=scenario)
+        if self.empty(valuations["size"]):
+            return
         prior = self.size(valuations["size"])
-        valuations = self.filter(valuations, *args, select=select, **kwargs)
+        index = set(valuations.columns) - ({"scenario"} | set(self.columns))
+        valuations = valuations.pivot(columns="scenario", index=index)
+        mask = self.mask(valuations, variable=scenario)
+        valuations = self.where(valuations, mask)
+        valuations = valuations.stack("scenario")
+        valuations = valuations.reset_index(drop=False, inplace=False)
         post = self.size(valuations["size"])
         __logger__.info(f"Filter: {repr(self)}|{str(contract)}[{prior:.0f}|{post:.0f}]")
         yield query | dict(valuations=valuations)

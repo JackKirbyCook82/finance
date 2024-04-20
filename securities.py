@@ -8,7 +8,6 @@ Created on Weds Jul 19 2023
 
 import logging
 import numpy as np
-import pandas as pd
 
 from support.pipelines import Producer, Processor, Consumer
 from support.processes import Loader, Saver, Filter
@@ -39,9 +38,11 @@ class SecurityFilter(Filter, Processor, title="Filtered"):
     def execute(self, query, *args, **kwargs):
         assert isinstance(query, dict)
         contract, securities = query["contract"], query["securities"]
-        assert isinstance(securities, pd.DataFrame)
+        if self.empty(securities["size"]):
+            return
         prior = self.size(securities["size"])
-        securities = self.filter(securities, *args, **kwargs)
+        mask = self.mask(securities)
+        securities = self.where(securities, mask)
         post = self.size(securities["size"])
         __logger__.info(f"Filter: {repr(self)}|{str(contract)}[{prior:.0f}|{post:.0f}]")
         yield query | dict(options=securities)

@@ -56,8 +56,7 @@ class Contract(ntuple("Contract", "ticker expire")):
     def tostring(self):
         ticker = str(self.ticker)
         expire = str(self.expire.strftime("%Y%m%d"))
-        string = "_".join([ticker, expire])
-        return string
+        return "_".join([ticker, expire])
 
     @classmethod
     def fromstring(cls, string):
