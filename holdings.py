@@ -14,7 +14,7 @@ from enum import IntEnum
 from itertools import product
 
 from support.pipelines import Producer, Processor, Consumer
-from support.processes import Process, Loader, Saver, Reader, Writer
+from support.processes import Process, Reader, Writer
 from support.tables import Tables, Options
 from support.files import Files
 
@@ -22,7 +22,7 @@ from finance.variables import Contract, Securities, Strategies, Scenarios, Instr
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["HoldingCalculator", "HoldingReader", "HoldingWriter", "HoldingLoader", "HoldingSaver", "HoldingTable", "HoldingFile", "HoldingStatus"]
+__all__ = ["HoldingCalculator", "HoldingReader", "HoldingWriter", "HoldingTable", "HoldingFile", "HoldingStatus"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
@@ -34,8 +34,6 @@ holding_formats = {(lead, lag): lambda column: f"{column:.02f}" for lead, lag in
 holding_formats.update({(lead, lag): lambda column: f"{column * 100:.02f}%" for lead, lag in product(["apy"], list(map(lambda scenario: str(scenario.name).lower(), Scenarios)))})
 holding_formats.update({("priority", ""): lambda column: f"{column * 100:.02f}"})
 holding_formats.update({("status", ""): lambda column: str(HoldingStatus(int(column)).name).lower()})
-query_function = lambda folder: {"contract": Contract.fromstring(folder)}
-folder_function = lambda query: query["contract"].tostring()
 holding_options = Options.Dataframe(rows=20, columns=25, width=1000, formats=holding_formats, numbers=lambda column: f"{column:.02f}")
 holding_index = {"instrument": str, "position": str, "strike": np.float32, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
 holding_columns = {"quantity": np.int32}
@@ -43,8 +41,6 @@ holding_columns = {"quantity": np.int32}
 
 class HoldingFile(Files.Dataframe, variable="holdings", index=holding_index, columns=holding_columns): pass
 class HoldingTable(Tables.Dataframe, options=holding_options): pass
-class HoldingSaver(Saver, Consumer, folder=folder_function, title="Saved"): pass
-class HoldingLoader(Loader, Producer, query=query_function, title="Loaded"): pass
 
 
 class HoldingReader(Reader, Producer, ABC):

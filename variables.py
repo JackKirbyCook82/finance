@@ -49,20 +49,23 @@ class DateRange(ntuple("DateRange", "minimum maximum")):
 
 @total_ordering
 class Contract(ntuple("Contract", "ticker expire")):
-    def __str__(self): return "|".join([str(self.ticker).upper(), self.expire.strftime('%Y-%m-%d')])
+    def __new__(cls, ticker, expire=None): return super().__new__(cls, ticker, expire)
+    def __str__(self): return self.tostring("|")
     def __eq__(self, other): return self.ticker == other.ticker and self.expire == other.expire
-    def __lt__(self, other): return self.ticker < other.ticker and self.expire < other.expire
+    def __lt__(self, other): return self.ticker < other.ticker and (self.expire < other.expire if bool(self.expire) else True)
 
-    def tostring(self):
-        ticker = str(self.ticker)
-        expire = str(self.expire.strftime("%Y%m%d"))
-        return "_".join([ticker, expire])
+    def tostring(self, delimiter="_"):
+        ticker = str(self.ticker).upper()
+        expire = str(self.expire.strftime("%Y%m%d")) if bool(self.expire) else None
+        contract = list(filter(None, [ticker, expire]))
+        return str(delimiter).join(contract)
 
     @classmethod
-    def fromstring(cls, string):
-        ticker, expire = str(string).split("_")
+    def fromstring(cls, string, delimiter="_"):
+        contract = str(string).split(delimiter)
+        ticker, expire = contract if len(contract) > 1 else (contract, None)
         ticker = str(ticker).upper()
-        expire = Datetime.strptime(expire, "%Y%m%d")
+        expire = Datetime.strptime(expire, "%Y%m%d") if bool(expire) else None
         return cls(ticker, expire)
 
 
