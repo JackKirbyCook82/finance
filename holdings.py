@@ -16,13 +16,14 @@ from itertools import product
 from support.pipelines import Producer, Processor, Consumer
 from support.processes import Process, Reader, Writer
 from support.tables import Tables, Options
+from support.queues import Queues
 from support.files import Files
 
 from finance.variables import Contract, Securities, Strategies, Scenarios, Instruments, Positions
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["HoldingCalculator", "HoldingReader", "HoldingWriter", "HoldingTable", "HoldingFile", "HoldingStatus"]
+__all__ = ["HoldingCalculator", "HoldingReader", "HoldingWriter", "HoldingTable", "HoldingFile", "HoldingQueue", "HoldingStatus"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
@@ -41,11 +42,10 @@ holding_columns = {"quantity": np.int32}
 
 class HoldingFile(Files.Dataframe, variable="holdings", index=holding_index, columns=holding_columns): pass
 class HoldingTable(Tables.Dataframe, options=holding_options): pass
+class HoldingQueue(Queues.FIFO, variable="contract"): pass
 
 
 class HoldingReader(Reader, Producer, ABC):
-    def __init_subclass__(cls, *args, variable, **kwargs): cls.variable = variable
-
     def execute(self, *args, **kwargs):
         valuations = self.read(*args, **kwargs)
         if self.empty(valuations):
@@ -99,8 +99,6 @@ class HoldingReader(Reader, Producer, ABC):
         dataframe = dataframe.groupby(index, as_index=False)[columns].sum()
         return dataframe
 
-    @property
-    def source(self): return super().source[self.variable]
     def read(self, *args, **kwargs):
         with self.source.mutex:
             if not bool(self.source):
@@ -112,14 +110,12 @@ class HoldingReader(Reader, Producer, ABC):
 
 
 class HoldingWriter(Writer, Consumer, ABC):
-    def __init_subclass__(cls, *args, variable, **kwargs): cls.variable = variable
-    def __init__(self, *args, valuation, liquidity, priority, capacity=None, **kwargs):
+    def __init__(self, *args, valuation, liquidity, priority, **kwargs):
         assert callable(liquidity) and callable(priority)
         super().__init__(*args, **kwargs)
         self.valuation = valuation
         self.liquidity = liquidity
         self.priority = priority
-        self.capacity = capacity
 
     def market(self, dataframe, *args, **kwargs):
         dataframe = dataframe.reset_index(drop=True, inplace=False)
@@ -136,8 +132,6 @@ class HoldingWriter(Writer, Consumer, ABC):
         dataframe = dataframe.reset_index(drop=True, inplace=False)
         return dataframe
 
-    @property
-    def destination(self): return super().destination[self.variable]
     def write(self, dataframe, *args, **kwargs):
         assert isinstance(dataframe, pd.DataFrame)
         if bool(dataframe.empty):

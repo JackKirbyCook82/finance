@@ -11,11 +11,12 @@ import numpy as np
 
 from support.pipelines import Processor
 from support.processes import Filter
+from support.queues import Queues
 from support.files import Files
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["SecurityFilter", "SecurityFile"]
+__all__ = ["SecurityFilter", "SecurityFile", "SecurityQueue"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
@@ -26,6 +27,9 @@ security_columns = {"price": np.float32, "underlying": np.float32, "size": np.fl
 
 
 class SecurityFile(Files.Dataframe, variable="securities", index=security_index, columns=security_columns): pass
+class SecurityQueue(Queues.FIFO, variable="contract"): pass
+
+
 class SecurityFilter(Filter, Processor, title="Filtered"):
     def execute(self, query, *args, **kwargs):
         assert isinstance(query, dict)

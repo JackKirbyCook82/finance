@@ -14,13 +14,14 @@ from collections import OrderedDict as ODict
 from support.calculations import Calculation, equation, source, constant
 from support.processes import Calculator, Filter
 from support.pipelines import Processor
+from support.queues import Queues
 from support.files import Files
 
 from finance.variables import Securities, Valuations, Scenarios
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["ValuationCalculation", "ValuationCalculator", "ValuationFilter", "ValuationFile"]
+__all__ = ["ValuationCalculation", "ValuationCalculator", "ValuationFilter", "ValuationFile", "ValuationQueue"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
@@ -31,6 +32,9 @@ valuation_columns = {"apy": np.float32, "npv": np.float32, "cost": np.float32, "
 
 
 class ValuationFile(Files.Dataframe, variable="valuations", index=valuation_index, columns=valuation_columns): pass
+class ValuationQueue(Queues.FIFO, variable="contract"): pass
+
+
 class ValuationCalculation(Calculation, fields=["valuation", "scenario"]):
     inc = equation("inc", "income", np.float32, domain=("v.vo", "v.vτ"), function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
     exp = equation("exp", "cost", np.float32, domain=("v.vo", "v.vτ"), function=lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0))
@@ -82,10 +86,9 @@ class ValuationCalculator(Calculator, Processor, calculations=ODict(list(Valuati
 
 
 class ValuationFilter(Filter, Processor, title="Filtered"):
-    columns = ["apy", "npv", "cost", "size"]
-
     def __init__(self, *args, scenario, **kwargs):
         super().__init__(*args, **kwargs)
+        self.columns = ["apy", "npv", "cost", "size"]
         self.scenario = scenario
 
     def execute(self, query, *args, **kwargs):

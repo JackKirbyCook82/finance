@@ -8,19 +8,18 @@ Created on Thurs Jan 31 2024
 
 import logging
 
-from finance.holdings import HoldingReader, HoldingWriter, HoldingTable
+from finance.holdings import HoldingReader, HoldingWriter
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["AcquisitionReader", "AcquisitionWriter", "AcquisitionTable"]
+__all__ = ["AcquisitionReader", "AcquisitionWriter"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-class AcquisitionTable(HoldingTable, variable="acquisitions"): pass
-class AcquisitionReader(HoldingReader, variable="acquisitions"): pass
-class AcquisitionWriter(HoldingWriter, variable="acquisitions"):
+class AcquisitionReader(HoldingReader): pass
+class AcquisitionWriter(HoldingWriter):
     def execute(self, query, *args, **kwargs):
         valuations = query["valuations"]
         if self.empty(valuations):
