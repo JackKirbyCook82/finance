@@ -14,14 +14,13 @@ from collections import OrderedDict as ODict
 from support.calculations import Calculation, equation, source, constant
 from support.processes import Calculator, Filter
 from support.pipelines import Processor
-from support.queues import Queues
 from support.files import Files
 
 from finance.variables import Securities, Valuations, Scenarios
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["ValuationCalculation", "ValuationCalculator", "ValuationFilter", "ValuationFile", "ValuationQueue"]
+__all__ = ["ValuationCalculation", "ValuationCalculator", "ValuationFilter", "ValuationFile"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
@@ -31,8 +30,8 @@ valuation_index = {security: str for security in list(map(str, Securities))} | {
 valuation_columns = {"apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.float32, "underlying": np.float32}
 
 
-class ValuationFile(Files.Dataframe, variable="valuations", index=valuation_index, columns=valuation_columns): pass
-class ValuationQueue(Queues.FIFO, variable="contract"): pass
+class ValuationFile(Files.Dataframe, variable="valuations", index=valuation_index, columns=valuation_columns):
+    pass
 
 
 class ValuationCalculation(Calculation, fields=["valuation", "scenario"]):
