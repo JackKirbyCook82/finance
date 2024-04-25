@@ -20,8 +20,8 @@ __logger__ = logging.getLogger(__name__)
 
 class AcquisitionReader(HoldingReader): pass
 class AcquisitionWriter(HoldingWriter):
-    def execute(self, query, *args, **kwargs):
-        valuations = query["valuations"]
+    def execute(self, contents, *args, **kwargs):
+        valuations = contents["valuations"]
         if self.empty(valuations):
             return
         valuations = self.market(valuations, *args, **kwargs)

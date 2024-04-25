@@ -30,17 +30,17 @@ __logger__ = logging.getLogger(__name__)
 
 HoldingStatus = IntEnum("Status", ["PROSPECT", "PURCHASED"], start=1)
 
-holding_formats = {(lead, lag): lambda column: f"{column:.02f}" for lead, lag in product(["npv", "cost"], list(map(lambda scenario: str(scenario.name).lower(), Scenarios)))}
-holding_formats.update({(lead, lag): lambda column: f"{column * 100:.02f}%" for lead, lag in product(["apy"], list(map(lambda scenario: str(scenario.name).lower(), Scenarios)))})
-holding_formats.update({("priority", ""): lambda column: f"{column * 100:.02f}"})
-holding_formats.update({("status", ""): lambda column: str(HoldingStatus(int(column)).name).lower()})
-holding_options = Options.Dataframe(rows=20, columns=25, width=1000, formats=holding_formats, numbers=lambda column: f"{column:.02f}")
-holding_index = {"instrument": str, "position": str, "strike": np.float32, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
-holding_columns = {"quantity": np.int32}
+holdings_formats = {(lead, lag): lambda column: f"{column:.02f}" for lead, lag in product(["npv", "cost"], list(map(lambda scenario: str(scenario.name).lower(), Scenarios)))}
+holdings_formats.update({(lead, lag): lambda column: f"{column * 100:.02f}%" for lead, lag in product(["apy"], list(map(lambda scenario: str(scenario.name).lower(), Scenarios)))})
+holdings_formats.update({("priority", ""): lambda column: f"{column * 100:.02f}"})
+holdings_formats.update({("status", ""): lambda column: str(HoldingStatus(int(column)).name).lower()})
+holdings_options = Options.Dataframe(rows=20, columns=25, width=1000, formats=holdings_formats, numbers=lambda column: f"{column:.02f}")
+holdings_index = {"instrument": str, "position": str, "strike": np.float32, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
+holdings_columns = {"quantity": np.int32}
 
 
-class HoldingFile(Files.Dataframe, variable="holdings", index=holding_index, columns=holding_columns): pass
-class HoldingTable(Tables.Dataframe, options=holding_options): pass
+class HoldingFile(Files.Dataframe, variable="holdings", index=holdings_index, columns=holdings_columns): pass
+class HoldingTable(Tables.Dataframe, options=holdings_options): pass
 
 
 class HoldingReader(Reader, Producer, ABC):
@@ -60,7 +60,7 @@ class HoldingReader(Reader, Producer, ABC):
 
     @staticmethod
     def contract(dataframe, *args, **kwargs):
-        contract = [column for column in list(holding_index.keys()) if column in dataframe.columns]
+        contract = [column for column in list(holdings_index.keys()) if column in dataframe.columns]
         dataframe = dataframe.droplevel("scenario", axis=1)
         return dataframe[contract]
 
@@ -92,8 +92,8 @@ class HoldingReader(Reader, Producer, ABC):
         dataframe["instrument"] = dataframe["security"].apply(instrument)
         dataframe["position"] = dataframe["security"].apply(position)
         dataframe["quantity"] = 1
-        index = list(holding_index.keys())
-        columns = list(holding_columns.keys())
+        index = list(holdings_index.keys())
+        columns = list(holdings_columns.keys())
         dataframe = dataframe.groupby(index, as_index=False)[columns].sum()
         return dataframe
 
@@ -150,8 +150,8 @@ class HoldingWriter(Writer, Consumer, ABC):
 
 
 class HoldingCalculator(Process, Processor):
-    def execute(self, query, *args, **kwargs):
-        holdings = query["holdings"]
+    def execute(self, contents, *args, **kwargs):
+        holdings = contents["holdings"]
         if self.empty(holdings):
             return
         stocks = self.stocks(holdings, *args, **kwargs)
@@ -160,7 +160,7 @@ class HoldingCalculator(Process, Processor):
         securities = pd.concat([options, virtuals], axis=0)
         securities = securities.reset_index(drop=True, inplace=False)
         holdings = self.holdings(securities, *args, *kwargs)
-        yield query | dict(holdings=holdings)
+        yield contents | dict(holdings=holdings)
 
     @staticmethod
     def stocks(dataframe, *args, **kwargs):

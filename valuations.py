@@ -26,14 +26,11 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-valuation_index = {security: str for security in list(map(str, Securities))} | {"strategy": str, "valuation": str, "scenario": str, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
-valuation_columns = {"apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.float32, "underlying": np.float32}
+valuations_index = {security: str for security in list(map(str, Securities))} | {"strategy": str, "valuation": str, "scenario": str, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
+valuations_columns = {"apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.float32, "underlying": np.float32}
 
 
-class ValuationFile(Files.Dataframe, variable="valuations", index=valuation_index, columns=valuation_columns):
-    pass
-
-
+class ValuationFile(Files.Dataframe, variable="valuations", index=valuations_index, columns=valuations_columns): pass
 class ValuationCalculation(Calculation, fields=["valuation", "scenario"]):
     inc = equation("inc", "income", np.float32, domain=("v.vo", "v.vτ"), function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
     exp = equation("exp", "cost", np.float32, domain=("v.vo", "v.vτ"), function=lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0))
@@ -41,25 +38,25 @@ class ValuationCalculation(Calculation, fields=["valuation", "scenario"]):
     npv = equation("npv", "npv", np.float32, domain=("inc", "exp", "tau", "ρ"), function=lambda inc, exp, tau, ρ: np.divide(inc, np.power(1 + ρ, tau / 365)) - exp)
     irr = equation("irr", "irr", np.float32, domain=("inc", "exp", "tau"), function=lambda inc, exp, tau: np.power(np.divide(inc, exp), np.power(tau, -1)) - 1)
     apy = equation("apy", "apy", np.float32, domain=("irr", "tau"), function=lambda irr, tau: np.power(irr + 1, np.power(tau / 365, -1)) - 1)
-    v = source("v", "valuation", position=0, variables={"to": "date", "tτ": "expire", "xo": "underlying", "qo": "size"})
+    stg = source("stg", "strategy", position=0, variables={"to": "date", "tτ": "expire", "xo": "underlying", "qo": "size"})
     ρ = constant("ρ", "discount", position="discount")
 
     def execute(self, feed, *args, discount, **kwargs):
         yield self.npv(feed, discount=discount)
         yield self.apy(feed)
         yield self.exp(feed)
-        yield self["v"].xo(feed)
-        yield self["v"].qo(feed)
+        yield self["stg"].xo(feed)
+        yield self["stg"].qo(feed)
 
 
 class ArbitrageCalculation(ValuationCalculation, valuation=Valuations.ARBITRAGE):
-    v = source("v", "arbitrage", position=0, variables={"vo": "spot"})
+    v = source("stg", "arbitrage", position=0, variables={"vo": "spot"})
 
 class MinimumArbitrageCalculation(ArbitrageCalculation, scenario=Scenarios.MINIMUM):
-    v = source("v", "minimum", position=0, variables={"vτ": "minimum"})
+    v = source("stg", "minimum", position=0, variables={"vτ": "minimum"})
 
 class MaximumArbitrageCalculation(ArbitrageCalculation, scenario=Scenarios.MAXIMUM):
-    v = source("v", "maximum", position=0, variables={"vτ": "maximum"})
+    v = source("stg", "maximum", position=0, variables={"vτ": "maximum"})
 
 
 class ValuationCalculator(Calculator, Processor, calculations=ODict(list(ValuationCalculation)), title="Calculated"):
@@ -67,8 +64,8 @@ class ValuationCalculator(Calculator, Processor, calculations=ODict(list(Valuati
         super().__init__(*args, **kwargs)
         self.valuation = valuation
 
-    def execute(self, query, *args, **kwargs):
-        strategies = query["strategies"]
+    def execute(self, contents, *args, **kwargs):
+        strategies = contents["strategies"]
         if self.empty(strategies["size"]):
             return
         valuation = str(self.valuation.name).lower()
@@ -81,7 +78,7 @@ class ValuationCalculator(Calculator, Processor, calculations=ODict(list(Valuati
         valuations = valuations.expand_dims(list(set(iter(valuations.coords)) - set(iter(valuations.dims))))
         valuations = valuations.to_dataframe().dropna(how="all", inplace=False)
         valuations = valuations.reset_index(drop=False, inplace=False)
-        yield query | dict(valuations=valuations)
+        yield contents | dict(valuations=valuations)
 
 
 class ValuationFilter(Filter, Processor, title="Filtered"):
@@ -90,9 +87,8 @@ class ValuationFilter(Filter, Processor, title="Filtered"):
         self.columns = ["apy", "npv", "cost", "size"]
         self.scenario = scenario
 
-    def execute(self, query, *args, **kwargs):
-        contract = query["contract"]
-        valuations = query["valuations"]
+    def execute(self, contents, *args, **kwargs):
+        contract, valuations = contents["contract"], contents["valuations"]
         scenario = str(self.scenario.name).lower()
         if self.empty(valuations["size"]):
             return
@@ -105,7 +101,7 @@ class ValuationFilter(Filter, Processor, title="Filtered"):
         valuations = valuations.reset_index(drop=False, inplace=False)
         post = self.size(valuations["size"])
         __logger__.info(f"Filter: {repr(self)}|{str(contract)}[{prior:.0f}|{post:.0f}]")
-        yield query | dict(valuations=valuations)
+        yield contents | dict(valuations=valuations)
 
 
 

@@ -77,23 +77,23 @@ class CollarShortCalculation(StrategyCalculation, strategy=Strategies.Collar.Sho
 class StrategyCalculator(Calculator, Processor, calculations=ODict(list(StrategyCalculation)), title="Calculated"):
     index = ["instrument", "position", "strike", "ticker", "expire", "date"]
 
-    def execute(self, query, *args, **kwargs):
-        securities = query["securities"]
-        if self.empty(securities["size"]):
+    def execute(self, contents, *args, **kwargs):
+        options = contents["options"]
+        if self.empty(options["size"]):
             return
-        securities = ODict([(security, dataset) for security, dataset in self.parser(securities) if not self.empty(dataset["size"])])
-        if not bool(securities):
+        options = ODict([(security, dataset) for security, dataset in self.parser(options) if not self.empty(dataset["size"])])
+        if not bool(options):
             return
         calculations = ODict([(variable.strategy, calculation) for variable, calculation in self.calculations.items()])
         for strategy, calculation in calculations.items():
-            if not all([security in securities.keys() for security in list(strategy.options)]):
+            if not all([security in options.keys() for security in list(strategy.options)]):
                 continue
-            strategies = calculation(securities, *args, **kwargs)
+            strategies = calculation(options, *args, **kwargs)
             variables = {"strategy": xr.Variable("strategy", [str(strategy)]).squeeze("strategy")}
             strategies = strategies.assign_coords(variables)
             if not self.size(strategies["size"]):
                 continue
-            yield query | dict(strategies=strategies)
+            yield contents | dict(strategies=strategies)
 
     def parser(self, dataframe):
         assert isinstance(dataframe, pd.DataFrame)
