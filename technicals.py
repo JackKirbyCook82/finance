@@ -20,14 +20,14 @@ from finance.variables import Technicals
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["BarFile", "StatisticFile"]
+__all__ = ["TechnicalCalculator", "BarFile", "StatisticFile"]
 __copyright__ = "Copyright 2024, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
 history_index = {"ticker": str, "date": np.datetime64}
 bars_columns = {"high": np.float32, "low": np.float32, "open": np.float32, "close": np.float32, "price": np.float32, "price": np.float32, "volume": np.float32}
-stats_columns = {}
+stats_columns = {"trend": np.float32, "volatility": np.float32}
 
 
 class BarFile(Files.Dataframe, variable="bars", index=history_index, columns=bars_columns): pass
@@ -49,7 +49,7 @@ class StatisticCalculation(TechnicalCalculation, technical=Technicals.STATISTIC)
         yield self.δi(feed, period=period)
 
 
-class StatisticCalculator(Calculator, Processor, calculations=ODict(list(StatisticCalculation)), title="Calculated"):
+class TechnicalCalculator(Calculator, Processor, calculations=ODict(list(StatisticCalculation)), title="Calculated"):
     def execute(self, contents, *args, **kwargs):
         pass
 
