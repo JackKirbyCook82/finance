@@ -10,7 +10,7 @@ import logging
 import numpy as np
 
 from support.pipelines import Processor
-from support.processes import Filter
+from support.filtering import Filter
 from support.files import Files
 
 __version__ = "1.0.0"

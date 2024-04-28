@@ -22,7 +22,7 @@ from finance.variables import Contract, Securities, Strategies, Scenarios, Instr
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["HoldingCalculator", "HoldingReader", "HoldingWriter", "HoldingTable", "HoldingFile", "HoldingStatus"]
+__all__ = ["HoldingTable", "HoldingFile", "HoldingStatus", "HoldingReader", "HoldingWriter", "HoldingCalculator", "HoldingEvaluator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
@@ -203,6 +203,11 @@ class HoldingCalculator(Process, Processor):
         dataframe = pd.concat([dataframe, dataframe.apply(function, axis=1, result_type="expand")], axis=1)
         dataframe = dataframe.drop("holdings", axis=1, inplace=False)
         return dataframe
+
+
+class HoldingEvaluator(Process, Processor):
+    def execute(self, contents, *args, **kwargs):
+        pass
 
 
 
