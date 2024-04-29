@@ -25,17 +25,23 @@ options_index = {"instrument": str, "position": str, "strike": np.float32, "tick
 options_columns = {"price": np.float32, "underlying": np.float32, "size": np.float32, "volume": np.float32, "interest": np.float32}
 
 
-class OptionFile(Files.Dataframe, variable="options", index=options_index, columns=options_columns): pass
-class SecurityFilter(Filter, Processor, title="Filtered"):
+class OptionFile(Files.Dataframe, variable="options", index=options_index, columns=options_columns):
+    pass
+
+
+class SecurityFilter(Filter, Processor, variable="options", title="Filtered"):
     def execute(self, contents, *args, **kwargs):
         assert isinstance(contents, dict)
         contract, options = contents["contract"], contents["options"]
-        if self.empty(options["size"]):
+        if self.empty(options):
             return
-        prior = self.size(options["size"])
+        prior = self.size(options)
+        options = options.reset_index(drop=True, inplace=False)
+        index = list(options_index.keys())
         mask = self.mask(options)
         options = self.where(options, mask)
-        post = self.size(options["size"])
+        options = options.set_index(index, drop=False, inplace=False)
+        post = self.size(options)
         __logger__.info(f"Filter: {repr(self)}|{str(contract)}[{prior:.0f}|{post:.0f}]")
         yield contents | dict(options=options)
 

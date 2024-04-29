@@ -30,7 +30,7 @@ Positions = IntEnum("Positions", ["LONG", "SHORT"], start=1)
 Spreads = IntEnum("Strategy", ["STRANGLE", "COLLAR", "VERTICAL"], start=1)
 Valuations = IntEnum("Valuation", ["ARBITRAGE"], start=1)
 Scenarios = IntEnum("Scenarios", ["MINIMUM", "MAXIMUM"], start=1)
-Technicals = IntEnum("Technicals", ["STATISTIC"], start=1)
+Technicals = IntEnum("Technicals", ["BAR", "STATISTIC", "STOCHASTIC"], start=1)
 
 
 class DateRange(ntuple("DateRange", "minimum maximum")):
@@ -88,6 +88,9 @@ class Security(Variable, ntuple("Security", "instrument position")): pass
 class Strategy(Variable, ntuple("Strategy", "spread instrument position")):
     def __new__(cls, spread, instrument, position, *args, **kwargs): return super().__new__(cls, spread, instrument, position)
     def __init__(self, *args, options=[], stocks=[], **kwargs): self.options, self.stocks = options, stocks
+
+    @property
+    def securities(self): return list(self.options) + list(self.stocks)
 
 
 StockLong = Security(Instruments.STOCK, Positions.LONG)

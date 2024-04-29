@@ -14,7 +14,6 @@ from enum import IntEnum
 from itertools import product
 
 from support.pipelines import Producer, Processor, Consumer
-from support.processes import Process, Reader, Writer
 from support.tables import Tables, Options
 from support.files import Files
 
@@ -43,7 +42,63 @@ class HoldingFile(Files.Dataframe, variable="holdings", index=holdings_index, co
 class HoldingTable(Tables.Dataframe, options=holdings_options): pass
 
 
-class HoldingReader(Reader, Producer, ABC):
+class HoldingWriter(Consumer, ABC):
+    def __init__(self, *args, destination, valuation, liquidity, priority, capacity=None, **kwargs):
+        assert callable(liquidity) and callable(priority)
+        self.__destination = destination
+        self.__valuation = valuation
+        self.__liquidity = liquidity
+        self.__priority = priority
+        self.__capacity = capacity
+
+    def market(self, dataframe, *args, **kwargs):
+        dataframe = dataframe.reset_index(drop=False, inplace=False)
+        index = set(dataframe.columns) - {"scenario", "apy", "npv", "cost"}
+        dataframe = dataframe.pivot(index=index, columns="scenario")
+        dataframe = dataframe.reset_index(drop=False, inplace=False)
+        dataframe["liquidity"] = dataframe.apply(self.liquidity, axis=1)
+        return dataframe
+
+    def prioritize(self, dataframe, *args, **kwargs):
+        dataframe["priority"] = dataframe.apply(self.priority, axis=1)
+        dataframe = dataframe.sort_values("priority", axis=0, ascending=False, inplace=False, ignore_index=False)
+        dataframe = dataframe.where(dataframe["priority"] > 0).dropna(axis=0, how="all")
+        dataframe = dataframe.reset_index(drop=True, inplace=False)
+        return dataframe
+
+    def write(self, dataframe, *args, **kwargs):
+        assert isinstance(dataframe, pd.DataFrame)
+        if bool(dataframe.empty):
+            return
+        dataframe["status"] = HoldingStatus.PROSPECT
+        dataframe = dataframe.reset_index(drop=True, inplace=False)
+        with self.destination.mutex:
+            if not bool(self.destination):
+                self.destination.table = dataframe
+            else:
+                index = np.max(self.destination.table.index.values) + 1
+                dataframe = dataframe.set_index(dataframe.index + index, drop=True, inplace=False)
+                self.destination.concat(dataframe, *args, **kwargs)
+            self.destination.sort("priority", reverse=True)
+            if bool(self.capacity):
+                self.destination.truncate(self.capacity)
+
+    @property
+    def destination(self): return self.__destination
+    @property
+    def valuation(self): return self.__valuation
+    @property
+    def liquidity(self): return self.__liquidity
+    @property
+    def priority(self): return self.__priority
+    @property
+    def capacity(self): return self.__capacity
+
+
+class HoldingReader(Producer, ABC):
+    def __init__(self, *args, source, **kwargs):
+        self.__source = source
+
     def execute(self, *args, **kwargs):
         valuations = self.read(*args, **kwargs)
         if self.empty(valuations):
@@ -106,50 +161,11 @@ class HoldingReader(Reader, Producer, ABC):
             self.source.remove(dataframe, *args, **kwargs)
             return dataframe
 
-
-class HoldingWriter(Writer, Consumer, ABC):
-    def __init__(self, *args, valuation, liquidity, priority, capacity=None, **kwargs):
-        assert callable(liquidity) and callable(priority)
-        super().__init__(*args, **kwargs)
-        self.valuation = valuation
-        self.liquidity = liquidity
-        self.priority = priority
-        self.capacity = capacity
-
-    def market(self, dataframe, *args, **kwargs):
-        dataframe = dataframe.reset_index(drop=True, inplace=False)
-        index = set(dataframe.columns) - {"scenario", "apy", "npv", "cost"}
-        dataframe = dataframe.pivot(index=index, columns="scenario")
-        dataframe = dataframe.reset_index(drop=False, inplace=False)
-        dataframe["liquidity"] = dataframe.apply(self.liquidity, axis=1)
-        return dataframe
-
-    def prioritize(self, dataframe, *args, **kwargs):
-        dataframe["priority"] = dataframe.apply(self.priority, axis=1)
-        dataframe = dataframe.sort_values("priority", axis=0, ascending=False, inplace=False, ignore_index=False)
-        dataframe = dataframe.where(dataframe["priority"] > 0).dropna(axis=0, how="all")
-        dataframe = dataframe.reset_index(drop=True, inplace=False)
-        return dataframe
-
-    def write(self, dataframe, *args, **kwargs):
-        assert isinstance(dataframe, pd.DataFrame)
-        if bool(dataframe.empty):
-            return
-        dataframe["status"] = HoldingStatus.PROSPECT
-        dataframe = dataframe.reset_index(drop=True, inplace=False)
-        with self.destination.mutex:
-            if not bool(self.destination):
-                self.destination.table = dataframe
-            else:
-                index = np.max(self.destination.table.index.values) + 1
-                dataframe = dataframe.set_index(dataframe.index + index, drop=True, inplace=False)
-                self.destination.concat(dataframe, *args, **kwargs)
-            self.destination.sort("priority", reverse=True)
-            if bool(self.capacity):
-                self.destination.truncate(self.capacity)
+    @property
+    def source(self): return self.__source
 
 
-class HoldingCalculator(Process, Processor):
+class HoldingCalculator(Processor):
     def execute(self, contents, *args, **kwargs):
         holdings = contents["holdings"]
         if self.empty(holdings):
@@ -205,7 +221,7 @@ class HoldingCalculator(Process, Processor):
         return dataframe
 
 
-class HoldingEvaluator(Process, Processor):
+class HoldingEvaluator(Processor):
     def execute(self, contents, *args, **kwargs):
         pass
 

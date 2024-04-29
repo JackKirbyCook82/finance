@@ -8,15 +8,16 @@ Created on Weds Jul 19 2023
 
 import logging
 import numpy as np
+import xarray as xr
+from abc import ABC, abstractmethod
+from collections import OrderedDict as ODict
 
-from support.calculations import Calculation
-from support.processes import Calculator
+from support.calculations import Equation, Calculation, Calculator
 from support.pipelines import Processor
 from support.filtering import Filter
 from support.files import Files
 
-from finance.variables import Securities, Valuations
-
+from finance.variables import Securities, Valuations, Scenarios
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -27,7 +28,7 @@ __logger__ = logging.getLogger(__name__)
 
 
 valuations_index = {security: str for security in list(map(str, Securities))} | {"strategy": str, "valuation": str, "scenario": str, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
-valuations_columns = {"spot": np.float32, "minimum": np.float32, "maximum": np.float32, "size": np.float32, "underlying": np.float32}
+valuations_columns = {"apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.float32}
 
 
 class ValuationFile(Files.Dataframe, variable="valuations", index=valuations_index, columns=valuations_columns):
@@ -37,33 +38,91 @@ class ValuationFile(Files.Dataframe, variable="valuations", index=valuations_ind
 class ValuationFilter(Filter, Processor, title="Filtered"):
     def __init__(self, *args, scenario, **kwargs):
         super().__init__(*args, **kwargs)
-        self.columns = ["apy", "npv", "cost", "size"]
-        self.scenario = scenario
+        self.__scenario = scenario
 
     def execute(self, contents, *args, **kwargs):
         contract, valuations = contents["contract"], contents["valuations"]
         scenario = str(self.scenario.name).lower()
-        if self.empty(valuations["size"]):
+        if self.empty(valuations):
             return
-        prior = self.size(valuations["size"])
-        index = set(valuations.columns) - ({"scenario"} | set(self.columns))
+        prior = self.size(valuations)
+        valuations = valuations.reset_index(drop=False, inplace=False)
+        index = set(valuations.columns) - ({"scenario"} | set(valuations_columns.keys()))
         valuations = valuations.pivot(columns="scenario", index=index)
         mask = self.mask(valuations, variable=scenario)
         valuations = self.where(valuations, mask)
         valuations = valuations.stack("scenario")
-        valuations = valuations.reset_index(drop=False, inplace=False)
-        post = self.size(valuations["size"])
+        valuations = valuations.set_index(index, drop=False, inplace=False)
+        post = self.size(valuations)
         __logger__.info(f"Filter: {repr(self)}|{str(contract)}[{prior:.0f}|{post:.0f}]")
         yield contents | dict(valuations=valuations)
 
+    @property
+    def scenario(self): return self.__scenario
 
-class ValuationCalculation(Calculation):
-    pass
+
+class ValuationEquation(Equation, domain=("to", "tτ", "vo", "vτ", "ρ")):
+    tau = lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D")
+    inc = lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0)
+    exp = lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0)
+    npv = lambda inc, exp, tau, ρ: np.divide(inc, np.power(1 + ρ, tau / 365)) - exp
+    irr = lambda inc, exp, tau: np.power(np.divide(inc, exp), np.power(tau, -1)) - 1
+    apy = lambda irr, tau: np.power(irr + 1, np.power(tau / 365, -1)) - 1
 
 
-class ValuationCalculator(Calculator, Processor):
+class ValuationCalculation(Calculation, ABC, fields=["valuation", "scenario"]): pass
+class ArbitrageCalculation(ValuationCalculation, valuation=Valuations.ARBITRAGE):
+    @staticmethod
+    @abstractmethod
+    def domain(strategies, *args, discount, **kwargs): pass
+    def execute(self, strategies, *args, **kwargs):
+        equation = ValuationEquation()
+        domain = self.domain(strategies, *args, **kwargs)
+        yield xr.apply_ufunc(equation.npv, *domain, output_dtypes=[np.float32], vectorize=True).to_dataset(name="npv")
+        yield xr.apply_ufunc(equation.apy, *domain, output_dtypes=[np.float32], vectorize=True).to_dataset(name="apy")
+        yield xr.apply_ufunc(equation.exp, *domain, output_dtypes=[np.float32], vectorize=True).to_dataset(name="cost")
+        yield strategies["underlying"]
+        yield strategies["size"]
+
+
+class MinimumArbitrageCalculation(ArbitrageCalculation, scenario=Scenarios.MINIMUM):
+    @staticmethod
+    def domain(strategies, *args, discount, **kwargs):
+        return [strategies["date"], strategies["expire"], strategies["spot"], strategies["minimum"], discount]
+
+class MaximumArbitrageCalculation(ArbitrageCalculation, scenario=Scenarios.MAXIMUM):
+    @staticmethod
+    def domain(strategies, *args, discount, **kwargs):
+        return [strategies["date"], strategies["expire"], strategies["spot"], strategies["maximum"], discount]
+
+
+class ValuationCalculator(Calculator, Processor, calculations=ODict(list(ValuationCalculation)), title="Calculated"):
+    def __init__(self, *args, valuation, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.__valuation = valuation
+
     def execute(self, contents, *args, **kwargs):
-        pass
+        strategies = contents["strategies"]
+        assert isinstance(strategies, xr.Dataset)
+        if self.empty(strategies["size"]):
+            return
+        valuations = self.calculate(strategies, *args, **kwargs)
+        valuations = valuations.to_dataframe().dropna(how="all", inplace=False)
+        valuations = valuations.set_index(list(valuations_index.keys()), drop=False, inplace=False)
+        yield contents | dict(valuations=valuations)
 
+    def calculate(self, strategies, *args, **kwargs):
+        assert isinstance(strategies, xr.Dataset)
+        variable = str(self.valuation.name).lower()
+        calculations = {scenario: calculation for (valuation, scenario), calculation in self.calculations.items() if valuation is self.valuation}
+        valuations = {scenario: calculation(strategies, *args, **kwargs) for scenario, calculation in calculations.items()}
+        valuations = [dataset.assign_coords({"scenario": str(scenario.name).lower()}).expand_dims("scenario") for scenario, dataset in valuations.items()]
+        valuations = xr.concat(valuations, dim="scenario").assign_coords({"valuation": variable})
+        valuations = valuations.drop_vars(["instrument", "position"], errors="ignore")
+        valuations = valuations.expand_dims(list(set(iter(valuations.coords)) - set(iter(valuations.dims))))
+        return valuations
+
+    @property
+    def valuation(self): return self.__valuation
 
 
