@@ -29,15 +29,15 @@ class OptionFile(Files.Dataframe, variable="options", index=options_index, colum
     pass
 
 
-class SecurityFilter(Filter, Processor, variable="options", title="Filtered"):
+class SecurityFilter(Filter, Processor, title="Filtered"):
     def execute(self, contents, *args, **kwargs):
         assert isinstance(contents, dict)
         contract, options = contents["contract"], contents["options"]
         if self.empty(options):
             return
         prior = self.size(options)
+        index = list(options.index.values)
         options = options.reset_index(drop=True, inplace=False)
-        index = list(options_index.keys())
         mask = self.mask(options)
         options = self.where(options, mask)
         options = options.set_index(index, drop=False, inplace=False)
