@@ -32,7 +32,7 @@ class BarFile(Files.Dataframe, variable="bars", index=history_index, columns=bar
 class TechnicalFile(Files.Dataframe, variable="technicals", index=history_index, columns=technicals_columns): pass
 
 
-class StochasticEquation(Equation, domain=("xi", "xli", "xhi")):
+class StochasticEquation(Equation):
     xki = lambda xi, xli, xhi: (xi - xli) * 100 / (xhi - xli)
 
 
@@ -40,17 +40,20 @@ class TechnicalCalculation(Calculation, fields=["technical"]): pass
 class StatisticCalculation(Calculation, technical=Technicals.STATISTIC):
     @staticmethod
     def execute(bars, *args, period, **kwargs):
-        yield bars["price"].pct_change(1).rolling(period).mean()
-        yield bars["price"].pct_change(1).rolling(period).std()
+        pass
 
+#        yield bars["price"].pct_change(1).rolling(period).mean()
+#        yield bars["price"].pct_change(1).rolling(period).std()
 
 class StochasticCalculation(Calculation, technical=Technicals.STOCHASTIC):
     @staticmethod
     def execute(bars, *args, period, **kwargs):
-        equation = StochasticEquation()
-        low = bars["low"].rolling(period).min()
-        high = bars["high"].rolling(period).max()
-        yield equation(bars["price"], low, high)
+        pass
+
+#        equation = StochasticEquation(domain=["xi", "xli", "xhi"])
+#        low = bars["low"].rolling(period).min()
+#        high = bars["high"].rolling(period).max()
+#        yield equation.xki(bars["price"], low, high)
 
 
 class TechnicalCalculator(Calculator, Processor, calculations=ODict(list(TechnicalCalculation)), title="Calculated"):

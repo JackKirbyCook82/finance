@@ -12,7 +12,7 @@ import xarray as xr
 from itertools import product
 from collections import OrderedDict as ODict
 
-from support.calculations import Calculation, Calculator
+from support.calculations import Equation, Calculation, Calculator
 from support.pipelines import Processor
 from support.files import Files
 
@@ -33,15 +33,52 @@ class StrategyFile(Files.Dataframe, variable="strategies", index=strategy_index,
     pass
 
 
+class StrategyEquation(Equation):
+    qo = lambda qα, qβ: np.minimum(qα, qβ)
+    xo = lambda xα, xβ: (xα + xβ) / 2
+    whτ = lambda yhτ, ε: yhτ * 100 - ε
+    wlτ = lambda ylτ, ε: ylτ * 100 - ε
+    wo = lambda yo, ε: yo * 100 - ε
+
+class VerticalEquation(StrategyEquation):
+    yo = lambda yα, yβ: - yα + yβ
+
+class CollarEquation(StrategyEquation):
+    yo = lambda yα, yβ, xo: - yα + yβ - xo
+
+class VerticalPutEquation(StrategyEquation):
+    yhτ = lambda kα, kβ: np.maximum(kα - kβ, 0)
+    ylτ = lambda kα, kβ: np.minimum(kα - kβ, 0)
+
+class VerticalCallEquation(StrategyEquation):
+    yhτ = lambda kα, kβ: np.maximum(-kα + kβ, 0)
+    ylτ = lambda kα, kβ: np.minimum(-kα + kβ, 0)
+
+class CollarLongEquation(StrategyEquation):
+    yhτ = lambda kα, kβ: np.maximum(kα, kβ)
+    ylτ = lambda kα, kβ: np.minimum(kα, kβ)
+
+class CollarShortEquation(StrategyEquation):
+    yhτ = lambda kα, kβ: np.maximum(-kα, -kβ)
+    ylτ = lambda kα, kβ: np.minimum(-kα, -kβ)
+
+
 class StrategyCalculation(Calculation, fields=["strategy"]):
     def execute(self, options, *args, fees, **kwargs):
-        assert all([isinstance(option, xr.Dataset) for option in options])
+        pass
+
+#        assert all([isinstance(option, xr.Dataset) for option in options])
+#        yield xr.apply_ufunc(equation.yhτ, *domain, output_dtypes=[np.float32], vectorize=True).to_dataset(name="minimum")
+#        yield xr.apply_ufunc(equation.ylτ, *domain, output_dtypes=[np.float32], vectorize=True).to_dataset(name="maximum")
+#        yield xr.apply_ufunc(equation.yo, *domain, output_dtypes=[np.float32], vectorize=True).to_dataset(name="spot")
+#        yield xr.apply_ufunc(equation.xo, *domain, output_dtypes=[np.float32], vectorize=True).to_dataset(name="underlying")
+#        yield xr.apply_ufunc(equation.qo, *domain, output_dtypes=[np.float32], vectorize=True).to_dataset(name="size")
 
 
-class VerticalPutCalculation(StrategyCalculation, strategy=Strategies.Vertical.Put, feed=Strategies.Vertical.Put.options): pass
-class VerticalCallCalculation(StrategyCalculation, strategy=Strategies.Vertical.Call, feed=Strategies.Vertical.Call.options): pass
-class CollarLongCalculation(StrategyCalculation, strategy=Strategies.Collar.Long, feed=Strategies.Collar.Long.options): pass
-class CollarShortCalculation(StrategyCalculation, strategy=Strategies.Collar.Short, feed=Strategies.Collar.Short.options): pass
+class VerticalPutCalculation(StrategyCalculation, strategy=Strategies.Vertical.Put): pass
+class VerticalCallCalculation(StrategyCalculation, strategy=Strategies.Vertical.Call): pass
+class CollarLongCalculation(StrategyCalculation, strategy=Strategies.Collar.Long): pass
+class CollarShortCalculation(StrategyCalculation, strategy=Strategies.Collar.Short): pass
 
 
 class StrategyCalculator(Calculator, Processor, calculations=ODict(list(StrategyCalculation)), title="Calculated"):

@@ -61,7 +61,7 @@ class ValuationFilter(Filter, Processor, title="Filtered"):
     def scenario(self): return self.__scenario
 
 
-class ValuationEquation(Equation, domain=("to", "tτ", "vo", "vτ", "ρ")):
+class ArbitrageEquation(Equation):
     tau = lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D")
     inc = lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0)
     exp = lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0)
@@ -72,28 +72,24 @@ class ValuationEquation(Equation, domain=("to", "tτ", "vo", "vτ", "ρ")):
 
 class ValuationCalculation(Calculation, ABC, fields=["valuation", "scenario"]): pass
 class ArbitrageCalculation(ValuationCalculation, valuation=Valuations.ARBITRAGE):
-    @staticmethod
-    @abstractmethod
-    def domain(strategies, *args, discount, **kwargs): pass
-    def execute(self, strategies, *args, **kwargs):
-        equation = ValuationEquation()
-        domain = self.domain(strategies, *args, **kwargs)
-        yield xr.apply_ufunc(equation.npv, *domain, output_dtypes=[np.float32], vectorize=True).to_dataset(name="npv")
-        yield xr.apply_ufunc(equation.apy, *domain, output_dtypes=[np.float32], vectorize=True).to_dataset(name="apy")
-        yield xr.apply_ufunc(equation.exp, *domain, output_dtypes=[np.float32], vectorize=True).to_dataset(name="cost")
-        yield strategies["underlying"]
-        yield strategies["size"]
+    def execute(self, strategies, *args, discount, **kwargs):
+        pass
+
+#        equation = ArbitrageEquation(domain=["to", "tτ", "vo", "vτ", "ρ"])
+#        domain = self.domain(strategies, *args, **kwargs)
+#        yield xr.apply_ufunc(equation.npv, *domain, output_dtypes=[np.float32], vectorize=True).to_dataset(name="npv")
+#        yield xr.apply_ufunc(equation.apy, *domain, output_dtypes=[np.float32], vectorize=True).to_dataset(name="apy")
+#        yield xr.apply_ufunc(equation.exp, *domain, output_dtypes=[np.float32], vectorize=True).to_dataset(name="cost")
+#        yield strategies["underlying"]
+#        yield strategies["size"]
+
+#    @staticmethod
+#    @abstractmethod
+#    def domain(strategies, *args, discount, **kwargs): pass
 
 
-class MinimumArbitrageCalculation(ArbitrageCalculation, scenario=Scenarios.MINIMUM):
-    @staticmethod
-    def domain(strategies, *args, discount, **kwargs):
-        return [strategies["date"], strategies["expire"], strategies["spot"], strategies["minimum"], discount]
-
-class MaximumArbitrageCalculation(ArbitrageCalculation, scenario=Scenarios.MAXIMUM):
-    @staticmethod
-    def domain(strategies, *args, discount, **kwargs):
-        return [strategies["date"], strategies["expire"], strategies["spot"], strategies["maximum"], discount]
+class MinimumArbitrageCalculation(ArbitrageCalculation, scenario=Scenarios.MINIMUM): pass
+class MaximumArbitrageCalculation(ArbitrageCalculation, scenario=Scenarios.MAXIMUM): pass
 
 
 class ValuationCalculator(Calculator, Processor, calculations=ODict(list(ValuationCalculation)), title="Calculated"):
@@ -124,5 +120,6 @@ class ValuationCalculator(Calculator, Processor, calculations=ODict(list(Valuati
 
     @property
     def valuation(self): return self.__valuation
+
 
 
