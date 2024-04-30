@@ -9,10 +9,11 @@ Created on Weds Jul 19 2023
 import numpy as np
 import pandas as pd
 import xarray as xr
+from abc import ABC
 from itertools import product
 from collections import OrderedDict as ODict
 
-from support.calculations import Equation, Calculation, Calculator
+from support.calculations import Variable, Equation, Calculation, Calculator
 from support.pipelines import Processor
 from support.files import Files
 
@@ -27,6 +28,7 @@ __license__ = "MIT License"
 
 strategy_index = {security: str for security in list(map(str, Securities))} | {"strategy": str, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
 strategy_columns = {"spot": np.float32, "minimum": np.float32, "maximum": np.float32, "size": np.float32, "underlying": np.float32}
+strategy_domains = [{variable + position: name for variable, name in {"q": "size", "x": "underlying", "y": "price", "k": "strike"}.items()} for position in ("α", "β")]
 
 
 class StrategyFile(Files.Dataframe, variable="strategies", index=strategy_index, columns=strategy_columns):
@@ -34,51 +36,50 @@ class StrategyFile(Files.Dataframe, variable="strategies", index=strategy_index,
 
 
 class StrategyEquation(Equation):
-    qo = lambda qα, qβ: np.minimum(qα, qβ)
-    xo = lambda xα, xβ: (xα + xβ) / 2
-    whτ = lambda yhτ, ε: yhτ * 100 - ε
-    wlτ = lambda ylτ, ε: ylτ * 100 - ε
-    wo = lambda yo, ε: yo * 100 - ε
+    qo = Variable(np.int32, lambda qα, qβ: np.minimum(qα, qβ))
+    xo = Variable(np.float32, lambda xα, xβ: (xα + xβ) / 2)
+    wo = Variable(np.float32, lambda yo, ε: yo * 100 - ε)
+    whτ = Variable(np.float32, lambda yhτ, ε: yhτ * 100 - ε)
+    wlτ = Variable(np.float32, lambda ylτ, ε: ylτ * 100 - ε)
 
 class VerticalEquation(StrategyEquation):
-    yo = lambda yα, yβ: - yα + yβ
+    yo = Variable(np.float32, lambda yα, yβ: - yα + yβ)
 
 class CollarEquation(StrategyEquation):
-    yo = lambda yα, yβ, xo: - yα + yβ - xo
+    yo = Variable(np.float32, lambda yα, yβ, xo: - yα + yβ - xo)
 
 class VerticalPutEquation(StrategyEquation):
-    yhτ = lambda kα, kβ: np.maximum(kα - kβ, 0)
-    ylτ = lambda kα, kβ: np.minimum(kα - kβ, 0)
+    yhτ = Variable(np.float32, lambda kα, kβ: np.maximum(kα - kβ, 0))
+    ylτ = Variable(np.float32, lambda kα, kβ: np.minimum(kα - kβ, 0))
 
 class VerticalCallEquation(StrategyEquation):
-    yhτ = lambda kα, kβ: np.maximum(-kα + kβ, 0)
-    ylτ = lambda kα, kβ: np.minimum(-kα + kβ, 0)
+    yhτ = Variable(np.float32, lambda kα, kβ: np.maximum(-kα + kβ, 0))
+    ylτ = Variable(np.float32, lambda kα, kβ: np.minimum(-kα + kβ, 0))
 
 class CollarLongEquation(StrategyEquation):
-    yhτ = lambda kα, kβ: np.maximum(kα, kβ)
-    ylτ = lambda kα, kβ: np.minimum(kα, kβ)
+    yhτ = Variable(np.float32, lambda kα, kβ: np.maximum(kα, kβ))
+    ylτ = Variable(np.float32, lambda kα, kβ: np.minimum(kα, kβ))
 
 class CollarShortEquation(StrategyEquation):
-    yhτ = lambda kα, kβ: np.maximum(-kα, -kβ)
-    ylτ = lambda kα, kβ: np.minimum(-kα, -kβ)
+    yhτ = Variable(np.float32, lambda kα, kβ: np.maximum(-kα, -kβ))
+    ylτ = Variable(np.float32, lambda kα, kβ: np.minimum(-kα, -kβ))
 
 
-class StrategyCalculation(Calculation, fields=["strategy"]):
+class StrategyCalculation(Calculation, ABC, fields=["strategy"], domain=strategy_domains):
     def execute(self, options, *args, fees, **kwargs):
-        pass
+        assert all([isinstance(option, xr.Dataset) for option in options])
+        long, short = [options[option] for option in self.strategy.options]
+        domain = self.domain(long, short) | {"ε": fees}
+        yield self.equation.yhτ(**domain).to_dataset(name="maximum")
+        yield self.equation.ylτ(**domain).to_dataset(name="minimum")
+        yield self.equation.yo(**domain).to_dataset(name="spot")
+        yield self.equation.xo(**domain).to_dataset(name="underlying")
+        yield self.equation.qo(**domain).to_dataset(name="size")
 
-#        assert all([isinstance(option, xr.Dataset) for option in options])
-#        yield xr.apply_ufunc(equation.yhτ, *domain, output_dtypes=[np.float32], vectorize=True).to_dataset(name="minimum")
-#        yield xr.apply_ufunc(equation.ylτ, *domain, output_dtypes=[np.float32], vectorize=True).to_dataset(name="maximum")
-#        yield xr.apply_ufunc(equation.yo, *domain, output_dtypes=[np.float32], vectorize=True).to_dataset(name="spot")
-#        yield xr.apply_ufunc(equation.xo, *domain, output_dtypes=[np.float32], vectorize=True).to_dataset(name="underlying")
-#        yield xr.apply_ufunc(equation.qo, *domain, output_dtypes=[np.float32], vectorize=True).to_dataset(name="size")
-
-
-class VerticalPutCalculation(StrategyCalculation, strategy=Strategies.Vertical.Put): pass
-class VerticalCallCalculation(StrategyCalculation, strategy=Strategies.Vertical.Call): pass
-class CollarLongCalculation(StrategyCalculation, strategy=Strategies.Collar.Long): pass
-class CollarShortCalculation(StrategyCalculation, strategy=Strategies.Collar.Short): pass
+class VerticalPutCalculation(StrategyCalculation, strategy=Strategies.Vertical.Put, equation=VerticalPutEquation): pass
+class VerticalCallCalculation(StrategyCalculation, strategy=Strategies.Vertical.Call, equation=VerticalCallEquation): pass
+class CollarLongCalculation(StrategyCalculation, strategy=Strategies.Collar.Long, equation=CollarLongEquation): pass
+class CollarShortCalculation(StrategyCalculation, strategy=Strategies.Collar.Short, equation=CollarShortEquation): pass
 
 
 class StrategyCalculator(Calculator, Processor, calculations=ODict(list(StrategyCalculation)), title="Calculated"):

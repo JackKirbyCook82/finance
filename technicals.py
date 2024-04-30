@@ -8,9 +8,10 @@ Created on Fri Apr 19 2024
 
 import numpy as np
 import pandas as pd
+from abc import ABC
 from collections import OrderedDict as ODict
 
-from support.calculations import Equation, Calculation, Calculator
+from support.calculations import Equation, Variable, Calculation, Calculator
 from support.pipelines import Processor
 from support.files import Files
 
@@ -33,27 +34,22 @@ class TechnicalFile(Files.Dataframe, variable="technicals", index=history_index,
 
 
 class StochasticEquation(Equation):
-    xki = lambda xi, xli, xhi: (xi - xli) * 100 / (xhi - xli)
+    xki = Variable(np.float32, lambda xi, xli, xhi: (xi - xli) * 100 / (xhi - xli))
 
 
-class TechnicalCalculation(Calculation, fields=["technical"]): pass
+class TechnicalCalculation(Calculation, ABC, fields=["technical"]): pass
 class StatisticCalculation(Calculation, technical=Technicals.STATISTIC):
     @staticmethod
     def execute(bars, *args, period, **kwargs):
-        pass
+        yield bars["price"].pct_change(1).rolling(period).mean()
+        yield bars["price"].pct_change(1).rolling(period).std()
 
-#        yield bars["price"].pct_change(1).rolling(period).mean()
-#        yield bars["price"].pct_change(1).rolling(period).std()
-
-class StochasticCalculation(Calculation, technical=Technicals.STOCHASTIC):
-    @staticmethod
-    def execute(bars, *args, period, **kwargs):
-        pass
-
-#        equation = StochasticEquation(domain=["xi", "xli", "xhi"])
-#        low = bars["low"].rolling(period).min()
-#        high = bars["high"].rolling(period).max()
-#        yield equation.xki(bars["price"], low, high)
+class StochasticCalculation(Calculation, technical=Technicals.STOCHASTIC, equation=StochasticEquation, domain={"xi": "price"}):
+    def execute(self, bars, *args, period, **kwargs):
+        low = bars["low"].rolling(period).min()
+        high = bars["high"].rolling(period).max()
+        domain = self.domain(bars) | {"xli": low, "xhi": high}
+        yield self.equation.xki(**domain)
 
 
 class TechnicalCalculator(Calculator, Processor, calculations=ODict(list(TechnicalCalculation)), title="Calculated"):

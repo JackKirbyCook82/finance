@@ -9,10 +9,10 @@ Created on Weds Jul 19 2023
 import logging
 import numpy as np
 import xarray as xr
-from abc import ABC, abstractmethod
+from abc import ABC
 from collections import OrderedDict as ODict
 
-from support.calculations import Equation, Calculation, Calculator
+from support.calculations import Variable, Equation, Calculation, Calculator
 from support.pipelines import Processor
 from support.filtering import Filter
 from support.files import Files
@@ -62,34 +62,26 @@ class ValuationFilter(Filter, Processor, title="Filtered"):
 
 
 class ArbitrageEquation(Equation):
-    tau = lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D")
-    inc = lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0)
-    exp = lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0)
-    npv = lambda inc, exp, tau, ρ: np.divide(inc, np.power(1 + ρ, tau / 365)) - exp
-    irr = lambda inc, exp, tau: np.power(np.divide(inc, exp), np.power(tau, -1)) - 1
-    apy = lambda irr, tau: np.power(irr + 1, np.power(tau / 365, -1)) - 1
+    tau = Variable(np.int32, lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
+    inc = Variable(np.float32, lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
+    exp = Variable(np.float32, lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0))
+    npv = Variable(np.float32, lambda inc, exp, tau, ρ: np.divide(inc, np.power(1 + ρ, tau / 365)) - exp)
+    irr = Variable(np.float32, lambda inc, exp, tau: np.power(np.divide(inc, exp), np.power(tau, -1)) - 1)
+    apy = Variable(np.float32, lambda irr, tau: np.power(irr + 1, np.power(tau / 365, -1)) - 1)
 
 
 class ValuationCalculation(Calculation, ABC, fields=["valuation", "scenario"]): pass
-class ArbitrageCalculation(ValuationCalculation, valuation=Valuations.ARBITRAGE):
+class ArbitrageCalculation(ValuationCalculation, ABC, valuation=Valuations.ARBITRAGE, equation=ArbitrageEquation, domain={"to": "date", "tτ": "expire", "vo": "spot"}):
     def execute(self, strategies, *args, discount, **kwargs):
-        pass
+        domain = self.domain(strategies) | {"ρ": discount}
+        yield self.equation.npv(**domain).to_dataset(name="npv")
+        yield self.equation.apy(**domain).to_dataset(name="apy")
+        yield self.equation.exp(**domain).to_dataset(name="cost")
+        yield strategies["underlying"]
+        yield strategies["size"]
 
-#        equation = ArbitrageEquation(domain=["to", "tτ", "vo", "vτ", "ρ"])
-#        domain = self.domain(strategies, *args, **kwargs)
-#        yield xr.apply_ufunc(equation.npv, *domain, output_dtypes=[np.float32], vectorize=True).to_dataset(name="npv")
-#        yield xr.apply_ufunc(equation.apy, *domain, output_dtypes=[np.float32], vectorize=True).to_dataset(name="apy")
-#        yield xr.apply_ufunc(equation.exp, *domain, output_dtypes=[np.float32], vectorize=True).to_dataset(name="cost")
-#        yield strategies["underlying"]
-#        yield strategies["size"]
-
-#    @staticmethod
-#    @abstractmethod
-#    def domain(strategies, *args, discount, **kwargs): pass
-
-
-class MinimumArbitrageCalculation(ArbitrageCalculation, scenario=Scenarios.MINIMUM): pass
-class MaximumArbitrageCalculation(ArbitrageCalculation, scenario=Scenarios.MAXIMUM): pass
+class MinimumArbitrageCalculation(ArbitrageCalculation, scenario=Scenarios.MINIMUM, domain={"vτ": "minimum"}): pass
+class MaximumArbitrageCalculation(ArbitrageCalculation, scenario=Scenarios.MAXIMUM, domain={"vτ": "maximum"}): pass
 
 
 class ValuationCalculator(Calculator, Processor, calculations=ODict(list(ValuationCalculation)), title="Calculated"):
