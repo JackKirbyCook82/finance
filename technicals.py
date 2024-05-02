@@ -9,9 +9,8 @@ Created on Fri Apr 19 2024
 import numpy as np
 import pandas as pd
 from abc import ABC
-from collections import OrderedDict as ODict
 
-from support.calculations import Equation, Variable, Calculation, Calculator
+from support.calculations import Variable, Domain, Equation, Calculation, Calculator
 from support.pipelines import Processor
 from support.files import Files
 
@@ -33,26 +32,29 @@ class BarFile(Files.Dataframe, variable="bars", index=history_index, columns=bar
 class TechnicalFile(Files.Dataframe, variable="technicals", index=history_index, columns=technicals_columns): pass
 
 
+class StochasticDomain(Domain, domain={"xi": "price", "xli": "lowest", "xhi": "highest"}): pass
 class StochasticEquation(Equation):
-    xki = Variable(np.float32, lambda xi, xli, xhi: (xi - xli) * 100 / (xhi - xli))
+    xki = Variable("oscillator", np.float32, lambda xi, xli, xhi: (xi - xli) * 100 / (xhi - xli))
 
 
 class TechnicalCalculation(Calculation, ABC, fields=["technical"]): pass
 class StatisticCalculation(Calculation, technical=Technicals.STATISTIC):
     @staticmethod
     def execute(bars, *args, period, **kwargs):
-        yield bars["price"].pct_change(1).rolling(period).mean()
-        yield bars["price"].pct_change(1).rolling(period).std()
+        yield bars["price"].pct_change(1).rolling(period).mean().rename("trend")
+        yield bars["price"].pct_change(1).rolling(period).std().rename("volatility")
 
-class StochasticCalculation(Calculation, technical=Technicals.STOCHASTIC, equation=StochasticEquation, domain={"xi": "price"}):
+class StochasticCalculation(Calculation, technical=Technicals.STOCHASTIC, equation=StochasticEquation, domain=StochasticDomain):
     def execute(self, bars, *args, period, **kwargs):
-        low = bars["low"].rolling(period).min()
-        high = bars["high"].rolling(period).max()
-        domain = self.domain(bars) | {"xli": low, "xhi": high}
-        yield self.equation.xki(**domain)
+        low = bars["lowest"].rolling(period).min()
+        high = bars["highest"].rolling(period).max()
+        bars = pd.concat([bars, low, high], axis=1)
+        domain = self.domain(bars)
+        equation = self.equation(domain)
+        yield equation.xki
 
 
-class TechnicalCalculator(Calculator, Processor, calculations=ODict(list(TechnicalCalculation)), title="Calculated"):
+class TechnicalCalculator(Calculator, Processor, calculation=TechnicalCalculation):
     def execute(self, contents, *args, **kwargs):
         bars = contents["bars"]
         assert isinstance(bars, pd.DataFrame)
@@ -64,8 +66,8 @@ class TechnicalCalculator(Calculator, Processor, calculations=ODict(list(Technic
 
     def calculate(self, bars, *args, **kwargs):
         assert isinstance(bars, pd.DataFrame)
-        for technical, calculation in self.calculations.items():
-            variable = str(technical.name).lower()
+        for fields, calculation in self.calculations.items():
+            variable = str(fields["technical"].name).lower()
             dataframe = calculation(bars, *args, **kwargs)
             if not self.size(dataframe):
                 continue

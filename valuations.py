@@ -10,9 +10,8 @@ import logging
 import numpy as np
 import xarray as xr
 from abc import ABC
-from collections import OrderedDict as ODict
 
-from support.calculations import Variable, Equation, Calculation, Calculator
+from support.calculations import Variable, Domain, Equation, Calculation, Calculator
 from support.pipelines import Processor
 from support.filtering import Filter
 from support.files import Files
@@ -35,7 +34,7 @@ class ValuationFile(Files.Dataframe, variable="valuations", index=valuations_ind
     pass
 
 
-class ValuationFilter(Filter, Processor, title="Filtered"):
+class ValuationFilter(Filter, Processor):
     def __init__(self, *args, scenario, **kwargs):
         super().__init__(*args, **kwargs)
         self.__scenario = scenario
@@ -61,31 +60,39 @@ class ValuationFilter(Filter, Processor, title="Filtered"):
     def scenario(self): return self.__scenario
 
 
+class ArbitrageDomain(Domain, feed={"to": "date", "tτ": "expire", "vo": "spot", "ρ": "discount"}): pass
+class MinimumArbitrageDomain(ArbitrageDomain, feed={"vτ": "minimum"}): pass
+class MaximumArbitrageDomain(ArbitrageDomain, feed={"vτ": "maximum"}): pass
+
+
 class ArbitrageEquation(Equation):
-    tau = Variable(np.int32, lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
-    inc = Variable(np.float32, lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
-    exp = Variable(np.float32, lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0))
-    npv = Variable(np.float32, lambda inc, exp, tau, ρ: np.divide(inc, np.power(1 + ρ, tau / 365)) - exp)
-    irr = Variable(np.float32, lambda inc, exp, tau: np.power(np.divide(inc, exp), np.power(tau, -1)) - 1)
-    apy = Variable(np.float32, lambda irr, tau: np.power(irr + 1, np.power(tau / 365, -1)) - 1)
+    tau = Variable("tau", np.int32, lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
+    inc = Variable("income", np.float32, lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
+    exp = Variable("cost", np.float32, lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0))
+    npv = Variable("npv", np.float32, lambda inc, exp, tau, ρ: np.divide(inc, np.power(1 + ρ, tau / 365)) - exp)
+    irr = Variable("irr", np.float32, lambda inc, exp, tau: np.power(np.divide(inc, exp), np.power(tau, -1)) - 1)
+    apy = Variable("apy", np.float32, lambda irr, tau: np.power(irr + 1, np.power(tau / 365, -1)) - 1)
 
 
 class ValuationCalculation(Calculation, ABC, fields=["valuation", "scenario"]): pass
-class ArbitrageCalculation(ValuationCalculation, ABC, valuation=Valuations.ARBITRAGE, equation=ArbitrageEquation, domain={"to": "date", "tτ": "expire", "vo": "spot"}):
+class ArbitrageCalculation(ValuationCalculation, ABC, valuation=Valuations.ARBITRAGE, equation=ArbitrageEquation):
     def execute(self, strategies, *args, discount, **kwargs):
-        domain = self.domain(strategies) | {"ρ": discount}
-        yield self.equation.npv(**domain).to_dataset(name="npv")
-        yield self.equation.apy(**domain).to_dataset(name="apy")
-        yield self.equation.exp(**domain).to_dataset(name="cost")
+        domain = self.domain(strategies, discount=discount)
+        equation = self.equation(domain)
         yield strategies["underlying"]
         yield strategies["size"]
+        yield equation.npv
+        yield equation.apy
+        yield equation.exp
 
-class MinimumArbitrageCalculation(ArbitrageCalculation, scenario=Scenarios.MINIMUM, domain={"vτ": "minimum"}): pass
-class MaximumArbitrageCalculation(ArbitrageCalculation, scenario=Scenarios.MAXIMUM, domain={"vτ": "maximum"}): pass
+class MinimumArbitrageCalculation(ArbitrageCalculation, scenario=Scenarios.MINIMUM, domain=MinimumArbitrageDomain): pass
+class MaximumArbitrageCalculation(ArbitrageCalculation, scenario=Scenarios.MAXIMUM, domain=MaximumArbitrageDomain): pass
 
 
-class ValuationCalculator(Calculator, Processor, calculations=ODict(list(ValuationCalculation)), title="Calculated"):
+class ValuationCalculator(Calculator, Processor, calculation=ValuationCalculation):
     def __init__(self, *args, valuation, **kwargs):
+        assert "valuation" not in kwargs.keys() and "scenario" not in kwargs.keys()
+        assert valuation in Valuations
         super().__init__(*args, **kwargs)
         self.__valuation = valuation
 
@@ -102,7 +109,7 @@ class ValuationCalculator(Calculator, Processor, calculations=ODict(list(Valuati
     def calculate(self, strategies, *args, **kwargs):
         assert isinstance(strategies, xr.Dataset)
         variable = str(self.valuation.name).lower()
-        calculations = {scenario: calculation for (valuation, scenario), calculation in self.calculations.items() if valuation is self.valuation}
+        calculations = {fields["scenario"]: calculation for fields, calculation in self.calculations.items() if fields["valuation"] is self.valuation}
         valuations = {scenario: calculation(strategies, *args, **kwargs) for scenario, calculation in calculations.items()}
         valuations = [dataset.assign_coords({"scenario": str(scenario.name).lower()}).expand_dims("scenario") for scenario, dataset in valuations.items()]
         valuations = xr.concat(valuations, dim="scenario").assign_coords({"valuation": variable})

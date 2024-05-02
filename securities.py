@@ -9,7 +9,6 @@ Created on Weds Jul 19 2023
 import logging
 import numpy as np
 
-from support.pipelines import Processor
 from support.filtering import Filter
 from support.files import Files
 
@@ -29,7 +28,7 @@ class OptionFile(Files.Dataframe, variable="options", index=options_index, colum
     pass
 
 
-class SecurityFilter(Filter, Processor, title="Filtered"):
+class SecurityFilter(Filter):
     def execute(self, contents, *args, **kwargs):
         assert isinstance(contents, dict)
         contract, options = contents["contract"], contents["options"]
