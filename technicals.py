@@ -8,9 +8,10 @@ Created on Fri Apr 19 2024
 
 import numpy as np
 import pandas as pd
+import xarray as xr
 from abc import ABC
 
-from support.calculations import Variable, Domain, Equation, Calculation, Calculator
+from support.calculations import Variable, Equation, Calculation, Calculator
 from support.pipelines import Processor
 from support.files import Files
 
@@ -25,16 +26,18 @@ __license__ = "MIT License"
 
 history_index = {"date": np.datetime64}
 bars_columns = {"high": np.float32, "low": np.float32, "open": np.float32, "close": np.float32, "price": np.float32, "volume": np.float32}
-technicals_columns = {"trend": np.float32, "volatility": np.float32, "oscillator": np.float32}
+technical_columns = {"trend": np.float32, "volatility": np.float32, "oscillator": np.float32}
 
 
 class BarFile(Files.Dataframe, variable="bars", index=history_index, columns=bars_columns): pass
-class TechnicalFile(Files.Dataframe, variable="technicals", index=history_index, columns=technicals_columns): pass
+class TechnicalFile(Files.Dataframe, variable="technicals", index=history_index, columns=technical_columns): pass
 
 
-class StochasticDomain(Domain, domain={"xi": "price", "xli": "lowest", "xhi": "highest"}): pass
 class StochasticEquation(Equation):
-    xki = Variable("oscillator", np.float32, lambda xi, xli, xhi: (xi - xli) * 100 / (xhi - xli))
+    xki = Variable("oscillator", function=lambda xi, xli, xhi: (xi - xli) * 100 / (xhi - xli))
+    xi = Variable("price", locator=0)
+    xli = Variable("lowest", locator=0)
+    xhi = Variable("highest", locator=0)
 
 
 class TechnicalCalculation(Calculation, ABC, fields=["technical"]): pass
@@ -44,14 +47,11 @@ class StatisticCalculation(Calculation, technical=Technicals.STATISTIC):
         yield bars["price"].pct_change(1).rolling(period).mean().rename("trend")
         yield bars["price"].pct_change(1).rolling(period).std().rename("volatility")
 
-class StochasticCalculation(Calculation, technical=Technicals.STOCHASTIC, equation=StochasticEquation, domain=StochasticDomain):
+class StochasticCalculation(Calculation, technical=Technicals.STOCHASTIC, equation=StochasticEquation):
     def execute(self, bars, *args, period, **kwargs):
-        low = bars["lowest"].rolling(period).min()
-        high = bars["highest"].rolling(period).max()
-        bars = pd.concat([bars, low, high], axis=1)
-        domain = self.domain(bars)
-        equation = self.equation(domain)
-        yield equation.xki
+        lowest = bars["lowest"].rolling(period).min()
+        highest = bars["highest"].rolling(period).max()
+        bars = pd.concat([bars, lowest, highest], axis=1)
 
 
 class TechnicalCalculator(Calculator, Processor, calculation=TechnicalCalculation):
@@ -60,7 +60,7 @@ class TechnicalCalculator(Calculator, Processor, calculation=TechnicalCalculatio
         assert isinstance(bars, pd.DataFrame)
         if self.empty(bars):
             return
-        technicals = {variable: technical for variable, technical in self.calculate(bars, *args, **kwargs)}
+        technicals = {technical: dataframe for technical, dataframe in self.calculate(bars, *args, **kwargs)}
         technicals = pd.concat(list(technicals.values()), axis=1)
         yield contents | technicals
 

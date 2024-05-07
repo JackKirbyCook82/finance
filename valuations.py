@@ -11,7 +11,7 @@ import numpy as np
 import xarray as xr
 from abc import ABC
 
-from support.calculations import Variable, Domain, Equation, Calculation, Calculator
+from support.calculations import Variable, Equation, Calculation, Calculator
 from support.pipelines import Processor
 from support.filtering import Filter
 from support.files import Files
@@ -26,11 +26,11 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-valuations_index = {security: str for security in list(map(str, Securities))} | {"strategy": str, "valuation": str, "scenario": str, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
-valuations_columns = {"apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.float32}
+valuation_index = {security: str for security in list(map(str, Securities))} | {"strategy": str, "valuation": str, "scenario": str, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
+valuation_columns = {"apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.float32}
 
 
-class ValuationFile(Files.Dataframe, variable="valuations", index=valuations_index, columns=valuations_columns):
+class ValuationFile(Files.Dataframe, variable="valuations", index=valuation_index, columns=valuation_columns):
     pass
 
 
@@ -46,7 +46,7 @@ class ValuationFilter(Filter, Processor):
             return
         prior = self.size(valuations)
         valuations = valuations.reset_index(drop=False, inplace=False)
-        index = set(valuations.columns) - ({"scenario"} | set(valuations_columns.keys()))
+        index = set(valuations.columns) - ({"scenario"} | set(valuation_columns.keys()))
         valuations = valuations.pivot(columns="scenario", index=index)
         mask = self.mask(valuations, variable=scenario)
         valuations = self.where(valuations, mask)
@@ -60,33 +60,34 @@ class ValuationFilter(Filter, Processor):
     def scenario(self): return self.__scenario
 
 
-class ArbitrageDomain(Domain, feed={"to": "date", "tτ": "expire", "vo": "spot", "ρ": "discount"}): pass
-class MinimumArbitrageDomain(ArbitrageDomain, feed={"vτ": "minimum"}): pass
-class MaximumArbitrageDomain(ArbitrageDomain, feed={"vτ": "maximum"}): pass
-
-
 class ArbitrageEquation(Equation):
-    tau = Variable("tau", np.int32, lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
-    inc = Variable("income", np.float32, lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
-    exp = Variable("cost", np.float32, lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0))
-    npv = Variable("npv", np.float32, lambda inc, exp, tau, ρ: np.divide(inc, np.power(1 + ρ, tau / 365)) - exp)
-    irr = Variable("irr", np.float32, lambda inc, exp, tau: np.power(np.divide(inc, exp), np.power(tau, -1)) - 1)
-    apy = Variable("apy", np.float32, lambda irr, tau: np.power(irr + 1, np.power(tau / 365, -1)) - 1)
+    tau = Variable("tau", function=lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
+    inc = Variable("income", function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
+    exp = Variable("cost", function=lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0))
+    npv = Variable("npv", function=lambda inc, exp, tau, ρ: np.divide(inc, np.power(1 + ρ, tau / 365)) - exp)
+    irr = Variable("irr", function=lambda inc, exp, tau: np.power(np.divide(inc, exp), np.power(tau, -1)) - 1)
+    apy = Variable("apy", function=lambda irr, tau: np.power(irr + 1, np.power(tau / 365, -1)) - 1)
+
+    ρ = Variable("discount", locator="discount")
+    vo = Variable("spot", locator=0)
+    to = Variable("date", locator=0)
+    tτ = Variable("expire", locator=0)
+
+class MinimumArbitrageEquation(ArbitrageEquation):
+    vτ = Variable("minimum", argument=0)
+
+class MaximumArbitrageEquation(ArbitrageEquation):
+    vτ = Variable("maximum", argument=0)
 
 
 class ValuationCalculation(Calculation, ABC, fields=["valuation", "scenario"]): pass
-class ArbitrageCalculation(ValuationCalculation, ABC, valuation=Valuations.ARBITRAGE, equation=ArbitrageEquation):
+class ArbitrageCalculation(ValuationCalculation, ABC, valuation=Valuations.ARBITRAGE):
     def execute(self, strategies, *args, discount, **kwargs):
-        domain = self.domain(strategies, discount=discount)
-        equation = self.equation(domain)
         yield strategies["underlying"]
         yield strategies["size"]
-        yield equation.npv
-        yield equation.apy
-        yield equation.exp
 
-class MinimumArbitrageCalculation(ArbitrageCalculation, scenario=Scenarios.MINIMUM, domain=MinimumArbitrageDomain): pass
-class MaximumArbitrageCalculation(ArbitrageCalculation, scenario=Scenarios.MAXIMUM, domain=MaximumArbitrageDomain): pass
+class MinimumArbitrageCalculation(ArbitrageCalculation, scenario=Scenarios.MINIMUM, equation=MinimumArbitrageEquation): pass
+class MaximumArbitrageCalculation(ArbitrageCalculation, scenario=Scenarios.MAXIMUM, equation=MaximumArbitrageEquation): pass
 
 
 class ValuationCalculator(Calculator, Processor, calculation=ValuationCalculation):
@@ -103,7 +104,7 @@ class ValuationCalculator(Calculator, Processor, calculation=ValuationCalculatio
             return
         valuations = self.calculate(strategies, *args, **kwargs)
         valuations = valuations.to_dataframe().dropna(how="all", inplace=False)
-        valuations = valuations.set_index(list(valuations_index.keys()), drop=False, inplace=False)
+        valuations = valuations.set_index(list(valuation_index.keys()), drop=False, inplace=False)
         yield contents | dict(valuations=valuations)
 
     def calculate(self, strategies, *args, **kwargs):

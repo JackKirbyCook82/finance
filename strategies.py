@@ -11,13 +11,12 @@ import pandas as pd
 import xarray as xr
 from abc import ABC
 from itertools import product
-from collections import OrderedDict as ODict
 
-from support.calculations import Variable, Domain, Equation, Calculation, Calculator
+from support.calculations import Variable, Equation, Calculation, Calculator
 from support.pipelines import Processor
 from support.files import Files
 
-from finance.variables import Securities, Strategies
+from finance.variables import Securities, Strategies, Positions
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -34,50 +33,49 @@ class StrategyFile(Files.Dataframe, variable="strategies", index=strategy_index,
     pass
 
 
-class StrategyDomain(Domain, feed={"ε": "discount"}): pass
-class LongOptionDomain(StrategyDomain, feed={"qα": "size", "xα": "underlying", "yα": "price", "kα": "strike"}): pass
-class ShortOptionDomain(StrategyDomain, feed={"qβ": "size", "xβ": "underlying", "yβ": "price", "kβ": "strike"}): pass
-
-
 class StrategyEquation(Equation):
-    qo = Variable("size", np.int32, lambda qα, qβ: np.minimum(qα, qβ))
-    xo = Variable("underlying", np.float32, lambda xα, xβ: (xα + xβ) / 2)
-    wo = Variable("spot", np.float32, lambda yo, ε: yo * 100 - ε)
-    whτ = Variable("maximum", np.float32, lambda yhτ, ε: yhτ * 100 - ε)
-    wlτ = Variable("minimum", np.float32, lambda ylτ, ε: ylτ * 100 - ε)
+    qo = Variable("size", function=lambda qα, qβ: np.minimum(qα, qβ))
+    xo = Variable("underlying", function=lambda xα, xβ: (xα + xβ) / 2)
+    wo = Variable("spot", function=lambda yo, ε: yo * 100 - ε)
+    whτ = Variable("maximum", function=lambda yhτ, ε: yhτ * 100 - ε)
+    wlτ = Variable("minimum", function=lambda ylτ, ε: ylτ * 100 - ε)
+
+    αq = Variable("size", locator=Positions.LONG)
+    αx = Variable("underlying", locator=Positions.LONG)
+    αy = Variable("price", locator=Positions.LONG)
+    αk = Variable("strike", locator=Positions.LONG)
+    αq = Variable("size", locator=Positions.SHORT)
+    αx = Variable("underlying", locator=Positions.SHORT)
+    αy = Variable("price", locator=Positions.SHORT)
+    αk = Variable("strike", locator=Positions.SHORT)
+    ε = Variable("fees", locator="fees")
 
 class VerticalEquation(StrategyEquation):
-    yo = Variable("spot", np.float32, lambda yα, yβ: - yα + yβ)
+    yo = Variable("spot", function=lambda yα, yβ: - yα + yβ)
 
 class CollarEquation(StrategyEquation):
-    yo = Variable("spot", np.float32, lambda yα, yβ, xo: - yα + yβ - xo)
+    yo = Variable("spot", function=lambda yα, yβ, xo: - yα + yβ - xo)
 
 class VerticalPutEquation(StrategyEquation):
-    yhτ = Variable("maximum", np.float32, lambda kα, kβ: np.maximum(kα - kβ, 0))
-    ylτ = Variable("minimum", np.float32, lambda kα, kβ: np.minimum(kα - kβ, 0))
+    yhτ = Variable("maximum", function=lambda kα, kβ: np.maximum(kα - kβ, 0))
+    ylτ = Variable("minimum", function=lambda kα, kβ: np.minimum(kα - kβ, 0))
 
 class VerticalCallEquation(StrategyEquation):
-    yhτ = Variable("maximum", np.float32, lambda kα, kβ: np.maximum(-kα + kβ, 0))
-    ylτ = Variable("minimum", np.float32, lambda kα, kβ: np.minimum(-kα + kβ, 0))
+    yhτ = Variable("maximum", function=lambda kα, kβ: np.maximum(-kα + kβ, 0))
+    ylτ = Variable("minimum", function=lambda kα, kβ: np.minimum(-kα + kβ, 0))
 
 class CollarLongEquation(StrategyEquation):
-    yhτ = Variable("maximum", np.float32, lambda kα, kβ: np.maximum(kα, kβ))
-    ylτ = Variable("minimum", np.float32, lambda kα, kβ: np.minimum(kα, kβ))
+    yhτ = Variable("maximum", function=lambda kα, kβ: np.maximum(kα, kβ))
+    ylτ = Variable("minimum", function=lambda kα, kβ: np.minimum(kα, kβ))
 
 class CollarShortEquation(StrategyEquation):
-    yhτ = Variable("maximum", np.float32, lambda kα, kβ: np.maximum(-kα, -kβ))
-    ylτ = Variable("minimum", np.float32, lambda kα, kβ: np.minimum(-kα, -kβ))
+    yhτ = Variable("maximum", function=lambda kα, kβ: np.maximum(-kα, -kβ))
+    ylτ = Variable("minimum", function=lambda kα, kβ: np.minimum(-kα, -kβ))
 
 
-class StrategyCalculation(Calculation, ABC, fields=["strategy"], domain=[LongOptionDomain, ShortOptionDomain]):
-    def execute(self, long, short, *args, fees, **kwargs):
-        domain = self.domain(long, short, fees=fees)
-        equation = self.equation(domain)
-        yield equation.yhτ
-        yield equation.ylτ
-        yield equation.yo
-        yield equation.xo
-        yield equation.qo
+class StrategyCalculation(Calculation, ABC, fields=["strategy"]):
+    def execute(self, options, *args, fees, **kwargs):
+        pass
 
 class VerticalPutCalculation(StrategyCalculation, strategy=Strategies.Vertical.Put, equation=VerticalPutEquation): pass
 class VerticalCallCalculation(StrategyCalculation, strategy=Strategies.Vertical.Call, equation=VerticalCallEquation): pass
@@ -91,9 +89,7 @@ class StrategyCalculator(Calculator, Processor, calculation=StrategyCalculation)
         assert isinstance(options, pd.DataFrame)
         if self.empty(options):
             return
-        options = ODict([(security, dataset) for security, dataset in self.options(options) if not self.empty(dataset["size"])])
-        if not bool(options):
-            return
+        options = {option: dataset for option, dataset in self.options(options) if not self.empty(dataset["size"])}
         strategies = [strategy for strategy in self.calculate(options, *args, **kwargs)]
         strategies = xr.concat(strategies, dim="scenario")
         yield contents | dict(strategies=strategies)
@@ -102,11 +98,11 @@ class StrategyCalculator(Calculator, Processor, calculation=StrategyCalculation)
         assert isinstance(options, dict)
         assert all([isinstance(option, xr.Dataset) for option in options.values()])
         for fields, calculation in self.calculations.items():
-            if not all([security in options.keys() for security in list(fields["strategy"].options)]):
+            if not all([option in options.keys() for option in list(fields["strategy"].options)]):
                 continue
             variable = str(fields["strategy"]).lower()
-            options = [options[security] for security in list(fields["strategy"].options)]
-            dataset = calculation(*options, *args, **kwargs)
+            options = {option: options[option] for option in list(fields["strategy"].options)}
+            dataset = calculation(options, *args, **kwargs)
             variables = {"strategy": xr.Variable("strategy", [variable]).squeeze("strategy")}
             dataset = dataset.assign_coords(variables)
             if not self.size(dataset["size"]):
