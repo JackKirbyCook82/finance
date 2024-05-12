@@ -8,7 +8,6 @@ Created on Fri Apr 19 2024
 
 import numpy as np
 import pandas as pd
-import xarray as xr
 from abc import ABC
 
 from support.calculations import Variable, Equation, Calculation, Calculator
@@ -34,24 +33,25 @@ class TechnicalFile(Files.Dataframe, variable="technicals", index=history_index,
 
 
 class StochasticEquation(Equation):
-    xki = Variable("oscillator", function=lambda xi, xli, xhi: (xi - xli) * 100 / (xhi - xli))
-    xi = Variable("price", locator=0)
-    xli = Variable("lowest", locator=0)
-    xhi = Variable("highest", locator=0)
+    xki = Variable("oscillator", np.float32, function=lambda xi, xli, xhi: (xi - xli) * 100 / (xhi - xli))
+    xi = Variable("price", position=0, locator="price")
+    xli = Variable("lowest", position=0, locator="lowest")
+    xhi = Variable("highest", position=0, locator="highest")
 
 
 class TechnicalCalculation(Calculation, ABC, fields=["technical"]): pass
-class StatisticCalculation(Calculation, technical=Technicals.STATISTIC):
+class StatisticCalculation(TechnicalCalculation, technical=Technicals.STATISTIC):
     @staticmethod
     def execute(bars, *args, period, **kwargs):
         yield bars["price"].pct_change(1).rolling(period).mean().rename("trend")
         yield bars["price"].pct_change(1).rolling(period).std().rename("volatility")
 
-class StochasticCalculation(Calculation, technical=Technicals.STOCHASTIC, equation=StochasticEquation):
+class StochasticCalculation(TechnicalCalculation, technical=Technicals.STOCHASTIC, equation=StochasticEquation):
     def execute(self, bars, *args, period, **kwargs):
         lowest = bars["lowest"].rolling(period).min()
         highest = bars["highest"].rolling(period).max()
         bars = pd.concat([bars, lowest, highest], axis=1)
+        yield self.equation.xki(bars)
 
 
 class TechnicalCalculator(Calculator, Processor, calculation=TechnicalCalculation):

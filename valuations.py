@@ -61,28 +61,31 @@ class ValuationFilter(Filter, Processor):
 
 
 class ArbitrageEquation(Equation):
-    tau = Variable("tau", function=lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
-    inc = Variable("income", function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
-    exp = Variable("cost", function=lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0))
-    npv = Variable("npv", function=lambda inc, exp, tau, ρ: np.divide(inc, np.power(1 + ρ, tau / 365)) - exp)
-    irr = Variable("irr", function=lambda inc, exp, tau: np.power(np.divide(inc, exp), np.power(tau, -1)) - 1)
-    apy = Variable("apy", function=lambda irr, tau: np.power(irr + 1, np.power(tau / 365, -1)) - 1)
+    tau = Variable("tau", np.int32, function=lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
+    inc = Variable("income", np.float32, function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
+    exp = Variable("cost", np.float32, function=lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0))
+    npv = Variable("npv", np.float32, function=lambda inc, exp, tau, ρ: np.divide(inc, np.power(1 + ρ, tau / 365)) - exp)
+    irr = Variable("irr", np.float32, function=lambda inc, exp, tau: np.power(np.divide(inc, exp), np.power(tau, -1)) - 1)
+    apy = Variable("apy", np.float32, function=lambda irr, tau: np.power(irr + 1, np.power(tau / 365, -1)) - 1)
 
-    ρ = Variable("discount", locator="discount")
-    vo = Variable("spot", locator=0)
-    to = Variable("date", locator=0)
-    tτ = Variable("expire", locator=0)
+    ρ = Variable("discount", position="discount")
+    vo = Variable("spot", position=0, locator="spot")
+    to = Variable("date", position=0, locator="date")
+    tτ = Variable("expire", position=0, locator="expire")
 
 class MinimumArbitrageEquation(ArbitrageEquation):
-    vτ = Variable("minimum", argument=0)
+    vτ = Variable("minimum", position=0, locator="minimum")
 
 class MaximumArbitrageEquation(ArbitrageEquation):
-    vτ = Variable("maximum", argument=0)
+    vτ = Variable("maximum", position=0, locator="maximum")
 
 
 class ValuationCalculation(Calculation, ABC, fields=["valuation", "scenario"]): pass
 class ArbitrageCalculation(ValuationCalculation, ABC, valuation=Valuations.ARBITRAGE):
     def execute(self, strategies, *args, discount, **kwargs):
+        yield self.equation.npv(strategies, discount=discount)
+        yield self.equation.apy(strategies, discount=discount)
+        yield self.equation.exp(strategies, discount=discount)
         yield strategies["underlying"]
         yield strategies["size"]
 

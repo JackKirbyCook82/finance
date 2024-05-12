@@ -34,48 +34,53 @@ class StrategyFile(Files.Dataframe, variable="strategies", index=strategy_index,
 
 
 class StrategyEquation(Equation):
-    qo = Variable("size", function=lambda qα, qβ: np.minimum(qα, qβ))
-    xo = Variable("underlying", function=lambda xα, xβ: (xα + xβ) / 2)
-    wo = Variable("spot", function=lambda yo, ε: yo * 100 - ε)
-    whτ = Variable("maximum", function=lambda yhτ, ε: yhτ * 100 - ε)
-    wlτ = Variable("minimum", function=lambda ylτ, ε: ylτ * 100 - ε)
+    qo = Variable("size", np.int32, function=lambda qα, qβ: np.minimum(qα, qβ))
+    xo = Variable("underlying", np.float32, function=lambda xα, xβ: (xα + xβ) / 2)
+    wo = Variable("spot", np.float32, function=lambda yo, ε: yo * 100 - ε)
+    whτ = Variable("maximum", np.float32, function=lambda yhτ, ε: yhτ * 100 - ε)
+    wlτ = Variable("minimum", np.float32, function=lambda ylτ, ε: ylτ * 100 - ε)
 
-    αq = Variable("size", locator=Positions.LONG)
-    αx = Variable("underlying", locator=Positions.LONG)
-    αy = Variable("price", locator=Positions.LONG)
-    αk = Variable("strike", locator=Positions.LONG)
-    αq = Variable("size", locator=Positions.SHORT)
-    αx = Variable("underlying", locator=Positions.SHORT)
-    αy = Variable("price", locator=Positions.SHORT)
-    αk = Variable("strike", locator=Positions.SHORT)
-    ε = Variable("fees", locator="fees")
+    αq = Variable("size", position=Positions.LONG, locator="size")
+    αx = Variable("underlying", position=Positions.LONG, locator="underlying")
+    αy = Variable("price", position=Positions.LONG, locator="price")
+    αk = Variable("strike", position=Positions.LONG, locator="strike")
+    αq = Variable("size", position=Positions.SHORT, locator="size")
+    αx = Variable("underlying", position=Positions.SHORT, locator="underlying")
+    αy = Variable("price", position=Positions.SHORT, locator="price")
+    αk = Variable("strike", position=Positions.SHORT, locator="strike")
+    ε = Variable("fees", position="fees")
 
 class VerticalEquation(StrategyEquation):
-    yo = Variable("spot", function=lambda yα, yβ: - yα + yβ)
+    yo = Variable("spot", np.float32, function=lambda yα, yβ: - yα + yβ)
 
 class CollarEquation(StrategyEquation):
-    yo = Variable("spot", function=lambda yα, yβ, xo: - yα + yβ - xo)
+    yo = Variable("spot", np.float32, function=lambda yα, yβ, xo: - yα + yβ - xo)
 
 class VerticalPutEquation(StrategyEquation):
-    yhτ = Variable("maximum", function=lambda kα, kβ: np.maximum(kα - kβ, 0))
-    ylτ = Variable("minimum", function=lambda kα, kβ: np.minimum(kα - kβ, 0))
+    yhτ = Variable("maximum", np.float32, function=lambda kα, kβ: np.maximum(kα - kβ, 0))
+    ylτ = Variable("minimum", np.float32, function=lambda kα, kβ: np.minimum(kα - kβ, 0))
 
 class VerticalCallEquation(StrategyEquation):
-    yhτ = Variable("maximum", function=lambda kα, kβ: np.maximum(-kα + kβ, 0))
-    ylτ = Variable("minimum", function=lambda kα, kβ: np.minimum(-kα + kβ, 0))
+    yhτ = Variable("maximum", np.float32, function=lambda kα, kβ: np.maximum(-kα + kβ, 0))
+    ylτ = Variable("minimum", np.float32, function=lambda kα, kβ: np.minimum(-kα + kβ, 0))
 
 class CollarLongEquation(StrategyEquation):
-    yhτ = Variable("maximum", function=lambda kα, kβ: np.maximum(kα, kβ))
-    ylτ = Variable("minimum", function=lambda kα, kβ: np.minimum(kα, kβ))
+    yhτ = Variable("maximum", np.float32, function=lambda kα, kβ: np.maximum(kα, kβ))
+    ylτ = Variable("minimum", np.float32, function=lambda kα, kβ: np.minimum(kα, kβ))
 
 class CollarShortEquation(StrategyEquation):
-    yhτ = Variable("maximum", function=lambda kα, kβ: np.maximum(-kα, -kβ))
-    ylτ = Variable("minimum", function=lambda kα, kβ: np.minimum(-kα, -kβ))
+    yhτ = Variable("maximum", np.float32, function=lambda kα, kβ: np.maximum(-kα, -kβ))
+    ylτ = Variable("minimum", np.float32, function=lambda kα, kβ: np.minimum(-kα, -kβ))
 
 
 class StrategyCalculation(Calculation, ABC, fields=["strategy"]):
     def execute(self, options, *args, fees, **kwargs):
-        pass
+        options = {str(option): dataset for option, dataset in options.items()}
+        yield self.equation.whτ(**options, fees=fees)
+        yield self.equation.wlτ(**options, fees=fees)
+        yield self.equation.wo(**options, fees=fees)
+        yield self.equation.xo(**options, fees=fees)
+        yield self.equation.qo(**options, fees=fees)
 
 class VerticalPutCalculation(StrategyCalculation, strategy=Strategies.Vertical.Put, equation=VerticalPutEquation): pass
 class VerticalCallCalculation(StrategyCalculation, strategy=Strategies.Vertical.Call, equation=VerticalCallEquation): pass
