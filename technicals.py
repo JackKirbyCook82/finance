@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 from abc import ABC
 
-from support.calculations import Variable, Equation, Calculation, Calculator
+from support.calculations import Variable, Domain, Equation, Calculation, Calculator
 from support.pipelines import Processor
 from support.files import Files
 
@@ -32,11 +32,13 @@ class BarFile(Files.Dataframe, variable="bars", index=history_index, columns=bar
 class TechnicalFile(Files.Dataframe, variable="technicals", index=history_index, columns=technical_columns): pass
 
 
+class StochasticDomain(Domain):
+    xi = Variable("xi", "price", np.float32, locator="price")
+    xli = Variable("xli", "lowest", np.float32, locator="low")
+    xhi = Variable("xhi", "highest", np.float32, locator="high")
+
 class StochasticEquation(Equation):
-    xki = Variable("oscillator", np.float32, function=lambda xi, xli, xhi: (xi - xli) * 100 / (xhi - xli))
-    xi = Variable("price", position=0, locator="price")
-    xli = Variable("lowest", position=0, locator="lowest")
-    xhi = Variable("highest", position=0, locator="highest")
+    xki = Variable("xki", "oscillator", np.float32, function=lambda xi, xli, xhi: (xi - xli) * 100 / (xhi - xli))
 
 
 class TechnicalCalculation(Calculation, ABC, fields=["technical"]): pass
@@ -46,12 +48,14 @@ class StatisticCalculation(TechnicalCalculation, technical=Technicals.STATISTIC)
         yield bars["price"].pct_change(1).rolling(period).mean().rename("trend")
         yield bars["price"].pct_change(1).rolling(period).std().rename("volatility")
 
-class StochasticCalculation(TechnicalCalculation, technical=Technicals.STOCHASTIC, equation=StochasticEquation):
+class StochasticCalculation(TechnicalCalculation, technical=Technicals.STOCHASTIC, domain=StochasticDomain, equation=StochasticEquation):
     def execute(self, bars, *args, period, **kwargs):
-        lowest = bars["lowest"].rolling(period).min()
-        highest = bars["highest"].rolling(period).max()
-        bars = pd.concat([bars, lowest, highest], axis=1)
-        yield self.equation.xki(bars)
+        lowest = bars["low"].rolling(period).min().rename("lowest")
+        highest = bars["high"].rolling(period).max().rename("highest")
+
+#        bars = pd.concat([bars, lowest, highest], axis=1)
+#        equation = self.equation(xi=bars["price"], xli=lowest, xhi=highest)
+#        yield equation.xki
 
 
 class TechnicalCalculator(Calculator, Processor, calculation=TechnicalCalculation):
@@ -69,7 +73,7 @@ class TechnicalCalculator(Calculator, Processor, calculation=TechnicalCalculatio
         for fields, calculation in self.calculations.items():
             variable = str(fields["technical"].name).lower()
             dataframe = calculation(bars, *args, **kwargs)
-            if not self.size(dataframe):
+            if self.empty(dataframe):
                 continue
             yield variable, dataframe
 

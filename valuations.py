@@ -11,7 +11,7 @@ import numpy as np
 import xarray as xr
 from abc import ABC
 
-from support.calculations import Variable, Equation, Calculation, Calculator
+from support.calculations import Variable, Domain, Equation, Calculation, Calculator
 from support.pipelines import Processor
 from support.filtering import Filter
 from support.files import Files
@@ -60,37 +60,41 @@ class ValuationFilter(Filter, Processor):
     def scenario(self): return self.__scenario
 
 
+class ArbitrageDomain(Domain):
+    tτ = Variable("tτ", "expire", np.datetime64, locator="expire")
+    to = Variable("to", "date", np.datetime64, locator="date")
+    vo = Variable("vo", "spot", np.float32, locator="spot")
+
+class MinimumArbitrageDomain(ArbitrageDomain):
+    vτ = Variable("vτ", "minimum", np.float32, locator="minimum")
+
+class MaximumArbitrageDomain(ArbitrageDomain):
+    vτ = Variable("vτ", "maximum", np.float32, locator="maximum")
+
+
 class ArbitrageEquation(Equation):
-    tau = Variable("tau", np.int32, function=lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
-    inc = Variable("income", np.float32, function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
-    exp = Variable("cost", np.float32, function=lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0))
-    npv = Variable("npv", np.float32, function=lambda inc, exp, tau, ρ: np.divide(inc, np.power(1 + ρ, tau / 365)) - exp)
-    irr = Variable("irr", np.float32, function=lambda inc, exp, tau: np.power(np.divide(inc, exp), np.power(tau, -1)) - 1)
-    apy = Variable("apy", np.float32, function=lambda irr, tau: np.power(irr + 1, np.power(tau / 365, -1)) - 1)
-
-    ρ = Variable("discount", position="discount")
-    vo = Variable("spot", position=0, locator="spot")
-    to = Variable("date", position=0, locator="date")
-    tτ = Variable("expire", position=0, locator="expire")
-
-class MinimumArbitrageEquation(ArbitrageEquation):
-    vτ = Variable("minimum", position=0, locator="minimum")
-
-class MaximumArbitrageEquation(ArbitrageEquation):
-    vτ = Variable("maximum", position=0, locator="maximum")
+    tau = Variable("tau", "tau", np.int32, function=lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
+    inc = Variable("inc", "income", np.float32, function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
+    exp = Variable("exp", "cost", np.float32, function=lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0))
+    npv = Variable("npv", "npv", np.float32, function=lambda inc, exp, tau, ρ: np.divide(inc, np.power(1 + ρ, tau / 365)) - exp)
+    irr = Variable("irr", "irr", np.float32, function=lambda inc, exp, tau: np.power(np.divide(inc, exp), np.power(tau, -1)) - 1)
+    apy = Variable("apy", "apy", np.float32, function=lambda irr, tau: np.power(irr + 1, np.power(tau / 365, -1)) - 1)
 
 
 class ValuationCalculation(Calculation, ABC, fields=["valuation", "scenario"]): pass
-class ArbitrageCalculation(ValuationCalculation, ABC, valuation=Valuations.ARBITRAGE):
+class ArbitrageCalculation(ValuationCalculation, ABC, valuation=Valuations.ARBITRAGE, equation=ArbitrageEquation):
     def execute(self, strategies, *args, discount, **kwargs):
-        yield self.equation.npv(strategies, discount=discount)
-        yield self.equation.apy(strategies, discount=discount)
-        yield self.equation.exp(strategies, discount=discount)
-        yield strategies["underlying"]
-        yield strategies["size"]
+        pass
 
-class MinimumArbitrageCalculation(ArbitrageCalculation, scenario=Scenarios.MINIMUM, equation=MinimumArbitrageEquation): pass
-class MaximumArbitrageCalculation(ArbitrageCalculation, scenario=Scenarios.MAXIMUM, equation=MaximumArbitrageEquation): pass
+#        equation = self.equation(*args, **kwargs)
+#        yield equation.npv(strategies, discount=discount)
+#        yield equation.apy(strategies, discount=discount)
+#        yield equation.exp(strategies, discount=discount)
+#        yield strategies["underlying"]
+#        yield strategies["size"]
+
+class MinimumArbitrageCalculation(ArbitrageCalculation, scenario=Scenarios.MINIMUM, domain=MinimumArbitrageDomain): pass
+class MaximumArbitrageCalculation(ArbitrageCalculation, scenario=Scenarios.MAXIMUM, domain=MaximumArbitrageDomain): pass
 
 
 class ValuationCalculator(Calculator, Processor, calculation=ValuationCalculation):
