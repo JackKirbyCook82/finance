@@ -12,7 +12,7 @@ import xarray as xr
 from abc import ABC
 from itertools import product
 
-from support.calculations import Variable, Domain, Equation, Calculation, Calculator
+from support.calculations import Variable, Equation, Calculation, Calculator
 from support.pipelines import Processor
 from support.files import Files
 
@@ -33,25 +33,21 @@ class StrategyFile(Files.Dataframe, variable="strategies", index=strategy_index,
     pass
 
 
-class LongOptionDomain(Domain):
-    qα = Variable("qα", "size", np.int32, locator="size")
-    xα = Variable("xα", "underlying", np.float32, locator="underlying")
-    yα = Variable("yα", "price", np.float32, locator="price")
-    kα = Variable("kα", "strike", np.float32, locator="strike")
-
-class ShortOptionDomain(Domain):
-    qβ = Variable("qβ", "size", np.int32, locator="size")
-    xβ = Variable("xβ", "underlying", np.float32, locator="underlying")
-    yβ = Variable("yβ", "price", np.float32, locator="price")
-    kβ = Variable("kβ", "strike", np.float32, locator="strike")
-
-
 class StrategyEquation(Equation):
-    qo = Variable("qo =", "size", np.int32, function=lambda qα, qβ: np.minimum(qα, qβ))
+    qo = Variable("qo", "size", np.int32, function=lambda qα, qβ: np.minimum(qα, qβ))
     xo = Variable("xo", "underlying", np.float32, function=lambda xα, xβ: (xα + xβ) / 2)
     wo = Variable("wo", "spot", np.float32, function=lambda yo, ε: yo * 100 - ε)
     whτ = Variable("whτ", "maximum", np.float32, function=lambda yhτ, ε: yhτ * 100 - ε)
     wlτ = Variable("wlτ", "minimum", np.float32, function=lambda ylτ, ε: ylτ * 100 - ε)
+    qα = Variable("qα", "size", np.int32, position=Positions.LONG, locator="size")
+    xα = Variable("xα", "underlying", np.float32, position=Positions.LONG, locator="underlying")
+    yα = Variable("yα", "price", np.float32, position=Positions.LONG, locator="price")
+    kα = Variable("kα", "strike", np.float32, position=Positions.LONG, locator="strike")
+    qβ = Variable("qβ", "size", np.int32, position=Positions.SHORT, locator="size")
+    xβ = Variable("xβ", "underlying", np.float32, position=Positions.SHORT, locator="underlying")
+    yβ = Variable("yβ", "price", np.float32, position=Positions.SHORT, locator="price")
+    kβ = Variable("kβ", "strike", np.float32, position=Positions.SHORT, locator="strike")
+    ε = Variable("ε", "discount", np.float32, position="discount")
 
 class VerticalEquation(StrategyEquation):
     yo = Variable("yo", "spot", np.float32, function=lambda yα, yβ: - yα + yβ)
@@ -76,17 +72,17 @@ class CollarShortEquation(StrategyEquation):
     ylτ = Variable("ylτ", "minimum", np.float32, function=lambda kα, kβ: np.minimum(-kα, -kβ))
 
 
-class StrategyCalculation(Calculation, ABC, fields=["strategy"], domain={Positions.LONG: LongOptionDomain, Positions.SHORT: ShortOptionDomain}):
+class StrategyCalculation(Calculation, ABC, fields=["strategy"]):
     def execute(self, options, *args, fees, **kwargs):
-        pass
-
-#        equation = self.equation(*args, **kwargs)
-#        options = {str(option): dataset for option, dataset in options.items()}
-#        yield equation.whτ(**options, fees=fees)
-#        yield equation.wlτ(**options, fees=fees)
-#        yield equation.wo(**options, fees=fees)
-#        yield equation.xo(**options, fees=fees)
-#        yield equation.qo(**options, fees=fees)
+        positions = [option.position for option in options.keys()]
+        assert len(set(positions)) == len(list(positions))
+        options = {str(option.position): dataset for option, dataset in options.items()}
+        equation = self.equation(*args, **kwargs)
+        yield equation.whτ(**options, fees=fees)
+        yield equation.wlτ(**options, fees=fees)
+        yield equation.wo(**options, fees=fees)
+        yield equation.xo(**options, fees=fees)
+        yield equation.qo(**options, fees=fees)
 
 class VerticalPutCalculation(StrategyCalculation, strategy=Strategies.Vertical.Put, equation=VerticalPutEquation): pass
 class VerticalCallCalculation(StrategyCalculation, strategy=Strategies.Vertical.Call, equation=VerticalCallEquation): pass
