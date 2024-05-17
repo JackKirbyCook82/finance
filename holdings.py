@@ -13,15 +13,14 @@ from abc import ABC
 from enum import IntEnum
 from itertools import product
 
-from support.pipelines import Producer, Processor, Consumer
+from finance.variables import Contract, Securities, Strategies, Scenarios
+from support.pipelines import Producer, Consumer
 from support.tables import Tables, Options
 from support.files import Files
 
-from finance.variables import Contract, Securities, Strategies, Scenarios, Instruments, Positions
-
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["HoldingTable", "HoldingFile", "HoldingStatus", "HoldingReader", "HoldingWriter", "HoldingCalculator", "HoldingEvaluator"]
+__all__ = ["HoldingTable", "HoldingFile", "HoldingStatus", "HoldingReader", "HoldingWriter"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
@@ -31,7 +30,7 @@ HoldingStatus = IntEnum("Status", ["PROSPECT", "PURCHASED"], start=1)
 
 holdings_formats = {(lead, lag): lambda column: f"{column:.02f}" for lead, lag in product(["npv", "cost"], list(map(lambda scenario: str(scenario.name).lower(), Scenarios)))}
 holdings_formats.update({(lead, lag): lambda column: f"{column * 100:.02f}%" for lead, lag in product(["apy"], list(map(lambda scenario: str(scenario.name).lower(), Scenarios)))})
-holdings_formats.update({("priority", ""): lambda column: f"{column * 100:.02f}"})
+holdings_formats.update({("priority", ""): lambda column: f"{column:.02f}"})
 holdings_formats.update({("status", ""): lambda column: str(HoldingStatus(int(column)).name).lower()})
 holdings_options = Options.Dataframe(rows=20, columns=25, width=1000, formats=holdings_formats, numbers=lambda column: f"{column:.02f}")
 holdings_index = {"instrument": str, "position": str, "strike": np.float32, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
@@ -39,12 +38,35 @@ holdings_columns = {"quantity": np.int32}
 
 
 class HoldingFile(Files.Dataframe, variable="holdings", index=holdings_index, columns=holdings_columns): pass
-class HoldingTable(Tables.Dataframe, options=holdings_options): pass
+class HoldingTable(Tables.Dataframe, options=holdings_options):
+    def write(self, locator, content, *args, **kwargs):
+        locator = self.locate(locator)
+        super().write(locator, content, *args, **kwargs)
+
+    def read(self, locator, *args, **kwargs):
+        locator = self.locate(locator)
+        return super().read(locator, *args, **kwargs)
+
+    def locate(self, locator):
+        index, column = locator
+        assert isinstance(index, (int, slice))
+        if isinstance(index, slice):
+            assert index.step is None
+            length = len(list(range(index.start, index.stop)))
+            index = slice(length) if length > len(self.table.index) else index
+        if isinstance(column, str):
+            column = (column, "")
+            column = list(self.table.columns).index(column)
+        elif isinstance(column, tuple):
+            assert len(column) == 2
+            column = list(self.table.columns).index(column)
+        return index, column
 
 
 class HoldingWriter(Consumer, ABC):
     def __init__(self, *args, destination, valuation, liquidity, priority, capacity=None, **kwargs):
         assert callable(liquidity) and callable(priority)
+        super().__init__(*args, **kwargs)
         self.__destination = destination
         self.__valuation = valuation
         self.__liquidity = liquidity
@@ -97,11 +119,13 @@ class HoldingWriter(Consumer, ABC):
 
 class HoldingReader(Producer, ABC):
     def __init__(self, *args, source, **kwargs):
+        super().__init__(*args, **kwargs)
         self.__source = source
 
     def execute(self, *args, **kwargs):
         valuations = self.read(*args, **kwargs)
-        if self.empty(valuations):
+        assert isinstance(valuations, pd.DataFrame)
+        if bool(valuations.empty):
             return
         contract = self.contract(valuations, *args, **kwargs)
         options = self.options(valuations, *args, **kwargs)
@@ -164,66 +188,6 @@ class HoldingReader(Producer, ABC):
     @property
     def source(self): return self.__source
 
-
-class HoldingCalculator(Processor):
-    def execute(self, contents, *args, **kwargs):
-        holdings = contents["holdings"]
-        if self.empty(holdings):
-            return
-        stocks = self.stocks(holdings, *args, **kwargs)
-        options = self.options(holdings, *args, **kwargs)
-        virtuals = self.virtuals(stocks, *args, **kwargs)
-        securities = pd.concat([options, virtuals], axis=0)
-        securities = securities.reset_index(drop=True, inplace=False)
-        holdings = self.holdings(securities, *args, *kwargs)
-        yield contents | dict(holdings=holdings)
-
-    @staticmethod
-    def stocks(dataframe, *args, **kwargs):
-        stocks = dataframe["instrument"] == str(Instruments.STOCK.name).lower()
-        stocks = dataframe.where(stocks).dropna(how="all", inplace=False)
-        return stocks
-
-    @staticmethod
-    def options(dataframe, *args, **kwargs):
-        puts = dataframe["instrument"] == str(Instruments.PUT.name).lower()
-        calls = dataframe["instrument"] == str(Instruments.CALL.name).lower()
-        options = dataframe.where(puts | calls).dropna(how="all", inplace=False)
-        return options
-
-    @staticmethod
-    def virtuals(dataframe, *args, **kwargs):
-        security = lambda instrument, position: dict(instrument=str(instrument.name).lower(), position=str(position.name).lower())
-        function = lambda records, instrument, position: pd.DataFrame.from_records([record | security(instrument, position) for record in records])
-        stocklong = dataframe["position"] == str(Positions.LONG.name).lower()
-        stocklong = dataframe.where(stocklong).dropna(how="all", inplace=False)
-        stockshort = dataframe["position"] == str(Positions.SHORT.name).lower()
-        stockshort = dataframe.where(stockshort).dropna(how="all", inplace=False)
-        putlong = function(stockshort.to_dict("records"), Instruments.PUT, Positions.LONG)
-        putshort = function(stocklong.to_dict("records"), Instruments.PUT, Positions.SHORT)
-        calllong = function(stocklong.to_dict("records"), Instruments.CALL, Positions.LONG)
-        callshort = function(stockshort.to_dict("records"), Instruments.CALL, Positions.SHORT)
-        virtuals = pd.concat([putlong, putshort, calllong, callshort], axis=0)
-        return virtuals
-
-    @staticmethod
-    def holdings(dataframe, *args, **kwargs):
-        factor = lambda cols: 2 * int(Positions[str(cols["position"]).upper()] is Positions.LONG) - 1
-        position = lambda cols: str(Positions.LONG.name).lower() if cols["holdings"] > 0 else str(Positions.SHORT.name).lower()
-        quantity = lambda cols: np.abs(cols["holdings"])
-        holdings = lambda cols: (cols.apply(factor, axis=1) * cols["quantity"]).sum()
-        function = lambda cols: {"position": position(cols), "quantity": quantity(cols)}
-        columns = [column for column in dataframe.columns if column not in ["position", "quantity"]]
-        dataframe = dataframe.groupby(columns, as_index=False).apply(holdings).rename(columns={None: "holdings"})
-        dataframe = dataframe.where(dataframe["holdings"] != 0).dropna(how="all", inplace=False)
-        dataframe = pd.concat([dataframe, dataframe.apply(function, axis=1, result_type="expand")], axis=1)
-        dataframe = dataframe.drop("holdings", axis=1, inplace=False)
-        return dataframe
-
-
-class HoldingEvaluator(Processor):
-    def execute(self, contents, *args, **kwargs):
-        pass
 
 
 

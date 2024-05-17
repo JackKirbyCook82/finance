@@ -51,7 +51,7 @@ class DateRange(ntuple("DateRange", "minimum maximum")):
 @total_ordering
 class Contract(ntuple("Contract", "ticker expire")):
     def __new__(cls, ticker, expire=None): return super().__new__(cls, ticker, expire)
-    def __str__(self): return self.tostring("|")
+    def __str__(self): return self.tostring(delimiter="|")
     def __eq__(self, other): return self.ticker == other.ticker and self.expire == other.expire
     def __lt__(self, other): return self.ticker < other.ticker and (self.expire < other.expire if bool(self.expire) else True)
 

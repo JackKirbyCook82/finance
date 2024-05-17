@@ -36,8 +36,8 @@ class TechnicalEquation(Equation): pass
 class StochasticEquation(TechnicalEquation):
     xki = Variable("xki", "oscillator", np.float32, function=lambda xi, xli, xhi: (xi - xli) * 100 / (xhi - xli))
     xi = Variable("xi", "price", np.float32, position=0, locator="price")
-    xli = Variable("xli", "lowest", np.float32, position=0, locator="low")
-    xhi = Variable("xhi", "highest", np.float32, position=0, locator="high")
+    xli = Variable("xli", "lowest", np.float32, position=0, locator="lowest")
+    xhi = Variable("xhi", "highest", np.float32, position=0, locator="highest")
 
 
 class TechnicalCalculation(Calculation, ABC, fields=["technical"]): pass
@@ -48,7 +48,7 @@ class StatisticCalculation(TechnicalCalculation, technical=Technicals.STATISTIC)
         yield bars["price"].pct_change(1).rolling(period).std().rename("volatility")
 
 class StochasticCalculation(TechnicalCalculation, technical=Technicals.STOCHASTIC, equation=StochasticEquation):
-    def execute(self, bars, *args, equation, period, **kwargs):
+    def execute(self, bars, *args, period, **kwargs):
         equation = self.equation(*args, **kwargs)
         lowest = bars["low"].rolling(period).min().rename("lowest")
         highest = bars["high"].rolling(period).max().rename("highest")
@@ -64,7 +64,7 @@ class TechnicalCalculator(Calculator, Processor, calculation=TechnicalCalculatio
             return
         technicals = {technical: dataframe for technical, dataframe in self.calculate(bars, *args, **kwargs)}
         technicals = pd.concat(list(technicals.values()), axis=1)
-        yield contents | technicals
+        yield contents | dict(technicals=technicals)
 
     def calculate(self, bars, *args, **kwargs):
         assert isinstance(bars, pd.DataFrame)

@@ -29,19 +29,24 @@ class OptionFile(Files.Dataframe, variable="options", index=options_index, colum
 
 
 class SecurityFilter(Filter):
+    index = list(options_index.keys())
+    columns = list(options_columns.keys())
+
     def execute(self, contents, *args, **kwargs):
         assert isinstance(contents, dict)
         contract, options = contents["contract"], contents["options"]
         if self.empty(options):
             return
         prior = self.size(options)
-        index = list(options.index.values)
-        options = options.reset_index(drop=True, inplace=False)
+        assert set(options.index.names) == set(self.index)
+        options = options.reset_index(drop=False, inplace=False)
         mask = self.mask(options)
         options = self.where(options, mask)
-        options = options.set_index(index, drop=False, inplace=False)
         post = self.size(options)
         __logger__.info(f"Filter: {repr(self)}|{str(contract)}[{prior:.0f}|{post:.0f}]")
+        if self.empty(options):
+            return
+        options = options.set_index(self.index, drop=True, inplace=False)
         yield contents | dict(options=options)
 
 

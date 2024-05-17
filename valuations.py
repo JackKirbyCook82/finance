@@ -26,8 +26,8 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-valuation_index = {security: str for security in list(map(str, Securities))} | {"strategy": str, "valuation": str, "scenario": str, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
-valuation_columns = {"apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.float32}
+valuation_index = {security: str for security in list(map(str, Securities.Options))} | {"strategy": str, "valuation": str, "scenario": str, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
+valuation_columns = {"apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.float32, "underlying": np.float32}
 
 
 class ValuationFile(Files.Dataframe, variable="valuations", index=valuation_index, columns=valuation_columns):
@@ -51,9 +51,13 @@ class ValuationFilter(Filter, Processor):
         mask = self.mask(valuations, variable=scenario)
         valuations = self.where(valuations, mask)
         valuations = valuations.stack("scenario")
-        valuations = valuations.set_index(index, drop=False, inplace=False)
         post = self.size(valuations)
         __logger__.info(f"Filter: {repr(self)}|{str(contract)}[{prior:.0f}|{post:.0f}]")
+        if self.empty(valuations):
+            return
+        valuations = valuations.reset_index(drop=False, inplace=False)
+        index = [column for column in list(valuation_index.keys()) if column in valuations]
+        valuations = valuations.set_index(index, drop=True, inplace=False)
         yield contents | dict(valuations=valuations)
 
     @property
@@ -71,6 +75,7 @@ class ArbitrageEquation(ValuationEquation):
     tτ = Variable("tτ", "expire", np.datetime64, position=0, locator="expire")
     to = Variable("to", "date", np.datetime64, position=0, locator="date")
     vo = Variable("vo", "spot", np.float32, position=0, locator="spot")
+    ρ = Variable("ρ", "discount", np.float32, position="discount")
 
 class MinimumArbitrageEquation(ArbitrageEquation):
     vτ = Variable("vτ", "minimum", np.float32, position=0, locator="minimum")
@@ -95,7 +100,6 @@ class MaximumArbitrageCalculation(ArbitrageCalculation, scenario=Scenarios.MAXIM
 
 class ValuationCalculator(Calculator, Processor, calculation=ValuationCalculation):
     def __init__(self, *args, valuation, **kwargs):
-        assert "valuation" not in kwargs.keys() and "scenario" not in kwargs.keys()
         assert valuation in Valuations
         super().__init__(*args, **kwargs)
         self.__valuation = valuation
@@ -103,23 +107,26 @@ class ValuationCalculator(Calculator, Processor, calculation=ValuationCalculatio
     def execute(self, contents, *args, **kwargs):
         strategies = contents["strategies"]
         assert isinstance(strategies, xr.Dataset)
-        if self.empty(strategies["size"]):
-            return
         valuations = self.calculate(strategies, *args, **kwargs)
-        valuations = valuations.to_dataframe().dropna(how="all", inplace=False)
-        valuations = valuations.set_index(list(valuation_index.keys()), drop=False, inplace=False)
+        variables = {"valuation": xr.Variable("valuation", [str(self.valuation.name).lower()]).squeeze("valuation")}
+        valuations = valuations.assign_coords(variables)
+        valuations = self.flatten(valuations)
         yield contents | dict(valuations=valuations)
 
     def calculate(self, strategies, *args, **kwargs):
         assert isinstance(strategies, xr.Dataset)
-        variable = str(self.valuation.name).lower()
         calculations = {fields["scenario"]: calculation for fields, calculation in self.calculations.items() if fields["valuation"] is self.valuation}
-        valuations = {scenario: calculation(strategies, *args, **kwargs) for scenario, calculation in calculations.items()}
-        valuations = [dataset.assign_coords({"scenario": str(scenario.name).lower()}).expand_dims("scenario") for scenario, dataset in valuations.items()]
-        valuations = xr.concat(valuations, dim="scenario").assign_coords({"valuation": variable})
-        valuations = valuations.drop_vars(["instrument", "position"], errors="ignore")
-        valuations = valuations.expand_dims(list(set(iter(valuations.coords)) - set(iter(valuations.dims))))
-        return valuations
+        datasets = {scenario: calculation(strategies, *args, **kwargs) for scenario, calculation in calculations.items()}
+        datasets = [dataset.assign_coords({"scenario": str(scenario.name).lower()}).expand_dims("scenario") for scenario, dataset in datasets.items()]
+        dataset = xr.concat(datasets, dim="scenario")
+        return dataset
+
+    @staticmethod
+    def flatten(dataset):
+        dataset = dataset.drop_vars(["instrument", "position"], errors="ignore")
+        dataset = dataset.expand_dims(list(set(iter(dataset.coords)) - set(iter(dataset.dims))))
+        dataframe = dataset.to_dataframe().dropna(how="all", inplace=False)
+        return dataframe
 
     @property
     def valuation(self): return self.__valuation

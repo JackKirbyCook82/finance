@@ -7,6 +7,7 @@ Created on Thurs Jan 31 2024
 """
 
 import logging
+import pandas as pd
 
 from finance.holdings import HoldingReader, HoldingWriter
 
@@ -22,7 +23,8 @@ class AcquisitionReader(HoldingReader): pass
 class AcquisitionWriter(HoldingWriter):
     def execute(self, contents, *args, **kwargs):
         valuations = contents["valuations"]
-        if self.empty(valuations):
+        assert isinstance(valuations, pd.DataFrame)
+        if bool(valuations.empty):
             return
         valuations = self.market(valuations, *args, **kwargs)
         valuations = self.prioritize(valuations, *args, **kwargs)
