@@ -74,7 +74,6 @@ class HoldingWriter(Consumer, ABC):
         self.__capacity = capacity
 
     def market(self, dataframe, *args, **kwargs):
-        dataframe = dataframe.reset_index(drop=False, inplace=False)
         index = set(dataframe.columns) - {"scenario", "apy", "npv", "cost"}
         dataframe = dataframe.pivot(index=index, columns="scenario")
         dataframe = dataframe.reset_index(drop=False, inplace=False)
@@ -118,6 +117,9 @@ class HoldingWriter(Consumer, ABC):
 
 
 class HoldingReader(Producer, ABC):
+    index = list(holdings_index.keys())
+    columns = list(holdings_columns.keys())
+
     def __init__(self, *args, source, **kwargs):
         super().__init__(*args, **kwargs)
         self.__source = source
@@ -127,12 +129,14 @@ class HoldingReader(Producer, ABC):
         assert isinstance(valuations, pd.DataFrame)
         if bool(valuations.empty):
             return
+        valuations = valuations.reset_index(drop=False, inplace=False)
         contract = self.contract(valuations, *args, **kwargs)
         options = self.options(valuations, *args, **kwargs)
         stocks = self.stocks(valuations, *args, **kwargs)
         stocks = stocks.dropna(how="all", axis=1)
         securities = pd.concat([contract, options, stocks], axis=1, ignore_index=False)
         holdings = self.holdings(securities, *args, **kwargs)
+        holdings = holdings.groupby(self.index, as_index=False)[self.columns].sum()
         for (ticker, expire), dataframe in iter(holdings.groupby(["ticker", "expire"])):
             contract = Contract(ticker, expire)
             yield dict(contract=contract, holdings=dataframe)
@@ -171,9 +175,6 @@ class HoldingReader(Producer, ABC):
         dataframe["instrument"] = dataframe["security"].apply(instrument)
         dataframe["position"] = dataframe["security"].apply(position)
         dataframe["quantity"] = 1
-        index = list(holdings_index.keys())
-        columns = list(holdings_columns.keys())
-        dataframe = dataframe.groupby(index, as_index=False)[columns].sum()
         return dataframe
 
     def read(self, *args, **kwargs):

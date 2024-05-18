@@ -26,6 +26,7 @@ class AcquisitionWriter(HoldingWriter):
         assert isinstance(valuations, pd.DataFrame)
         if bool(valuations.empty):
             return
+        valuations = valuations.reset_index(drop=False, inplace=False)
         valuations = self.market(valuations, *args, **kwargs)
         valuations = self.prioritize(valuations, *args, **kwargs)
         if bool(valuations.empty):

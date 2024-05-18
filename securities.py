@@ -38,7 +38,6 @@ class SecurityFilter(Filter):
         if self.empty(options):
             return
         prior = self.size(options)
-        assert set(options.index.names) == set(self.index)
         options = options.reset_index(drop=False, inplace=False)
         mask = self.mask(options)
         options = self.where(options, mask)
@@ -46,8 +45,13 @@ class SecurityFilter(Filter):
         __logger__.info(f"Filter: {repr(self)}|{str(contract)}[{prior:.0f}|{post:.0f}]")
         if self.empty(options):
             return
-        options = options.set_index(self.index, drop=True, inplace=False)
+        options = self.header(options)
         yield contents | dict(options=options)
+
+    def header(self, dataframe):
+        index = [column for column in list(self.index) if column in dataframe]
+        dataframe = dataframe.set_index(index, drop=True, inplace=False)
+        return dataframe[self.columns]
 
 
 

@@ -25,7 +25,7 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-strategy_index = {security: str for security in list(map(str, Securities.Options))} | {"strategy": str, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
+strategy_index = {option: str for option in list(map(str, Securities.Options))} | {"strategy": str, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
 strategy_columns = {"spot": np.float32, "minimum": np.float32, "maximum": np.float32, "size": np.float32, "underlying": np.float32}
 
 

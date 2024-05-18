@@ -26,7 +26,7 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-valuation_index = {security: str for security in list(map(str, Securities.Options))} | {"strategy": str, "valuation": str, "scenario": str, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
+valuation_index = {option: str for option in list(map(str, Securities.Options))} | {"strategy": str, "valuation": str, "scenario": str, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
 valuation_columns = {"apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.float32, "underlying": np.float32}
 
 
@@ -35,6 +35,9 @@ class ValuationFile(Files.Dataframe, variable="valuations", index=valuation_inde
 
 
 class ValuationFilter(Filter, Processor):
+    index = list(valuation_index.keys())
+    columns = list(valuation_columns.keys())
+
     def __init__(self, *args, scenario, **kwargs):
         super().__init__(*args, **kwargs)
         self.__scenario = scenario
@@ -46,19 +49,23 @@ class ValuationFilter(Filter, Processor):
             return
         prior = self.size(valuations)
         valuations = valuations.reset_index(drop=False, inplace=False)
-        index = set(valuations.columns) - ({"scenario"} | set(valuation_columns.keys()))
+        index = set(valuations.columns) - ({"scenario"} | set(self.columns))
         valuations = valuations.pivot(columns="scenario", index=index)
         mask = self.mask(valuations, variable=scenario)
         valuations = self.where(valuations, mask)
         valuations = valuations.stack("scenario")
+        valuations = valuations.reset_index(drop=False, inplace=False)
         post = self.size(valuations)
         __logger__.info(f"Filter: {repr(self)}|{str(contract)}[{prior:.0f}|{post:.0f}]")
         if self.empty(valuations):
             return
-        valuations = valuations.reset_index(drop=False, inplace=False)
-        index = [column for column in list(valuation_index.keys()) if column in valuations]
-        valuations = valuations.set_index(index, drop=True, inplace=False)
+        valuations = self.header(valuations)
         yield contents | dict(valuations=valuations)
+
+    def header(self, dataframe):
+        index = [column for column in list(self.index) if column in dataframe]
+        dataframe = dataframe.set_index(index, drop=True, inplace=False)
+        return dataframe[self.columns]
 
     @property
     def scenario(self): return self.__scenario
