@@ -117,11 +117,11 @@ class HoldingWriter(Consumer, ABC):
 
 
 class HoldingReader(Producer, ABC):
-    index = list(holdings_index.keys())
-    columns = list(holdings_columns.keys())
-
-    def __init__(self, *args, source, **kwargs):
+    def __init__(self, *args, source, valuation, **kwargs):
         super().__init__(*args, **kwargs)
+        self.__index = list(holdings_index.keys())
+        self.__columns = list(holdings_columns.keys())
+        self.__valuation = valuation
         self.__source = source
 
     def execute(self, *args, **kwargs):
@@ -187,7 +187,13 @@ class HoldingReader(Producer, ABC):
             return dataframe
 
     @property
+    def valuation(self): return self.__valuation
+    @property
     def source(self): return self.__source
+    @property
+    def index(self): return self.__index
+    @property
+    def columns(self): return self.__columns
 
 
 

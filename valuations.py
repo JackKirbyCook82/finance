@@ -8,10 +8,13 @@ Created on Weds Jul 19 2023
 
 import logging
 import numpy as np
+import pandas as pd
 import xarray as xr
 from abc import ABC
+from collections import OrderedDict as ODict
 
 from support.calculations import Variable, Equation, Calculation, Calculator
+from support.dispatchers import kwargsdispatcher
 from support.pipelines import Processor
 from support.filtering import Filter
 from support.files import Files
@@ -20,55 +23,49 @@ from finance.variables import Securities, Valuations, Scenarios
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["ValuationFile", "ValuationFilter", "ValuationCalculator"]
+__all__ = ["ArbitrageFile", "ValuationFilter", "ValuationCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-valuation_index = {option: str for option in list(map(str, Securities.Options))} | {"strategy": str, "valuation": str, "scenario": str, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
-valuation_columns = {"apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.float32, "underlying": np.float32}
+arbitrage_index = {option: str for option in list(map(str, Securities.Options))} | {"strategy": str, "valuation": str, "scenario": str, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
+arbitrage_columns = {"apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.float32, "underlying": np.float32}
+arbitrage_header = Header(pd.DataFrame, index=list(arbitrage_index.keys()), columns=list(arbitrage_columns.keys()))
+valuations_headers = dict(arbitrage=arbitrage_header)
 
 
-class ValuationFile(Files.Dataframe, variable="valuations", index=valuation_index, columns=valuation_columns):
-    pass
+# class ArbitrageFile(Files.Dataframe, contents=["valuation", "arbitrage"], variable="arbitrage", index=arbitrage_index, columns=arbitrage_columns):
+#     pass
 
 
-class ValuationFilter(Filter, Processor):
-    index = list(valuation_index.keys())
-    columns = list(valuation_columns.keys())
+class ValuationFilter(Filter):
+    @query("contract", "valuations", valuations=valuations_headers)
+    def execute(self, contract, valuations, *args, **kwargs):
+        valuations = ODict(list(self.filter(valuations, *args, contract=contract, **kwargs)))
+        yield dict(valuations=valuations)
 
-    def __init__(self, *args, scenario, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.__scenario = scenario
+    def filtering(self, valuations, *args, contract, **kwargs):
+        for valuation, dataframe in valuations.items():
+            prior = self.size(dataframe)
+            dataframe = dataframe.reset_index(drop=False, inplace=False)
+            dataframe = self.filter(dataframe, *args, valuation=valuation, **kwargs)
+            post = self.size(dataframe)
+            __logger__.info(f"Filter: {repr(self)}|{str(contract)}[{prior:.0f}|{post:.0f}]")
+            yield valuation, dataframe
 
-    def execute(self, contents, *args, **kwargs):
-        contract, valuations = contents["contract"], contents["valuations"]
+    @kwargsdispatcher("valuation")
+    def filter(self, dataframe, *args, valuation, **kwargs): raise ValueError(valuation)
+    @filter.register.value(str(Valuations.ARBITRAGE.name).lower())
+    def arbitrage(self, dataframe, *args, **kwargs):
         scenario = str(self.scenario.name).lower()
-        if self.empty(valuations):
-            return
-        prior = self.size(valuations)
-        valuations = valuations.reset_index(drop=False, inplace=False)
-        index = set(valuations.columns) - ({"scenario"} | set(self.columns))
-        valuations = valuations.pivot(columns="scenario", index=index)
-        mask = self.mask(valuations, variable=scenario)
-        valuations = self.where(valuations, mask)
-        valuations = valuations.stack("scenario")
-        valuations = valuations.reset_index(drop=False, inplace=False)
-        post = self.size(valuations)
-        __logger__.info(f"Filter: {repr(self)}|{str(contract)}[{prior:.0f}|{post:.0f}]")
-        if self.empty(valuations):
-            return
-        valuations = self.header(valuations)
-        yield contents | dict(valuations=valuations)
-
-    def header(self, dataframe):
-        index = [column for column in list(self.index) if column in dataframe]
-        dataframe = dataframe.set_index(index, drop=True, inplace=False)
-        return dataframe[self.columns]
-
-    @property
-    def scenario(self): return self.__scenario
+        index = set(dataframe.columns) - ({"scenario"} | set(self.columns))
+        dataframe = dataframe.pivot(columns="scenario", index=index)
+        mask = self.mask(dataframe, variable=scenario)
+        dataframe = self.where(dataframe, mask)
+        dataframe = dataframe.stack("scenario")
+        dataframe = dataframe.reset_index(drop=False, inplace=False)
+        return dataframe
 
 
 class ValuationEquation(Equation): pass
@@ -106,27 +103,22 @@ class MaximumArbitrageCalculation(ArbitrageCalculation, scenario=Scenarios.MAXIM
 
 
 class ValuationCalculator(Calculator, Processor, calculation=ValuationCalculation):
-    def __init__(self, *args, valuation, **kwargs):
-        assert valuation in Valuations
-        super().__init__(*args, **kwargs)
-        self.__valuation = valuation
-
-    def execute(self, contents, *args, **kwargs):
-        strategies = contents["strategies"]
-        assert isinstance(strategies, xr.Dataset)
-        valuations = self.calculate(strategies, *args, **kwargs)
-        variables = {"valuation": xr.Variable("valuation", [str(self.valuation.name).lower()]).squeeze("valuation")}
-        valuations = valuations.assign_coords(variables)
-        valuations = self.flatten(valuations)
-        yield contents | dict(valuations=valuations)
+    @query("strategies", valuations=valuations_headers)
+    def execute(self, strategies, *args, **kwargs):
+        assert isinstance(strategies, list) and all([isinstance(dataset, xr.Dataset) for dataset in strategies])
+        valuations = ODict(list(self.calculate(strategies, *args, **kwargs)))
+        valuations = {valuation: [self.flatten(dataset) for dataset in datasets] for valuation, datasets in valuations.items()}
+        valuations = {valuation: pd.concat(dataframe, axis=1) for valuation, dataframe in valuations.items()}
+        yield dict(valuations=valuations)
 
     def calculate(self, strategies, *args, **kwargs):
-        assert isinstance(strategies, xr.Dataset)
-        calculations = {fields["scenario"]: calculation for fields, calculation in self.calculations.items() if fields["valuation"] is self.valuation}
-        datasets = {scenario: calculation(strategies, *args, **kwargs) for scenario, calculation in calculations.items()}
-        datasets = [dataset.assign_coords({"scenario": str(scenario.name).lower()}).expand_dims("scenario") for scenario, dataset in datasets.items()]
-        dataset = xr.concat(datasets, dim="scenario")
-        return dataset
+        function = lambda key, value: {key: xr.Variable(key, [value]).squeeze(key)}
+        for variables, calculations in self.calculations.items():
+            variable = str(variables["valuation"]).lower()
+            variables = lambda scenario: function("valuation", variable) | function("scenario", str(scenario.name).lower())
+            results = {scenario: [calculation(dataset, *args, **kwargs) for dataset in strategies] for scenario, calculation in calculations.items()}
+            results = [dataset.assign_coords(variables(scenario)).expand_dims("scenario") for scenario, datasets in results.items() for dataset in datasets]
+            yield variable, results
 
     @staticmethod
     def flatten(dataset):
@@ -134,9 +126,6 @@ class ValuationCalculator(Calculator, Processor, calculation=ValuationCalculatio
         dataset = dataset.expand_dims(list(set(iter(dataset.coords)) - set(iter(dataset.dims))))
         dataframe = dataset.to_dataframe().dropna(how="all", inplace=False)
         return dataframe
-
-    @property
-    def valuation(self): return self.__valuation
 
 
 

@@ -30,7 +30,7 @@ Positions = IntEnum("Positions", ["LONG", "SHORT"], start=1)
 Spreads = IntEnum("Strategy", ["STRANGLE", "COLLAR", "VERTICAL"], start=1)
 Valuations = IntEnum("Valuation", ["ARBITRAGE"], start=1)
 Scenarios = IntEnum("Scenarios", ["MINIMUM", "MAXIMUM"], start=1)
-Technicals = IntEnum("Technicals", ["BAR", "STATISTIC", "STOCHASTIC"], start=1)
+Technicals = IntEnum("Technicals", ["BARS", "STATISTIC", "STOCHASTIC"], start=1)
 
 
 class DateRange(ntuple("DateRange", "minimum maximum")):

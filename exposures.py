@@ -16,25 +16,22 @@ from support.files import Files
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["HoldingFile", "ExposureFile", "OptionFile", "ExposureCalculator"]
+__all__ = ["ExposureFile", "ExposureCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-holdings_index = {"instrument": str, "position": str, "strike": np.float32, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
-options_columns = {"price": np.float32, "underlying": np.float32, "size": np.float32, "volume": np.float32, "interest": np.float32}
-holdings_columns = {"quantity": np.int32}
+exposures_index = {"instrument": str, "position": str, "strike": np.float32, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
 exposures_columns = {"quantity": np.int32}
 
 
-class HoldingFile(Files.Dataframe, variable="holdings", index=holdings_index, columns=holdings_columns): pass
-class ExposureFile(Files.Dataframe, variable="exposures", index=holdings_index, columns=exposures_columns): pass
-class OptionFile(Files.Dataframe, variable="options", index=holdings_index, columns=options_columns): pass
+class ExposureFile(Files.Dataframe, variable="exposures", index=exposures_index, columns=exposures_columns):
+    pass
 
 
 class ExposureCalculator(Processor):
-    index = list(holdings_index.keys())
+    index = list(exposures_index.keys())
     columns = list(exposures_columns.keys())
 
     def execute(self, contents, *args, **kwargs):
@@ -54,9 +51,10 @@ class ExposureCalculator(Processor):
         yield contents | dict(exposures=exposures)
 
     def header(self, dataframe):
-        index = [column for column in list(self.index) if column in dataframe]
+        index = [column for column in list(self.index) if column in dataframe.columns]
+        columns = [column for column in list(self.columns) if column in dataframe.columns]
         dataframe = dataframe.set_index(index, drop=True, inplace=False)
-        return dataframe[self.columns]
+        return dataframe[columns]
 
     @staticmethod
     def stocks(dataframe, *args, **kwargs):

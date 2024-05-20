@@ -7,7 +7,6 @@ Created on Weds Jul 19 2023
 """
 
 import numpy as np
-import pandas as pd
 import xarray as xr
 from abc import ABC
 from itertools import product
@@ -25,12 +24,13 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-strategy_index = {option: str for option in list(map(str, Securities.Options))} | {"strategy": str, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
-strategy_columns = {"spot": np.float32, "minimum": np.float32, "maximum": np.float32, "size": np.float32, "underlying": np.float32}
+strategies_index = {option: str for option in list(map(str, Securities.Options))} | {"strategy": str, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
+strategies_columns = {"spot": np.float32, "minimum": np.float32, "maximum": np.float32, "size": np.float32, "underlying": np.float32}
+strategies_headers = Header(xr.Dataset, index=list(strategies_index.keys()), columns=list(strategies_columns.keys()))
 
 
-class StrategyFile(Files.Dataframe, variable="strategies", index=strategy_index, columns=strategy_columns):
-    pass
+# class StrategyFile(Files.Dataframe, contents="strategies", variable="strategies", index=strategies_index, columns=strategies_columns):
+#     pass
 
 
 class StrategyEquation(Equation):
@@ -91,30 +91,27 @@ class CollarShortCalculation(StrategyCalculation, strategy=Strategies.Collar.Sho
 
 
 class StrategyCalculator(Calculator, Processor, calculation=StrategyCalculation):
-    def execute(self, contents, *args, **kwargs):
-        options = contents["options"]
-        assert isinstance(options, pd.DataFrame)
-        if self.empty(options):
-            return
+    @query("options", strategies=strategies_headers)
+    def execute(self, options, *args, **kwargs):
+        assert isinstance(options, dict) and all([isinstance(dataset, xr.Dataset) for dataset in options.values()])
         options = {option: dataset for option, dataset in self.options(options) if not self.empty(dataset["size"])}
-        for strategy, strategies in self.calculate(options, *args, **kwargs):
-            variables = {"strategy": xr.Variable("strategy", [str(strategy).lower()]).squeeze("strategy")}
-            strategies = strategies.assign_coords(variables)
-            yield contents | dict(strategies=strategies)
+        strategies = list(self.calculate(options, *args, **kwargs))
+        yield dict(strategies=strategies)
 
     def calculate(self, options, *args, **kwargs):
-        assert isinstance(options, dict)
-        assert all([isinstance(option, xr.Dataset) for option in options.values()])
-        for fields, calculation in self.calculations.items():
-            if not all([option in options.keys() for option in list(fields["strategy"].options)]):
+        function = lambda key, value: {key: xr.Variable(key, [value]).squeeze(key)}
+        for variables, calculation in self.calculations.items():
+            if not all([option in options.keys() for option in list(variables["strategy"].options)]):
                 continue
-            datasets = {option: options[option] for option in list(fields["strategy"].options)}
-            dataset = calculation(datasets, *args, **kwargs)
-            yield fields["strategy"], dataset
+            variable = str(variables["strategy"]).lower()
+            variables = function("strategy", variable)
+            datasets = {option: options[option] for option in list(variables["strategy"].options)}
+            results = calculation(datasets, *args, **kwargs)
+            results = results.assign_coords(variables)
+            yield results
 
     @staticmethod
     def options(dataframe):
-        assert isinstance(dataframe, pd.DataFrame)
         if bool(dataframe.empty):
             return
         datasets = xr.Dataset.from_dataframe(dataframe)
