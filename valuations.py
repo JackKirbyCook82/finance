@@ -15,6 +15,7 @@ from collections import OrderedDict as ODict
 
 from support.calculations import Variable, Equation, Calculation, Calculator
 from support.dispatchers import kwargsdispatcher
+from support.query import Header, Query
 from support.pipelines import Processor
 from support.filtering import Filter
 from support.files import Files
@@ -35,12 +36,12 @@ arbitrage_header = Header(pd.DataFrame, index=list(arbitrage_index.keys()), colu
 valuations_headers = dict(arbitrage=arbitrage_header)
 
 
-# class ArbitrageFile(Files.Dataframe, contents=["valuation", "arbitrage"], variable="arbitrage", index=arbitrage_index, columns=arbitrage_columns):
-#     pass
+class ArbitrageFile(Files.Dataframe, variable=("arbitrage", ["valuation", "arbitrage"]), index=arbitrage_index, columns=arbitrage_columns):
+    pass
 
 
 class ValuationFilter(Filter):
-    @query("contract", "valuations", valuations=valuations_headers)
+    @Query("contract", "valuations", valuations=valuations_headers)
     def execute(self, contract, valuations, *args, **kwargs):
         valuations = ODict(list(self.filter(valuations, *args, contract=contract, **kwargs)))
         yield dict(valuations=valuations)
@@ -103,7 +104,7 @@ class MaximumArbitrageCalculation(ArbitrageCalculation, scenario=Scenarios.MAXIM
 
 
 class ValuationCalculator(Calculator, Processor, calculation=ValuationCalculation):
-    @query("strategies", valuations=valuations_headers)
+    @Query("strategies", valuations=valuations_headers)
     def execute(self, strategies, *args, **kwargs):
         assert isinstance(strategies, list) and all([isinstance(dataset, xr.Dataset) for dataset in strategies])
         valuations = ODict(list(self.calculate(strategies, *args, **kwargs)))

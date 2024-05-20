@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 from collections import OrderedDict as ODict
 
+from support.query import Header, Query
 from support.filtering import Filter
 from support.files import Files
 
@@ -31,12 +32,12 @@ options_header = Header(pd.DataFrame, index=list(options_index.keys()), columns=
 securities_headers = dict(stocks=stocks_header, options=options_header)
 
 
-# class StockFile(Files.Dataframe, contents=["securities", "stocks"], variable="stocks", index=stocks_index, columns=stocks_columns): pass
-# class OptionFile(Files.Dataframe, contents=["securities", "options"], variables="options", index=options_index, columns=options_columns): pass
+class StockFile(Files.Dataframe, variable=("stocks", ["securities", "stocks"]), index=stocks_index, columns=stocks_columns): pass
+class OptionFile(Files.Dataframe, variables=("options", ["securities", "options"]), index=options_index, columns=options_columns): pass
 
 
 class SecurityFilter(Filter):
-    @query("contract", "securities", securities=securities_headers)
+    @Query("contract", "securities", securities=securities_headers)
     def execute(self, contract, securities, *args, **kwargs):
         securities = ODict(list(self.filtering(securities, *args, contract=contract, **kwargs)))
         yield dict(securities=securities)

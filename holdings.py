@@ -37,7 +37,7 @@ holdings_index = {"instrument": str, "position": str, "strike": np.float32, "tic
 holdings_columns = {"quantity": np.int32}
 
 
-class HoldingFile(Files.Dataframe, variable="holdings", index=holdings_index, columns=holdings_columns): pass
+class HoldingFile(Files.Dataframe, variable=("holdings", "holdings"), index=holdings_index, columns=holdings_columns): pass
 class HoldingTable(Tables.Dataframe, options=holdings_options):
     def write(self, locator, content, *args, **kwargs):
         locator = self.locate(locator)

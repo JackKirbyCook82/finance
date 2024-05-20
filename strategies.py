@@ -13,6 +13,7 @@ from itertools import product
 
 from support.calculations import Variable, Equation, Calculation, Calculator
 from support.pipelines import Processor
+from support.query import Header, Query
 from support.files import Files
 
 from finance.variables import Securities, Strategies, Positions
@@ -29,8 +30,8 @@ strategies_columns = {"spot": np.float32, "minimum": np.float32, "maximum": np.f
 strategies_headers = Header(xr.Dataset, index=list(strategies_index.keys()), columns=list(strategies_columns.keys()))
 
 
-# class StrategyFile(Files.Dataframe, contents="strategies", variable="strategies", index=strategies_index, columns=strategies_columns):
-#     pass
+class StrategyFile(Files.Dataframe, variable=("strategies", "strategies"), index=strategies_index, columns=strategies_columns):
+    pass
 
 
 class StrategyEquation(Equation):
@@ -91,7 +92,7 @@ class CollarShortCalculation(StrategyCalculation, strategy=Strategies.Collar.Sho
 
 
 class StrategyCalculator(Calculator, Processor, calculation=StrategyCalculation):
-    @query("options", strategies=strategies_headers)
+    @Query("options", strategies=strategies_headers)
     def execute(self, options, *args, **kwargs):
         assert isinstance(options, dict) and all([isinstance(dataset, xr.Dataset) for dataset in options.values()])
         options = {option: dataset for option, dataset in self.options(options) if not self.empty(dataset["size"])}

@@ -12,6 +12,7 @@ from abc import ABC
 from collections import OrderedDict as ODict
 
 from support.calculations import Variable, Equation, Calculation, Calculator
+from support.query import Header, Query
 from support.pipelines import Processor
 from support.files import Files
 
@@ -34,9 +35,9 @@ stochastic_header = Header(pd.DataFrame, index=list(technicals_index.keys()), co
 technicals_headers = dict(statistic=statistic_header, stochastic=stochastic_header)
 
 
-# class BarsFile(Files.Dataframe, contents=["history", "bars"], variable="variable", index=technicals_index, columns=bars_columns): pass
-# class StatisticFile(Files.Dataframe, contents=["history", "statistics"], variable="statistics", index=technicals_index, columns=statistic_columns): pass
-# class StochasticFile(Files.Dataframe, contents=["history", "stochastics"], variable="stochastics", index=technicals_index, columns=stochastic_columns): pass
+class BarsFile(Files.Dataframe, variable=("bars", ["history", "bars"]), index=technicals_index, columns=bars_columns): pass
+class StatisticFile(Files.Dataframe, variable=("statistics", ["history", "statistics"]), index=technicals_index, columns=statistic_columns): pass
+class StochasticFile(Files.Dataframe, variable=("stochastics", ["history", "stochastics"]), index=technicals_index, columns=stochastic_columns): pass
 
 
 class TechnicalEquation(Equation): pass
@@ -66,7 +67,7 @@ class StochasticCalculation(TechnicalCalculation, technical=Technicals.STOCHASTI
 
 
 class TechnicalCalculator(Calculator, Processor, calculation=TechnicalCalculation):
-    @query("history", technicals=technicals_headers)
+    @Query("history", technicals=technicals_headers)
     def execute(self, history, *args, **kwargs):
         technicals = ODict(list(self.calculate(history["bars"], *args, **kwargs)))
         yield dict(technicals=technicals)
