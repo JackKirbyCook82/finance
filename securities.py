@@ -29,18 +29,19 @@ stocks_header = Header(pd.DataFrame, index=list(stocks_index.keys()), columns=li
 options_index = {"instrument": str, "position": str, "strike": np.float32, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
 options_columns = {"price": np.float32, "underlying": np.float32, "size": np.float32, "volume": np.float32, "interest": np.float32}
 options_header = Header(pd.DataFrame, index=list(options_index.keys()), columns=list(options_columns.keys()))
-securities_headers = dict(stocks=stocks_header, options=options_header)
+securities_headers = ODict(list(dict(stocks=stocks_header, options=options_header).items()))
 
 
-class StockFile(Files.Dataframe, variable=("stocks", ["securities", "stocks"]), index=stocks_index, columns=stocks_columns): pass
-class OptionFile(Files.Dataframe, variables=("options", ["securities", "options"]), index=options_index, columns=options_columns): pass
+class StockFile(Files.Dataframe, variable="stocks", index=stocks_index, columns=stocks_columns): pass
+class OptionFile(Files.Dataframe, variables="options", index=options_index, columns=options_columns): pass
 
 
 class SecurityFilter(Filter):
-    @Query("contract", "securities", securities=securities_headers)
-    def execute(self, contract, securities, *args, **kwargs):
-        securities = ODict(list(self.filtering(securities, *args, contract=contract, **kwargs)))
-        yield dict(securities=securities)
+    @Query(**dict(securities_headers))
+    def execute(self, contents, *args, **kwargs):
+        securities = {key: contents[key] for key in securities_headers.keys() if key in contents.keys()}
+        securities = ODict(list(self.filtering(securities, *args, contract=contents["contract"], **kwargs)))
+        yield securities
 
     def filtering(self, securities, *args, contract, **kwargs):
         for security, dataframe in securities.items():

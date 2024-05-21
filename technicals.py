@@ -13,7 +13,6 @@ from collections import OrderedDict as ODict
 
 from support.calculations import Variable, Equation, Calculation, Calculator
 from support.query import Header, Query
-from support.pipelines import Processor
 from support.files import Files
 
 from finance.variables import Technicals
@@ -25,19 +24,19 @@ __copyright__ = "Copyright 2024, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-technicals_index = {"date": np.datetime64}
+technical_index = {"date": np.datetime64}
 bars_columns = {"high": np.float32, "low": np.float32, "open": np.float32, "close": np.float32, "price": np.float32, "volume": np.float32}
-bars_header = Header(pd.DataFrame, index=list(technicals_index.keys()), columns=list(bars_columns.keys()))
+bars_header = Header(pd.DataFrame, index=list(technical_index.keys()), columns=list(bars_columns.keys()))
 statistic_columns = {"price": np.float32, "trend": np.float32, "volatility": np.float32}
-statistic_header = Header(pd.DataFrame, index=list(technicals_index.keys()), columns=list(statistic_columns.keys()))
+statistic_header = Header(pd.DataFrame, index=list(technical_index.keys()), columns=list(statistic_columns.keys()))
 stochastic_columns = {"price": np.float32, "oscillator": np.float32}
-stochastic_header = Header(pd.DataFrame, index=list(technicals_index.keys()), columns=list(stochastic_columns.keys()))
-technicals_headers = dict(statistic=statistic_header, stochastic=stochastic_header)
+stochastic_header = Header(pd.DataFrame, index=list(technical_index.keys()), columns=list(stochastic_columns.keys()))
+technical_headers = ODict(list(dict(statistic=statistic_header, stochastic=stochastic_header).items()))
 
 
-class BarsFile(Files.Dataframe, variable=("bars", ["history", "bars"]), index=technicals_index, columns=bars_columns): pass
-class StatisticFile(Files.Dataframe, variable=("statistics", ["history", "statistics"]), index=technicals_index, columns=statistic_columns): pass
-class StochasticFile(Files.Dataframe, variable=("stochastics", ["history", "stochastics"]), index=technicals_index, columns=stochastic_columns): pass
+class BarsFile(Files.Dataframe, variable="bars", index=technical_index, columns=bars_columns): pass
+class StatisticFile(Files.Dataframe, variable="statistic", index=technical_index, columns=statistic_columns): pass
+class StochasticFile(Files.Dataframe, variable="stochastic", index=technical_index, columns=stochastic_columns): pass
 
 
 class TechnicalEquation(Equation): pass
@@ -66,18 +65,16 @@ class StochasticCalculation(TechnicalCalculation, technical=Technicals.STOCHASTI
         yield equation.xki(bars)
 
 
-class TechnicalCalculator(Calculator, Processor, calculation=TechnicalCalculation):
-    @Query("history", technicals=technicals_headers)
-    def execute(self, history, *args, **kwargs):
-        technicals = ODict(list(self.calculate(history["bars"], *args, **kwargs)))
-        yield dict(technicals=technicals)
+class TechnicalCalculator(Calculator, calculations=TechnicalCalculation):
+    @Query("bars", **dict(technical_headers))
+    def execute(self, bars, *args, **kwargs):
+        technicals = ODict(list(self.calculate(bars, *args, **kwargs)))
+        yield dict(technicals)
 
     def calculate(self, bars, *args, **kwargs):
         for variables, calculation in self.calculations.items():
             variable = str(variables["technical"].name).lower()
             dataframe = calculation(bars, *args, **kwargs)
-            if self.empty(dataframe):
-                continue
             yield variable, dataframe
 
 

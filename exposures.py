@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 from finance.variables import Instruments, Positions
+from support.query import Header, Query
 from support.pipelines import Processor
 from support.files import Files
 
@@ -22,39 +23,27 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-exposures_index = {"instrument": str, "position": str, "strike": np.float32, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
-exposures_columns = {"quantity": np.int32}
+exposure_index = {"instrument": str, "position": str, "strike": np.float32, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
+exposure_columns = {"quantity": np.int32}
+exposure_header = Header(pd.DataFrame, index=list(exposure_index.keys()), columns=list(exposure_columns.keys()))
 
 
-class ExposureFile(Files.Dataframe, variable="exposures", index=exposures_index, columns=exposures_columns):
+class ExposureFile(Files.Dataframe, variable="exposure", index=exposure_index, columns=exposure_columns):
     pass
 
 
 class ExposureCalculator(Processor):
-    index = list(exposures_index.keys())
-    columns = list(exposures_columns.keys())
-
-    def execute(self, contents, *args, **kwargs):
-        holdings = contents["holdings"]
-        assert isinstance(holdings, pd.DataFrame)
-        if bool(holdings.empty):
-            return
+    @Query("holdings", exposure=exposure_header)
+    def execute(self, holdings, *args, **kwargs):
         holdings = holdings.reset_index(drop=False, inplace=False)
         stocks = self.stocks(holdings, *args, **kwargs)
         options = self.options(holdings, *args, **kwargs)
         virtuals = self.virtuals(stocks, *args, **kwargs)
         securities = pd.concat([options, virtuals], axis=0)
         securities = securities.reset_index(drop=True, inplace=False)
-        exposures = self.holdings(securities, *args, *kwargs)
-        exposures = exposures.reset_index(drop=True, inplace=False)
-        exposures = self.header(exposures)
-        yield contents | dict(exposures=exposures)
-
-    def header(self, dataframe):
-        index = [column for column in list(self.index) if column in dataframe.columns]
-        columns = [column for column in list(self.columns) if column in dataframe.columns]
-        dataframe = dataframe.set_index(index, drop=True, inplace=False)
-        return dataframe[columns]
+        exposure = self.holdings(securities, *args, *kwargs)
+        exposure = exposure.reset_index(drop=True, inplace=False)
+        yield dict(exposure=exposure)
 
     @staticmethod
     def stocks(dataframe, *args, **kwargs):

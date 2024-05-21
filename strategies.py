@@ -12,8 +12,7 @@ from abc import ABC
 from itertools import product
 
 from support.calculations import Variable, Equation, Calculation, Calculator
-from support.pipelines import Processor
-from support.query import Header, Query
+from support.query import Data, Header, Query
 from support.files import Files
 
 from finance.variables import Securities, Strategies, Positions
@@ -27,10 +26,10 @@ __license__ = "MIT License"
 
 strategies_index = {option: str for option in list(map(str, Securities.Options))} | {"strategy": str, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
 strategies_columns = {"spot": np.float32, "minimum": np.float32, "maximum": np.float32, "size": np.float32, "underlying": np.float32}
-strategies_headers = Header(xr.Dataset, index=list(strategies_index.keys()), columns=list(strategies_columns.keys()))
+strategies_header = Header(xr.Dataset, index=list(strategies_index.keys()), columns=list(strategies_columns.keys()))
 
 
-class StrategyFile(Files.Dataframe, variable=("strategies", "strategies"), index=strategies_index, columns=strategies_columns):
+class StrategyFile(Files.Dataframe, variable="strategies", index=strategies_index, columns=strategies_columns):
     pass
 
 
@@ -91,8 +90,8 @@ class CollarLongCalculation(StrategyCalculation, strategy=Strategies.Collar.Long
 class CollarShortCalculation(StrategyCalculation, strategy=Strategies.Collar.Short, equation=CollarShortEquation): pass
 
 
-class StrategyCalculator(Calculator, Processor, calculation=StrategyCalculation):
-    @Query("options", strategies=strategies_headers)
+class StrategyCalculator(Data, Calculator, calculations=StrategyCalculation):
+    @Query("options", strategies=strategies_header)
     def execute(self, options, *args, **kwargs):
         assert isinstance(options, dict) and all([isinstance(dataset, xr.Dataset) for dataset in options.values()])
         options = {option: dataset for option, dataset in self.options(options) if not self.empty(dataset["size"])}
