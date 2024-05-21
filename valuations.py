@@ -40,19 +40,20 @@ class ArbitrageFile(Files.Dataframe, variable="arbitrage", index=arbitrage_index
 
 
 class ValuationFilter(Filter):
-    @Query(**dict(valuations_headers))
+    @Query()
     def execute(self, contents, *args, **kwargs):
         valuations = {key: contents[key] for key in valuations_headers.keys() if key in contents.keys()}
-        valuations = ODict(list(self.filtering(valuations, *args, contract=contents["contract"], **kwargs)))
+        valuations = ODict(list(self.calculate(valuations, *args, contract=contents["contract"], **kwargs)))
         yield valuations
 
-    def filtering(self, valuations, *args, contract, **kwargs):
+    def calculate(self, valuations, *args, contract, **kwargs):
         for valuation, dataframe in valuations.items():
+            variable = str(valuation.name).lower()
             prior = self.size(dataframe)
             dataframe = dataframe.reset_index(drop=False, inplace=False)
-            dataframe = self.filter(dataframe, *args, valuation=valuation, **kwargs)
+            dataframe = self.pivot(dataframe, *args, valuation=valuation, **kwargs)
             post = self.size(dataframe)
-            __logger__.info(f"Filter: {repr(self)}|{str(contract)}[{prior:.0f}|{post:.0f}]")
+            __logger__.info(f"Filter: {repr(self)}|{str(contract)}|{str(variable)}[{prior:.0f}|{post:.0f}]")
             yield valuation, dataframe
 
     @kwargsdispatcher("valuation")
@@ -104,13 +105,13 @@ class MaximumArbitrageCalculation(ArbitrageCalculation, scenario=Scenarios.MAXIM
 
 
 class ValuationCalculator(Data, Calculator, calculations=ValuationCalculation):
-    @Query("strategies", **valuations_headers)
+    @Query()
     def execute(self, strategies, *args, **kwargs):
         assert isinstance(strategies, list) and all([isinstance(dataset, xr.Dataset) for dataset in strategies])
         valuations = ODict(list(self.calculate(strategies, *args, **kwargs)))
         valuations = {valuation: [self.flatten(dataset) for dataset in datasets] for valuation, datasets in valuations.items()}
         valuations = {valuation: pd.concat(dataframe, axis=1) for valuation, dataframe in valuations.items()}
-        yield dict(valuations)
+        yield valuations
 
     def calculate(self, strategies, *args, **kwargs):
         function = lambda key, value: {key: xr.Variable(key, [value]).squeeze(key)}

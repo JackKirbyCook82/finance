@@ -26,12 +26,12 @@ __license__ = "MIT License"
 
 technical_index = {"date": np.datetime64}
 bars_columns = {"high": np.float32, "low": np.float32, "open": np.float32, "close": np.float32, "price": np.float32, "volume": np.float32}
-bars_header = Header(pd.DataFrame, index=list(technical_index.keys()), columns=list(bars_columns.keys()))
+bars_header = Header(pd.DataFrame, index=list(technical_index.keys()), columns=list(bars_columns.keys()), ascending="date")
 statistic_columns = {"price": np.float32, "trend": np.float32, "volatility": np.float32}
 statistic_header = Header(pd.DataFrame, index=list(technical_index.keys()), columns=list(statistic_columns.keys()))
 stochastic_columns = {"price": np.float32, "oscillator": np.float32}
 stochastic_header = Header(pd.DataFrame, index=list(technical_index.keys()), columns=list(stochastic_columns.keys()))
-technical_headers = ODict(list(dict(statistic=statistic_header, stochastic=stochastic_header).items()))
+technical_headers = ODict(list({"statistic": statistic_header, "stochastic": stochastic_header}.items()))
 
 
 class BarsFile(Files.Dataframe, variable="bars", index=technical_index, columns=bars_columns): pass
@@ -66,10 +66,10 @@ class StochasticCalculation(TechnicalCalculation, technical=Technicals.STOCHASTI
 
 
 class TechnicalCalculator(Calculator, calculations=TechnicalCalculation):
-    @Query("bars", **dict(technical_headers))
+    @Query()
     def execute(self, bars, *args, **kwargs):
         technicals = ODict(list(self.calculate(bars, *args, **kwargs)))
-        yield dict(technicals)
+        yield technicals
 
     def calculate(self, bars, *args, **kwargs):
         for variables, calculation in self.calculations.items():

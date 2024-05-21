@@ -29,7 +29,7 @@ stocks_header = Header(pd.DataFrame, index=list(stocks_index.keys()), columns=li
 options_index = {"instrument": str, "position": str, "strike": np.float32, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
 options_columns = {"price": np.float32, "underlying": np.float32, "size": np.float32, "volume": np.float32, "interest": np.float32}
 options_header = Header(pd.DataFrame, index=list(options_index.keys()), columns=list(options_columns.keys()))
-securities_headers = ODict(list(dict(stocks=stocks_header, options=options_header).items()))
+securities_headers = ODict(list({"stocks": stocks_header, "options": options_header}.items()))
 
 
 class StockFile(Files.Dataframe, variable="stocks", index=stocks_index, columns=stocks_columns): pass
@@ -37,22 +37,22 @@ class OptionFile(Files.Dataframe, variables="options", index=options_index, colu
 
 
 class SecurityFilter(Filter):
-    @Query(**dict(securities_headers))
-    def execute(self, contents, *args, **kwargs):
-        securities = {key: contents[key] for key in securities_headers.keys() if key in contents.keys()}
-        securities = ODict(list(self.filtering(securities, *args, contract=contents["contract"], **kwargs)))
+    @Query()
+    def execute(self, contract, securities, *args, **kwargs):
+        securities = ODict(list(self.calculate(securities, *args, contract=contract, **kwargs)))
         yield securities
 
-    def filtering(self, securities, *args, contract, **kwargs):
+    def calculate(self, securities, *args, contract, **kwargs):
         for security, dataframe in securities.items():
+            variable = str(security.name).lower()
             prior = self.size(dataframe)
             dataframe = dataframe.reset_index(drop=False, inplace=False)
-            dataframe = self.filter(dataframe, *args, **kwargs)
+            dataframe = self.filter(dataframe)
             post = self.size(dataframe)
-            __logger__.info(f"Filter: {repr(self)}|{str(contract)}[{prior:.0f}|{post:.0f}]")
-            yield security, dataframe
+            __logger__.info(f"Filter: {repr(self)}|{str(contract)}|{variable}[{prior:.0f}|{post:.0f}]")
+            yield variable, dataframe
 
-    def filter(self, dataframe, *args, **kwargs):
+    def filter(self, dataframe):
         mask = self.mask(dataframe)
         dataframe = self.where(dataframe, mask)
         return dataframe

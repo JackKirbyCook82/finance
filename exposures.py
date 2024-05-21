@@ -33,7 +33,7 @@ class ExposureFile(Files.Dataframe, variable="exposure", index=exposure_index, c
 
 
 class ExposureCalculator(Processor):
-    @Query("holdings", exposure=exposure_header)
+    @Query()
     def execute(self, holdings, *args, **kwargs):
         holdings = holdings.reset_index(drop=False, inplace=False)
         stocks = self.stocks(holdings, *args, **kwargs)
@@ -43,7 +43,7 @@ class ExposureCalculator(Processor):
         securities = securities.reset_index(drop=True, inplace=False)
         exposure = self.holdings(securities, *args, *kwargs)
         exposure = exposure.reset_index(drop=True, inplace=False)
-        yield dict(exposure=exposure)
+        yield exposure
 
     @staticmethod
     def stocks(dataframe, *args, **kwargs):

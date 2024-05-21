@@ -12,7 +12,7 @@ from abc import ABC
 from itertools import product
 
 from support.calculations import Variable, Equation, Calculation, Calculator
-from support.query import Data, Header, Query
+from support.query import Header, Query
 from support.files import Files
 
 from finance.variables import Securities, Strategies, Positions
@@ -90,13 +90,14 @@ class CollarLongCalculation(StrategyCalculation, strategy=Strategies.Collar.Long
 class CollarShortCalculation(StrategyCalculation, strategy=Strategies.Collar.Short, equation=CollarShortEquation): pass
 
 
-class StrategyCalculator(Data, Calculator, calculations=StrategyCalculation):
-    @Query("options", strategies=strategies_header)
+class StrategyCalculator(Calculator, calculations=StrategyCalculation):
+    @Query()
     def execute(self, options, *args, **kwargs):
         assert isinstance(options, dict) and all([isinstance(dataset, xr.Dataset) for dataset in options.values()])
-        options = {option: dataset for option, dataset in self.options(options) if not self.empty(dataset["size"])}
+        empty = lambda dataarray: not bool(np.count_nonzero(~np.isnan(dataarray.values)))
+        options = {option: dataset for option, dataset in self.options(options) if not empty(dataset["size"])}
         strategies = list(self.calculate(options, *args, **kwargs))
-        yield dict(strategies=strategies)
+        yield strategies
 
     def calculate(self, options, *args, **kwargs):
         function = lambda key, value: {key: xr.Variable(key, [value]).squeeze(key)}
