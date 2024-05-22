@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 
 from finance.variables import Instruments, Positions
-from support.query import Header, Query
+from support.query import Header, Input, Output, Query
 from support.pipelines import Processor
 from support.files import Files
 
@@ -32,8 +32,11 @@ class ExposureFile(Files.Dataframe, variable="exposure", index=exposure_index, c
     pass
 
 
+exposure_input = Input(arguments=["holdings"])
+exposure_output = Output(arguments=["exposure"])
+exposure_header = {"exposure": exposure_header}
 class ExposureCalculator(Processor):
-    @Query()
+    @Query(input=exposure_input, output=exposure_output, header=exposure_header)
     def execute(self, holdings, *args, **kwargs):
         holdings = holdings.reset_index(drop=False, inplace=False)
         stocks = self.stocks(holdings, *args, **kwargs)

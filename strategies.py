@@ -12,7 +12,7 @@ from abc import ABC
 from itertools import product
 
 from support.calculations import Variable, Equation, Calculation, Calculator
-from support.query import Header, Query
+from support.query import Header, Input, Output, Query
 from support.files import Files
 
 from finance.variables import Securities, Strategies, Positions
@@ -90,8 +90,11 @@ class CollarLongCalculation(StrategyCalculation, strategy=Strategies.Collar.Long
 class CollarShortCalculation(StrategyCalculation, strategy=Strategies.Collar.Short, equation=CollarShortEquation): pass
 
 
+strategies_input = Input(arguments=["options"])
+strategies_output = Output(arguments=["strategies"])
+strategies_header = {"strategies": strategies_header}
 class StrategyCalculator(Calculator, calculations=StrategyCalculation):
-    @Query()
+    @Query(input=strategies_input, output=strategies_output, header=strategies_header)
     def execute(self, options, *args, **kwargs):
         assert isinstance(options, dict) and all([isinstance(dataset, xr.Dataset) for dataset in options.values()])
         empty = lambda dataarray: not bool(np.count_nonzero(~np.isnan(dataarray.values)))

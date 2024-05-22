@@ -12,7 +12,7 @@ from abc import ABC
 from collections import OrderedDict as ODict
 
 from support.calculations import Variable, Equation, Calculation, Calculator
-from support.query import Header, Query
+from support.query import Header, Input, Output, Query
 from support.files import Files
 
 from finance.variables import Technicals
@@ -31,7 +31,6 @@ statistic_columns = {"price": np.float32, "trend": np.float32, "volatility": np.
 statistic_header = Header(pd.DataFrame, index=list(technical_index.keys()), columns=list(statistic_columns.keys()))
 stochastic_columns = {"price": np.float32, "oscillator": np.float32}
 stochastic_header = Header(pd.DataFrame, index=list(technical_index.keys()), columns=list(stochastic_columns.keys()))
-technical_headers = ODict(list({"statistic": statistic_header, "stochastic": stochastic_header}.items()))
 
 
 class BarsFile(Files.Dataframe, variable="bars", index=technical_index, columns=bars_columns): pass
@@ -65,8 +64,11 @@ class StochasticCalculation(TechnicalCalculation, technical=Technicals.STOCHASTI
         yield equation.xki(bars)
 
 
+etrade_market_input = Input(arguments=["bars"])
+etrade_market_output = Output(parameters={"technicals": ["statistic", "stochastic"]})
+etrade_market_header = {"statistic": statistic_header, "stochastic": stochastic_header}
 class TechnicalCalculator(Calculator, calculations=TechnicalCalculation):
-    @Query()
+    @Query(input=etrade_market_input, output=etrade_market_output, header=etrade_market_header)
     def execute(self, bars, *args, **kwargs):
         technicals = ODict(list(self.calculate(bars, *args, **kwargs)))
         yield technicals
