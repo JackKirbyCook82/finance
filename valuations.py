@@ -14,7 +14,7 @@ from abc import ABC
 from collections import OrderedDict as ODict
 
 from support.calculations import Variable, Equation, Calculation, Calculator
-from support.query import Header, Input, Output, Query
+from support.query import Header, Query
 from support.dispatchers import kwargsdispatcher
 from support.filtering import Filter
 from support.files import Files
@@ -32,20 +32,18 @@ __logger__ = logging.getLogger(__name__)
 arbitrage_index = {option: str for option in list(map(str, Securities.Options))} | {"strategy": str, "valuation": str, "scenario": str, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
 arbitrage_columns = {"apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.float32, "underlying": np.float32}
 arbitrage_header = Header(pd.DataFrame, index=list(arbitrage_index.keys()), columns=list(arbitrage_columns.keys()))
+valuations_headers = dict(arbitrage=arbitrage_header)
 
 
 class ArbitrageFile(Files.Dataframe, variable="arbitrage", index=arbitrage_index, columns=arbitrage_columns):
     pass
 
 
-valuations_input = Input(parameters={"valuations": ["arbitrage"]})
-valuations_output = Output(parameters={"valuations": ["arbitrage"]})
-valuations_header = {"arbitrage": arbitrage_header}
 class ValuationFilter(Filter):
-    @Query(input=valuations_input, output=valuations_output, header=valuations_header)
-    def execute(self, contract, valuations, *args, **kwargs):
+    @Query(arguments=["contract"], parameters={"valuations": ["arbitrage"]}, headers=valuations_headers)
+    def execute(self, *args, contract, valuations, **kwargs):
         valuations = ODict(list(self.calculate(valuations, *args, contract=contract, **kwargs)))
-        yield valuations
+        yield dict(valuations)
 
     def calculate(self, valuations, *args, contract, **kwargs):
         for valuation, dataframe in valuations.items():
@@ -105,17 +103,14 @@ class MinimumArbitrageCalculation(ArbitrageCalculation, scenario=Scenarios.MINIM
 class MaximumArbitrageCalculation(ArbitrageCalculation, scenario=Scenarios.MAXIMUM, equation=MaximumArbitrageEquation): pass
 
 
-valuations_input = Input(arguments=["strategies"])
-valuations_output = Output(parameters={"valuations": ["arbitrage"]})
-valuations_header = {"arbitrage": arbitrage_header}
 class ValuationCalculator(Calculator, calculations=ValuationCalculation):
-    @Query(input=valuations_input, output=valuations_output, header=valuations_header)
-    def execute(self, strategies, *args, **kwargs):
+    @Query(arguments=["strategies"], headers=valuations_headers)
+    def execute(self, *args, strategies, **kwargs):
         assert isinstance(strategies, list) and all([isinstance(dataset, xr.Dataset) for dataset in strategies])
         valuations = ODict(list(self.calculate(strategies, *args, **kwargs)))
         valuations = {valuation: [self.flatten(dataset) for dataset in datasets] for valuation, datasets in valuations.items()}
         valuations = {valuation: pd.concat(dataframe, axis=1) for valuation, dataframe in valuations.items()}
-        yield valuations
+        yield dict(valuations)
 
     def calculate(self, strategies, *args, **kwargs):
         function = lambda key, value: {key: xr.Variable(key, [value]).squeeze(key)}

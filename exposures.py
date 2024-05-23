@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 
 from finance.variables import Instruments, Positions
-from support.query import Header, Input, Output, Query
+from support.query import Header, Query
 from support.pipelines import Processor
 from support.files import Files
 
@@ -26,18 +26,16 @@ __logger__ = logging.getLogger(__name__)
 exposure_index = {"instrument": str, "position": str, "strike": np.float32, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
 exposure_columns = {"quantity": np.int32}
 exposure_header = Header(pd.DataFrame, index=list(exposure_index.keys()), columns=list(exposure_columns.keys()))
+exposure_headers = dict(exposure=exposure_header)
 
 
 class ExposureFile(Files.Dataframe, variable="exposure", index=exposure_index, columns=exposure_columns):
     pass
 
 
-exposure_input = Input(arguments=["holdings"])
-exposure_output = Output(arguments=["exposure"])
-exposure_header = {"exposure": exposure_header}
 class ExposureCalculator(Processor):
-    @Query(input=exposure_input, output=exposure_output, header=exposure_header)
-    def execute(self, holdings, *args, **kwargs):
+    @Query(arguments=["holdings"], headers=exposure_headers)
+    def execute(self, *args, holdings, **kwargs):
         holdings = holdings.reset_index(drop=False, inplace=False)
         stocks = self.stocks(holdings, *args, **kwargs)
         options = self.options(holdings, *args, **kwargs)
@@ -46,7 +44,7 @@ class ExposureCalculator(Processor):
         securities = securities.reset_index(drop=True, inplace=False)
         exposure = self.holdings(securities, *args, *kwargs)
         exposure = exposure.reset_index(drop=True, inplace=False)
-        yield exposure
+        yield dict(exposure=exposure)
 
     @staticmethod
     def stocks(dataframe, *args, **kwargs):

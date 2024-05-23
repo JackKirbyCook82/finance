@@ -12,7 +12,7 @@ from abc import ABC
 from itertools import product
 
 from support.calculations import Variable, Equation, Calculation, Calculator
-from support.query import Header, Input, Output, Query
+from support.query import Header, Query
 from support.files import Files
 
 from finance.variables import Securities, Strategies, Positions
@@ -27,6 +27,7 @@ __license__ = "MIT License"
 strategies_index = {option: str for option in list(map(str, Securities.Options))} | {"strategy": str, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
 strategies_columns = {"spot": np.float32, "minimum": np.float32, "maximum": np.float32, "size": np.float32, "underlying": np.float32}
 strategies_header = Header(xr.Dataset, index=list(strategies_index.keys()), columns=list(strategies_columns.keys()))
+strategies_headers = dict(strategies=strategies_header)
 
 
 class StrategyFile(Files.Dataframe, variable="strategies", index=strategies_index, columns=strategies_columns):
@@ -90,19 +91,16 @@ class CollarLongCalculation(StrategyCalculation, strategy=Strategies.Collar.Long
 class CollarShortCalculation(StrategyCalculation, strategy=Strategies.Collar.Short, equation=CollarShortEquation): pass
 
 
-strategies_input = Input(arguments=["options"])
-strategies_output = Output(arguments=["strategies"])
-strategies_header = {"strategies": strategies_header}
 class StrategyCalculator(Calculator, calculations=StrategyCalculation):
-    @Query(input=strategies_input, output=strategies_output, header=strategies_header)
-    def execute(self, options, *args, **kwargs):
+    @Query(arguments="options", headers=strategies_headers)
+    def execute(self, *args, options, **kwargs):
         assert isinstance(options, dict) and all([isinstance(dataset, xr.Dataset) for dataset in options.values()])
         empty = lambda dataarray: not bool(np.count_nonzero(~np.isnan(dataarray.values)))
         options = {option: dataset for option, dataset in self.options(options) if not empty(dataset["size"])}
         strategies = list(self.calculate(options, *args, **kwargs))
-        yield strategies
+        yield dict(strategies=strategies)
 
-    def calculate(self, options, *args, **kwargs):
+    def calculate(self, *args, options, **kwargs):
         function = lambda key, value: {key: xr.Variable(key, [value]).squeeze(key)}
         for variables, calculation in self.calculations.items():
             if not all([option in options.keys() for option in list(variables["strategy"].options)]):

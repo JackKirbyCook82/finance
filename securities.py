@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 from collections import OrderedDict as ODict
 
-from support.query import Header, Input, Output, Query
+from support.query import Header, Query
 from support.filtering import Filter
 from support.files import Files
 
@@ -29,20 +29,18 @@ stocks_header = Header(pd.DataFrame, index=list(stocks_index.keys()), columns=li
 options_index = {"instrument": str, "position": str, "strike": np.float32, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
 options_columns = {"price": np.float32, "underlying": np.float32, "size": np.float32, "volume": np.float32, "interest": np.float32}
 options_header = Header(pd.DataFrame, index=list(options_index.keys()), columns=list(options_columns.keys()))
+securities_headers = dict(stocks=stocks_header, options=options_header)
 
 
 class StockFile(Files.Dataframe, variable="stocks", index=stocks_index, columns=stocks_columns): pass
 class OptionFile(Files.Dataframe, variables="options", index=options_index, columns=options_columns): pass
 
 
-securities_input = Input(parameters={"securities": ["stocks", "options"]})
-securities_output = Output(parameters={"securities": ["stocks", "options"]})
-securities_header = {"stocks": stocks_header, "options": options_header}
 class SecurityFilter(Filter):
-    @Query(input=securities_input, output=securities_output, header=securities_header)
-    def execute(self, contract, securities, *args, **kwargs):
+    @Query(arguments=["contract"], parameters={"securities": ["stocks", "options"]}, headers=securities_headers)
+    def execute(self, *args, contract, securities, **kwargs):
         securities = ODict(list(self.calculate(securities, *args, contract=contract, **kwargs)))
-        yield securities
+        yield dict(securities)
 
     def calculate(self, securities, *args, contract, **kwargs):
         for security, dataframe in securities.items():
