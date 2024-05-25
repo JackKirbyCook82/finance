@@ -13,13 +13,12 @@ import xarray as xr
 from abc import ABC
 from collections import OrderedDict as ODict
 
+from finance.variables import Contract, Securities, Valuations, Scenarios
 from support.calculations import Variable, Equation, Calculation, Calculator
-from support.query import Header, Query
+from support.files import FileDirectory, FileQuery, FileData
 from support.dispatchers import kwargsdispatcher
+from support.pipelines import Header, Query
 from support.filtering import Filter
-from support.files import Files
-
-from finance.variables import Securities, Valuations, Scenarios
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -31,11 +30,13 @@ __logger__ = logging.getLogger(__name__)
 
 arbitrage_index = {option: str for option in list(map(str, Securities.Options))} | {"strategy": str, "valuation": str, "scenario": str, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
 arbitrage_columns = {"apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.float32, "underlying": np.float32}
-arbitrage_header = Header(pd.DataFrame, index=list(arbitrage_index.keys()), columns=list(arbitrage_columns.keys()))
+arbitrage_header = Header.Dataframe(index=list(arbitrage_index.keys()), columns=list(arbitrage_columns.keys()))
 valuations_headers = dict(arbitrage=arbitrage_header)
+arbitrage_data = FileData.Dataframe(index=arbitrage_index, columns=arbitrage_columns, duplicates=False)
+contract_query = FileQuery("Contract", Contract.fromstring, Contract.tostring)
 
 
-class ArbitrageFile(Files.Dataframe, variable="arbitrage", index=arbitrage_index, columns=arbitrage_columns):
+class ArbitrageFile(FileDirectory, variable="arbitrage", query=contract_query, data=arbitrage_data):
     pass
 
 

@@ -14,13 +14,13 @@ from enum import IntEnum
 from itertools import product
 
 from finance.variables import Contract, Securities, Strategies, Scenarios
+from support.files import FileDirectory, FileQuery, FileData
 from support.pipelines import Producer, Consumer
-from support.tables import Tables, Options
-from support.files import Files
+from support.tables import Table, Options
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["HoldingTable", "HoldingFile", "HoldingStatus", "HoldingReader", "HoldingWriter"]
+__all__ = ["HoldingFile", "HoldingTable", "HoldingStatus", "HoldingReader", "HoldingWriter"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
@@ -35,10 +35,12 @@ holdings_formats.update({("status", ""): lambda column: str(HoldingStatus(int(co
 holdings_options = Options.Dataframe(rows=20, columns=25, width=1000, formats=holdings_formats, numbers=lambda column: f"{column:.02f}")
 holdings_index = {"instrument": str, "position": str, "strike": np.float32, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
 holdings_columns = {"quantity": np.int32}
+holdings_data = FileData.Dataframe(index=holdings_index, columns=holdings_columns, duplicates=True)
+contract_query = FileQuery("Contract", Contract.fromstring, Contract.tostring)
 
 
-class HoldingFile(Files.Dataframe, variable="holdings", index=holdings_index, columns=holdings_columns): pass
-class HoldingTable(Tables.Dataframe, options=holdings_options):
+class HoldingFile(FileDirectory, variable="holdings", query=contract_query, data=holdings_data): pass
+class HoldingTable(Table.Dataframe, options=holdings_options):
     def write(self, locator, content, *args, **kwargs):
         locator = self.locate(locator)
         super().write(locator, content, *args, **kwargs)

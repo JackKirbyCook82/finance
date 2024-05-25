@@ -11,11 +11,10 @@ import xarray as xr
 from abc import ABC
 from itertools import product
 
+from finance.variables import Contract, Securities, Strategies, Positions
 from support.calculations import Variable, Equation, Calculation, Calculator
-from support.query import Header, Query
-from support.files import Files
-
-from finance.variables import Securities, Strategies, Positions
+from support.files import FileDirectory, FileQuery, FileData
+from support.pipelines import Query
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -26,11 +25,11 @@ __license__ = "MIT License"
 
 strategies_index = {option: str for option in list(map(str, Securities.Options))} | {"strategy": str, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
 strategies_columns = {"spot": np.float32, "minimum": np.float32, "maximum": np.float32, "size": np.float32, "underlying": np.float32}
-strategies_header = Header(xr.Dataset, index=list(strategies_index.keys()), columns=list(strategies_columns.keys()))
-strategies_headers = dict(strategies=strategies_header)
+strategies_data = FileData.Dataframe(index=strategies_index, columns=strategies_columns, duplicates=False)
+contract_query = FileQuery("Contract", Contract.fromstring, Contract.tostring)
 
 
-class StrategyFile(Files.Dataframe, variable="strategies", index=strategies_index, columns=strategies_columns):
+class StrategyFile(FileDirectory, variable="strategies", query=contract_query, data=strategies_data):
     pass
 
 
@@ -92,7 +91,7 @@ class CollarShortCalculation(StrategyCalculation, strategy=Strategies.Collar.Sho
 
 
 class StrategyCalculator(Calculator, calculations=StrategyCalculation):
-    @Query(arguments="options", headers=strategies_headers)
+    @Query(arguments="options")
     def execute(self, *args, options, **kwargs):
         assert isinstance(options, dict) and all([isinstance(dataset, xr.Dataset) for dataset in options.values()])
         empty = lambda dataarray: not bool(np.count_nonzero(~np.isnan(dataarray.values)))

@@ -11,11 +11,10 @@ import pandas as pd
 from abc import ABC
 from collections import OrderedDict as ODict
 
-from support.calculations import Variable, Equation, Calculation, Calculator
-from support.query import Header, Query
-from support.files import Files
-
 from finance.variables import Technicals
+from support.calculations import Variable, Equation, Calculation, Calculator
+from support.files import FileDirectory, FileQuery, FileData
+from support.pipelines import Header, Query
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -26,17 +25,21 @@ __license__ = "MIT License"
 
 technical_index = {"date": np.datetime64}
 bars_columns = {"high": np.float32, "low": np.float32, "open": np.float32, "close": np.float32, "price": np.float32, "volume": np.float32}
-bars_header = Header(pd.DataFrame, index=list(technical_index.keys()), columns=list(bars_columns.keys()), ascending="date")
+bars_header = Header.Dataframe(index=list(technical_index.keys()), columns=list(bars_columns.keys()), ascending="date")
 statistic_columns = {"price": np.float32, "trend": np.float32, "volatility": np.float32}
-statistic_header = Header(pd.DataFrame, index=list(technical_index.keys()), columns=list(statistic_columns.keys()))
+statistic_header = Header.Dataframe(index=list(technical_index.keys()), columns=list(statistic_columns.keys()))
 stochastic_columns = {"price": np.float32, "oscillator": np.float32}
-stochastic_header = Header(pd.DataFrame, index=list(technical_index.keys()), columns=list(stochastic_columns.keys()))
+stochastic_header = Header.Dataframe(index=list(technical_index.keys()), columns=list(stochastic_columns.keys()))
 technical_headers = dict(statistic=statistic_header, stochastic=stochastic_header)
+bars_data = FileData.Dataframe(index=technical_index, columns=bars_columns, duplicates=False)
+statistic_data = FileData.Dataframe(index=technical_index, columns=statistic_columns, duplicates=False)
+stochastic_data = FileData.Dataframe(index=technical_index, columns=stochastic_columns, duplicates=False)
+ticker_query = FileQuery("ticker", str.upper, str.upper)
 
 
-class BarsFile(Files.Dataframe, variable="bars", index=technical_index, columns=bars_columns): pass
-class StatisticFile(Files.Dataframe, variable="statistic", index=technical_index, columns=statistic_columns): pass
-class StochasticFile(Files.Dataframe, variable="stochastic", index=technical_index, columns=stochastic_columns): pass
+class BarsFile(FileDirectory, variable="bars", query=ticker_query, data=bars_data): pass
+class StatisticFile(FileDirectory, variable="statistic", query=ticker_query, data=statistic_data): pass
+class StochasticFile(FileDirectory, variable="stochastic", query=ticker_query, data=stochastic_data): pass
 
 
 class TechnicalEquation(Equation): pass

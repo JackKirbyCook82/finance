@@ -10,10 +10,9 @@ import logging
 import numpy as np
 import pandas as pd
 
-from finance.variables import Instruments, Positions
-from support.query import Header, Query
-from support.pipelines import Processor
-from support.files import Files
+from finance.variables import Contract, Instruments, Positions
+from support.files import FileDirectory, FileQuery, FileData
+from support.pipelines import Processor, Header, Query
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -25,11 +24,13 @@ __logger__ = logging.getLogger(__name__)
 
 exposure_index = {"instrument": str, "position": str, "strike": np.float32, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
 exposure_columns = {"quantity": np.int32}
-exposure_header = Header(pd.DataFrame, index=list(exposure_index.keys()), columns=list(exposure_columns.keys()))
+exposure_header = Header.Dataframe(index=list(exposure_index.keys()), columns=list(exposure_columns.keys()))
 exposure_headers = dict(exposure=exposure_header)
+exposure_data = FileData.Dataframe(index=exposure_index, columns=exposure_columns, duplicates=True)
+contract_query = FileQuery("Contract", Contract.fromstring, Contract.tostring)
 
 
-class ExposureFile(Files.Dataframe, variable="exposure", index=exposure_index, columns=exposure_columns):
+class ExposureFile(FileDirectory, variable="exposure", query=contract_query, data=exposure_data):
     pass
 
 
