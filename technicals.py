@@ -12,9 +12,9 @@ from abc import ABC
 from collections import OrderedDict as ODict
 
 from finance.variables import Technicals
-from support.calculations import Variable, Equation, Calculation, Calculator
+from support.calculations import Variable, Equation, Calculation
 from support.files import FileDirectory, FileQuery, FileData
-from support.pipelines import Header, Query
+from support.pipelines import Processor
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -25,12 +25,8 @@ __license__ = "MIT License"
 
 technical_index = {"date": np.datetime64}
 bars_columns = {"high": np.float32, "low": np.float32, "open": np.float32, "close": np.float32, "price": np.float32, "volume": np.float32}
-bars_header = Header.Dataframe(index=list(technical_index.keys()), columns=list(bars_columns.keys()), ascending="date")
 statistic_columns = {"price": np.float32, "trend": np.float32, "volatility": np.float32}
-statistic_header = Header.Dataframe(index=list(technical_index.keys()), columns=list(statistic_columns.keys()))
 stochastic_columns = {"price": np.float32, "oscillator": np.float32}
-stochastic_header = Header.Dataframe(index=list(technical_index.keys()), columns=list(stochastic_columns.keys()))
-technical_headers = dict(statistic=statistic_header, stochastic=stochastic_header)
 bars_data = FileData.Dataframe(index=technical_index, columns=bars_columns, duplicates=False)
 statistic_data = FileData.Dataframe(index=technical_index, columns=statistic_columns, duplicates=False)
 stochastic_data = FileData.Dataframe(index=technical_index, columns=stochastic_columns, duplicates=False)
@@ -68,17 +64,39 @@ class StochasticCalculation(TechnicalCalculation, technical=Technicals.STOCHASTI
         yield equation.xki(bars)
 
 
-class TechnicalCalculator(Calculator, calculations=TechnicalCalculation):
-    @Query(arguments=["bars"], headers=technical_headers)
-    def execute(self, *args, bars, **kwargs):
+class TechnicalCalculator(Processor):
+    def __init__(self, *args, technicals=[], name=None, **kwargs):
+        assert isinstance(technicals, list) and all([strategy in list(Technicals) for strategy in technicals])
+        super().__init__(*args, name=name, **kwargs)
+        calculations = {variables["technical"]: calculation for variables, calculation in ODict(list(TechnicalCalculation)).items() if variables["technical"] in technicals}
+        self.__calculations = {str(technical.name).lower(): calculation(*args, **kwargs) for technical, calculation in calculations.items()}
+        self.__columns = dict(bars=list(bars_columns.keys()), statistics=list(statistic_columns.keys()), stochastics=list(stochastic_columns.keys()))
+        self.__index = list(technical_index.keys())
+
+    def execute(self, contents, *args, **kwargs):
+        bars = contents["bars"]
+        assert isinstance(bars, pd.DataFrame)
         technicals = ODict(list(self.calculate(bars, *args, **kwargs)))
-        yield dict(technicals)
+        technicals = ODict(list(self.parse(technicals, *args, **kwargs)))
+        yield contents | dict(technicals)
 
     def calculate(self, bars, *args, **kwargs):
-        for variables, calculation in self.calculations.items():
-            variable = str(variables["technical"].name).lower()
+        for technical, calculation in self.calculations.items():
             dataframe = calculation(bars, *args, **kwargs)
-            yield variable, dataframe
+            yield technical, dataframe
 
+    def parse(self, technicals, *args, **kwargs):
+        for technical, dataframe in technicals.itmes():
+            columns = self.columns[technical]
+            assert set(dataframe.index.names) == self.index
+            dataframe = dataframe[columns]
+            yield technical, dataframe
+
+    @property
+    def calculations(self): return self.__calculations
+    @property
+    def columns(self): return self.__columns
+    @property
+    def index(self): return self.__index
 
 

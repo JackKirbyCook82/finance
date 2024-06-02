@@ -27,7 +27,7 @@ exposure_columns = {"quantity": np.int32}
 exposure_header = Header.Dataframe(index=list(exposure_index.keys()), columns=list(exposure_columns.keys()))
 exposure_headers = dict(exposure=exposure_header)
 exposure_data = FileData.Dataframe(index=exposure_index, columns=exposure_columns, duplicates=True)
-contract_query = FileQuery("Contract", Contract.fromstring, Contract.tostring)
+contract_query = FileQuery("contract", Contract.tostring, Contract.fromstring)
 
 
 class ExposureFile(FileDirectory, variable="exposure", query=contract_query, data=exposure_data):

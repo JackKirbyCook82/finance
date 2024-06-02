@@ -36,7 +36,7 @@ holdings_options = Options.Dataframe(rows=20, columns=25, width=1000, formats=ho
 holdings_index = {"instrument": str, "position": str, "strike": np.float32, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
 holdings_columns = {"quantity": np.int32}
 holdings_data = FileData.Dataframe(index=holdings_index, columns=holdings_columns, duplicates=True)
-contract_query = FileQuery("Contract", Contract.fromstring, Contract.tostring)
+contract_query = FileQuery("contract", Contract.tostring, Contract.fromstring)
 
 
 class HoldingFile(FileDirectory, variable="holdings", query=contract_query, data=holdings_data): pass
