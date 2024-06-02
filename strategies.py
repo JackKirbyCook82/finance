@@ -28,7 +28,7 @@ __license__ = "MIT License"
 securities_index = {option: str for option in list(map(str, Securities))}
 strategies_index = {"strategy": str, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
 strategies_columns = {"spot": np.float32, "minimum": np.float32, "maximum": np.float32, "size": np.float32, "underlying": np.float32}
-strategies_data = FileData.Dataframe(index=strategies_index + securities_index, columns=strategies_columns, duplicates=False)
+strategies_data = FileData.Dataframe(header=securities_index | strategies_index | strategies_columns)
 contract_query = FileQuery("contract", Contract.tostring, Contract.fromstring)
 
 
@@ -99,10 +99,7 @@ class StrategyCalculator(Processor):
         super().__init__(*args, name=name, **kwargs)
         calculations = {variables["strategy"]: calculation for variables, calculation in ODict(list(StrategyCalculation)).items() if variables["strategy"] in strategies}
         self.__calculations = {str(strategy).lower(): calculation(*args, **kwargs) for strategy, calculation in calculations.items()}
-        self.__variables = lambda mapping: {key: xr.Variable(key, [value]).squeeze(key) for key, value in mapping.items()}
-        self.__securities = list(securities_index.keys())
-        self.__columns = list(strategies_index.keys())
-        self.__index = list(strategies_columns.keys())
+        self.__variables = lambda **mapping: {key: xr.Variable(key, [value]).squeeze(key) for key, value in mapping.items()}
 
     def execute(self, contents, *args, **kwargs):
         options = contents["options"]
@@ -115,9 +112,9 @@ class StrategyCalculator(Processor):
     def calculate(self, options, *args, **kwargs):
         for strategy, calculation in self.calculations.items():
             variables = self.variables(strategy=strategy)
-            if not all([option in options.keys() for option in list(strategy.options)]):
+            if not all([option in options.keys() for option in list(Strategies[strategy].options)]):
                 continue
-            datasets = {option: options[option] for option in list(strategy.options)}
+            datasets = {option: options[option] for option in list(Strategies[strategy].options)}
             dataset = calculation(datasets, *args, **kwargs)
             dataset = dataset.assign_coords(variables)
             yield strategy, dataset
@@ -142,12 +139,6 @@ class StrategyCalculator(Processor):
     def calculations(self): return self.__calculations
     @property
     def variables(self): return self.__variables
-    @property
-    def securities(self): return self.__securities
-    @property
-    def columns(self): return self.__columns
-    @property
-    def index(self): return self.__index
 
 
 

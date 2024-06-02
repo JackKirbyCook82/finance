@@ -10,8 +10,8 @@ import logging
 import numpy as np
 import pandas as pd
 import xarray as xr
-import enum as Enum
 from abc import ABC
+from collections import namedtuple as ntuple
 from collections import OrderedDict as ODict
 
 from finance.variables import Contract, Securities, Valuations, Scenarios
@@ -29,10 +29,12 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
+Header = ntuple("Header", "index columns")
 securities_index = {option: str for option in list(map(str, Securities))}
 arbitrage_index = {"strategy": str, "valuation": str, "scenario": str, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
 arbitrage_columns = {"apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.float32, "underlying": np.float32}
-arbitrage_data = FileData.Dataframe(index=arbitrage_index + securities_index, columns=arbitrage_columns, duplicates=False)
+valuation_headers = {"arbitrage": Header(securities_index | arbitrage_columns, arbitrage_columns)}
+arbitrage_data = FileData.Dataframe(header=securities_index | arbitrage_index | arbitrage_columns)
 contract_query = FileQuery("contract", Contract.tostring, Contract.fromstring)
 
 
@@ -43,42 +45,34 @@ class ArbitrageFile(FileDirectory, variable="arbitrage", query=contract_query, d
 class ValuationFilter(Filter):
     def __init__(self, *args, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
-        self.__columns = dict(arbitrage=list(arbitrage_columns.keys()))
-        self.__indexes = dict(arbitrage=list(arbitrage_index.keys()))
-        self.__securities = list(securities_index.keys())
-        self.__valuations = ("arbitrage",)
+        self.__valuations = list(valuation_headers.keys())
 
     def execute(self, contents, *args, **kwargs):
         contract, valuations = str(contents["contract"]), {valuation: contents[valuation] for valuation in self.valuations if valuation in contents.keys()}
         valuations = ODict(list(self.calculate(valuations, *args, contract=contract, **kwargs)))
-        valuations = ODict(list(self.parse(valuations, *args, contract=contract, **kwargs)))
         yield contents | dict(valuations)
 
     def calculate(self, valuations, *args, contract, **kwargs):
         for valuation, dataframe in valuations.items():
             prior = self.size(dataframe)
-            dataframe = dataframe.reset_index(drop=False, inplace=False)
-            dataframe = self.pivot(dataframe, *args, valuation=valuation, **kwargs)
+
+            print(dataframe)
+            print(dataframe.columns)
+            print(dataframe.index)
+            raise Exception()
+
+            dataframe = self.filter(dataframe, *args, valuation=valuation, **kwargs)
             post = self.size(dataframe)
             __logger__.info(f"Filter: {repr(self)}|{contract}|{valuation}[{prior:.0f}|{post:.0f}]")
-            yield valuation, dataframe
-
-    def parse(self, valuations, *args, **kwargs):
-        for valuation, dataframe in valuations.itmes():
-            securities = [security for security in self.securities if security in dataframe.columns]
-            index, columns = self.indexes[valuation], self.columns[valuation]
-            dataframe = dataframe.set_index(index + securities, drop=True, inplace=False)
-            dataframe = dataframe[columns]
             yield valuation, dataframe
 
     @kwargsdispatcher("valuation")
     def filter(self, dataframe, *args, valuation, **kwargs): raise ValueError(valuation)
     @filter.register.value(str(Valuations.ARBITRAGE.name).lower())
     def arbitrage(self, dataframe, *args, **kwargs):
-        scenario = str(self.scenario.name).lower()
         index = set(dataframe.columns) - ({"scenario"} | set(self.columns))
         dataframe = dataframe.pivot(columns="scenario", index=index)
-        mask = self.mask(dataframe, variable=scenario)
+        mask = self.mask(dataframe, variable="minimum")
         dataframe = self.where(dataframe, mask)
         dataframe = dataframe.stack("scenario")
         dataframe = dataframe.reset_index(drop=False, inplace=False)
@@ -86,12 +80,28 @@ class ValuationFilter(Filter):
 
     @property
     def valuations(self): return self.__valuations
+
+
+class ValuationHeader(Processor):
+    def __init__(self, *args, name=None, **kwargs):
+        super().__init__(*args, name=name, **kwargs)
+        self.__valuations = dict(valuation_headers)
+
+    def execute(self, contents, *args, **kwargs):
+        valuations = {valuation: contents[valuation] for valuation in self.valuations if valuation in contents.keys()}
+        valuations = ODict(list(self.calculate(valuations, *args, **kwargs)))
+        yield contents | dict(valuations)
+
+    def calculate(self, valuations, *args, **kwargs):
+        for valuation, dataframe in valuations.items():
+            header = self.valuations[valuation]
+            index = [value for value in header.index if value in dataframe.columns]
+            dataframe = dataframe.set_index(index, drop=True, inplace=False)
+            dataframe = dataframe[header.columns]
+            yield valuation, dataframe
+
     @property
-    def securities(self): return self.__securities
-    @property
-    def columns(self): return self.__columns
-    @property
-    def indexes(self): return self.__index
+    def valuations(self): return self.__valuations
 
 
 class ValuationEquation(Equation): pass
@@ -133,14 +143,9 @@ class ValuationCalculator(Processor):
         assert valuation in list(Valuations)
         super().__init__(*args, name=name, **kwargs)
         calculations = {variables["scenario"]: calculation for variables, calculation in ODict(list(ValuationCalculation)).items() if variables["valuation"] is valuation}
-        columns = dict(arbitrage=list(arbitrage_columns.keys()))
-        indexes = dict(arbitrage=list(arbitrage_index.keys()))
         valuation = str(valuation.name).lower()
         self.__calculations = {str(scenario.name).lower(): calculation(*args, **kwargs) for scenario, calculation in calculations.items()}
-        self.__variables = lambda mapping: {key: xr.Variable(key, [value]).squeeze(key) for key, value in mapping.items()}
-        self.__securities = list(securities_index.keys())
-        self.__columns = columns[valuation]
-        self.__index = indexes[valuation]
+        self.__variables = lambda **mapping: {key: xr.Variable(key, [value]).squeeze(key) for key, value in mapping.items()}
         self.__valuation = valuation
 
     def execute(self, contents, *args, **kwargs):
@@ -148,7 +153,7 @@ class ValuationCalculator(Processor):
         assert isinstance(strategies, list) and all([isinstance(dataset, xr.Dataset) for dataset in strategies])
         valuations = ODict(list(self.calculate(strategies, *args, **kwargs)))
         valuations = ODict(list(self.flatten(valuations, *args, **kwargs)))
-        valuations = {self.valuation: pd.concat(list(valuations.values()), axis=1)}
+        valuations = {self.valuation: pd.concat(list(valuations.values()), axis=0)}
         yield contents | valuations
 
     def calculate(self, strategies, *args, **kwargs):
@@ -164,7 +169,8 @@ class ValuationCalculator(Processor):
             datasets = [dataset.drop_vars(["instrument", "position"], errors="ignore") for dataset in datasets]
             datasets = [dataset.expand_dims(list(set(iter(dataset.coords)) - set(iter(dataset.dims)))) for dataset in datasets]
             dataframes = [dataset.to_dataframe().dropna(how="all", inplace=False) for dataset in datasets]
-            dataframe = pd.concat(dataframes, axis=1)
+            dataframes = [dataframe.reset_index(drop=False, inplace=False) for dataframe in dataframes]
+            dataframe = pd.concat(dataframes, axis=0)
             yield scenario, dataframe
 
     @property
@@ -173,12 +179,6 @@ class ValuationCalculator(Processor):
     def variables(self): return self.__variables
     @property
     def valuation(self): return self.__valuation
-    @property
-    def securities(self): return self.__securities
-    @property
-    def columns(self): return self.__columns
-    @property
-    def index(self): return self.__index
 
 
 
