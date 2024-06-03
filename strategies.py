@@ -13,27 +13,19 @@ from abc import ABC
 from itertools import product
 from collections import OrderedDict as ODict
 
-from finance.variables import Contract, Securities, Strategies, Positions
+from finance.variables import Securities, Strategies, Positions
 from support.calculations import Variable, Equation, Calculation
-from support.files import FileDirectory, FileQuery, FileData
 from support.pipelines import Processor
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["StrategyFile", "StrategyCalculator"]
+__all__ = ["StrategyCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-securities_index = {option: str for option in list(map(str, Securities))}
-strategies_index = {"strategy": str, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
+strategies_index = {option: str for option in list(map(str, Securities))} | {"strategy": str, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
 strategies_columns = {"spot": np.float32, "minimum": np.float32, "maximum": np.float32, "size": np.float32, "underlying": np.float32}
-strategies_data = FileData.Dataframe(header=securities_index | strategies_index | strategies_columns)
-contract_query = FileQuery("contract", Contract.tostring, Contract.fromstring)
-
-
-class StrategyFile(FileDirectory, variable="strategies", query=contract_query, data=strategies_data):
-    pass
 
 
 class StrategyEquation(Equation):

@@ -11,97 +11,46 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 from abc import ABC
-from collections import namedtuple as ntuple
 from collections import OrderedDict as ODict
 
-from finance.variables import Contract, Securities, Valuations, Scenarios
+from finance.variables import Securities, Valuations, Scenarios
 from support.calculations import Variable, Equation, Calculation
-from support.files import FileDirectory, FileQuery, FileData
 from support.dispatchers import kwargsdispatcher
 from support.pipelines import Processor
-from support.filtering import Filter
+from support.cleaning import Filter
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["ArbitrageFile", "ValuationFilter", "ValuationCalculator"]
+__all__ = ["ValuationFilter", "ValuationCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-Header = ntuple("Header", "index columns")
-securities_index = {option: str for option in list(map(str, Securities))}
-arbitrage_index = {"strategy": str, "valuation": str, "scenario": str, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
+arbitrage_index = {option: str for option in list(map(str, Securities))} | {"strategy": str, "valuation": str, "scenario": str, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
 arbitrage_columns = {"apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.float32, "underlying": np.float32}
-valuation_headers = {"arbitrage": Header(securities_index | arbitrage_columns, arbitrage_columns)}
-arbitrage_data = FileData.Dataframe(header=securities_index | arbitrage_index | arbitrage_columns)
-contract_query = FileQuery("contract", Contract.tostring, Contract.fromstring)
 
 
-class ArbitrageFile(FileDirectory, variable="arbitrage", query=contract_query, data=arbitrage_data):
-    pass
+# arbitrage_axes = Axes.Dataframe(index=arbitrage_index, columns=arbitrage_columns)
+# arbitrage_data = FileData.Dataframe(header=arbitrage_index | arbitrage_columns)
+# contract_query = FileQuery("contract", Contract.tostring, Contract.fromstring)
 
 
-class ValuationFilter(Filter):
-    def __init__(self, *args, name=None, **kwargs):
-        super().__init__(*args, name=name, **kwargs)
-        self.__valuations = list(valuation_headers.keys())
+# class ArbitrageFile(FileDirectory, variable="arbitrage", query=contract_query, data=arbitrage_data): pass
+# class ArbitrageHeader(Header, variable="arbitrage": arbitrage_axes}): pass
 
-    def execute(self, contents, *args, **kwargs):
-        contract, valuations = str(contents["contract"]), {valuation: contents[valuation] for valuation in self.valuations if valuation in contents.keys()}
-        valuations = ODict(list(self.calculate(valuations, *args, contract=contract, **kwargs)))
-        yield contents | dict(valuations)
 
-    def calculate(self, valuations, *args, contract, **kwargs):
-        for valuation, dataframe in valuations.items():
-            prior = self.size(dataframe)
-
-            print(dataframe)
-            print(dataframe.columns)
-            print(dataframe.index)
-            raise Exception()
-
-            dataframe = self.filter(dataframe, *args, valuation=valuation, **kwargs)
-            post = self.size(dataframe)
-            __logger__.info(f"Filter: {repr(self)}|{contract}|{valuation}[{prior:.0f}|{post:.0f}]")
-            yield valuation, dataframe
-
-    @kwargsdispatcher("valuation")
-    def filter(self, dataframe, *args, valuation, **kwargs): raise ValueError(valuation)
-    @filter.register.value(str(Valuations.ARBITRAGE.name).lower())
+class ValuationFilter(Filter, variables=["arbitrage"], query="contract"):
+    @kwargsdispatcher("variable")
+    def filter(self, dataframe, *args, variable, **kwargs): raise ValueError(variable)
+    @filter.register.value("arbitrage")
     def arbitrage(self, dataframe, *args, **kwargs):
         index = set(dataframe.columns) - ({"scenario"} | set(self.columns))
         dataframe = dataframe.pivot(columns="scenario", index=index)
-        mask = self.mask(dataframe, variable="minimum")
-        dataframe = self.where(dataframe, mask)
+        dataframe = super().filter(dataframe, *args, stack=["minimum"], **kwargs)
         dataframe = dataframe.stack("scenario")
         dataframe = dataframe.reset_index(drop=False, inplace=False)
         return dataframe
-
-    @property
-    def valuations(self): return self.__valuations
-
-
-class ValuationHeader(Processor):
-    def __init__(self, *args, name=None, **kwargs):
-        super().__init__(*args, name=name, **kwargs)
-        self.__valuations = dict(valuation_headers)
-
-    def execute(self, contents, *args, **kwargs):
-        valuations = {valuation: contents[valuation] for valuation in self.valuations if valuation in contents.keys()}
-        valuations = ODict(list(self.calculate(valuations, *args, **kwargs)))
-        yield contents | dict(valuations)
-
-    def calculate(self, valuations, *args, **kwargs):
-        for valuation, dataframe in valuations.items():
-            header = self.valuations[valuation]
-            index = [value for value in header.index if value in dataframe.columns]
-            dataframe = dataframe.set_index(index, drop=True, inplace=False)
-            dataframe = dataframe[header.columns]
-            yield valuation, dataframe
-
-    @property
-    def valuations(self): return self.__valuations
 
 
 class ValuationEquation(Equation): pass
