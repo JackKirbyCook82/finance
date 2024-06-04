@@ -11,13 +11,14 @@ import pandas as pd
 from abc import ABC
 from collections import OrderedDict as ODict
 
-from finance.variables import Technicals
+from finance.variables import Ticker, Technicals
 from support.calculations import Variable, Equation, Calculation
-from support.pipelines import Processor
+from support.pipelines import Processor, Header
+from support.files import File
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["TechnicalCalculator"]
+__all__ = ["TechnicalFiles", "TechnicalHeaders", "TechnicalCalculator"]
 __copyright__ = "Copyright 2024, Jack Kirby Cook"
 __license__ = "MIT License"
 
@@ -28,19 +29,12 @@ statistic_columns = {"price": np.float32, "trend": np.float32, "volatility": np.
 stochastic_columns = {"price": np.float32, "oscillator": np.float32}
 
 
-# bars_axes = Axes.Dataframe(index=technical_index, columns=bars_columns)
-# bars_data = FileData.Dataframe(header=technical_index | bars_columns)
-# statistic_axes = Axes.Dataframe(index=technical_index, columns=statistic_columns)
-# statistic_data = FileData.Dataframe(header=technical_index | statistic_columns)
-# stochastic_axes = Axes.Dataframe(index=technical_index, columns=stochastic_columns)
-# stochastic_data = FileData.Dataframe(header=technical_index | stochastic_columns)
-# ticker_query = FileQuery("ticker", str.upper, str.upper)
-
-
-# class BarsFile(FileDirectory, variable="bars", query=ticker_query, data=bars_data): pass
-# class StatisticFile(FileDirectory, variable="statistic", query=ticker_query, data=statistic_data): pass
-# class StochasticFile(FileDirectory, variable="stochastic", query=ticker_query, data=stochastic_data): pass
-# class TechnicalHeader(Header, variables={"bars": bars_axes, "statistic": statistic_axes, "stochastic": stochastic_axes}): pass
+class BarsFile(File, variable="bars", query=("ticker", Ticker), datatype=pd.DataFrame, header=technical_index | bars_columns): pass
+class StatisticFile(File, variable="statistic", query=("ticker", Ticker), datatype=pd.DataFrame, header=technical_index | statistic_columns): pass
+class StochasticFile(File, variable="stochastic", query=("ticker", Ticker), datatype=pd.DataFrame, header=technical_index | stochastic_columns): pass
+class BarsHeader(Header, variable="bars", datatype=pd.DataFrame, axes={"index": technical_index, "columns": bars_columns}): pass
+class StatisticHeader(Header, variable="statistic", datatype=pd.DataFrame, axes={"index": technical_index, "columns": statistic_columns}): pass
+class StochasticHeader(Header, variable="stochastic", datatype=pd.DataFrame, axes={"index": technical_index, "columns": stochastic_columns}): pass
 
 
 class TechnicalEquation(Equation): pass
@@ -89,6 +83,17 @@ class TechnicalCalculator(Processor):
 
     @property
     def calculations(self): return self.__calculations
+
+
+class TechnicalFiles(object):
+    BARS = BarsFile
+    STATISTIC = StatisticFile
+    STOCHASTIC = StochasticFile
+
+class TechnicalHeaders(object):
+    BARS = BarsHeader
+    STATISTIC = StatisticHeader
+    STOCHASTIC = StochasticHeader
 
 
 

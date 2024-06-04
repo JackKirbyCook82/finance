@@ -13,15 +13,16 @@ import xarray as xr
 from abc import ABC
 from collections import OrderedDict as ODict
 
-from finance.variables import Securities, Valuations, Scenarios
+from finance.variables import Contract, Securities, Valuations, Scenarios
 from support.calculations import Variable, Equation, Calculation
 from support.dispatchers import kwargsdispatcher
-from support.pipelines import Processor
-from support.cleaning import Filter
+from support.pipelines import Processor, Header
+from support.filtering import Filter
+from support.files import File
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["ValuationFilter", "ValuationCalculator"]
+__all__ = ["ValuationFiles", "ValuationHeaders", "ValuationFilter", "ValuationCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
@@ -31,13 +32,8 @@ arbitrage_index = {option: str for option in list(map(str, Securities))} | {"str
 arbitrage_columns = {"apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.float32, "underlying": np.float32}
 
 
-# arbitrage_axes = Axes.Dataframe(index=arbitrage_index, columns=arbitrage_columns)
-# arbitrage_data = FileData.Dataframe(header=arbitrage_index | arbitrage_columns)
-# contract_query = FileQuery("contract", Contract.tostring, Contract.fromstring)
-
-
-# class ArbitrageFile(FileDirectory, variable="arbitrage", query=contract_query, data=arbitrage_data): pass
-# class ArbitrageHeader(Header, variable="arbitrage": arbitrage_axes}): pass
+class ArbitrageFile(File, variable="arbitrage", query=("contract", Contract), datatype=pd.DataFrame, header=arbitrage_index | arbitrage_columns): pass
+class ArbitrageHeader(Header, variable="arbitrage", axes={"index": arbitrage_index, "columns": arbitrage_columns}): pass
 
 
 class ValuationFilter(Filter, variables=["arbitrage"], query="contract"):
@@ -128,6 +124,13 @@ class ValuationCalculator(Processor):
     def variables(self): return self.__variables
     @property
     def valuation(self): return self.__valuation
+
+
+class ValuationFiles(object):
+    ARBITRAGE = ArbitrageFile
+
+class ValuationHeaders(object):
+    ARBITRAGE = ArbitrageHeader
 
 
 

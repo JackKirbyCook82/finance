@@ -18,7 +18,7 @@ from support.dispatchers import typedispatcher
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["DateRange", "Contract", "Variable", "Actions", "Instruments", "Options", "Positions", "Spreads", "Scenarios", "Technicals", "Securities", "Strategies", "Valuations"]
+__all__ = ["DateRange", "Ticker", "Contract", "Variable", "Actions", "Instruments", "Options", "Positions", "Spreads", "Scenarios", "Technicals", "Securities", "Strategies", "Valuations"]
 __copyright__ = "Copyright 2023,SE Jack Kirby Cook"
 __license__ = "MIT License"
 
@@ -49,25 +49,34 @@ class DateRange(ntuple("DateRange", "minimum maximum")):
 
 
 @total_ordering
-class Contract(ntuple("Contract", "ticker expire")):
-    def __new__(cls, ticker, expire=None): return super().__new__(cls, ticker, expire)
-    def __str__(self): return self.tostring(delimiter="|")
-    def __eq__(self, other): return self.ticker == other.ticker and self.expire == other.expire
-    def __lt__(self, other): return self.ticker < other.ticker and (self.expire < other.expire if bool(self.expire) else True)
+class Ticker(str):
+    def __str__(self): return self.tostring()
+    def __eq__(self, other): return str(self) == str(other)
+    def __lt__(self, other): return str(self) < str(other)
 
-    def tostring(self, delimiter="_"):
-        ticker = str(self.ticker).upper()
-        expire = str(self.expire.strftime("%Y%m%d")) if bool(self.expire) else None
-        contract = list(filter(None, [ticker, expire]))
-        return str(delimiter).join(contract)
+    @classmethod
+    def fromstring(cls, string): return cls(string)
+    def tostring(self): return str(self)
+
+
+@total_ordering
+class Contract(ntuple("Contract", "ticker expire")):
+    def __str__(self): return self.tostring(delimiter="|")
+    def __eq__(self, other): return str(self.ticker) == str(other.ticker) and self.expire == other.expire
+    def __lt__(self, other): return str(self.ticker) < str(other.ticker) and self.expire < other.expire
 
     @classmethod
     def fromstring(cls, string, delimiter="_"):
-        contract = str(string).split(delimiter)
-        ticker, expire = contract if len(contract) > 1 else (contract, None)
+        ticker, expire = str(string).split(delimiter)
         ticker = str(ticker).upper()
-        expire = Datetime.strptime(expire, "%Y%m%d") if bool(expire) else None
+        expire = Datetime.strptime(expire, "%Y%m%d")
         return cls(ticker, expire)
+
+    def tostring(self, delimiter="_"):
+        ticker = str(self.ticker).upper()
+        expire = str(self.expire.strftime("%Y%m%d"))
+        contract = list(filter(None, [ticker, expire]))
+        return str(delimiter).join(contract)
 
 
 class Variable(ABC):
