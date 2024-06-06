@@ -16,8 +16,9 @@ from collections import OrderedDict as ODict
 from finance.variables import Contract, Securities, Valuations, Scenarios
 from support.calculations import Variable, Equation, Calculation
 from support.dispatchers import kwargsdispatcher
-from support.pipelines import Processor, Header
+from support.pipelines import Processor
 from support.filtering import Filter
+from support.parsers import Header
 from support.files import File
 
 __version__ = "1.0.0"
@@ -32,8 +33,8 @@ arbitrage_index = {option: str for option in list(map(str, Securities))} | {"str
 arbitrage_columns = {"apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.float32, "underlying": np.float32}
 
 
-class ArbitrageFile(File, variable="arbitrage", query=("contract", Contract), datatype=pd.DataFrame, header=arbitrage_index | arbitrage_columns): pass
-class ArbitrageHeader(Header, variable="arbitrage", axes={"index": arbitrage_index, "columns": arbitrage_columns, "duplicates": False}): pass
+class ArbitrageFile(File, variable="arbitrage", query=Contract, datatype=pd.DataFrame, header=arbitrage_index | arbitrage_columns): pass
+class ArbitrageHeader(Header, variable="arbitrage", axes={"index": arbitrage_index, "columns": arbitrage_columns}): pass
 
 
 class ValuationFilter(Filter, variables=["arbitrage"], query="contract"):

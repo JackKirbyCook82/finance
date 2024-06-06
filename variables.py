@@ -48,19 +48,24 @@ class DateRange(ntuple("DateRange", "minimum maximum")):
     def __len__(self): return (self.maximum - self.minimum).days
 
 
+class QueryMeta(type):
+    def __str__(cls): return str(cls.__name__).lower()
+    def __getitem__(cls, string): return cls.fromstring(string)
+
+
 @total_ordering
-class Ticker(str):
+class Ticker(ntuple("Ticker", "ticker"), metaclass=QueryMeta):
     def __str__(self): return self.tostring()
-    def __eq__(self, other): return str(self) == str(other)
-    def __lt__(self, other): return str(self) < str(other)
+    def __eq__(self, other): return str(self.ticker) == str(other)
+    def __lt__(self, other): return str(self.ticker) < str(other)
 
     @classmethod
     def fromstring(cls, string): return cls(string)
-    def tostring(self): return str(self)
+    def tostring(self): return str(self.ticker)
 
 
 @total_ordering
-class Contract(ntuple("Contract", "ticker expire")):
+class Contract(ntuple("Contract", "ticker expire"), metaclass=QueryMeta):
     def __str__(self): return self.tostring(delimiter="|")
     def __eq__(self, other): return str(self.ticker) == str(other.ticker) and self.expire == other.expire
     def __lt__(self, other): return str(self.ticker) < str(other.ticker) and self.expire < other.expire

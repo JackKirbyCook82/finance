@@ -12,7 +12,7 @@ import pandas as pd
 
 from finance.variables import Contract
 from support.filtering import Filter
-from support.pipelines import Header
+from support.parsers import Header
 from support.files import File
 
 __version__ = "1.0.0"
@@ -29,10 +29,10 @@ options_index = {"instrument": str, "position": str, "strike": np.float32, "tick
 options_columns = {"price": np.float32, "underlying": np.float32, "size": np.float32, "volume": np.float32, "interest": np.float32}
 
 
-class StockFile(File, variable="stocks", query=("contract", Contract), datatype=pd.DataFrame, header=stocks_index | stocks_columns): pass
-class OptionFile(File, variable="options", query=("contract", Contract), datatype=pd.DataFrame, header=options_index | options_columns): pass
-class StockHeader(Header, variable="stocks", axes={"index": stocks_index, "columns": stocks_columns, "duplicates": False}): pass
-class OptionHeader(Header, variable="options", axes={"index": options_index, "columns": options_columns, "duplicates": False}): pass
+class StockFile(File, variable="stocks", query=Contract, datatype=pd.DataFrame, header=stocks_index | stocks_columns): pass
+class OptionFile(File, variable="options", query=Contract, datatype=pd.DataFrame, header=options_index | options_columns): pass
+class StockHeader(Header, variable="stocks", axes={"index": stocks_index, "columns": stocks_columns}): pass
+class OptionHeader(Header, variable="options", axes={"index": options_index, "columns": options_columns}): pass
 class SecurityFilter(Filter, variables=["stocks", "options"], query="contract"): pass
 
 
