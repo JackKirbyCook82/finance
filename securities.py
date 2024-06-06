@@ -31,8 +31,8 @@ options_columns = {"price": np.float32, "underlying": np.float32, "size": np.flo
 
 class StockFile(File, variable="stocks", query=("contract", Contract), datatype=pd.DataFrame, header=stocks_index | stocks_columns): pass
 class OptionFile(File, variable="options", query=("contract", Contract), datatype=pd.DataFrame, header=options_index | options_columns): pass
-class StockHeader(Header, variable="stocks", axes={"index": stocks_index, "columns": stocks_columns}): pass
-class OptionHeader(Header, variable="options", axes={"index": options_index, "columns": options_columns}): pass
+class StockHeader(Header, variable="stocks", axes={"index": stocks_index, "columns": stocks_columns, "duplicates": False}): pass
+class OptionHeader(Header, variable="options", axes={"index": options_index, "columns": options_columns, "duplicates": False}): pass
 class SecurityFilter(Filter, variables=["stocks", "options"], query="contract"): pass
 
 

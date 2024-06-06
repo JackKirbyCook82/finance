@@ -32,9 +32,9 @@ stochastic_columns = {"price": np.float32, "oscillator": np.float32}
 class BarsFile(File, variable="bars", query=("ticker", Ticker), datatype=pd.DataFrame, header=technical_index | bars_columns): pass
 class StatisticFile(File, variable="statistic", query=("ticker", Ticker), datatype=pd.DataFrame, header=technical_index | statistic_columns): pass
 class StochasticFile(File, variable="stochastic", query=("ticker", Ticker), datatype=pd.DataFrame, header=technical_index | stochastic_columns): pass
-class BarsHeader(Header, variable="bars", datatype=pd.DataFrame, axes={"index": technical_index, "columns": bars_columns}): pass
-class StatisticHeader(Header, variable="statistic", datatype=pd.DataFrame, axes={"index": technical_index, "columns": statistic_columns}): pass
-class StochasticHeader(Header, variable="stochastic", datatype=pd.DataFrame, axes={"index": technical_index, "columns": stochastic_columns}): pass
+class BarsHeader(Header, variable="bars", datatype=pd.DataFrame, axes={"index": technical_index, "columns": bars_columns, "duplicates": False}): pass
+class StatisticHeader(Header, variable="statistic", datatype=pd.DataFrame, axes={"index": technical_index, "columns": statistic_columns, "duplicates": False}): pass
+class StochasticHeader(Header, variable="stochastic", datatype=pd.DataFrame, axes={"index": technical_index, "columns": stochastic_columns, "duplicates": False}): pass
 
 
 class TechnicalEquation(Equation): pass
