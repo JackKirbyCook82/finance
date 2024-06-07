@@ -24,7 +24,7 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-strategies_index = {option: str for option in list(map(str, Securities))} | {"strategy": str, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
+strategies_index = {option: str for option in list(map(str, Securities))} | {"strategy": str, "expire": np.datetime64, "date": np.datetime64}
 strategies_columns = {"spot": np.float32, "minimum": np.float32, "maximum": np.float32, "size": np.float32, "underlying": np.float32}
 
 
@@ -86,10 +86,10 @@ class CollarShortCalculation(StrategyCalculation, strategy=Strategies.Collar.Sho
 
 
 class StrategyCalculator(Processor):
-    def __init__(self, *args, strategies=[], name=None, **kwargs):
-        assert isinstance(strategies, list) and all([strategy in list(Strategies) for strategy in strategies])
+    def __init__(self, *args, calculations=[], name=None, **kwargs):
+        assert isinstance(calculations, list) and all([strategy in list(Strategies) for strategy in calculations])
         super().__init__(*args, name=name, **kwargs)
-        calculations = {variables["strategy"]: calculation for variables, calculation in ODict(list(StrategyCalculation)).items() if variables["strategy"] in strategies}
+        calculations = {variables["strategy"]: calculation for variables, calculation in ODict(list(StrategyCalculation)).items() if variables["strategy"] in calculations}
         self.__calculations = {str(strategy).lower(): calculation(*args, **kwargs) for strategy, calculation in calculations.items()}
         self.__variables = lambda **mapping: {key: xr.Variable(key, [value]).squeeze(key) for key, value in mapping.items()}
 
@@ -98,8 +98,10 @@ class StrategyCalculator(Processor):
         assert isinstance(options, pd.DataFrame)
         options = ODict(list(self.options(options, *args, **kwargs)))
         strategies = ODict(list(self.calculate(options, *args, **kwargs)))
-        strategies = {"strategies": list(strategies.values())}
-        yield contents | strategies
+        strategies = list(strategies.values())
+        if not bool(strategies):
+            return
+        yield contents | dict(strategies=strategies)
 
     def calculate(self, options, *args, **kwargs):
         for strategy, calculation in self.calculations.items():
@@ -108,25 +110,27 @@ class StrategyCalculator(Processor):
                 continue
             datasets = {option: options[option] for option in list(Strategies[strategy].options)}
             dataset = calculation(datasets, *args, **kwargs)
+            if self.empty(dataset["size"]):
+                continue
             dataset = dataset.assign_coords(variables)
             yield strategy, dataset
 
-    @staticmethod
-    def options(dataframe, *args, **kwargs):
+    def options(self, dataframe, *args, **kwargs):
         if bool(dataframe.empty):
             return
-        empty = lambda dataarray: not bool(np.count_nonzero(~np.isnan(dataarray.values)))
         datasets = xr.Dataset.from_dataframe(dataframe)
-        datasets = datasets.squeeze("ticker").squeeze("expire").squeeze("date")
+        datasets = datasets.squeeze("expire").squeeze("date")
         for instrument, position in product(datasets["instrument"].values, datasets["position"].values):
             option = Securities[f"{instrument}|{position}"]
             dataset = datasets.sel({"instrument": instrument, "position": position})
-            if empty(dataset["size"]):
+            if self.empty(dataset["size"]):
                 continue
             dataset = dataset.rename({"strike": str(option)})
             dataset["strike"] = dataset[str(option)]
             yield option, dataset
 
+    @staticmethod
+    def empty(dataarray): return not bool(np.count_nonzero(~np.isnan(dataarray.values)))
     @property
     def calculations(self): return self.__calculations
     @property

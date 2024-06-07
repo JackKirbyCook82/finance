@@ -65,10 +65,10 @@ class StochasticCalculation(TechnicalCalculation, technical=Technicals.STOCHASTI
 
 
 class TechnicalCalculator(Processor):
-    def __init__(self, *args, technicals=[], name=None, **kwargs):
-        assert isinstance(technicals, list) and all([strategy in list(Technicals) for strategy in technicals])
+    def __init__(self, *args, calculations=[], name=None, **kwargs):
+        assert isinstance(calculations, list) and all([strategy in list(Technicals) for strategy in calculations])
         super().__init__(*args, name=name, **kwargs)
-        calculations = {variables["technical"]: calculation for variables, calculation in ODict(list(TechnicalCalculation)).items() if variables["technical"] in technicals}
+        calculations = {variables["technical"]: calculation for variables, calculation in ODict(list(TechnicalCalculation)).items() if variables["technical"] in calculations}
         self.__calculations = {str(technical.name).lower(): calculation(*args, **kwargs) for technical, calculation in calculations.items()}
 
     def execute(self, contents, *args, **kwargs):

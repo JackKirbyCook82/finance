@@ -23,16 +23,16 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-stocks_index = {"instrument": str, "position": str, "ticker": str, "date": np.datetime64}
+stocks_index = {"instrument": str, "position": str, "date": np.datetime64}
 stocks_columns = {"price": np.float32, "size": np.float32, "volume": np.float32}
-options_index = {"instrument": str, "position": str, "strike": np.float32, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
+options_index = {"instrument": str, "position": str, "strike": np.float32, "expire": np.datetime64, "date": np.datetime64}
 options_columns = {"price": np.float32, "underlying": np.float32, "size": np.float32, "volume": np.float32, "interest": np.float32}
 
 
 class StockFile(File, variable="stocks", query=Contract, datatype=pd.DataFrame, header=stocks_index | stocks_columns): pass
 class OptionFile(File, variable="options", query=Contract, datatype=pd.DataFrame, header=options_index | options_columns): pass
-class StockHeader(Header, variable="stocks", axes={"index": stocks_index, "columns": stocks_columns}): pass
-class OptionHeader(Header, variable="options", axes={"index": options_index, "columns": options_columns}): pass
+class StockHeader(Header, variable="stocks", datatype=pd.DataFrame, axes={"index": stocks_index, "columns": stocks_columns}): pass
+class OptionHeader(Header, variable="options", datatype=pd.DataFrame, axes={"index": options_index, "columns": options_columns}): pass
 class SecurityFilter(Filter, variables=["stocks", "options"], query="contract"): pass
 
 

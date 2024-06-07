@@ -54,33 +54,33 @@ class QueryMeta(type):
 
 
 @total_ordering
-class Ticker(ntuple("Ticker", "ticker"), metaclass=QueryMeta):
+class Ticker(ntuple("Ticker", "symbol"), metaclass=QueryMeta):
     def __str__(self): return self.tostring()
-    def __eq__(self, other): return str(self.ticker) == str(other)
-    def __lt__(self, other): return str(self.ticker) < str(other)
+    def __eq__(self, other): return str(self.symbol) == str(self.symbol)
+    def __lt__(self, other): return str(self.symbol) < str(self.symbol)
 
     @classmethod
     def fromstring(cls, string): return cls(string)
-    def tostring(self): return str(self.ticker)
+    def tostring(self): return str(self.symbol)
 
 
 @total_ordering
-class Contract(ntuple("Contract", "ticker expire"), metaclass=QueryMeta):
+class Contract(ntuple("Contract", "symbol expire"), metaclass=QueryMeta):
     def __str__(self): return self.tostring(delimiter="|")
-    def __eq__(self, other): return str(self.ticker) == str(other.ticker) and self.expire == other.expire
-    def __lt__(self, other): return str(self.ticker) < str(other.ticker) and self.expire < other.expire
+    def __eq__(self, other): return str(self.symbol) == str(other.symbol) and self.expire == other.expire
+    def __lt__(self, other): return str(self.symbol) < str(other.symbol) and self.expire < other.expire
 
     @classmethod
     def fromstring(cls, string, delimiter="_"):
-        ticker, expire = str(string).split(delimiter)
-        ticker = str(ticker).upper()
+        symbol, expire = str(string).split(delimiter)
+        symbol = str(symbol).upper()
         expire = Datetime.strptime(expire, "%Y%m%d")
-        return cls(ticker, expire)
+        return cls(symbol, expire)
 
     def tostring(self, delimiter="_"):
-        ticker = str(self.ticker).upper()
+        symbol = str(self.symbol).upper()
         expire = str(self.expire.strftime("%Y%m%d"))
-        contract = list(filter(None, [ticker, expire]))
+        contract = list(filter(None, [symbol, expire]))
         return str(delimiter).join(contract)
 
 
