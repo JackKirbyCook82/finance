@@ -11,6 +11,8 @@ import numpy as np
 import pandas as pd
 
 from finance.variables import Contract
+from support.calculations import Variable, Equation, Calculation
+from support.pipelines import Processor
 from support.filtering import Filter
 from support.parsers import Header
 from support.files import File
@@ -25,8 +27,8 @@ __logger__ = logging.getLogger(__name__)
 
 stocks_index = {"instrument": str, "position": str, "date": np.datetime64}
 stocks_columns = {"price": np.float32, "size": np.float32, "volume": np.float32}
-options_index = {"instrument": str, "position": str, "strike": np.float32, "expire": np.datetime64, "date": np.datetime64}
-options_columns = {"price": np.float32, "underlying": np.float32, "size": np.float32, "volume": np.float32, "interest": np.float32}
+options_index = {"ticker": str, "instrument": str, "position": str, "strike": np.float32, "expire": np.datetime64}
+options_columns = {"current": np.datetime64, "price": np.float32, "underlying": np.float32, "size": np.float32, "volume": np.float32, "interest": np.float32}
 
 
 class StockFile(File, variable="stocks", query=Contract, datatype=pd.DataFrame, header=stocks_index | stocks_columns): pass
@@ -36,13 +38,30 @@ class OptionHeader(Header, variable="options", datatype=pd.DataFrame, axes={"ind
 class SecurityFilter(Filter, variables=["stocks", "options"], query="contract"): pass
 
 
+class SecurityEquation(Equation):
+    pass
+
+
+class SecurityCalculation(Calculation, equation=SecurityEquation):
+    def execute(self, *args, discount, **kwargs):
+        equation = self.equation(*args, **kwargs)
+
+
+class SecurityCalculator(Processor):
+    def __init__(self, *args, name=None, **kwargs):
+        super().__init__(*args, name=name, **kwargs)
+
+    def execute(self, contents, *args, **kwargs):
+        pass
+
+
 class SecurityFiles(object):
-    STOCKS = StockFile
-    OPTIONS = OptionFile
+    Stocks = StockFile
+    Options = OptionFile
 
 class SecurityHeaders(object):
-    STOCKS = StockHeader
-    OPTIONS = OptionHeader
+    Stocks = StockHeader
+    Options = OptionHeader
 
 
 

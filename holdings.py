@@ -10,37 +10,36 @@ import logging
 import numpy as np
 import pandas as pd
 from abc import ABC
-from enum import IntEnum
 from itertools import product
 
-from finance.variables import Contract, Securities, Strategies, Scenarios
-from support.files import FileDirectory, FileQuery, FileData
+from finance.variables import Status, Contract, Securities, Strategies, Scenarios
 from support.pipelines import Producer, Consumer
-from support.tables import Table, Options
+from support.tables import Tables, Options
+from support.parsers import Header
+from support.files import File
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["HoldingFile", "HoldingTable", "HoldingStatus", "HoldingReader", "HoldingWriter"]
+__all__ = ["HoldingFiles", "HoldingHeaders", "HoldingTable", "HoldingReader", "HoldingWriter"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-HoldingStatus = IntEnum("Status", ["PROSPECT", "PURCHASED"], start=1)
-
 holdings_formats = {(lead, lag): lambda column: f"{column:.02f}" for lead, lag in product(["npv", "cost"], list(map(lambda scenario: str(scenario.name).lower(), Scenarios)))}
 holdings_formats.update({(lead, lag): lambda column: f"{column * 100:.02f}%" for lead, lag in product(["apy"], list(map(lambda scenario: str(scenario.name).lower(), Scenarios)))})
 holdings_formats.update({("priority", ""): lambda column: f"{column:.02f}"})
-holdings_formats.update({("status", ""): lambda column: str(HoldingStatus(int(column)).name).lower()})
+holdings_formats.update({("status", ""): lambda column: str(Status(int(column)).name).lower()})
 holdings_options = Options.Dataframe(rows=20, columns=25, width=1000, formats=holdings_formats, numbers=lambda column: f"{column:.02f}")
-holdings_index = {"instrument": str, "position": str, "strike": np.float32, "ticker": str, "expire": np.datetime64, "date": np.datetime64}
-holdings_columns = {"quantity": np.int32}
-holdings_data = FileData.Dataframe(index=holdings_index, columns=holdings_columns, duplicates=True)
-contract_query = FileQuery("contract", Contract.tostring, Contract.fromstring)
+holdings_index = {"ticker": str, "instrument": str, "position": str, "strike": np.float32, "expire": np.datetime64}
+holdings_columns = {"entry": np.datetime64, "quantity": np.int32}
 
 
-class HoldingFile(FileDirectory, variable="holdings", query=contract_query, data=holdings_data): pass
-class HoldingTable(Table.Dataframe, options=holdings_options):
+class HoldingFile(File, variable="holdings", query=Contract, datatype=pd.DataFrame, header=holdings_index | holdings_columns): pass
+class HoldingHeader(Header, variable="holdings", axes={"index": holdings_index, "columns": holdings_columns}): pass
+
+
+class HoldingTable(Tables.Dataframe, datatype=pd.DataFrame, options=holdings_options):
     def write(self, locator, content, *args, **kwargs):
         locator = self.locate(locator)
         super().write(locator, content, *args, **kwargs)
@@ -66,11 +65,11 @@ class HoldingTable(Table.Dataframe, options=holdings_options):
 
 
 class HoldingWriter(Consumer, ABC):
-    def __init__(self, *args, destination, valuation, liquidity, priority, capacity=None, **kwargs):
+    def __init__(self, *args, destination, calculation, liquidity, priority, capacity=None, **kwargs):
         assert callable(liquidity) and callable(priority)
         super().__init__(*args, **kwargs)
+        self.__calculation = str(calculation.name).lower()
         self.__destination = destination
-        self.__valuation = valuation
         self.__liquidity = liquidity
         self.__priority = priority
         self.__capacity = capacity
@@ -90,26 +89,21 @@ class HoldingWriter(Consumer, ABC):
         return dataframe
 
     def write(self, dataframe, *args, **kwargs):
-        assert isinstance(dataframe, pd.DataFrame)
-        if bool(dataframe.empty):
-            return
-        dataframe["status"] = HoldingStatus.PROSPECT
-        dataframe = dataframe.reset_index(drop=True, inplace=False)
-        with self.destination.mutex:
-            if not bool(self.destination):
-                self.destination.table = dataframe
-            else:
-                index = np.max(self.destination.table.index.values) + 1
-                dataframe = dataframe.set_index(dataframe.index + index, drop=True, inplace=False)
-                self.destination.concat(dataframe, *args, **kwargs)
-            self.destination.sort("priority", reverse=True)
-            if bool(self.capacity):
-                self.destination.truncate(self.capacity)
+        dataframe["status"] = Status.PROSPECT
+        if not bool(self.destination):
+            self.destination.table = dataframe
+        else:
+            index = np.max(self.destination.table.index.values) + 1
+            dataframe = dataframe.set_index(dataframe.index + index, drop=True, inplace=False)
+            self.destination.concat(dataframe, *args, **kwargs)
+        self.destination.sort("priority", reverse=True)
+        if bool(self.capacity):
+            self.destination.truncate(self.capacity)
 
     @property
     def destination(self): return self.__destination
     @property
-    def valuation(self): return self.__valuation
+    def calculation(self): return self.__calculation
     @property
     def liquidity(self): return self.__liquidity
     @property
@@ -119,11 +113,8 @@ class HoldingWriter(Consumer, ABC):
 
 
 class HoldingReader(Producer, ABC):
-    def __init__(self, *args, source, valuation, **kwargs):
+    def __init__(self, *args, source, **kwargs):
         super().__init__(*args, **kwargs)
-        self.__index = list(holdings_index.keys())
-        self.__columns = list(holdings_columns.keys())
-        self.__valuation = valuation
         self.__source = source
 
     def execute(self, *args, **kwargs):
@@ -131,23 +122,32 @@ class HoldingReader(Producer, ABC):
         assert isinstance(valuations, pd.DataFrame)
         if bool(valuations.empty):
             return
-        valuations = valuations.reset_index(drop=False, inplace=False)
         contract = self.contract(valuations, *args, **kwargs)
         options = self.options(valuations, *args, **kwargs)
         stocks = self.stocks(valuations, *args, **kwargs)
         stocks = stocks.dropna(how="all", axis=1)
         securities = pd.concat([contract, options, stocks], axis=1, ignore_index=False)
         holdings = self.holdings(securities, *args, **kwargs)
-        holdings = holdings.groupby(self.index, as_index=False)[self.columns].sum()
+        index = list(holdings_index.keys())
+        columns = list(holdings_columns.keys())
+        holdings = holdings.groupby(index, as_index=False)[columns].sum()
         for (ticker, expire), dataframe in iter(holdings.groupby(["ticker", "expire"])):
             contract = Contract(ticker, expire)
             yield dict(contract=contract, holdings=dataframe)
 
+    def read(self, *args, **kwargs):
+        if not bool(self.source):
+            return pd.DataFrame()
+        mask = self.source.table["status"] == Status.PURCHASED
+        dataframe = self.source.table.where(mask).dropna(how="all", inplace=False)
+        self.source.remove(dataframe, *args, **kwargs)
+        return dataframe
+
     @staticmethod
     def contract(dataframe, *args, **kwargs):
-        contract = [column for column in list(holdings_index.keys()) if column in dataframe.columns]
         dataframe = dataframe.droplevel("scenario", axis=1)
-        return dataframe[contract]
+        dataframe["entry"] = dataframe["current"].date()
+        return dataframe[["ticker", "expire", "entry"]]
 
     @staticmethod
     def options(dataframe, *args, **kwargs):
@@ -176,27 +176,16 @@ class HoldingReader(Producer, ABC):
         dataframe = dataframe.melt(id_vars=contracts, value_vars=securities, var_name="security", value_name="strike")
         dataframe["instrument"] = dataframe["security"].apply(instrument)
         dataframe["position"] = dataframe["security"].apply(position)
-        dataframe["quantity"] = 1
         return dataframe
 
-    def read(self, *args, **kwargs):
-        with self.source.mutex:
-            if not bool(self.source):
-                return pd.DataFrame()
-            mask = self.source.table["status"] == HoldingStatus.PURCHASED
-            dataframe = self.source.table.where(mask).dropna(how="all", inplace=False)
-            self.source.remove(dataframe, *args, **kwargs)
-            return dataframe
-
-    @property
-    def valuation(self): return self.__valuation
     @property
     def source(self): return self.__source
-    @property
-    def index(self): return self.__index
-    @property
-    def columns(self): return self.__columns
 
 
+class HoldingFiles(object):
+    Holding = HoldingFile
+
+class HoldingHeaders(object):
+    Holding = HoldingHeader
 
 

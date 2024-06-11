@@ -24,20 +24,23 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-strategies_index = {option: str for option in list(map(str, Securities))} | {"strategy": str, "expire": np.datetime64, "date": np.datetime64}
-strategies_columns = {"spot": np.float32, "minimum": np.float32, "maximum": np.float32, "size": np.float32, "underlying": np.float32}
+strategies_index = {option: str for option in list(map(str, Securities))} | {"strategy": str, "ticker": str, "expire": np.datetime64}
+strategies_columns = {"current": np.datetime64, "spot": np.float32, "minimum": np.float32, "maximum": np.float32, "size": np.float32, "underlying": np.float32}
 
 
 class StrategyEquation(Equation):
-    qo = Variable("qo", "size", np.float32, function=lambda qα, qβ: np.minimum(qα, qβ))
-    xo = Variable("xo", "underlying", np.float32, function=lambda xα, xβ: (xα + xβ) / 2)
-    wo = Variable("wo", "spot", np.float32, function=lambda yo, ε: yo * 100 - ε)
+    ti = Variable("ti", "current", np.datetime64, function=lambda tα, tβ: np.minimum(tα, tβ))
+    qi = Variable("qi", "size", np.float32, function=lambda qα, qβ: np.minimum(qα, qβ))
+    xi = Variable("xi", "underlying", np.float32, function=lambda xα, xβ: (xα + xβ) / 2)
+    wi = Variable("wi", "spot", np.float32, function=lambda yi, ε: yi * 100 - ε)
     whτ = Variable("whτ", "maximum", np.float32, function=lambda yhτ, ε: yhτ * 100 - ε)
     wlτ = Variable("wlτ", "minimum", np.float32, function=lambda ylτ, ε: ylτ * 100 - ε)
+    tα = Variable("tα", "current", np.datetime64, position=Positions.LONG, locator="current")
     qα = Variable("qα", "size", np.float32, position=Positions.LONG, locator="size")
     xα = Variable("xα", "underlying", np.float32, position=Positions.LONG, locator="underlying")
     yα = Variable("yα", "price", np.float32, position=Positions.LONG, locator="price")
     kα = Variable("kα", "strike", np.float32, position=Positions.LONG, locator="strike")
+    tβ = Variable("tβ", "current", np.datetime64, position=Positions.SHORT, locator="current")
     qβ = Variable("qβ", "size", np.float32, position=Positions.SHORT, locator="size")
     xβ = Variable("xβ", "underlying", np.float32, position=Positions.SHORT, locator="underlying")
     yβ = Variable("yβ", "price", np.float32, position=Positions.SHORT, locator="price")
@@ -45,10 +48,10 @@ class StrategyEquation(Equation):
     ε = Variable("ε", "fees", np.float32, position="fees")
 
 class VerticalEquation(StrategyEquation):
-    yo = Variable("yo", "spot", np.float32, function=lambda yα, yβ: - yα + yβ)
+    yi = Variable("yi", "spot", np.float32, function=lambda yα, yβ: - yα + yβ)
 
 class CollarEquation(StrategyEquation):
-    yo = Variable("yo", "spot", np.float32, function=lambda yα, yβ, xo: - yα + yβ - xo)
+    yi = Variable("yi", "spot", np.float32, function=lambda yα, yβ, xi: - yα + yβ - xi)
 
 class VerticalPutEquation(VerticalEquation):
     yhτ = Variable("yhτ", "maximum", np.float32, function=lambda kα, kβ: np.maximum(kα - kβ, 0))
@@ -75,9 +78,10 @@ class StrategyCalculation(Calculation, ABC, fields=["strategy"]):
         equation = self.equation(*args, **kwargs)
         yield equation.whτ(**options, fees=fees)
         yield equation.wlτ(**options, fees=fees)
-        yield equation.wo(**options, fees=fees)
-        yield equation.xo(**options, fees=fees)
-        yield equation.qo(**options, fees=fees)
+        yield equation.wi(**options, fees=fees)
+        yield equation.xi(**options, fees=fees)
+        yield equation.qi(**options, fees=fees)
+        yield equation.ti(**options, fees=fees)
 
 class VerticalPutCalculation(StrategyCalculation, strategy=Strategies.Vertical.Put, equation=VerticalPutEquation): pass
 class VerticalCallCalculation(StrategyCalculation, strategy=Strategies.Vertical.Call, equation=VerticalCallEquation): pass
@@ -119,7 +123,7 @@ class StrategyCalculator(Processor):
         if bool(dataframe.empty):
             return
         datasets = xr.Dataset.from_dataframe(dataframe)
-        datasets = datasets.squeeze("expire").squeeze("date")
+        datasets = datasets.squeeze("ticker").squeeze("expire").squeeze("date")
         for instrument, position in product(datasets["instrument"].values, datasets["position"].values):
             option = Securities[f"{instrument}|{position}"]
             dataset = datasets.sel({"instrument": instrument, "position": position})

@@ -29,8 +29,8 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-arbitrage_index = {option: str for option in list(map(str, Securities))} | {"strategy": str, "valuation": str, "scenario": str, "expire": np.datetime64, "date": np.datetime64}
-arbitrage_columns = {"apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.float32, "underlying": np.float32}
+arbitrage_index = {option: str for option in list(map(str, Securities))} | {"strategy": str, "valuation": str, "scenario": str, "ticker": str, "expire": np.datetime64}
+arbitrage_columns = {"current": np.datetime64, "apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.float32, "underlying": np.float32}
 
 
 class ArbitrageFile(File, variable="arbitrage", query=Contract, datatype=pd.DataFrame, header=arbitrage_index | arbitrage_columns): pass
@@ -53,15 +53,15 @@ class ValuationFilter(Filter, variables=["arbitrage"], query="contract"):
 
 class ValuationEquation(Equation): pass
 class ArbitrageEquation(ValuationEquation):
-    tau = Variable("tau", "tau", np.int32, function=lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
-    inc = Variable("inc", "income", np.float32, function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
-    exp = Variable("exp", "cost", np.float32, function=lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0))
+    tau = Variable("tau", "tau", np.int32, function=lambda ti, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(ti, "ns"), "D") / np.timedelta64(1, "D"))
+    inc = Variable("inc", "income", np.float32, function=lambda vi, vτ: + np.maximum(vi, 0) + np.maximum(vτ, 0))
+    exp = Variable("exp", "cost", np.float32, function=lambda vi, vτ: - np.minimum(vi, 0) - np.minimum(vτ, 0))
     npv = Variable("npv", "npv", np.float32, function=lambda inc, exp, tau, ρ: np.divide(inc, np.power(1 + ρ, tau / 365)) - exp)
     irr = Variable("irr", "irr", np.float32, function=lambda inc, exp, tau: np.power(np.divide(inc, exp), np.power(tau, -1)) - 1)
     apy = Variable("apy", "apy", np.float32, function=lambda irr, tau: np.power(irr + 1, np.power(tau / 365, -1)) - 1)
     tτ = Variable("tτ", "expire", np.datetime64, position=0, locator="expire")
-    to = Variable("to", "date", np.datetime64, position=0, locator="date")
-    vo = Variable("vo", "spot", np.float32, position=0, locator="spot")
+    ti = Variable("ti", "date", np.datetime64, position=0, locator="date")
+    vi = Variable("vi", "spot", np.float32, position=0, locator="spot")
     ρ = Variable("ρ", "discount", np.float32, position="discount")
 
 class MinimumArbitrageEquation(ArbitrageEquation):
@@ -79,6 +79,7 @@ class ArbitrageCalculation(ValuationCalculation, ABC, valuation=Valuations.ARBIT
         yield equation.apy(strategies, discount=discount)
         yield equation.exp(strategies, discount=discount)
         yield strategies["underlying"]
+        yield strategies["current"]
         yield strategies["size"]
 
 class MinimumArbitrageCalculation(ArbitrageCalculation, scenario=Scenarios.MINIMUM, equation=MinimumArbitrageEquation): pass
@@ -133,10 +134,10 @@ class ValuationCalculator(Processor):
 
 
 class ValuationFiles(object):
-    ARBITRAGE = ArbitrageFile
+    Arbitrage = ArbitrageFile
 
 class ValuationHeaders(object):
-    ARBITRAGE = ArbitrageHeader
+    Arbitrage = ArbitrageHeader
 
 
 

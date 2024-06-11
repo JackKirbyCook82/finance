@@ -18,7 +18,7 @@ from support.dispatchers import typedispatcher
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["DateRange", "Ticker", "Contract", "Variable", "Actions", "Instruments", "Options", "Positions", "Spreads", "Scenarios", "Technicals", "Securities", "Strategies", "Valuations"]
+__all__ = ["DateRange", "Symbol", "Contract", "Variable", "Status", "Actions", "Instruments", "Options", "Positions", "Spreads", "Scenarios", "Technicals", "Securities", "Strategies", "Valuations"]
 __copyright__ = "Copyright 2023,SE Jack Kirby Cook"
 __license__ = "MIT License"
 
@@ -31,6 +31,7 @@ Spreads = IntEnum("Strategy", ["STRANGLE", "COLLAR", "VERTICAL"], start=1)
 Valuations = IntEnum("Valuation", ["ARBITRAGE"], start=1)
 Scenarios = IntEnum("Scenarios", ["MINIMUM", "MAXIMUM"], start=1)
 Technicals = IntEnum("Technicals", ["BARS", "STATISTIC", "STOCHASTIC"], start=1)
+Status = IntEnum("Status", ["PROSPECT", "PURCHASED"], start=1)
 
 
 class DateRange(ntuple("DateRange", "minimum maximum")):
@@ -54,33 +55,33 @@ class QueryMeta(type):
 
 
 @total_ordering
-class Ticker(ntuple("Ticker", "symbol"), metaclass=QueryMeta):
+class Symbol(ntuple("Symbol", "ticker"), metaclass=QueryMeta):
     def __str__(self): return self.tostring()
-    def __eq__(self, other): return str(self.symbol) == str(self.symbol)
-    def __lt__(self, other): return str(self.symbol) < str(self.symbol)
+    def __eq__(self, other): return str(self.ticker) == str(self.ticker)
+    def __lt__(self, other): return str(self.ticker) < str(self.ticker)
 
     @classmethod
     def fromstring(cls, string): return cls(string)
-    def tostring(self): return str(self.symbol)
+    def tostring(self): return str(self.ticker)
 
 
 @total_ordering
-class Contract(ntuple("Contract", "symbol expire"), metaclass=QueryMeta):
+class Contract(ntuple("Contract", "ticker expire"), metaclass=QueryMeta):
     def __str__(self): return self.tostring(delimiter="|")
-    def __eq__(self, other): return str(self.symbol) == str(other.symbol) and self.expire == other.expire
-    def __lt__(self, other): return str(self.symbol) < str(other.symbol) and self.expire < other.expire
+    def __eq__(self, other): return str(self.ticker) == str(other.ticker) and self.expire == other.expire
+    def __lt__(self, other): return str(self.ticker) < str(other.ticker) and self.expire < other.expire
 
     @classmethod
     def fromstring(cls, string, delimiter="_"):
-        symbol, expire = str(string).split(delimiter)
-        symbol = str(symbol).upper()
+        ticker, expire = str(string).split(delimiter)
+        ticker = str(ticker).upper()
         expire = Datetime.strptime(expire, "%Y%m%d")
-        return cls(symbol, expire)
+        return cls(ticker, expire)
 
     def tostring(self, delimiter="_"):
-        symbol = str(self.symbol).upper()
+        ticker = str(self.ticker).upper()
         expire = str(self.expire.strftime("%Y%m%d"))
-        contract = list(filter(None, [symbol, expire]))
+        contract = list(filter(None, [ticker, expire]))
         return str(delimiter).join(contract)
 
 

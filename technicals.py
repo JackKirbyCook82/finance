@@ -25,9 +25,9 @@ __license__ = "MIT License"
 
 
 technical_index = {"date": np.datetime64}
-bars_columns = {"high": np.float32, "low": np.float32, "open": np.float32, "close": np.float32, "price": np.float32, "volume": np.float32}
-statistic_columns = {"price": np.float32, "trend": np.float32, "volatility": np.float32}
-stochastic_columns = {"price": np.float32, "oscillator": np.float32}
+bars_columns = {"ticker": str, "high": np.float32, "low": np.float32, "open": np.float32, "close": np.float32, "price": np.float32, "volume": np.float32}
+statistic_columns = {"ticker": str, "price": np.float32, "trend": np.float32, "volatility": np.float32}
+stochastic_columns = {"ticker": str, "price": np.float32, "oscillator": np.float32}
 
 
 class BarsFile(File, variable="bars", query=Ticker, datatype=pd.DataFrame, header=technical_index | bars_columns): pass
@@ -50,6 +50,7 @@ class TechnicalCalculation(Calculation, ABC, fields=["technical"]): pass
 class StatisticCalculation(TechnicalCalculation, technical=Technicals.STATISTIC):
     @staticmethod
     def execute(bars, *args, period, **kwargs):
+        yield bars["ticker"]
         yield bars["price"]
         yield bars["price"].pct_change(1).rolling(period).mean().rename("trend")
         yield bars["price"].pct_change(1).rolling(period).std().rename("volatility")
@@ -60,6 +61,7 @@ class StochasticCalculation(TechnicalCalculation, technical=Technicals.STOCHASTI
         lowest = bars["low"].rolling(period).min().rename("lowest")
         highest = bars["high"].rolling(period).max().rename("highest")
         bars = pd.concat([bars, lowest, highest], axis=1)
+        yield bars["ticker"]
         yield bars["price"]
         yield equation.xki(bars)
 
@@ -87,14 +89,14 @@ class TechnicalCalculator(Processor):
 
 
 class TechnicalFiles(object):
-    BARS = BarsFile
-    STATISTIC = StatisticFile
-    STOCHASTIC = StochasticFile
+    Bars = BarsFile
+    Statistic = StatisticFile
+    Stochastic = StochasticFile
 
 class TechnicalHeaders(object):
-    BARS = BarsHeader
-    STATISTIC = StatisticHeader
-    STOCHASTIC = StochasticHeader
+    Bars = BarsHeader
+    Statistic = StatisticHeader
+    Stochastic = StochasticHeader
 
 
 
