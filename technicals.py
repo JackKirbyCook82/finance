@@ -11,7 +11,7 @@ import pandas as pd
 from abc import ABC
 from collections import OrderedDict as ODict
 
-from finance.variables import Ticker, Technicals
+from finance.variables import Symbol, Technicals
 from support.calculations import Variable, Equation, Calculation
 from support.pipelines import Processor
 from support.parsers import Header
@@ -30,9 +30,9 @@ statistic_columns = {"ticker": str, "price": np.float32, "trend": np.float32, "v
 stochastic_columns = {"ticker": str, "price": np.float32, "oscillator": np.float32}
 
 
-class BarsFile(File, variable="bars", query=Ticker, datatype=pd.DataFrame, header=technical_index | bars_columns): pass
-class StatisticFile(File, variable="statistic", query=Ticker, datatype=pd.DataFrame, header=technical_index | statistic_columns): pass
-class StochasticFile(File, variable="stochastic", query=Ticker, datatype=pd.DataFrame, header=technical_index | stochastic_columns): pass
+class BarsFile(File, variable="bars", query=Symbol, datatype=pd.DataFrame, header=technical_index | bars_columns): pass
+class StatisticFile(File, variable="statistic", query=Symbol, datatype=pd.DataFrame, header=technical_index | statistic_columns): pass
+class StochasticFile(File, variable="stochastic", query=Symbol, datatype=pd.DataFrame, header=technical_index | stochastic_columns): pass
 class BarsHeader(Header, variable="bars", datatype=pd.DataFrame, axes={"index": technical_index, "columns": bars_columns}): pass
 class StatisticHeader(Header, variable="statistic", datatype=pd.DataFrame, axes={"index": technical_index, "columns": statistic_columns}): pass
 class StochasticHeader(Header, variable="stochastic", datatype=pd.DataFrame, axes={"index": technical_index, "columns": stochastic_columns}): pass

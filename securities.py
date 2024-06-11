@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 
 from finance.variables import Contract
-from support.calculations import Variable, Equation, Calculation
+from support.calculations import Equation, Calculation
 from support.pipelines import Processor
 from support.filtering import Filter
 from support.parsers import Header

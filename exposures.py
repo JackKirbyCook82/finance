@@ -24,7 +24,7 @@ __logger__ = logging.getLogger(__name__)
 
 
 exposure_index = {"ticker": str, "instrument": str, "position": str, "strike": np.float32, "expire": np.datetime64}
-exposure_columns = {"quantity": np.int32}
+exposure_columns = {"entry": np.datetime64, "quantity": np.int32}
 
 
 class ExposureFile(File, variable="exposure", query=Contract, datatype=pd.DataFrame, header=exposure_index | exposure_columns): pass
@@ -33,7 +33,7 @@ class ExposureHeader(Header, variable="exposure", axes={"index": exposure_index,
 
 class ExposureCalculator(Processor):
     def execute(self, contents, *args, **kwargs):
-        holdings = contents["holdings"][list(exposure_index.keys()) + list(exposure_columns.keys())]
+        holdings = contents["holdings"]
         stocks = self.stocks(holdings, *args, **kwargs)
         options = self.options(holdings, *args, **kwargs)
         virtuals = self.virtuals(stocks, *args, **kwargs)
@@ -75,16 +75,17 @@ class ExposureCalculator(Processor):
     @staticmethod
     def holdings(dataframe, *args, **kwargs):
         factor = lambda cols: 2 * int(Positions[str(cols["position"]).upper()] is Positions.LONG) - 1
-        position = lambda cols: str(Positions.LONG.name).lower() if cols["holdings"] > 0 else str(Positions.SHORT.name).lower()
-        quantity = lambda cols: np.abs(cols["holdings"])
         holdings = lambda cols: (cols.apply(factor, axis=1) * cols["quantity"]).sum()
-        function = lambda cols: {"position": position(cols), "quantity": quantity(cols)}
-        columns = [column for column in dataframe.columns if column not in ["position", "quantity"]]
+        columns = [column for column in dataframe.columns if column not in ["position", "quantity", "entry"]]
+        dataframe = dataframe.groupby(columns, as_index=False).apply(holdings, axis=1, result_type="expand")
 
-        dataframe = dataframe.groupby(columns, as_index=False).apply(holdings).rename(columns={None: "holdings"})
+        #.rename(columns={None: "holdings"})
 
         dataframe = dataframe.where(dataframe["holdings"] != 0).dropna(how="all", inplace=False)
 
+        position = lambda cols: str(Positions.LONG.name).lower() if cols["holdings"] > 0 else str(Positions.SHORT.name).lower()
+        quantity = lambda cols: np.abs(cols["holdings"])
+        function = lambda cols: {"position": position(cols), "quantity": quantity(cols)}
         dataframe = pd.concat([dataframe, dataframe.apply(function, axis=1, result_type="expand")], axis=1)
 
         dataframe = dataframe.drop("holdings", axis=1, inplace=False)
