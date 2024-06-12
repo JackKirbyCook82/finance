@@ -50,6 +50,7 @@ class TechnicalCalculation(Calculation, ABC, fields=["technical"]): pass
 class StatisticCalculation(TechnicalCalculation, technical=Technicals.STATISTIC):
     @staticmethod
     def execute(bars, *args, period, **kwargs):
+        assert (bars["ticker"].to_numpy()[0] == bars["ticker"]).all()
         yield bars["ticker"]
         yield bars["price"]
         yield bars["price"].pct_change(1).rolling(period).mean().rename("trend")
@@ -57,6 +58,7 @@ class StatisticCalculation(TechnicalCalculation, technical=Technicals.STATISTIC)
 
 class StochasticCalculation(TechnicalCalculation, technical=Technicals.STOCHASTIC, equation=StochasticEquation):
     def execute(self, bars, *args, period, **kwargs):
+        assert (bars["ticker"].to_numpy()[0] == bars["ticker"]).all()
         equation = self.equation(*args, **kwargs)
         lowest = bars["low"].rolling(period).min().rename("lowest")
         highest = bars["high"].rolling(period).max().rename("highest")

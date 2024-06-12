@@ -74,10 +74,26 @@ class ExposureCalculator(Processor):
 
     @staticmethod
     def holdings(dataframe, *args, **kwargs):
-        factor = lambda cols: 2 * int(Positions[str(cols["position"]).upper()] is Positions.LONG) - 1
-        holdings = lambda cols: (cols.apply(factor, axis=1) * cols["quantity"]).sum()
+
+        position = lambda column: 2 * int(Positions[str(column["position"]).upper()] is Positions.LONG) - 1
+        quantity = lambda rows: 
+        entry = lambda rows:
+        dataframe["position"] = dataframe["position"].apply(position)
         columns = [column for column in dataframe.columns if column not in ["position", "quantity", "entry"]]
-        dataframe = dataframe.groupby(columns, as_index=False).apply(holdings, axis=1, result_type="expand")
+        dataframe = dataframe.groupby(columns, as_index=False).agg({"quantity": quantity, "entry": entry})
+
+
+
+
+
+        quantity = lambda cols: (cols["position"].apply(position) * cols["quantity"]).sum()
+        entry = lambda cols: cols["entry"]
+        function = lambda cols: {"quantity": quantity(cols), "entry": entry(cols)}
+
+        dataframe = dataframe.groupby(columns, as_index=False).apply(function, axis=1, result_type="expand")
+
+
+
 
         #.rename(columns={None: "holdings"})
 
