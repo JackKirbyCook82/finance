@@ -25,7 +25,7 @@ __logger__ = logging.getLogger(__name__)
 
 
 exposure_index = {"ticker": str, "instrument": str, "position": str, "strike": np.float32, "expire": np.datetime64}
-exposure_columns = {"current": np.datetime64, "entry": np.datetime64, "quantity": np.int32}
+exposure_columns = {"entry": np.datetime64, "quantity": np.int32}
 
 
 class ExposureFile(File, variable="exposure", query=Contract, datatype=pd.DataFrame, header=exposure_index | exposure_columns): pass
@@ -33,8 +33,7 @@ class ExposureHeader(Header, variable="exposure", axes={"index": exposure_index,
 
 
 class ExposureCalculator(Processor):
-    def execute(self, contents, *args, current, **kwargs):
-        assert isinstance(current, Datetime)
+    def execute(self, contents, *args, **kwargs):
         holdings = contents["holdings"]
         stocks = self.stocks(holdings, *args, **kwargs)
         options = self.options(holdings, *args, **kwargs)
@@ -43,7 +42,6 @@ class ExposureCalculator(Processor):
         securities = securities.reset_index(drop=True, inplace=False)
         exposure = self.holdings(securities, *args, *kwargs)
         exposure = exposure.reset_index(drop=True, inplace=False)
-        exposure["current"] = current
         yield contents | dict(exposure=exposure)
 
     @staticmethod
