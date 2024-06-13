@@ -13,7 +13,7 @@ from abc import ABC
 from itertools import product
 from collections import OrderedDict as ODict
 
-from finance.variables import Securities, Strategies, Positions
+from finance.variables import Variables, Securities, Strategies
 from support.calculations import Variable, Equation, Calculation
 from support.pipelines import Processor
 
@@ -35,16 +35,16 @@ class StrategyEquation(Equation):
     wi = Variable("wi", "spot", np.float32, function=lambda yi, ε: yi * 100 - ε)
     whτ = Variable("whτ", "maximum", np.float32, function=lambda yhτ, ε: yhτ * 100 - ε)
     wlτ = Variable("wlτ", "minimum", np.float32, function=lambda ylτ, ε: ylτ * 100 - ε)
-    tα = Variable("tα", "current", np.datetime64, position=Positions.LONG, locator="current")
-    qα = Variable("qα", "size", np.float32, position=Positions.LONG, locator="size")
-    xα = Variable("xα", "underlying", np.float32, position=Positions.LONG, locator="underlying")
-    yα = Variable("yα", "price", np.float32, position=Positions.LONG, locator="price")
-    kα = Variable("kα", "strike", np.float32, position=Positions.LONG, locator="strike")
-    tβ = Variable("tβ", "current", np.datetime64, position=Positions.SHORT, locator="current")
-    qβ = Variable("qβ", "size", np.float32, position=Positions.SHORT, locator="size")
-    xβ = Variable("xβ", "underlying", np.float32, position=Positions.SHORT, locator="underlying")
-    yβ = Variable("yβ", "price", np.float32, position=Positions.SHORT, locator="price")
-    kβ = Variable("kβ", "strike", np.float32, position=Positions.SHORT, locator="strike")
+    tα = Variable("tα", "current", np.datetime64, position=Variables.Positions.LONG, locator="current")
+    qα = Variable("qα", "size", np.float32, position=Variables.Positions.LONG, locator="size")
+    xα = Variable("xα", "underlying", np.float32, position=Variables.Positions.LONG, locator="underlying")
+    yα = Variable("yα", "price", np.float32, position=Variables.Positions.LONG, locator="price")
+    kα = Variable("kα", "strike", np.float32, position=Variables.Positions.LONG, locator="strike")
+    tβ = Variable("tβ", "current", np.datetime64, position=Variables.Positions.SHORT, locator="current")
+    qβ = Variable("qβ", "size", np.float32, position=Variables.Positions.SHORT, locator="size")
+    xβ = Variable("xβ", "underlying", np.float32, position=Variables.Positions.SHORT, locator="underlying")
+    yβ = Variable("yβ", "price", np.float32, position=Variables.Positions.SHORT, locator="price")
+    kβ = Variable("kβ", "strike", np.float32, position=Variables.Positions.SHORT, locator="strike")
     ε = Variable("ε", "fees", np.float32, position="fees")
 
 class VerticalEquation(StrategyEquation):
@@ -102,10 +102,10 @@ class StrategyCalculator(Processor):
         assert isinstance(options, pd.DataFrame)
         options = ODict(list(self.options(options, *args, **kwargs)))
         strategies = ODict(list(self.calculate(options, *args, **kwargs)))
-        strategies = list(strategies.values())
-        if not bool(strategies):
+        strategies = {"strategies": list(strategies.values())}
+        if not bool(strategies["strategies"]):
             return
-        yield contents | dict(strategies=strategies)
+        yield contents | strategies
 
     def calculate(self, options, *args, **kwargs):
         for strategy, calculation in self.calculations.items():

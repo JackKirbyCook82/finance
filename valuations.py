@@ -13,7 +13,7 @@ import xarray as xr
 from abc import ABC
 from collections import OrderedDict as ODict
 
-from finance.variables import Contract, Securities, Valuations, Scenarios
+from finance.variables import Querys, Variables, Securities
 from support.calculations import Variable, Equation, Calculation
 from support.dispatchers import kwargsdispatcher
 from support.pipelines import Processor
@@ -33,14 +33,14 @@ arbitrage_index = {option: str for option in list(map(str, Securities))} | {"str
 arbitrage_columns = {"current": np.datetime64, "apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.float32, "underlying": np.float32}
 
 
-class ArbitrageFile(File, variable="arbitrage", query=Contract, datatype=pd.DataFrame, header=arbitrage_index | arbitrage_columns): pass
-class ArbitrageHeader(Header, variable="arbitrage", axes={"index": arbitrage_index, "columns": arbitrage_columns}): pass
+class ArbitrageFile(File, variable=Variables.Valuations.ARBITRAGE, query=Querys.Contract, datatype=pd.DataFrame, header=arbitrage_index | arbitrage_columns): pass
+class ArbitrageHeader(Header, variable=Variables.Valuations.ARBITRAGE, axes={"index": arbitrage_index, "columns": arbitrage_columns}): pass
 
 
-class ValuationFilter(Filter, variables=["arbitrage"], query="contract"):
+class ValuationFilter(Filter, variables=[Variables.Valuations.ARBITRAGE], query=Querys.Contract):
     @kwargsdispatcher("variable")
     def filter(self, dataframe, *args, variable, **kwargs): raise ValueError(variable)
-    @filter.register.value("arbitrage")
+    @filter.register.value(str(Variables.Valuations.ARBITRAGE.name).lower())
     def arbitrage(self, dataframe, *args, **kwargs):
         columns = set(arbitrage_columns.keys())
         index = set(dataframe.columns) - ({"scenario"} | set(columns))
@@ -72,7 +72,7 @@ class MaximumArbitrageEquation(ArbitrageEquation):
 
 
 class ValuationCalculation(Calculation, ABC, fields=["valuation", "scenario"]): pass
-class ArbitrageCalculation(ValuationCalculation, ABC, valuation=Valuations.ARBITRAGE):
+class ArbitrageCalculation(ValuationCalculation, ABC, valuation=Variables.Valuations.ARBITRAGE):
     def execute(self, strategies, *args, discount, **kwargs):
         equation = self.equation(*args, **kwargs)
         yield equation.npv(strategies, discount=discount)
@@ -82,13 +82,13 @@ class ArbitrageCalculation(ValuationCalculation, ABC, valuation=Valuations.ARBIT
         yield strategies["current"]
         yield strategies["size"]
 
-class MinimumArbitrageCalculation(ArbitrageCalculation, scenario=Scenarios.MINIMUM, equation=MinimumArbitrageEquation): pass
-class MaximumArbitrageCalculation(ArbitrageCalculation, scenario=Scenarios.MAXIMUM, equation=MaximumArbitrageEquation): pass
+class MinimumArbitrageCalculation(ArbitrageCalculation, scenario=Variables.Scenarios.MINIMUM, equation=MinimumArbitrageEquation): pass
+class MaximumArbitrageCalculation(ArbitrageCalculation, scenario=Variables.Scenarios.MAXIMUM, equation=MaximumArbitrageEquation): pass
 
 
 class ValuationCalculator(Processor):
     def __init__(self, *args, name=None, **kwargs):
-        assert kwargs["calculation"] in list(Valuations)
+        assert kwargs["calculation"] in list(Variables.Valuations)
         super().__init__(*args, name=name, **kwargs)
         calculations = {variables["scenario"]: calculation for variables, calculation in ODict(list(ValuationCalculation)).items() if variables["valuation"] is kwargs["calculation"]}
         self.__calculations = {str(scenario.name).lower(): calculation(*args, **kwargs) for scenario, calculation in calculations.items()}
@@ -100,11 +100,10 @@ class ValuationCalculator(Processor):
         assert isinstance(strategies, list) and all([isinstance(dataset, xr.Dataset) for dataset in strategies])
         valuations = ODict(list(self.calculate(strategies, *args, **kwargs)))
         valuations = ODict(list(self.flatten(valuations, *args, **kwargs)))
-        valuations = list(valuations.values())
-        if not bool(valuations):
+        valuations = {self.valuation: pd.concat(list(valuations.values()), axis=0)}
+        if bool(valuations["valuations"].empty):
             return
-        valuations = pd.concat(list(valuations), axis=0)
-        yield contents | {self.valuation: valuations}
+        yield contents | valuations
 
     def calculate(self, strategies, *args, **kwargs):
         for scenario, calculation in self.calculations.items():

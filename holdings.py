@@ -12,7 +12,7 @@ import pandas as pd
 from abc import ABC
 from itertools import product
 
-from finance.variables import Status, Contract, Securities, Strategies, Scenarios
+from finance.variables import Querys, Variables, Securities, Strategies
 from support.pipelines import Producer, Consumer
 from support.tables import Tables, Options
 from support.parsers import Header
@@ -26,16 +26,16 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-holdings_formats = {(lead, lag): lambda column: f"{column:.02f}" for lead, lag in product(["npv", "cost"], list(map(lambda scenario: str(scenario.name).lower(), Scenarios)))}
-holdings_formats.update({(lead, lag): lambda column: f"{column * 100:.02f}%" for lead, lag in product(["apy"], list(map(lambda scenario: str(scenario.name).lower(), Scenarios)))})
+holdings_formats = {(lead, lag): lambda column: f"{column:.02f}" for lead, lag in product(["npv", "cost"], list(map(lambda scenario: str(scenario.name).lower(), Variables.Scenarios)))}
+holdings_formats.update({(lead, lag): lambda column: f"{column * 100:.02f}%" for lead, lag in product(["apy"], list(map(lambda scenario: str(scenario.name).lower(), Variables.Scenarios)))})
 holdings_formats.update({("priority", ""): lambda column: f"{column:.02f}"})
-holdings_formats.update({("status", ""): lambda column: str(Status(int(column)).name).lower()})
+holdings_formats.update({("status", ""): lambda column: str(Variables.Status(int(column)).name).lower()})
 holdings_options = Options.Dataframe(rows=20, columns=25, width=1000, formats=holdings_formats, numbers=lambda column: f"{column:.02f}")
-holdings_index = {"ticker": str, "instrument": str, "position": str, "strike": np.float32, "expire": np.datetime64}
-holdings_columns = {"entry": np.datetime64, "quantity": np.int32}
+holdings_index = {"ticker": str, "strike": np.float32, "expire": np.datetime64, "instrument": str, "position": str}
+holdings_columns = {"quantity": np.int32}
 
 
-class HoldingFile(File, variable="holdings", query=Contract, datatype=pd.DataFrame, header=holdings_index | holdings_columns): pass
+class HoldingFile(File, variable="holdings", query=Querys.Contract, datatype=pd.DataFrame, header=holdings_index | holdings_columns): pass
 class HoldingHeader(Header, variable="holdings", axes={"index": holdings_index, "columns": holdings_columns}): pass
 
 
@@ -89,7 +89,7 @@ class HoldingWriter(Consumer, ABC):
         return dataframe
 
     def write(self, dataframe, *args, **kwargs):
-        dataframe["status"] = Status.PROSPECT
+        dataframe["status"] = Variables.Status.PROSPECT
         if not bool(self.destination):
             self.destination.table = dataframe
         else:
@@ -132,13 +132,13 @@ class HoldingReader(Producer, ABC):
         columns = list(holdings_columns.keys())
         holdings = holdings.groupby(index, as_index=False)[columns].sum()
         for (ticker, expire), dataframe in iter(holdings.groupby(["ticker", "expire"])):
-            contract = Contract(ticker, expire)
+            contract = Querys.Contract(ticker, expire)
             yield dict(contract=contract, holdings=dataframe)
 
     def read(self, *args, **kwargs):
         if not bool(self.source):
             return pd.DataFrame()
-        mask = self.source.table["status"] == Status.PURCHASED
+        mask = self.source.table["status"] == Variables.Status.PURCHASED
         dataframe = self.source.table.where(mask).dropna(how="all", inplace=False)
         self.source.remove(dataframe, *args, **kwargs)
         return dataframe
@@ -146,8 +146,7 @@ class HoldingReader(Producer, ABC):
     @staticmethod
     def contract(dataframe, *args, **kwargs):
         dataframe = dataframe.droplevel("scenario", axis=1)
-        dataframe["entry"] = dataframe["current"].date()
-        return dataframe[["ticker", "expire", "entry"]]
+        return dataframe[list(Querys.Contract.fields())]
 
     @staticmethod
     def options(dataframe, *args, **kwargs):

@@ -11,7 +11,7 @@ import pandas as pd
 from abc import ABC
 from collections import OrderedDict as ODict
 
-from finance.variables import Symbol, Technicals
+from finance.variables import Querys, Variables
 from support.calculations import Variable, Equation, Calculation
 from support.pipelines import Processor
 from support.parsers import Header
@@ -30,12 +30,12 @@ statistic_columns = {"ticker": str, "price": np.float32, "trend": np.float32, "v
 stochastic_columns = {"ticker": str, "price": np.float32, "oscillator": np.float32}
 
 
-class BarsFile(File, variable="bars", query=Symbol, datatype=pd.DataFrame, header=technical_index | bars_columns): pass
-class StatisticFile(File, variable="statistic", query=Symbol, datatype=pd.DataFrame, header=technical_index | statistic_columns): pass
-class StochasticFile(File, variable="stochastic", query=Symbol, datatype=pd.DataFrame, header=technical_index | stochastic_columns): pass
-class BarsHeader(Header, variable="bars", datatype=pd.DataFrame, axes={"index": technical_index, "columns": bars_columns}): pass
-class StatisticHeader(Header, variable="statistic", datatype=pd.DataFrame, axes={"index": technical_index, "columns": statistic_columns}): pass
-class StochasticHeader(Header, variable="stochastic", datatype=pd.DataFrame, axes={"index": technical_index, "columns": stochastic_columns}): pass
+class BarsFile(File, variable=Variables.Technicals.BARS, query=Querys.Symbol, datatype=pd.DataFrame, header=technical_index | bars_columns): pass
+class StatisticFile(File, variable=Variables.Technicals.STATISTIC, query=Querys.Symbol, datatype=pd.DataFrame, header=technical_index | statistic_columns): pass
+class StochasticFile(File, variable=Variables.Technicals.STOCHASTIC, query=Querys.Symbol, datatype=pd.DataFrame, header=technical_index | stochastic_columns): pass
+class BarsHeader(Header, variable=Variables.Technicals.BARS, datatype=pd.DataFrame, axes={"index": technical_index, "columns": bars_columns}): pass
+class StatisticHeader(Header, variable=Variables.Technicals.STATISTIC, datatype=pd.DataFrame, axes={"index": technical_index, "columns": statistic_columns}): pass
+class StochasticHeader(Header, variable=Variables.Technicals.STOCHASTIC, datatype=pd.DataFrame, axes={"index": technical_index, "columns": stochastic_columns}): pass
 
 
 class TechnicalEquation(Equation): pass
@@ -47,7 +47,7 @@ class StochasticEquation(TechnicalEquation):
 
 
 class TechnicalCalculation(Calculation, ABC, fields=["technical"]): pass
-class StatisticCalculation(TechnicalCalculation, technical=Technicals.STATISTIC):
+class StatisticCalculation(TechnicalCalculation, technical=Variables.Technicals.STATISTIC):
     @staticmethod
     def execute(bars, *args, period, **kwargs):
         assert (bars["ticker"].to_numpy()[0] == bars["ticker"]).all()
@@ -56,7 +56,7 @@ class StatisticCalculation(TechnicalCalculation, technical=Technicals.STATISTIC)
         yield bars["price"].pct_change(1).rolling(period).mean().rename("trend")
         yield bars["price"].pct_change(1).rolling(period).std().rename("volatility")
 
-class StochasticCalculation(TechnicalCalculation, technical=Technicals.STOCHASTIC, equation=StochasticEquation):
+class StochasticCalculation(TechnicalCalculation, technical=Variables.Technicals.STOCHASTIC, equation=StochasticEquation):
     def execute(self, bars, *args, period, **kwargs):
         assert (bars["ticker"].to_numpy()[0] == bars["ticker"]).all()
         equation = self.equation(*args, **kwargs)
@@ -70,7 +70,7 @@ class StochasticCalculation(TechnicalCalculation, technical=Technicals.STOCHASTI
 
 class TechnicalCalculator(Processor):
     def __init__(self, *args, calculations=[], name=None, **kwargs):
-        assert isinstance(calculations, list) and all([strategy in list(Technicals) for strategy in calculations])
+        assert isinstance(calculations, list) and all([technical in list(Variables.Technicals) for technical in calculations])
         super().__init__(*args, name=name, **kwargs)
         calculations = {variables["technical"]: calculation for variables, calculation in ODict(list(TechnicalCalculation)).items() if variables["technical"] in calculations}
         self.__calculations = {str(technical.name).lower(): calculation(*args, **kwargs) for technical, calculation in calculations.items()}
@@ -79,7 +79,7 @@ class TechnicalCalculator(Processor):
         bars = contents["bars"]
         assert isinstance(bars, pd.DataFrame)
         technicals = ODict(list(self.calculate(bars, *args, **kwargs)))
-        yield contents | dict(technicals)
+        yield contents | technicals
 
     def calculate(self, bars, *args, **kwargs):
         for technical, calculation in self.calculations.items():

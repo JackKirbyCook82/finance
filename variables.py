@@ -18,13 +18,13 @@ from support.dispatchers import typedispatcher
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["DateRange", "Symbol", "Contract", "Variable", "Status", "Actions", "Instruments", "Options", "Positions", "Spreads", "Scenarios", "Technicals", "Securities", "Strategies", "Valuations"]
+__all__ = ["Variables", "Querys", "DateRange", "Securities", "Strategies"]
 __copyright__ = "Copyright 2023,SE Jack Kirby Cook"
 __license__ = "MIT License"
 
 
 Actions = IntEnum("Actions", ["OPEN", "CLOSE"], start=1)
-Instruments = IntEnum("Instruments", ["PUT", "CALL", "STOCK"], start=1)
+Instruments = IntEnum("Instruments", ["PUT", "CALL", "STOCK", "OPTION"], start=1)
 Options = IntEnum("Options", ["PUT", "CALL"], start=1)
 Positions = IntEnum("Positions", ["LONG", "SHORT"], start=1)
 Spreads = IntEnum("Strategy", ["STRANGLE", "COLLAR", "VERTICAL"], start=1)
@@ -49,16 +49,19 @@ class DateRange(ntuple("DateRange", "minimum maximum")):
     def __len__(self): return (self.maximum - self.minimum).days
 
 
-class QueryMeta(type):
+class Query(type):
     def __str__(cls): return str(cls.__name__).lower()
     def __getitem__(cls, string): return cls.fromstring(string)
 
 
 @total_ordering
-class Symbol(ntuple("Symbol", "ticker"), metaclass=QueryMeta):
+class Symbol(ntuple("Symbol", "ticker"), metaclass=Query):
     def __str__(self): return self.tostring()
     def __eq__(self, other): return str(self.ticker) == str(self.ticker)
     def __lt__(self, other): return str(self.ticker) < str(self.ticker)
+
+    @classmethod
+    def fields(cls): return cls._fields
 
     @classmethod
     def fromstring(cls, string): return cls(string)
@@ -66,10 +69,13 @@ class Symbol(ntuple("Symbol", "ticker"), metaclass=QueryMeta):
 
 
 @total_ordering
-class Contract(ntuple("Contract", "ticker expire"), metaclass=QueryMeta):
+class Contract(ntuple("Contract", "ticker expire"), metaclass=Query):
     def __str__(self): return self.tostring(delimiter="|")
     def __eq__(self, other): return str(self.ticker) == str(other.ticker) and self.expire == other.expire
     def __lt__(self, other): return str(self.ticker) < str(other.ticker) and self.expire < other.expire
+
+    @classmethod
+    def fields(cls): return cls._fields
 
     @classmethod
     def fromstring(cls, string, delimiter="_"):
@@ -195,6 +201,21 @@ class StrategiesMeta(VariablesMeta, variables=[CollarLong, CollarShort, Vertical
 
 class Securities(object, metaclass=SecuritiesMeta): pass
 class Strategies(object, metaclass=StrategiesMeta): pass
+
+class Querys(object):
+    Symbol = Symbol
+    Contract = Contract
+
+class Variables(object):
+    Actions = Actions
+    Instruments = Instruments
+    Options = Options
+    Positions = Positions
+    Spreads = Spreads
+    Valuations = Valuations
+    Scenarios = Scenarios
+    Technicals = Technicals
+    Status = Status
 
 
 
