@@ -9,6 +9,7 @@ Created on Fri May 17 2024
 import logging
 import numpy as np
 import pandas as pd
+from datetime import datetime as Datetime
 
 from finance.variables import Contract, Instruments, Positions
 from support.pipelines import Processor
@@ -24,7 +25,7 @@ __logger__ = logging.getLogger(__name__)
 
 
 exposure_index = {"ticker": str, "instrument": str, "position": str, "strike": np.float32, "expire": np.datetime64}
-exposure_columns = {"entry": np.datetime64, "quantity": np.int32}
+exposure_columns = {"current": np.datetime64, "entry": np.datetime64, "quantity": np.int32}
 
 
 class ExposureFile(File, variable="exposure", query=Contract, datatype=pd.DataFrame, header=exposure_index | exposure_columns): pass
@@ -32,7 +33,8 @@ class ExposureHeader(Header, variable="exposure", axes={"index": exposure_index,
 
 
 class ExposureCalculator(Processor):
-    def execute(self, contents, *args, **kwargs):
+    def execute(self, contents, *args, current, **kwargs):
+        assert isinstance(current, Datetime)
         holdings = contents["holdings"]
         stocks = self.stocks(holdings, *args, **kwargs)
         options = self.options(holdings, *args, **kwargs)
@@ -41,6 +43,7 @@ class ExposureCalculator(Processor):
         securities = securities.reset_index(drop=True, inplace=False)
         exposure = self.holdings(securities, *args, *kwargs)
         exposure = exposure.reset_index(drop=True, inplace=False)
+        exposure["current"] = current
         yield contents | dict(exposure=exposure)
 
     @staticmethod
@@ -74,37 +77,15 @@ class ExposureCalculator(Processor):
 
     @staticmethod
     def holdings(dataframe, *args, **kwargs):
-
-        position = lambda column: 2 * int(Positions[str(column["position"]).upper()] is Positions.LONG) - 1
-        quantity = lambda rows: 
-        entry = lambda rows:
-        dataframe["position"] = dataframe["position"].apply(position)
-        columns = [column for column in dataframe.columns if column not in ["position", "quantity", "entry"]]
-        dataframe = dataframe.groupby(columns, as_index=False).agg({"quantity": quantity, "entry": entry})
-
-
-
-
-
-        quantity = lambda cols: (cols["position"].apply(position) * cols["quantity"]).sum()
-        entry = lambda cols: cols["entry"]
-        function = lambda cols: {"quantity": quantity(cols), "entry": entry(cols)}
-
-        dataframe = dataframe.groupby(columns, as_index=False).apply(function, axis=1, result_type="expand")
-
-
-
-
-        #.rename(columns={None: "holdings"})
-
-        dataframe = dataframe.where(dataframe["holdings"] != 0).dropna(how="all", inplace=False)
-
-        position = lambda cols: str(Positions.LONG.name).lower() if cols["holdings"] > 0 else str(Positions.SHORT.name).lower()
-        quantity = lambda cols: np.abs(cols["holdings"])
-        function = lambda cols: {"position": position(cols), "quantity": quantity(cols)}
-        dataframe = pd.concat([dataframe, dataframe.apply(function, axis=1, result_type="expand")], axis=1)
-
-        dataframe = dataframe.drop("holdings", axis=1, inplace=False)
+        index = [value for value in dataframe.columns if value not in ["position", "quantity", "entry"]]
+        numerical = lambda value: 2 * int(Positions[str(value).upper()] is Positions.LONG) - 1
+        symbolical = lambda value: lambda cols: str(Positions.LONG.name).lower() if value > 0 else str(Positions.SHORT.name).lower()
+        holdings = lambda cols: cols["quantity"] * numerical(cols["position"])
+        dataframe["quantity"] = dataframe.apply(holdings)
+        dataframe = dataframe.groupby(index, as_index=False).agg({"quantity": np.sum, "entry": np.max})
+        dataframe = dataframe.where(dataframe["quantity"] != 0).dropna(how="all", inplace=False)
+        dataframe["position"] = dataframe["quantity"].apply(symbolical)
+        dataframe["quantity"] = dataframe["quantity"].apply(np.abs)
         return dataframe
 
 
