@@ -30,11 +30,12 @@ holdings_formats.update({(lead, lag): lambda column: f"{column * 100:.02f}%" for
 holdings_formats.update({("priority", ""): lambda column: f"{column:.02f}"})
 holdings_formats.update({("status", ""): lambda column: str(Variables.Status(int(column)).name).lower()})
 holdings_options = Options.Dataframe(rows=20, columns=25, width=1000, formats=holdings_formats, numbers=lambda column: f"{column:.02f}")
-holdings_index = {"ticker": str, "strike": np.float32, "expire": np.datetime64, "instrument": Variables.Instruments, "position": Variables.Positions}
+holdings_index = {"ticker": str, "strike": np.float32, "expire": np.datetime64, "instrument": int, "position": int}
+holdings_parsers = {"instrument": lambda x: Variables.Instruments(int(x)), "position": lambda x: Variables.Positions(int(x))}
 holdings_columns = {"quantity": np.int32}
 
 
-class HoldingFile(File, variable="holdings", query=Querys.Contract, datatype=pd.DataFrame, header=holdings_index | holdings_columns):
+class HoldingFile(File, variable="holdings", query=Querys.Contract, datatype=pd.DataFrame, header=holdings_index | holdings_columns, parsers=holdings_parsers):
     pass
 
 
@@ -136,7 +137,7 @@ class HoldingWriter(Consumer, ABC):
     def __init__(self, *args, destination, calculation, liquidity, priority, capacity=None, **kwargs):
         assert callable(liquidity) and callable(priority)
         super().__init__(*args, **kwargs)
-        self.__calculation = calculation
+        self.__calculation = str(calculation.name).lower()
         self.__destination = destination
         self.__liquidity = liquidity
         self.__priority = priority

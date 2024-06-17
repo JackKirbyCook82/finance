@@ -22,8 +22,7 @@ __logger__ = logging.getLogger(__name__)
 class DivestitureReader(HoldingReader): pass
 class DivestitureWriter(HoldingWriter):
     def execute(self, contents, *args, **kwargs):
-        valuation = str(self.calculation.name).lower()
-        valuations, exposures = contents[valuation], contents["exposures"]
+        valuations, exposures = contents[self.calculation], contents["exposures"]
         assert isinstance(valuations, pd.DataFrame) and isinstance(exposures, pd.DataFrame)
         if bool(valuations.empty):
             return

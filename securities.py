@@ -30,12 +30,14 @@ __logger__ = logging.getLogger(__name__)
 
 stock_index = {"ticker": str, "instrument": int, "position": int}
 stock_columns = {"current": np.datetime64, "price": np.float32, "size": np.float32, "volume": np.float32}
-option_index = {"ticker": str, "expire": np.datetime64, "strike": np.float32, "instrument": Variables.Instruments, "position": Variables.Positions}
+stock_parsers = {"instrument": lambda x: Variables.Instruments(int(x)), "position": lambda x: Variables.Positions(int(x))}
+option_index = {"ticker": str, "expire": np.datetime64, "strike": np.float32, "instrument": int, "position": int}
 option_columns = {"current": np.datetime64, "price": np.float32, "underlying": np.float32, "size": np.float32, "volume": np.float32, "interest": np.float32}
+option_parsers = {"instrument": lambda x: Variables.Instruments(int(x)), "position": lambda x: Variables.Positions(int(x))}
 
 
-class StockFile(File, variable=Variables.Instruments.STOCK, query=Querys.Contract, datatype=pd.DataFrame, header=stock_index | stock_columns): pass
-class OptionFile(File, variable=Variables.Instruments.OPTION, query=Querys.Contract, datatype=pd.DataFrame, header=option_index | option_columns): pass
+class StockFile(File, variable=Variables.Instruments.STOCK, query=Querys.Contract, datatype=pd.DataFrame, header=stock_index | stock_columns, parsers=stock_parsers): pass
+class OptionFile(File, variable=Variables.Instruments.OPTION, query=Querys.Contract, datatype=pd.DataFrame, header=option_index | option_columns, parsers=option_parsers): pass
 
 
 class SecurityFilter(Filter, variables=[Variables.Instruments.STOCK, Variables.Instruments.OPTION], query=Querys.Contract):
@@ -50,7 +52,7 @@ class OptionEquation(SecurityEquation):
     nzr = Variable("nr", "right", np.float32, function=lambda xi, zr, θ: xi * θ * norm(θ * zr))
     nzl = Variable("nl", "left", np.float32, function=lambda k, zl, θ, D: k * θ * D * norm(θ * zl))
     zr = Variable("zr", "right", np.float32, function=lambda α, β: α + β)
-    zl = Variable("zl", "left", np.float32, functin=lambda α, β: α - β)
+    zl = Variable("zl", "left", np.float32, function=lambda α, β: α - β)
     α = Variable("α", "alpha", np.float32, function=lambda si, A, B: (si / B) + (A, B))
     β = Variable("β", "beta", np.float32, function=lambda B: (B ** 2) / (B * 2))
     A = Variable("A", "alpha", np.float32, function=lambda τi, ρ: np.multiply(τi, ρ))

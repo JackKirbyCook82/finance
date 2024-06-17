@@ -92,14 +92,14 @@ class ValuationCalculator(Processor):
         calculations = {variables["scenario"]: calculation for variables, calculation in ODict(list(ValuationCalculation)).items() if variables["valuation"] is kwargs["calculation"]}
         self.__calculations = {str(scenario.name).lower(): calculation(*args, **kwargs) for scenario, calculation in calculations.items()}
         self.__variables = lambda **mapping: {key: xr.Variable(key, [value]).squeeze(key) for key, value in mapping.items()}
-        self.__calculation = kwargs["calculation"]
+        self.__calculation = str(kwargs["calculation"].name).lower()
 
     def execute(self, contents, *args, **kwargs):
         strategies = contents["strategies"]
         assert isinstance(strategies, list) and all([isinstance(dataset, xr.Dataset) for dataset in strategies])
         valuations = ODict(list(self.calculate(strategies, *args, **kwargs)))
         valuations = ODict(list(self.flatten(valuations, *args, **kwargs)))
-        valuations = {str(self.calculation.name).lower(): pd.concat(list(valuations.values()), axis=0)}
+        valuations = {self.calculation: pd.concat(list(valuations.values()), axis=0)}
         if bool(valuations["valuations"].empty):
             return
         yield contents | valuations

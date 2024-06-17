@@ -22,8 +22,7 @@ __logger__ = logging.getLogger(__name__)
 class AcquisitionReader(HoldingReader): pass
 class AcquisitionWriter(HoldingWriter):
     def execute(self, contents, *args, **kwargs):
-        valuation = str(self.calculation.name).lower()
-        valuations = contents[valuation]
+        valuations = contents[self.calculation]
         assert isinstance(valuations, pd.DataFrame)
         if bool(valuations.empty):
             return
