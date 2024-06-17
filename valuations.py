@@ -18,29 +18,28 @@ from support.calculations import Variable, Equation, Calculation
 from support.dispatchers import kwargsdispatcher
 from support.pipelines import Processor
 from support.filtering import Filter
-from support.parsers import Header
 from support.files import File
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["ValuationFiles", "ValuationHeaders", "ValuationFilter", "ValuationCalculator"]
+__all__ = ["ValuationFiles", "ValuationFilter", "ValuationCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-arbitrage_index = {option: str for option in list(map(str, Securities))} | {"strategy": str, "valuation": str, "scenario": str, "ticker": str, "expire": np.datetime64}
+arbitrage_index = {security: np.float32 for security in list(map(str, Securities))} | {"strategy": str, "valuation": str, "scenario": str, "ticker": str, "expire": np.datetime64}
 arbitrage_columns = {"current": np.datetime64, "apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.float32, "underlying": np.float32}
 
 
-class ArbitrageFile(File, variable=Variables.Valuations.ARBITRAGE, query=Querys.Contract, datatype=pd.DataFrame, header=arbitrage_index | arbitrage_columns): pass
-class ArbitrageHeader(Header, variable=Variables.Valuations.ARBITRAGE, axes={"index": arbitrage_index, "columns": arbitrage_columns}): pass
+class ArbitrageFile(File, variable=Variables.Valuations.ARBITRAGE, query=Querys.Contract, datatype=pd.DataFrame, header=arbitrage_index | arbitrage_columns):
+    pass
 
 
 class ValuationFilter(Filter, variables=[Variables.Valuations.ARBITRAGE], query=Querys.Contract):
     @kwargsdispatcher("variable")
     def filter(self, dataframe, *args, variable, **kwargs): raise ValueError(variable)
-    @filter.register.value(str(Variables.Valuations.ARBITRAGE.name).lower())
+    @filter.register.value(Variables.Valuations.ARBITRAGE)
     def arbitrage(self, dataframe, *args, **kwargs):
         columns = set(arbitrage_columns.keys())
         index = set(dataframe.columns) - ({"scenario"} | set(columns))
@@ -93,21 +92,21 @@ class ValuationCalculator(Processor):
         calculations = {variables["scenario"]: calculation for variables, calculation in ODict(list(ValuationCalculation)).items() if variables["valuation"] is kwargs["calculation"]}
         self.__calculations = {str(scenario.name).lower(): calculation(*args, **kwargs) for scenario, calculation in calculations.items()}
         self.__variables = lambda **mapping: {key: xr.Variable(key, [value]).squeeze(key) for key, value in mapping.items()}
-        self.__valuation = str(kwargs["calculation"].name).lower()
+        self.__calculation = kwargs["calculation"]
 
     def execute(self, contents, *args, **kwargs):
         strategies = contents["strategies"]
         assert isinstance(strategies, list) and all([isinstance(dataset, xr.Dataset) for dataset in strategies])
         valuations = ODict(list(self.calculate(strategies, *args, **kwargs)))
         valuations = ODict(list(self.flatten(valuations, *args, **kwargs)))
-        valuations = {self.valuation: pd.concat(list(valuations.values()), axis=0)}
+        valuations = {str(self.calculation.name).lower(): pd.concat(list(valuations.values()), axis=0)}
         if bool(valuations["valuations"].empty):
             return
         yield contents | valuations
 
     def calculate(self, strategies, *args, **kwargs):
         for scenario, calculation in self.calculations.items():
-            variables = self.variables(valuation=self.valuation, scenario=scenario)
+            variables = self.variables(valuation=self.calculation, scenario=scenario)
             datasets = [calculation(dataset, *args, **kwargs) for dataset in strategies]
             datasets = [dataset.assign_coords(variables).expand_dims("scenario") for dataset in datasets]
             yield scenario, datasets
@@ -127,16 +126,14 @@ class ValuationCalculator(Processor):
     @property
     def calculations(self): return self.__calculations
     @property
-    def variables(self): return self.__variables
+    def calculation(self): return self.__calculation
     @property
-    def valuation(self): return self.__valuation
+    def variables(self): return self.__variables
 
 
 class ValuationFiles(object):
     Arbitrage = ArbitrageFile
 
-class ValuationHeaders(object):
-    Arbitrage = ArbitrageHeader
 
 
 

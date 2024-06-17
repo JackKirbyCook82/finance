@@ -14,12 +14,11 @@ from collections import OrderedDict as ODict
 from finance.variables import Querys, Variables
 from support.calculations import Variable, Equation, Calculation
 from support.pipelines import Processor
-from support.parsers import Header
 from support.files import File
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["TechnicalFiles", "TechnicalHeaders", "TechnicalCalculator"]
+__all__ = ["TechnicalFiles", "TechnicalCalculator"]
 __copyright__ = "Copyright 2024, Jack Kirby Cook"
 __license__ = "MIT License"
 
@@ -33,9 +32,6 @@ stochastic_columns = {"ticker": str, "price": np.float32, "oscillator": np.float
 class BarsFile(File, variable=Variables.Technicals.BARS, query=Querys.Symbol, datatype=pd.DataFrame, header=technical_index | bars_columns): pass
 class StatisticFile(File, variable=Variables.Technicals.STATISTIC, query=Querys.Symbol, datatype=pd.DataFrame, header=technical_index | statistic_columns): pass
 class StochasticFile(File, variable=Variables.Technicals.STOCHASTIC, query=Querys.Symbol, datatype=pd.DataFrame, header=technical_index | stochastic_columns): pass
-class BarsHeader(Header, variable=Variables.Technicals.BARS, datatype=pd.DataFrame, axes={"index": technical_index, "columns": bars_columns}): pass
-class StatisticHeader(Header, variable=Variables.Technicals.STATISTIC, datatype=pd.DataFrame, axes={"index": technical_index, "columns": statistic_columns}): pass
-class StochasticHeader(Header, variable=Variables.Technicals.STOCHASTIC, datatype=pd.DataFrame, axes={"index": technical_index, "columns": stochastic_columns}): pass
 
 
 class TechnicalEquation(Equation): pass
@@ -51,8 +47,7 @@ class StatisticCalculation(TechnicalCalculation, technical=Variables.Technicals.
     @staticmethod
     def execute(bars, *args, period, **kwargs):
         assert (bars["ticker"].to_numpy()[0] == bars["ticker"]).all()
-        yield bars["ticker"]
-        yield bars["price"]
+        yield from iter([bars["ticker"], bars["date"], bars["price"]])
         yield bars["price"].pct_change(1).rolling(period).mean().rename("trend")
         yield bars["price"].pct_change(1).rolling(period).std().rename("volatility")
 
@@ -63,8 +58,7 @@ class StochasticCalculation(TechnicalCalculation, technical=Variables.Technicals
         lowest = bars["low"].rolling(period).min().rename("lowest")
         highest = bars["high"].rolling(period).max().rename("highest")
         bars = pd.concat([bars, lowest, highest], axis=1)
-        yield bars["ticker"]
-        yield bars["price"]
+        yield from iter([bars["ticker"], bars["date"], bars["price"]])
         yield equation.xki(bars)
 
 
@@ -94,11 +88,6 @@ class TechnicalFiles(object):
     Bars = BarsFile
     Statistic = StatisticFile
     Stochastic = StochasticFile
-
-class TechnicalHeaders(object):
-    Bars = BarsHeader
-    Statistic = StatisticHeader
-    Stochastic = StochasticHeader
 
 
 

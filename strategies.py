@@ -24,10 +24,6 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-strategies_index = {option: str for option in list(map(str, Securities))} | {"strategy": str, "ticker": str, "expire": np.datetime64}
-strategies_columns = {"current": np.datetime64, "spot": np.float32, "minimum": np.float32, "maximum": np.float32, "size": np.float32, "underlying": np.float32}
-
-
 class StrategyEquation(Equation):
     ti = Variable("ti", "current", np.datetime64, function=lambda tα, tβ: np.minimum(tα, tβ))
     qi = Variable("qi", "size", np.float32, function=lambda qα, qβ: np.minimum(qα, qβ))
@@ -35,7 +31,7 @@ class StrategyEquation(Equation):
     wi = Variable("wi", "spot", np.float32, function=lambda yi, ε: yi * 100 - ε)
     whτ = Variable("whτ", "maximum", np.float32, function=lambda yhτ, ε: yhτ * 100 - ε)
     wlτ = Variable("wlτ", "minimum", np.float32, function=lambda ylτ, ε: ylτ * 100 - ε)
-    tα = Variable("tα", "current", np.datetime64, position=Variables.Positions.LONG, locator="current")
+    tc = Variable("tα", "current", np.datetime64, position=Variables.Positions.LONG, locator="current")
     qα = Variable("qα", "size", np.float32, position=Variables.Positions.LONG, locator="size")
     xα = Variable("xα", "underlying", np.float32, position=Variables.Positions.LONG, locator="underlying")
     yα = Variable("yα", "price", np.float32, position=Variables.Positions.LONG, locator="price")
@@ -122,11 +118,13 @@ class StrategyCalculator(Processor):
     def options(self, dataframe, *args, **kwargs):
         if bool(dataframe.empty):
             return
+        dataframe = dataframe.set_index(["expire", "strike", "instrument", "position"], drop=True, inplace=False)
         datasets = xr.Dataset.from_dataframe(dataframe)
         datasets = datasets.squeeze("ticker").squeeze("expire").squeeze("date")
         for instrument, position in product(datasets["instrument"].values, datasets["position"].values):
-            option = Securities[f"{instrument}|{position}"]
+            option = Securities[f"{str(instrument.name).lower()}|{str(position.name).lower()}"]
             dataset = datasets.sel({"instrument": instrument, "position": position})
+            dataset = dataset.drop_vars(["instrument", "position"], errors="ignore")
             if self.empty(dataset["size"]):
                 continue
             dataset = dataset.rename({"strike": str(option)})

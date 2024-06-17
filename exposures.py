@@ -9,26 +9,26 @@ Created on Fri May 17 2024
 import logging
 import numpy as np
 import pandas as pd
+from datetime import datetime as Datetime
 
 from finance.variables import Querys, Variables
 from support.pipelines import Processor
-from support.parsers import Header
 from support.files import File
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["ExposureFiles", "ExposureHeaders", "ExposureCalculator"]
+__all__ = ["ExposureFiles", "ExposureCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-exposure_index = {"ticker": str, "instrument": str, "position": str, "strike": np.float32, "expire": np.datetime64}
+exposure_index = {"ticker": str, "instrument": Variables.Instruments, "position": Variables.Positions, "strike": np.float32, "expire": np.datetime64}
 exposure_columns = {"quantity": np.int32}
 
 
-class ExposureFile(File, variable="exposure", query=Querys.Contract, datatype=pd.DataFrame, header=exposure_index | exposure_columns): pass
-class ExposureHeader(Header, variable="exposure", axes={"index": exposure_index, "columns": exposure_columns}): pass
+class ExposureFile(File, variable="exposure", query=Querys.Contract, datatype=pd.DataFrame, header=exposure_index | exposure_columns):
+    pass
 
 
 class ExposureCalculator(Processor):
@@ -40,30 +40,31 @@ class ExposureCalculator(Processor):
         securities = pd.concat([options, virtuals], axis=0)
         securities = securities.reset_index(drop=True, inplace=False)
         exposures = self.holdings(securities, *args, *kwargs)
+        exposures = self.expired(exposures, *args, **kwargs)
         exposures = exposures.reset_index(drop=True, inplace=False)
         exposures = {"exposure": exposures}
         yield contents | exposures
 
     @staticmethod
     def stocks(dataframe, *args, **kwargs):
-        stocks = dataframe["instrument"] == str(Variables.Instruments.STOCK.name).lower()
+        stocks = dataframe["instrument"] == Variables.Instruments.STOCK
         stocks = dataframe.where(stocks).dropna(how="all", inplace=False)
         return stocks
 
     @staticmethod
     def options(dataframe, *args, **kwargs):
-        puts = dataframe["instrument"] == str(Variables.Instruments.PUT.name).lower()
-        calls = dataframe["instrument"] == str(Variables.Instruments.CALL.name).lower()
+        puts = dataframe["instrument"] == Variables.Instruments.PUT
+        calls = dataframe["instrument"] == Variables.Instruments.CALL
         options = dataframe.where(puts | calls).dropna(how="all", inplace=False)
         return options
 
     @staticmethod
     def virtuals(dataframe, *args, **kwargs):
-        security = lambda instrument, position: dict(instrument=str(instrument.name).lower(), position=str(position.name).lower())
+        security = lambda instrument, position: dict(instrument=instrument, position=position)
         function = lambda records, instrument, position: pd.DataFrame.from_records([record | security(instrument, position) for record in records])
-        stocklong = dataframe["position"] == str(Variables.Positions.LONG.name).lower()
+        stocklong = dataframe["position"] == Variables.Positions.LONG
         stocklong = dataframe.where(stocklong).dropna(how="all", inplace=False)
-        stockshort = dataframe["position"] == str(Variables.Positions.SHORT.name).lower()
+        stockshort = dataframe["position"] == Variables.Positions.SHORT
         stockshort = dataframe.where(stockshort).dropna(how="all", inplace=False)
         putlong = function(stockshort.to_dict("records"), Variables.Instruments.PUT, Variables.Positions.LONG)
         putshort = function(stocklong.to_dict("records"), Variables.Instruments.PUT, Variables.Positions.SHORT)
@@ -76,22 +77,26 @@ class ExposureCalculator(Processor):
     @staticmethod
     def holdings(dataframe, *args, **kwargs):
         index = [value for value in dataframe.columns if value not in ("position", "quantity")]
-        numerical = lambda value: 2 * int(Variables.Positions[str(value).upper()] is Variables.Positions.LONG) - 1
-        symbolical = lambda value: lambda cols: str(Variables.Positions.LONG.name).lower() if value > 0 else str(Variables.Positions.SHORT.name).lower()
+        numerical = lambda position: 2 * int(bool(position is Variables.Positions.LONG)) - 1
+        enumerical = lambda value: lambda cols: Variables.Positions.LONG if value > 0 else Variables.Positions.SHORT
         holdings = lambda cols: cols["quantity"] * numerical(cols["position"])
         dataframe["quantity"] = dataframe.apply(holdings)
         dataframe = dataframe.groupby(index, as_index=False).agg({"quantity": np.sum})
         dataframe = dataframe.where(dataframe["quantity"] != 0).dropna(how="all", inplace=False)
-        dataframe["position"] = dataframe["quantity"].apply(symbolical)
+        dataframe["position"] = dataframe["quantity"].apply(enumerical)
         dataframe["quantity"] = dataframe["quantity"].apply(np.abs)
+        return dataframe
+
+    @staticmethod
+    def expired(dataframe, *args, current, **kwargs):
+        assert isinstance(current, Datetime)
+        dataframe = dataframe.where(dataframe["expire"] >= current.date())
+        dataframe = dataframe.dropna(how="all", inplace=False)
         return dataframe
 
 
 class ExposureFiles(object):
     Exposure = ExposureFile
-
-class ExposureHeaders(object):
-    Exposure = ExposureHeader
 
 
 

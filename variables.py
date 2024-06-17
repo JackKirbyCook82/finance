@@ -23,39 +23,40 @@ __copyright__ = "Copyright 2023,SE Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-Actions = IntEnum("Actions", ["OPEN", "CLOSE"], start=1)
-Instruments = IntEnum("Instruments", ["PUT", "CALL", "STOCK", "OPTION"], start=1)
-Options = IntEnum("Options", ["PUT", "CALL"], start=1)
-Positions = IntEnum("Positions", ["LONG", "SHORT"], start=1)
-Spreads = IntEnum("Strategy", ["STRANGLE", "COLLAR", "VERTICAL"], start=1)
-Valuations = IntEnum("Valuation", ["ARBITRAGE"], start=1)
-Scenarios = IntEnum("Scenarios", ["MINIMUM", "MAXIMUM"], start=1)
-Technicals = IntEnum("Technicals", ["BARS", "STATISTIC", "STOCHASTIC"], start=1)
-Status = IntEnum("Status", ["PROSPECT", "PURCHASED"], start=1)
-
-
-class DateRange(ntuple("DateRange", "minimum maximum")):
-    def __new__(cls, dates):
-        assert isinstance(dates, list)
-        assert all([isinstance(date, Date) for date in dates])
-        dates = [date if isinstance(date, Date) else date.date() for date in dates]
-        return super().__new__(cls, min(dates), max(dates)) if dates else None
-
-    def __contains__(self, date): return self.minimum <= date <= self.maximum
-    def __iter__(self): return (date for date in pd.date_range(start=self.minimum, end=self.maximum))
-    def __repr__(self): return f"{self.__class__.__name__}({repr(self.minimum)}, {repr(self.maximum)})"
-    def __str__(self): return f"{str(self.minimum)}|{str(self.maximum)}"
-    def __bool__(self): return self.minimum < self.maximum
-    def __len__(self): return (self.maximum - self.minimum).days
-
-
-class Query(type):
+class QueryMeta(type):
     def __str__(cls): return str(cls.__name__).lower()
     def __getitem__(cls, string): return cls.fromstring(string)
 
 
+class VariablesMeta(type):
+    def __init_subclass__(mcs, *args, variables, **kwargs): mcs.variables = variables
+    def __getitem__(cls, value): return cls.get(value)
+    def __iter__(cls): return iter(type(cls).variables)
+
+    @typedispatcher
+    def get(cls, key): raise TypeError(type(key).__name__)
+    @get.register(tuple)
+    def hash(cls, content): return {hash(value): value for value in iter(cls)}[hash(content)]
+    @get.register(str)
+    def string(cls, string): return {str(value): value for value in iter(cls)}[str(string).lower()]
+
+
+class Variable(ABC):
+    def __str__(self): return "|".join([str(value.name).lower() for value in self if value is not None])
+    def __hash__(self): return hash(tuple(self))
+
+    @property
+    def title(self): return "|".join([str(string).title() for string in str(self).split("|")])
+    @classmethod
+    def fields(cls): return list(cls._fields)
+
+    def items(self): return list(zip(self.keys(), self.values()))
+    def keys(self): return list(self._fields)
+    def values(self): return list(self)
+
+
 @total_ordering
-class Symbol(ntuple("Symbol", "ticker"), metaclass=Query):
+class Symbol(ntuple("Symbol", "ticker"), metaclass=QueryMeta):
     def __str__(self): return self.tostring()
     def __eq__(self, other): return str(self.ticker) == str(self.ticker)
     def __lt__(self, other): return str(self.ticker) < str(self.ticker)
@@ -69,7 +70,7 @@ class Symbol(ntuple("Symbol", "ticker"), metaclass=Query):
 
 
 @total_ordering
-class Contract(ntuple("Contract", "ticker expire"), metaclass=Query):
+class Contract(ntuple("Contract", "ticker expire"), metaclass=QueryMeta):
     def __str__(self): return self.tostring(delimiter="|")
     def __eq__(self, other): return str(self.ticker) == str(other.ticker) and self.expire == other.expire
     def __lt__(self, other): return str(self.ticker) < str(other.ticker) and self.expire < other.expire
@@ -91,20 +92,6 @@ class Contract(ntuple("Contract", "ticker expire"), metaclass=Query):
         return str(delimiter).join(contract)
 
 
-class Variable(ABC):
-    def __str__(self): return "|".join([str(value.name).lower() for value in self if value is not None])
-    def __hash__(self): return hash(tuple(self))
-
-    @property
-    def title(self): return "|".join([str(string).title() for string in str(self).split("|")])
-    @classmethod
-    def fields(cls): return list(cls._fields)
-
-    def items(self): return list(zip(self.keys(), self.values()))
-    def keys(self): return list(self._fields)
-    def values(self): return list(self)
-
-
 class Security(Variable, ntuple("Security", "instrument position")): pass
 class Strategy(Variable, ntuple("Strategy", "spread instrument position")):
     def __new__(cls, spread, instrument, position, *args, **kwargs): return super().__new__(cls, spread, instrument, position)
@@ -113,6 +100,16 @@ class Strategy(Variable, ntuple("Strategy", "spread instrument position")):
     @property
     def securities(self): return list(self.options) + list(self.stocks)
 
+
+Actions = IntEnum("Actions", ["OPEN", "CLOSE"], start=1)
+Instruments = IntEnum("Instruments", ["PUT", "CALL", "STOCK", "OPTION"], start=1)
+Options = IntEnum("Options", ["PUT", "CALL"], start=1)
+Positions = IntEnum("Positions", ["LONG", "SHORT"], start=1)
+Spreads = IntEnum("Strategy", ["STRANGLE", "COLLAR", "VERTICAL"], start=1)
+Valuations = IntEnum("Valuation", ["ARBITRAGE"], start=1)
+Scenarios = IntEnum("Scenarios", ["MINIMUM", "MAXIMUM"], start=1)
+Technicals = IntEnum("Technicals", ["BARS", "STATISTIC", "STOCHASTIC"], start=1)
+Status = IntEnum("Status", ["PROSPECT", "PURCHASED"], start=1)
 
 StockLong = Security(Instruments.STOCK, Positions.LONG)
 StockShort = Security(Instruments.STOCK, Positions.SHORT)
@@ -126,17 +123,19 @@ CollarLong = Strategy(Spreads.COLLAR, None, Positions.LONG, options=[PutLong, Ca
 CollarShort = Strategy(Spreads.COLLAR, None, Positions.SHORT, options=[CallLong, PutShort], stocks=[StockShort])
 
 
-class VariablesMeta(type):
-    def __init_subclass__(mcs, *args, variables, **kwargs): mcs.variables = variables
-    def __getitem__(cls, value): return cls.get(value)
-    def __iter__(cls): return iter(type(cls).variables)
+class DateRange(ntuple("DateRange", "minimum maximum")):
+    def __contains__(self, date): return self.minimum <= date <= self.maximum
+    def __new__(cls, dates):
+        assert isinstance(dates, list)
+        assert all([isinstance(date, Date) for date in dates])
+        dates = [date if isinstance(date, Date) else date.date() for date in dates]
+        return super().__new__(cls, min(dates), max(dates)) if dates else None
 
-    @typedispatcher
-    def get(cls, key): raise TypeError(type(key).__name__)
-    @get.register(tuple)
-    def hash(cls, content): return {hash(value): value for value in iter(cls)}[hash(content)]
-    @get.register(str)
-    def string(cls, string): return {str(value): value for value in iter(cls)}[str(string).lower()]
+    def __iter__(self): return (date for date in pd.date_range(start=self.minimum, end=self.maximum))
+    def __repr__(self): return f"{self.__class__.__name__}({repr(self.minimum)}, {repr(self.maximum)})"
+    def __str__(self): return f"{str(self.minimum)}|{str(self.maximum)}"
+    def __bool__(self): return self.minimum < self.maximum
+    def __len__(self): return (self.maximum - self.minimum).days
 
 
 class SecuritiesMeta(VariablesMeta, variables=[StockLong, StockShort, PutLong, PutShort, CallLong, CallShort]):
