@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 from datetime import datetime as Datetime
 
-from finance.variables import Querys, Variables
+from finance.variables import Variables
 from support.pipelines import Processor
 from support.files import File
 
@@ -28,7 +28,7 @@ exposure_parsers = {"instrument": lambda x: Variables.Instruments(int(x)), "posi
 exposure_columns = {"quantity": np.int32}
 
 
-class ExposureFile(File, variable="exposure", query=Querys.Contract, datatype=pd.DataFrame, header=exposure_index | exposure_columns, parsers=exposure_parsers):
+class ExposureFile(File, variable="exposure", datatype=pd.DataFrame, header=exposure_index | exposure_columns, parsers=exposure_parsers):
     pass
 
 
@@ -79,9 +79,9 @@ class ExposureCalculator(Processor):
     def holdings(dataframe, *args, **kwargs):
         index = [value for value in dataframe.columns if value not in ("position", "quantity")]
         numerical = lambda position: 2 * int(bool(position is Variables.Positions.LONG)) - 1
-        enumerical = lambda value: lambda cols: Variables.Positions.LONG if value > 0 else Variables.Positions.SHORT
+        enumerical = lambda value: Variables.Positions.LONG if value > 0 else Variables.Positions.SHORT
         holdings = lambda cols: cols["quantity"] * numerical(cols["position"])
-        dataframe["quantity"] = dataframe.apply(holdings)
+        dataframe["quantity"] = dataframe.apply(holdings, axis=1)
         dataframe = dataframe.groupby(index, as_index=False).agg({"quantity": np.sum})
         dataframe = dataframe.where(dataframe["quantity"] != 0).dropna(how="all", inplace=False)
         dataframe["position"] = dataframe["quantity"].apply(enumerical)
@@ -91,7 +91,7 @@ class ExposureCalculator(Processor):
     @staticmethod
     def expired(dataframe, *args, current, **kwargs):
         assert isinstance(current, Datetime)
-        dataframe = dataframe.where(dataframe["expire"] >= current.date())
+        dataframe = dataframe.where(dataframe["expire"] >= current)
         dataframe = dataframe.dropna(how="all", inplace=False)
         return dataframe
 

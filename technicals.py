@@ -29,9 +29,9 @@ statistic_columns = {"ticker": str, "price": np.float32, "trend": np.float32, "v
 stochastic_columns = {"ticker": str, "price": np.float32, "oscillator": np.float32}
 
 
-class BarsFile(File, variable=Variables.Technicals.BARS, query=Querys.Symbol, datatype=pd.DataFrame, header=technical_index | bars_columns): pass
-class StatisticFile(File, variable=Variables.Technicals.STATISTIC, query=Querys.Symbol, datatype=pd.DataFrame, header=technical_index | statistic_columns): pass
-class StochasticFile(File, variable=Variables.Technicals.STOCHASTIC, query=Querys.Symbol, datatype=pd.DataFrame, header=technical_index | stochastic_columns): pass
+class BarsFile(File, variable=Variables.Technicals.BARS, datatype=pd.DataFrame, header=technical_index | bars_columns): pass
+class StatisticFile(File, variable=Variables.Technicals.STATISTIC, datatype=pd.DataFrame, header=technical_index | statistic_columns): pass
+class StochasticFile(File, variable=Variables.Technicals.STOCHASTIC, datatype=pd.DataFrame, header=technical_index | stochastic_columns): pass
 
 
 class TechnicalEquation(Equation): pass

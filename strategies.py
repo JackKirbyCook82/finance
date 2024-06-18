@@ -25,13 +25,13 @@ __license__ = "MIT License"
 
 
 class StrategyEquation(Equation):
-    ti = Variable("ti", "current", np.datetime64, function=lambda tα, tβ: np.minimum(tα, tβ))
+    ti = Variable("ti", "current", np.datetime64, function=lambda tα, tβ: np.minimum(np.datetime64(tα, "ns"), np.datetime64(tβ, "ns")))
     qi = Variable("qi", "size", np.float32, function=lambda qα, qβ: np.minimum(qα, qβ))
     xi = Variable("xi", "underlying", np.float32, function=lambda xα, xβ: (xα + xβ) / 2)
     wi = Variable("wi", "spot", np.float32, function=lambda yi, ε: yi * 100 - ε)
     whτ = Variable("whτ", "maximum", np.float32, function=lambda yhτ, ε: yhτ * 100 - ε)
     wlτ = Variable("wlτ", "minimum", np.float32, function=lambda ylτ, ε: ylτ * 100 - ε)
-    tc = Variable("tα", "current", np.datetime64, position=Variables.Positions.LONG, locator="current")
+    tα = Variable("tα", "current", np.datetime64, position=Variables.Positions.LONG, locator="current")
     qα = Variable("qα", "size", np.float32, position=Variables.Positions.LONG, locator="size")
     xα = Variable("xα", "underlying", np.float32, position=Variables.Positions.LONG, locator="underlying")
     yα = Variable("yα", "price", np.float32, position=Variables.Positions.LONG, locator="price")
@@ -94,7 +94,7 @@ class StrategyCalculator(Processor):
         self.__variables = lambda **mapping: {key: xr.Variable(key, [value]).squeeze(key) for key, value in mapping.items()}
 
     def execute(self, contents, *args, **kwargs):
-        options = contents["options"]
+        options = contents["option"]
         assert isinstance(options, pd.DataFrame)
         options = ODict(list(self.options(options, *args, **kwargs)))
         strategies = ODict(list(self.calculate(options, *args, **kwargs)))
@@ -118,11 +118,12 @@ class StrategyCalculator(Processor):
     def options(self, dataframe, *args, **kwargs):
         if bool(dataframe.empty):
             return
-        dataframe = dataframe.set_index(["expire", "strike", "instrument", "position"], drop=True, inplace=False)
+        string = lambda variable, number: str(variable(number).name).lower()
+        dataframe = dataframe.set_index(["ticker", "expire", "strike", "instrument", "position"], drop=True, inplace=False)
         datasets = xr.Dataset.from_dataframe(dataframe)
-        datasets = datasets.squeeze("ticker").squeeze("expire").squeeze("date")
+        datasets = datasets.squeeze("ticker").squeeze("expire")
         for instrument, position in product(datasets["instrument"].values, datasets["position"].values):
-            option = Securities[f"{str(instrument.name).lower()}|{str(position.name).lower()}"]
+            option = Securities[f"{string(Variables.Instruments, instrument)}|{string(Variables.Positions, position)}"]
             dataset = datasets.sel({"instrument": instrument, "position": position})
             dataset = dataset.drop_vars(["instrument", "position"], errors="ignore")
             if self.empty(dataset["size"]):

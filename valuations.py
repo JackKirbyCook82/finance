@@ -28,18 +28,18 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-arbitrage_index = {security: np.float32 for security in list(map(str, Securities))} | {"strategy": str, "valuation": str, "scenario": str, "ticker": str, "expire": np.datetime64}
+arbitrage_index = {security: np.float32 for security in list(map(str, Securities.Options))} | {"strategy": str, "valuation": str, "scenario": str, "ticker": str, "expire": np.datetime64}
 arbitrage_columns = {"current": np.datetime64, "apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.float32, "underlying": np.float32}
 
 
-class ArbitrageFile(File, variable=Variables.Valuations.ARBITRAGE, query=Querys.Contract, datatype=pd.DataFrame, header=arbitrage_index | arbitrage_columns):
+class ArbitrageFile(File, variable=Variables.Valuations.ARBITRAGE, datatype=pd.DataFrame, header=arbitrage_index | arbitrage_columns):
     pass
 
 
-class ValuationFilter(Filter, variables=[Variables.Valuations.ARBITRAGE], query=Querys.Contract):
+class ValuationFilter(Filter, variables=[Variables.Valuations.ARBITRAGE]):
     @kwargsdispatcher("variable")
     def filter(self, dataframe, *args, variable, **kwargs): raise ValueError(variable)
-    @filter.register.value(Variables.Valuations.ARBITRAGE)
+    @filter.register.value(str(Variables.Valuations.ARBITRAGE.name).lower())
     def arbitrage(self, dataframe, *args, **kwargs):
         columns = set(arbitrage_columns.keys())
         index = set(dataframe.columns) - ({"scenario"} | set(columns))
@@ -59,7 +59,7 @@ class ArbitrageEquation(ValuationEquation):
     irr = Variable("irr", "irr", np.float32, function=lambda inc, exp, tau: np.power(np.divide(inc, exp), np.power(tau, -1)) - 1)
     apy = Variable("apy", "apy", np.float32, function=lambda irr, tau: np.power(irr + 1, np.power(tau / 365, -1)) - 1)
     tτ = Variable("tτ", "expire", np.datetime64, position=0, locator="expire")
-    ti = Variable("ti", "date", np.datetime64, position=0, locator="date")
+    ti = Variable("ti", "current", np.datetime64, position=0, locator="current")
     vi = Variable("vi", "spot", np.float32, position=0, locator="spot")
     ρ = Variable("ρ", "discount", np.float32, position="discount")
 
@@ -100,7 +100,7 @@ class ValuationCalculator(Processor):
         valuations = ODict(list(self.calculate(strategies, *args, **kwargs)))
         valuations = ODict(list(self.flatten(valuations, *args, **kwargs)))
         valuations = {self.calculation: pd.concat(list(valuations.values()), axis=0)}
-        if bool(valuations["valuations"].empty):
+        if bool(valuations[self.calculation].empty):
             return
         yield contents | valuations
 

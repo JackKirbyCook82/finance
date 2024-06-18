@@ -35,7 +35,7 @@ holdings_parsers = {"instrument": lambda x: Variables.Instruments(int(x)), "posi
 holdings_columns = {"quantity": np.int32}
 
 
-class HoldingFile(File, variable="holdings", query=Querys.Contract, datatype=pd.DataFrame, header=holdings_index | holdings_columns, parsers=holdings_parsers):
+class HoldingFile(File, variable="holdings", datatype=pd.DataFrame, header=holdings_index | holdings_columns, parsers=holdings_parsers):
     pass
 
 
@@ -74,11 +74,12 @@ class HoldingReader(Producer, ABC):
         assert isinstance(valuations, pd.DataFrame)
         if bool(valuations.empty):
             return
+        valuations["quantity"] = 1
         contract = self.contract(valuations, *args, **kwargs)
         options = self.options(valuations, *args, **kwargs)
         stocks = self.stocks(valuations, *args, **kwargs)
         stocks = stocks.dropna(how="all", axis=1)
-        securities = pd.concat([contract, options, stocks], axis=1, ignore_index=False)
+        securities = pd.concat([contract, options, stocks, valuations["quantity"]], axis=1, ignore_index=False)
         holdings = self.holdings(securities, *args, **kwargs)
         index = list(holdings_index.keys())
         columns = list(holdings_columns.keys())
@@ -102,7 +103,7 @@ class HoldingReader(Producer, ABC):
 
     @staticmethod
     def options(dataframe, *args, **kwargs):
-        securities = list(map(str, iter(Securities)))
+        securities = list(map(str, iter(Securities.Options)))
         securities = [column for column in securities if column in dataframe.columns]
         dataframe = dataframe.droplevel("scenario", axis=1)
         return dataframe[securities]
@@ -142,6 +143,18 @@ class HoldingWriter(Consumer, ABC):
         self.__liquidity = liquidity
         self.__priority = priority
         self.__capacity = capacity
+
+    def execute(self, contents, *args, **kwargs):
+        valuations = contents[self.calculation]
+        assert isinstance(valuations, pd.DataFrame)
+        if bool(valuations.empty):
+            return
+        valuations = self.market(valuations, *args, **kwargs)
+        valuations = self.prioritize(valuations, *args, **kwargs)
+        if bool(valuations.empty):
+            return
+        valuations = valuations.reset_index(drop=True, inplace=False)
+        self.write(valuations, *args, **kwargs)
 
     def market(self, dataframe, *args, **kwargs):
         index = set(dataframe.columns) - {"scenario", "apy", "npv", "cost"}

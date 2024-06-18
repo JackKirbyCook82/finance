@@ -7,7 +7,6 @@ Created on Thurs Jan 31 2024
 """
 
 import logging
-import pandas as pd
 
 from finance.holdings import HoldingReader, HoldingWriter
 
@@ -20,22 +19,4 @@ __logger__ = logging.getLogger(__name__)
 
 
 class DivestitureReader(HoldingReader): pass
-class DivestitureWriter(HoldingWriter):
-    def execute(self, contents, *args, **kwargs):
-        valuations, exposures = contents[self.calculation], contents["exposures"]
-        assert isinstance(valuations, pd.DataFrame) and isinstance(exposures, pd.DataFrame)
-        if bool(valuations.empty):
-            return
-        valuations = self.market(valuations, *args, **kwargs)
-        valuations = self.prioritize(valuations, *args, **kwargs)
-        if bool(valuations.empty):
-            return
-
-        ### Check each valuation strategy against exposures ###
-
-
-        valuations = valuations.reset_index(drop=True, inplace=False)
-        self.write(valuations, *args, **kwargs)
-
-
-
+class DivestitureWriter(HoldingWriter): pass

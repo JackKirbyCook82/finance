@@ -36,11 +36,11 @@ option_columns = {"current": np.datetime64, "price": np.float32, "underlying": n
 option_parsers = {"instrument": lambda x: Variables.Instruments(int(x)), "position": lambda x: Variables.Positions(int(x))}
 
 
-class StockFile(File, variable=Variables.Instruments.STOCK, query=Querys.Contract, datatype=pd.DataFrame, header=stock_index | stock_columns, parsers=stock_parsers): pass
-class OptionFile(File, variable=Variables.Instruments.OPTION, query=Querys.Contract, datatype=pd.DataFrame, header=option_index | option_columns, parsers=option_parsers): pass
+class StockFile(File, variable=Variables.Instruments.STOCK, datatype=pd.DataFrame, header=stock_index | stock_columns, parsers=stock_parsers): pass
+class OptionFile(File, variable=Variables.Instruments.OPTION, datatype=pd.DataFrame, header=option_index | option_columns, parsers=option_parsers): pass
 
 
-class SecurityFilter(Filter, variables=[Variables.Instruments.STOCK, Variables.Instruments.OPTION], query=Querys.Contract):
+class SecurityFilter(Filter, variables=[Variables.Instruments.STOCK, Variables.Instruments.OPTION]):
     pass
 
 
@@ -85,7 +85,6 @@ class OptionCalculation(Calculation, instrument=Variables.Instruments.OPTION, eq
 class SecurityCalculator(Processor):
     def __init__(self, *args, calculations=[], name=None, size, volume, interest, **kwargs):
         assert isinstance(calculations, list) and all([instrument in list(Variables.Instruments) for instrument in calculations])
-        assert all([callable(function) for function in (size, volume, interest)])
         super().__init__(*args, name=name, **kwargs)
         calculations = {variables["instrument"]: calculation for variables, calculation in ODict(list(SecurityCalculation)).items() if variables["instrument"] in calculations}
         self.__calculations = {str(instrument.name).lower(): calculation(*args, **kwargs) for instrument, calculation in calculations.items()}
