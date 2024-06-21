@@ -13,7 +13,7 @@ import xarray as xr
 from abc import ABC
 from collections import OrderedDict as ODict
 
-from finance.variables import Querys, Variables, Securities
+from finance.variables import Variables, Securities
 from support.calculations import Variable, Equation, Calculation
 from support.dispatchers import kwargsdispatcher
 from support.pipelines import Processor
@@ -30,9 +30,10 @@ __logger__ = logging.getLogger(__name__)
 
 arbitrage_index = {security: np.float32 for security in list(map(str, Securities.Options))} | {"strategy": str, "valuation": str, "scenario": str, "ticker": str, "expire": np.datetime64}
 arbitrage_columns = {"current": np.datetime64, "apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.float32, "underlying": np.float32}
+valuation_filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
 
 
-class ArbitrageFile(File, variable=Variables.Valuations.ARBITRAGE, datatype=pd.DataFrame, header=arbitrage_index | arbitrage_columns):
+class ArbitrageFile(File, variable=Variables.Valuations.ARBITRAGE, filename=valuation_filename, datatype=pd.DataFrame, header=arbitrage_index | arbitrage_columns):
     pass
 
 

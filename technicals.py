@@ -11,7 +11,7 @@ import pandas as pd
 from abc import ABC
 from collections import OrderedDict as ODict
 
-from finance.variables import Querys, Variables
+from finance.variables import Variables
 from support.calculations import Variable, Equation, Calculation
 from support.pipelines import Processor
 from support.files import File
@@ -27,11 +27,12 @@ technical_index = {"date": np.datetime64}
 bars_columns = {"ticker": str, "high": np.float32, "low": np.float32, "open": np.float32, "close": np.float32, "price": np.float32, "volume": np.float32}
 statistic_columns = {"ticker": str, "price": np.float32, "trend": np.float32, "volatility": np.float32}
 stochastic_columns = {"ticker": str, "price": np.float32, "oscillator": np.float32}
+technical_filename = lambda query: str(query.ticker).upper()
 
 
-class BarsFile(File, variable=Variables.Technicals.BARS, datatype=pd.DataFrame, header=technical_index | bars_columns): pass
-class StatisticFile(File, variable=Variables.Technicals.STATISTIC, datatype=pd.DataFrame, header=technical_index | statistic_columns): pass
-class StochasticFile(File, variable=Variables.Technicals.STOCHASTIC, datatype=pd.DataFrame, header=technical_index | stochastic_columns): pass
+class BarsFile(File, variable=Variables.Technicals.BARS, datatype=pd.DataFrame, filename=technical_filename, header=technical_index | bars_columns): pass
+class StatisticFile(File, variable=Variables.Technicals.STATISTIC, datatype=pd.DataFrame, filename=technical_filename, header=technical_index | statistic_columns): pass
+class StochasticFile(File, variable=Variables.Technicals.STOCHASTIC, datatype=pd.DataFrame, filename=technical_filename, header=technical_index | stochastic_columns): pass
 
 
 class TechnicalEquation(Equation): pass

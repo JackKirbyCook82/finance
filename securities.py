@@ -14,7 +14,7 @@ from scipy.stats import norm
 from datetime import datetime as Datetime
 from collections import OrderedDict as ODict
 
-from finance.variables import Querys, Variables
+from finance.variables import Variables
 from support.calculations import Variable, Equation, Calculation
 from support.pipelines import Processor
 from support.filtering import Filter
@@ -34,9 +34,10 @@ stock_parsers = {"instrument": lambda x: Variables.Instruments(int(x)), "positio
 option_index = {"ticker": str, "expire": np.datetime64, "strike": np.float32, "instrument": int, "position": int}
 option_columns = {"current": np.datetime64, "price": np.float32, "underlying": np.float32, "size": np.float32, "volume": np.float32, "interest": np.float32}
 option_parsers = {"instrument": lambda x: Variables.Instruments(int(x)), "position": lambda x: Variables.Positions(int(x))}
+security_filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
 
 
-class StockFile(File, variable=Variables.Instruments.STOCK, datatype=pd.DataFrame, header=stock_index | stock_columns, parsers=stock_parsers): pass
+class StockFile(File, variable=Variables.Instruments.STOCK, datatype=pd.DataFrame, filename=security_filename, header=stock_index | stock_columns, parsers=stock_parsers): pass
 class OptionFile(File, variable=Variables.Instruments.OPTION, datatype=pd.DataFrame, header=option_index | option_columns, parsers=option_parsers): pass
 
 

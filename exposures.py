@@ -25,10 +25,11 @@ __logger__ = logging.getLogger(__name__)
 
 exposure_index = {"ticker": str, "instrument": int, "position": int, "strike": np.float32, "expire": np.datetime64}
 exposure_parsers = {"instrument": lambda x: Variables.Instruments(int(x)), "position": lambda x: Variables.Positions(int(x))}
+exposure_filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
 exposure_columns = {"quantity": np.int32}
 
 
-class ExposureFile(File, variable="exposure", datatype=pd.DataFrame, header=exposure_index | exposure_columns, parsers=exposure_parsers):
+class ExposureFile(File, variable="exposure", datatype=pd.DataFrame, filename=exposure_filename, header=exposure_index | exposure_columns, parsers=exposure_parsers):
     pass
 
 

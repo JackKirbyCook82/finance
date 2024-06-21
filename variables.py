@@ -23,22 +23,39 @@ __copyright__ = "Copyright 2023,SE Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class QueryMeta(type):
-    def __str__(cls): return str(cls.__name__).lower()
-    def __getitem__(cls, string): return cls.fromstring(string)
+class DateRange(ntuple("DateRange", "minimum maximum")):
+    def __contains__(self, date): return self.minimum <= date <= self.maximum
+    def __new__(cls, dates):
+        assert isinstance(dates, list)
+        assert all([isinstance(date, Date) for date in dates])
+        dates = [date if isinstance(date, Date) else date.date() for date in dates]
+        return super().__new__(cls, min(dates), max(dates)) if dates else None
+
+    def __iter__(self): return (date for date in pd.date_range(start=self.minimum, end=self.maximum))
+    def __repr__(self): return f"{self.__class__.__name__}({repr(self.minimum)}, {repr(self.maximum)})"
+    def __str__(self): return f"{str(self.minimum)}|{str(self.maximum)}"
+    def __bool__(self): return self.minimum < self.maximum
+    def __len__(self): return (self.maximum - self.minimum).days
 
 
-class VariablesMeta(type):
-    def __init_subclass__(mcs, *args, variables, **kwargs): mcs.variables = variables
-    def __getitem__(cls, value): return cls.get(value)
-    def __iter__(cls): return iter(type(cls).variables)
+@total_ordering
+class Symbol(ntuple("Symbol", "ticker")):
+    def __str__(self): return str(self.ticker).upper()
+    def __eq__(self, other): return str(self.ticker) == str(self.ticker)
+    def __lt__(self, other): return str(self.ticker) < str(self.ticker)
 
-    @typedispatcher
-    def get(cls, key): raise TypeError(type(key).__name__)
-    @get.register(tuple)
-    def hash(cls, content): return {hash(value): value for value in iter(cls)}[hash(content)]
-    @get.register(str)
-    def string(cls, string): return {str(value): value for value in iter(cls)}[str(string).lower()]
+    @classmethod
+    def fields(cls): return cls._fields
+
+
+@total_ordering
+class Contract(ntuple("Contract", "ticker expire")):
+    def __str__(self): return "|".join([str(self.ticker).upper(), str(self.expire.strftime("%Y%m%d"))])
+    def __eq__(self, other): return str(self.ticker) == str(other.ticker) and self.expire == other.expire
+    def __lt__(self, other): return str(self.ticker) < str(other.ticker) and self.expire < other.expire
+
+    @classmethod
+    def fields(cls): return cls._fields
 
 
 class Variable(ABC):
@@ -53,43 +70,6 @@ class Variable(ABC):
     def items(self): return list(zip(self.keys(), self.values()))
     def keys(self): return list(self._fields)
     def values(self): return list(self)
-
-
-@total_ordering
-class Symbol(ntuple("Symbol", "ticker"), metaclass=QueryMeta):
-    def __str__(self): return self.tostring()
-    def __eq__(self, other): return str(self.ticker) == str(self.ticker)
-    def __lt__(self, other): return str(self.ticker) < str(self.ticker)
-
-    @classmethod
-    def fields(cls): return cls._fields
-
-    @classmethod
-    def fromstring(cls, string): return cls(string)
-    def tostring(self): return str(self.ticker)
-
-
-@total_ordering
-class Contract(ntuple("Contract", "ticker expire"), metaclass=QueryMeta):
-    def __str__(self): return self.tostring(delimiter="|")
-    def __eq__(self, other): return str(self.ticker) == str(other.ticker) and self.expire == other.expire
-    def __lt__(self, other): return str(self.ticker) < str(other.ticker) and self.expire < other.expire
-
-    @classmethod
-    def fields(cls): return cls._fields
-
-    @classmethod
-    def fromstring(cls, string, delimiter="_"):
-        ticker, expire = str(string).split(delimiter)
-        ticker = str(ticker).upper()
-        expire = Datetime.strptime(expire, "%Y%m%d")
-        return cls(ticker, expire)
-
-    def tostring(self, delimiter="_"):
-        ticker = str(self.ticker).upper()
-        expire = str(self.expire.strftime("%Y%m%d"))
-        contract = list(filter(None, [ticker, expire]))
-        return str(delimiter).join(contract)
 
 
 class Security(Variable, ntuple("Security", "instrument position")): pass
@@ -123,19 +103,17 @@ CollarLong = Strategy(Spreads.COLLAR, None, Positions.LONG, options=[PutLong, Ca
 CollarShort = Strategy(Spreads.COLLAR, None, Positions.SHORT, options=[CallLong, PutShort], stocks=[StockShort])
 
 
-class DateRange(ntuple("DateRange", "minimum maximum")):
-    def __contains__(self, date): return self.minimum <= date <= self.maximum
-    def __new__(cls, dates):
-        assert isinstance(dates, list)
-        assert all([isinstance(date, Date) for date in dates])
-        dates = [date if isinstance(date, Date) else date.date() for date in dates]
-        return super().__new__(cls, min(dates), max(dates)) if dates else None
+class VariablesMeta(type):
+    def __init_subclass__(mcs, *args, variables, **kwargs): mcs.variables = variables
+    def __getitem__(cls, value): return cls.get(value)
+    def __iter__(cls): return iter(type(cls).variables)
 
-    def __iter__(self): return (date for date in pd.date_range(start=self.minimum, end=self.maximum))
-    def __repr__(self): return f"{self.__class__.__name__}({repr(self.minimum)}, {repr(self.maximum)})"
-    def __str__(self): return f"{str(self.minimum)}|{str(self.maximum)}"
-    def __bool__(self): return self.minimum < self.maximum
-    def __len__(self): return (self.maximum - self.minimum).days
+    @typedispatcher
+    def get(cls, key): raise TypeError(type(key).__name__)
+    @get.register(tuple)
+    def hash(cls, content): return {hash(value): value for value in iter(cls)}[hash(content)]
+    @get.register(str)
+    def string(cls, string): return {str(value): value for value in iter(cls)}[str(string).lower()]
 
 
 class SecuritiesMeta(VariablesMeta, variables=[StockLong, StockShort, PutLong, PutShort, CallLong, CallShort]):

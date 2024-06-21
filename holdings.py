@@ -30,12 +30,13 @@ holdings_formats.update({(lead, lag): lambda column: f"{column * 100:.02f}%" for
 holdings_formats.update({("priority", ""): lambda column: f"{column:.02f}"})
 holdings_formats.update({("status", ""): lambda column: str(Variables.Status(int(column)).name).lower()})
 holdings_options = Options.Dataframe(rows=20, columns=25, width=1000, formats=holdings_formats, numbers=lambda column: f"{column:.02f}")
+holdings_filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
 holdings_index = {"ticker": str, "strike": np.float32, "expire": np.datetime64, "instrument": int, "position": int}
 holdings_parsers = {"instrument": lambda x: Variables.Instruments(int(x)), "position": lambda x: Variables.Positions(int(x))}
 holdings_columns = {"quantity": np.int32}
 
 
-class HoldingFile(File, variable="holdings", datatype=pd.DataFrame, header=holdings_index | holdings_columns, parsers=holdings_parsers):
+class HoldingFile(File, variable="holdings", datatype=pd.DataFrame, filename=holdings_filename, header=holdings_index | holdings_columns, parsers=holdings_parsers):
     pass
 
 
