@@ -38,7 +38,7 @@ security_filename = lambda query: "_".join([str(query.ticker).upper(), str(query
 
 
 class StockFile(File, variable=Variables.Instruments.STOCK, datatype=pd.DataFrame, filename=security_filename, header=stock_index | stock_columns, parsers=stock_parsers): pass
-class OptionFile(File, variable=Variables.Instruments.OPTION, datatype=pd.DataFrame, header=option_index | option_columns, parsers=option_parsers): pass
+class OptionFile(File, variable=Variables.Instruments.OPTION, datatype=pd.DataFrame, filename=security_filename, header=option_index | option_columns, parsers=option_parsers): pass
 
 
 class SecurityFilter(Filter, variables=[Variables.Instruments.STOCK, Variables.Instruments.OPTION]):
