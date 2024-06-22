@@ -110,7 +110,7 @@ class SecurityCalculator(Processor):
     @property
     def calculations(self): return self.__calculations
     @property
-    def functions(self): return self.__functins
+    def functions(self): return self.__functions
 
 
 class SecurityFiles(object):
