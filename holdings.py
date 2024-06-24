@@ -147,6 +147,7 @@ class HoldingWriter(Consumer, ABC):
 
     def execute(self, contents, *args, **kwargs):
         valuations = contents[self.calculation]
+        exposures = contents.get("exposures", None)
         assert isinstance(valuations, pd.DataFrame)
         if bool(valuations.empty):
             return
@@ -154,6 +155,7 @@ class HoldingWriter(Consumer, ABC):
         valuations = self.prioritize(valuations, *args, **kwargs)
         if bool(valuations.empty):
             return
+        valuations = self.stabilize(valuations, exposures, *args, **kwargs)
         valuations = valuations.reset_index(drop=True, inplace=False)
         self.write(valuations, *args, **kwargs)
 
@@ -170,6 +172,11 @@ class HoldingWriter(Consumer, ABC):
         dataframe = dataframe.where(dataframe["priority"] > 0).dropna(axis=0, how="all")
         dataframe = dataframe.reset_index(drop=True, inplace=False)
         return dataframe
+
+    @staticmethod
+    def stabilize(self, dataframe, exposures, *args, **kwargs):
+        if exposures is None:
+            return dataframe
 
     def write(self, dataframe, *args, **kwargs):
         dataframe["status"] = Variables.Status.PROSPECT
