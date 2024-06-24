@@ -11,7 +11,6 @@ from abc import ABC
 from enum import IntEnum
 from datetime import date as Date
 from functools import total_ordering
-from datetime import datetime as Datetime
 from collections import namedtuple as ntuple
 
 from support.dispatchers import typedispatcher

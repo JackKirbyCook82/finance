@@ -42,7 +42,6 @@ class ExposureCalculator(Processor):
         securities = pd.concat([options, virtuals], axis=0)
         securities = securities.reset_index(drop=True, inplace=False)
         exposures = self.holdings(securities, *args, *kwargs)
-        exposures = self.expired(exposures, *args, **kwargs)
         exposures = exposures.reset_index(drop=True, inplace=False)
         exposures = {"exposure": exposures}
         yield contents | exposures
@@ -79,7 +78,7 @@ class ExposureCalculator(Processor):
     @staticmethod
     def holdings(dataframe, *args, **kwargs):
         index = [value for value in dataframe.columns if value not in ("position", "quantity")]
-        numerical = lambda position: 2 * int(bool(position is Variables.Positions.LONG)) - 1
+        numerical = lambda position: 2 * int(bool(Variables.Positions(int(position)) is Variables.Positions.LONG)) - 1
         enumerical = lambda value: Variables.Positions.LONG if value > 0 else Variables.Positions.SHORT
         holdings = lambda cols: cols["quantity"] * numerical(cols["position"])
         dataframe["quantity"] = dataframe.apply(holdings, axis=1)
@@ -87,13 +86,6 @@ class ExposureCalculator(Processor):
         dataframe = dataframe.where(dataframe["quantity"] != 0).dropna(how="all", inplace=False)
         dataframe["position"] = dataframe["quantity"].apply(enumerical)
         dataframe["quantity"] = dataframe["quantity"].apply(np.abs)
-        return dataframe
-
-    @staticmethod
-    def expired(dataframe, *args, current, **kwargs):
-        assert isinstance(current, Datetime)
-        dataframe = dataframe.where(dataframe["expire"] >= current)
-        dataframe = dataframe.dropna(how="all", inplace=False)
         return dataframe
 
 
