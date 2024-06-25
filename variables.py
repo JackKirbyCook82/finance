@@ -17,7 +17,7 @@ from support.dispatchers import typedispatcher
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["Variables", "Querys", "DateRange", "Securities", "Strategies"]
+__all__ = ["DateRange", "Variables", "Querys", "Securities", "Strategies"]
 __copyright__ = "Copyright 2023,SE Jack Kirby Cook"
 __license__ = "MIT License"
 
@@ -43,45 +43,31 @@ class Symbol(ntuple("Symbol", "ticker")):
     def __eq__(self, other): return str(self.ticker) == str(self.ticker)
     def __lt__(self, other): return str(self.ticker) < str(self.ticker)
 
-    @classmethod
-    def fields(cls): return cls._fields
-
-
 @total_ordering
 class Contract(ntuple("Contract", "ticker expire")):
     def __str__(self): return "|".join([str(self.ticker).upper(), str(self.expire.strftime("%Y%m%d"))])
     def __eq__(self, other): return str(self.ticker) == str(other.ticker) and self.expire == other.expire
     def __lt__(self, other): return str(self.ticker) < str(other.ticker) and self.expire < other.expire
 
-    @classmethod
-    def fields(cls): return cls._fields
-
 
 class Variable(ABC):
-    def __str__(self): return "|".join([str(value.name).lower() for value in self if value is not None])
-    def __hash__(self): return hash(tuple(self))
-
-    @property
-    def title(self): return "|".join([str(string).title() for string in str(self).split("|")])
-    @classmethod
-    def fields(cls): return list(cls._fields)
+    def __int__(self): return sum([pow(10, index) * (int(value) if value is not None else 0) for index, value in enumerate(reversed(self))])
+    def __str__(self): return str("|".join([str(value.name).lower() for value in iter(self) if value is not None]))
+    def __hash__(self): return hash(tuple(self.items()))
 
     def items(self): return list(zip(self.keys(), self.values()))
     def keys(self): return list(self._fields)
     def values(self): return list(self)
 
 
-class Security(Variable, ntuple("Security", "instrument position")): pass
-class Strategy(Variable, ntuple("Strategy", "spread instrument position")):
-    def __new__(cls, spread, instrument, position, *args, **kwargs): return super().__new__(cls, spread, instrument, position)
+class Security(Variable, ntuple("Security", "instrument option position")): pass
+class Strategy(Variable, ntuple("Strategy", "spread option position")):
+    def __new__(cls, spread, option, position, *args, **kwargs): return super().__new__(cls, spread, option, position)
     def __init__(self, *args, options=[], stocks=[], **kwargs): self.options, self.stocks = options, stocks
-
-    @property
-    def securities(self): return list(self.options) + list(self.stocks)
 
 
 Actions = IntEnum("Actions", ["OPEN", "CLOSE"], start=1)
-Instruments = IntEnum("Instruments", ["PUT", "CALL", "STOCK", "OPTION"], start=1)
+Instruments = IntEnum("Instruments", ["STOCK", "OPTION"], start=1)
 Options = IntEnum("Options", ["PUT", "CALL"], start=1)
 Positions = IntEnum("Positions", ["LONG", "SHORT"], start=1)
 Spreads = IntEnum("Strategy", ["STRANGLE", "COLLAR", "VERTICAL"], start=1)
@@ -90,16 +76,16 @@ Scenarios = IntEnum("Scenarios", ["MINIMUM", "MAXIMUM"], start=1)
 Technicals = IntEnum("Technicals", ["BARS", "STATISTIC", "STOCHASTIC"], start=1)
 Status = IntEnum("Status", ["PROSPECT", "PURCHASED"], start=1)
 
-StockLong = Security(Instruments.STOCK, Positions.LONG)
-StockShort = Security(Instruments.STOCK, Positions.SHORT)
-PutLong = Security(Instruments.PUT, Positions.LONG)
-PutShort = Security(Instruments.PUT, Positions.SHORT)
-CallLong = Security(Instruments.CALL, Positions.LONG,)
-CallShort = Security(Instruments.CALL, Positions.SHORT)
-VerticalPut = Strategy(Spreads.VERTICAL, Instruments.PUT, None, options=[PutLong, PutShort])
-VerticalCall = Strategy(Spreads.VERTICAL, Instruments.CALL, None, options=[CallLong, CallShort])
-CollarLong = Strategy(Spreads.COLLAR, None, Positions.LONG, options=[PutLong, CallShort], stocks=[StockLong])
-CollarShort = Strategy(Spreads.COLLAR, None, Positions.SHORT, options=[CallLong, PutShort], stocks=[StockShort])
+StockLong = Security(Instruments.STOCK, None, Positions.LONG)
+StockShort = Security(Instruments.STOCK, None, Positions.SHORT)
+OptionPutLong = Security(Instruments.OPTION, Options.PUT, Positions.LONG)
+OptionPutShort = Security(Instruments.OPTION, Options.PUT, Positions.SHORT)
+OptionCallLong = Security(Instruments.OPTION, Options.CALL, Positions.LONG,)
+OptionCallShort = Security(Instruments.OPTION, Options.CALL, Positions.SHORT)
+VerticalPut = Strategy(Spreads.VERTICAL, Options.PUT, None, options=[OptionPutLong, OptionPutShort])
+VerticalCall = Strategy(Spreads.VERTICAL, Options.CALL, None, options=[OptionCallLong, OptionCallShort])
+CollarLong = Strategy(Spreads.COLLAR, None, Positions.LONG, options=[OptionPutLong, OptionCallShort], stocks=[StockLong])
+CollarShort = Strategy(Spreads.COLLAR, None, Positions.SHORT, options=[OptionCallLong, OptionPutShort], stocks=[StockShort])
 
 
 class VariablesMeta(type):
@@ -109,74 +95,69 @@ class VariablesMeta(type):
 
     @typedispatcher
     def get(cls, key): raise TypeError(type(key).__name__)
+    @get.register(int)
+    def number(cls, number): return {int(value): value for value in iter(cls)}[int(number)]
     @get.register(tuple)
     def hash(cls, content): return {hash(value): value for value in iter(cls)}[hash(content)]
     @get.register(str)
     def string(cls, string): return {str(value): value for value in iter(cls)}[str(string).lower()]
 
 
-class SecuritiesMeta(VariablesMeta, variables=[StockLong, StockShort, PutLong, PutShort, CallLong, CallShort]):
-    def security(cls, instrument, position): return Securities[(cls.instrument(instrument), cls.position(position))]
+class SecuritiesMeta(VariablesMeta, variables=[StockLong, StockShort, OptionPutLong, OptionPutShort, OptionCallLong, OptionCallShort]):
+    def security(cls, instrument, option, position): return Securities[(cls.instrument(instrument), cls.option(option), cls.position(position))]
 
     @staticmethod
-    def instrument(instrument): return Instruments[str(instrument).upper()]
+    def instrument(instrument): return Instruments(int(instrument))
     @staticmethod
-    def position(position): return Positions[str(position).upper()]
+    def option(option): return Options(int(option))
+    @staticmethod
+    def position(position): return Positions(int(position))
 
     @property
     def Stocks(cls): return iter([StockLong, StockShort])
     @property
-    def Options(cls): return iter([PutLong, PutShort, CallLong, CallShort])
+    def Options(cls): return iter([OptionPutLong, OptionPutShort, OptionCallLong, OptionCallShort])
     @property
-    def Puts(cls): return iter([PutLong, PutShort])
+    def Puts(cls): return iter([OptionPutLong, OptionPutShort])
     @property
-    def Calls(cls): return iter([CallLong, CallShort])
-
-    class Stock:
-        Long = StockLong
-        Short = StockShort
-    class Option:
-        class Put:
-            Long = PutLong
-            Short = PutShort
-        class Call:
-            Long = CallLong
-            Short = CallShort
-    class Long:
-        Stock = StockLong
-        Put = PutLong
-        Call = CallLong
-    class Short:
-        Stock = StockShort
-        Put = PutShort
-        Call = CallShort
+    def Calls(cls): return iter([OptionCallLong, OptionCallShort])
 
 
 class StrategiesMeta(VariablesMeta, variables=[CollarLong, CollarShort, VerticalPut, VerticalCall]):
     def strategy(cls, spread, instrument, position): return Strategies[(cls.spread(spread), cls.instrument(instrument), cls.position(position))]
 
     @staticmethod
-    def spread(spread): return Spreads[str(spread).upper()]
+    def spread(spread): return Spreads(int(spread))
     @staticmethod
-    def instrument(instrument): return Instruments[str(instrument).upper()]
+    def instrument(instrument): return Instruments(int(instrument))
     @staticmethod
-    def position(position): return Positions[str(position).upper()]
+    def position(position): return Positions(int(position))
 
     @property
     def Collars(cls): return iter([CollarLong, CollarShort])
     @property
     def Verticals(cls): return iter([VerticalPut, VerticalCall])
 
+
+class Securities(object, metaclass=SecuritiesMeta):
+    class Stock:
+        Long = StockLong
+        Short = StockShort
+    class Option:
+        class Put:
+            Long = OptionPutLong
+            Short = OptionPutShort
+        class Call:
+            Long = OptionCallLong
+            Short = OptionCallShort
+
+class Strategies(object, metaclass=StrategiesMeta):
     class Collar:
         Long = CollarLong
         Short = CollarShort
     class Vertical:
         Put = VerticalPut
         Call = VerticalCall
-
-
-class Securities(object, metaclass=SecuritiesMeta): pass
-class Strategies(object, metaclass=StrategiesMeta): pass
 
 class Querys(object):
     Symbol = Symbol

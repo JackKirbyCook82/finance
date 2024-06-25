@@ -9,7 +9,6 @@ Created on Fri May 17 2024
 import logging
 import numpy as np
 import pandas as pd
-from datetime import datetime as Datetime
 
 from finance.variables import Variables
 from support.pipelines import Processor

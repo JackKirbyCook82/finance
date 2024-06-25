@@ -31,8 +31,8 @@ holdings_formats.update({("priority", ""): lambda column: f"{column:.02f}"})
 holdings_formats.update({("status", ""): lambda column: str(Variables.Status(int(column)).name).lower()})
 holdings_options = Options.Dataframe(rows=20, columns=25, width=1000, formats=holdings_formats, numbers=lambda column: f"{column:.02f}")
 holdings_filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
-holdings_index = {"ticker": str, "strike": np.float32, "expire": np.datetime64, "instrument": int, "position": int}
-holdings_parsers = {"instrument": lambda x: Variables.Instruments(int(x)), "position": lambda x: Variables.Positions(int(x))}
+holdings_index = {"ticker": str, "strike": np.float32, "expire": np.datetime64, "instrument": int, "option": int, "position": int}
+holdings_parsers = {"instrument": lambda x: Variables.Instruments(int(x)), "option": lambda x: Variables.Options(int(x)), "position": lambda x: Variables.Positions(int(x))}
 holdings_columns = {"quantity": np.int32}
 
 
@@ -100,7 +100,7 @@ class HoldingReader(Producer, ABC):
     @staticmethod
     def contract(dataframe, *args, **kwargs):
         dataframe = dataframe.droplevel("scenario", axis=1)
-        return dataframe[list(Querys.Contract.fields())]
+        return dataframe[["ticker", "expire"]]
 
     @staticmethod
     def options(dataframe, *args, **kwargs):
@@ -123,11 +123,13 @@ class HoldingReader(Producer, ABC):
     @staticmethod
     def holdings(dataframe, *args, **kwargs):
         instrument = lambda security: Securities[security].instrument
+        option = lambda security: Securities[security].option
         position = lambda security: Securities[security].position
         securities = [security for security in list(map(str, iter(Securities))) if security in dataframe.columns]
         contracts = [column for column in dataframe.columns if column not in securities]
         dataframe = dataframe.melt(id_vars=contracts, value_vars=securities, var_name="security", value_name="strike")
         dataframe["instrument"] = dataframe["security"].apply(instrument)
+        dataframe["option"] = dataframe["security"].apply(option)
         dataframe["position"] = dataframe["security"].apply(position)
         return dataframe
 
@@ -147,7 +149,6 @@ class HoldingWriter(Consumer, ABC):
 
     def execute(self, contents, *args, **kwargs):
         valuations = contents[self.calculation]
-        exposures = contents.get("exposures", None)
         assert isinstance(valuations, pd.DataFrame)
         if bool(valuations.empty):
             return
@@ -155,7 +156,6 @@ class HoldingWriter(Consumer, ABC):
         valuations = self.prioritize(valuations, *args, **kwargs)
         if bool(valuations.empty):
             return
-        valuations = self.stabilize(valuations, exposures, *args, **kwargs)
         valuations = valuations.reset_index(drop=True, inplace=False)
         self.write(valuations, *args, **kwargs)
 
@@ -172,11 +172,6 @@ class HoldingWriter(Consumer, ABC):
         dataframe = dataframe.where(dataframe["priority"] > 0).dropna(axis=0, how="all")
         dataframe = dataframe.reset_index(drop=True, inplace=False)
         return dataframe
-
-    @staticmethod
-    def stabilize(self, dataframe, exposures, *args, **kwargs):
-        if exposures is None:
-            return dataframe
 
     def write(self, dataframe, *args, **kwargs):
         dataframe["status"] = Variables.Status.PROSPECT

@@ -33,10 +33,7 @@ arbitrage_columns = {"current": np.datetime64, "apy": np.float32, "npv": np.floa
 valuation_filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
 
 
-class ArbitrageFile(File, variable=Variables.Valuations.ARBITRAGE, filename=valuation_filename, datatype=pd.DataFrame, header=arbitrage_index | arbitrage_columns):
-    pass
-
-
+class ArbitrageFile(File, variable=Variables.Valuations.ARBITRAGE, filename=valuation_filename, datatype=pd.DataFrame, header=arbitrage_index | arbitrage_columns): pass
 class ValuationFilter(Filter, variables=[Variables.Valuations.ARBITRAGE]):
     @kwargsdispatcher("variable")
     def filter(self, dataframe, *args, variable, **kwargs): raise ValueError(variable)

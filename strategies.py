@@ -90,7 +90,7 @@ class StrategyCalculator(Processor):
         assert isinstance(calculations, list) and all([strategy in list(Strategies) for strategy in calculations])
         super().__init__(*args, name=name, **kwargs)
         calculations = {variables["strategy"]: calculation for variables, calculation in ODict(list(StrategyCalculation)).items() if variables["strategy"] in calculations}
-        self.__calculations = {str(strategy).lower(): calculation(*args, **kwargs) for strategy, calculation in calculations.items()}
+        self.__calculations = {str(strategy.name).lower(): calculation(*args, **kwargs) for strategy, calculation in calculations.items()}
         self.__variables = lambda **mapping: {key: xr.Variable(key, [value]).squeeze(key) for key, value in mapping.items()}
 
     def execute(self, contents, *args, **kwargs):
@@ -105,10 +105,10 @@ class StrategyCalculator(Processor):
 
     def calculate(self, options, *args, **kwargs):
         for strategy, calculation in self.calculations.items():
-            variables = self.variables(strategy=strategy)
             if not all([option in options.keys() for option in list(Strategies[strategy].options)]):
                 continue
             datasets = {option: options[option] for option in list(Strategies[strategy].options)}
+            variables = self.variables(strategy=strategy)
             dataset = calculation(datasets, *args, **kwargs)
             if self.empty(dataset["size"]):
                 continue
@@ -119,13 +119,13 @@ class StrategyCalculator(Processor):
         if bool(dataframe.empty):
             return
         string = lambda variable, number: str(variable(number).name).lower()
-        dataframe = dataframe.set_index(["ticker", "expire", "strike", "instrument", "position"], drop=True, inplace=False)
+        dataframe = dataframe.set_index(["ticker", "expire", "strike", "instrument", "option", "position"], drop=True, inplace=False)
         datasets = xr.Dataset.from_dataframe(dataframe)
         datasets = datasets.squeeze("ticker").squeeze("expire")
-        for instrument, position in product(datasets["instrument"].values, datasets["position"].values):
-            option = Securities[f"{string(Variables.Instruments, instrument)}|{string(Variables.Positions, position)}"]
-            dataset = datasets.sel({"instrument": instrument, "position": position})
-            dataset = dataset.drop_vars(["instrument", "position"], errors="ignore")
+        for instrument, option, position in product(datasets["instrument"].values, datasets["option"].values, datasets["position"].values):
+            option = Securities[f"{string(Variables.Instruments, instrument)}|{str(Variables.Options, option)}|{string(Variables.Positions, position)}"]
+            dataset = datasets.sel({"instrument": instrument, "option": option, "position": position})
+            dataset = dataset.drop_vars(["instrument", "option", "position"], errors="ignore")
             if self.empty(dataset["size"]):
                 continue
             dataset = dataset.rename({"strike": str(option)})

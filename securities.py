@@ -22,31 +22,23 @@ from support.files import File
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["SecurityFiles", "SecurityFilter", "SecurityCalculator"]
+__all__ = ["OptionFiles", "OptionFilter", "OptionCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-stock_index = {"ticker": str, "instrument": int, "position": int}
-stock_columns = {"current": np.datetime64, "price": np.float32, "size": np.float32, "volume": np.float32}
-stock_parsers = {"instrument": lambda x: Variables.Instruments(int(x)), "position": lambda x: Variables.Positions(int(x))}
-option_index = {"ticker": str, "expire": np.datetime64, "strike": np.float32, "instrument": int, "position": int}
+option_index = {"ticker": str, "expire": np.datetime64, "strike": np.float32, "instrument": int, "option": int, "position": int}
 option_columns = {"current": np.datetime64, "price": np.float32, "underlying": np.float32, "size": np.float32, "volume": np.float32, "interest": np.float32}
-option_parsers = {"instrument": lambda x: Variables.Instruments(int(x)), "position": lambda x: Variables.Positions(int(x))}
-security_filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
+option_parsers = {"instrument": lambda x: Variables.Instruments(int(x)), "option": lambda x: Variables.Options(int(x)), "position": lambda x: Variables.Positions(int(x))}
+option_filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
 
 
-class StockFile(File, variable=Variables.Instruments.STOCK, datatype=pd.DataFrame, filename=security_filename, header=stock_index | stock_columns, parsers=stock_parsers): pass
-class OptionFile(File, variable=Variables.Instruments.OPTION, datatype=pd.DataFrame, filename=security_filename, header=option_index | option_columns, parsers=option_parsers): pass
+class OptionFile(File, variable=Variables.Assets.OPTION, datatype=pd.DataFrame, filename=option_filename, header=option_index | option_columns, parsers=option_parsers): pass
+class OptionFilter(Filter, variables=[Variables.Assets.OPTION]): pass
 
 
-class SecurityFilter(Filter, variables=[Variables.Instruments.STOCK, Variables.Instruments.OPTION]):
-    pass
-
-
-class SecurityEquation(Equation): pass
-class OptionEquation(SecurityEquation):
+class OptionEquation(Equation):
     τi = Variable("τi", "tau", np.int32, function=lambda ti, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(ti, "ns"), "D") / np.timedelta64(1, "D"))
     si = Variable("si", "ratio", np.float32, function=lambda xi, k: np.log(xi / k))
     yi = Variable("yi", "price", np.float32, function=lambda nzr, nzl: nzr - nzl)
@@ -65,57 +57,46 @@ class OptionEquation(SecurityEquation):
     tτ = Variable("tτ", "expire", np.datetime64, position=0, locator="expire")
     ti = Variable("ti", "current", np.datetime64, position=0, locator="date")
     k = Variable("k", "strike", np.float32, position=0, locator="strike")
-    Θ = Variable("Θ", "instrument", np.int32, position=0, locator="instrument")
-    Φ = Variable("Φ", "position", np.int32, position=0, locator="position")
+    Θ = Variable("Θ", "option", np.int32, position=0, locator="option")
     ρ = Variable("ρ", "discount", np.float32, position="discount")
 
 
-class SecurityCalculation(Calculation, ABC, fields=["instrument"]): pass
-class OptionCalculation(SecurityCalculation, instrument=Variables.Instruments.OPTION, equation=OptionEquation):
+class OptionCalculation(Calculation, equation=OptionEquation):
     def execute(self, exposures, *args, discount, **kwargs):
         invert = lambda position: Variables.Positions(int(Variables.Positions.LONG) + int(Variables.Positions.SHORT) - int(position))
         equation = self.equation(*args, **kwargs)
-        yield from iter([exposures["ticker"], exposures["expire"], exposures["strike"]])
-        yield equation.Θ(exposures)
-        yield equation.Φ(exposures).apply(invert)
-        yield equation.ti(exposures)
+        yield from iter([exposures["ticker"], exposures["expire"]])
+        yield from iter([exposures["instrument"], exposures["option"], exposures["position"].apply(invert), exposures["strike"]])
         yield equation.yi(exposures, discount=discount)
         yield equation.xi(exposures)
+        yield equation.ti(exposures)
 
 
-class SecurityCalculator(Processor):
-    def __init__(self, *args, calculations=[], name=None, size, volume, interest, **kwargs):
-        assert isinstance(calculations, list) and all([instrument in list(Variables.Instruments) for instrument in calculations])
+class OptionCalculator(Processor):
+    def __init__(self, *args, name=None, size, volume, interest, **kwargs):
         super().__init__(*args, name=name, **kwargs)
-        calculations = {variables["instrument"]: calculation for variables, calculation in ODict(list(SecurityCalculation)).items() if variables["instrument"] in calculations}
-        self.__calculations = {str(instrument.name).lower(): calculation(*args, **kwargs) for instrument, calculation in calculations.items()}
         self.__functions = dict(size=size, volume=volume, interest=interest)
+        self.__calculation = OptionCalculation(*args, **kwargs)
 
-    def execute(self, contents, *args, **kwargs):
+    def execute(self, contents, *args, current, **kwargs):
         statistics, exposures = contents["statistic"], contents["exposure"]
         assert isinstance(statistics, pd.DataFrame) and isinstance(exposures, pd.DataFrame)
-        securities = ODict(list(self.calculate(exposures, statistics, *args, **kwargs)))
-        yield contents | securities
-
-    def calculate(self, exposures, statistics, *args, current, **kwargs):
         assert isinstance(current, Datetime)
         statistics = statistics.where(statistics["date"] == pd.to_datetime(current))
         exposures = pd.merge(exposures, statistics, how="inner", on="ticker")
-        for security, calculation in self.calculations.items():
-            dataframe = calculation(exposures, *args, **kwargs)
-            for column, function in self.functions.items():
-                dataframe[column] = dataframe.apply(function, axis=1)
-            yield security, dataframe
+        options = self.calculation(exposures, *args, **kwargs)
+        for column, function in self.functions.items():
+            options[column] = options.apply(function, axis=1)
+        yield contents | {"options": options}
 
     @property
-    def calculations(self): return self.__calculations
+    def calculation(self): return self.__calculation
     @property
     def functions(self): return self.__functions
 
 
-class SecurityFiles(object):
-    Stock = StockFile
-    Options = OptionFile
+class OptionFiles(object):
+    Option = OptionFile
 
 
 
