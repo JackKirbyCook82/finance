@@ -13,7 +13,7 @@ from abc import ABC
 from itertools import product
 from collections import OrderedDict as ODict
 
-from finance.variables import Variables, Securities, Strategies
+from finance.variables import Variables, Strategies
 from support.calculations import Variable, Equation, Calculation
 from support.pipelines import Processor
 
@@ -70,7 +70,7 @@ class StrategyCalculation(Calculation, ABC, fields=["strategy"]):
     def execute(self, options, *args, fees, **kwargs):
         positions = [option.position for option in options.keys()]
         assert len(set(positions)) == len(list(positions))
-        options = {str(option.position.name).lower(): dataset for option, dataset in options.items()}
+        options = {str(option): dataset for option, dataset in options.items()}
         equation = self.equation(*args, **kwargs)
         yield equation.whτ(**options, fees=fees)
         yield equation.wlτ(**options, fees=fees)
@@ -86,29 +86,29 @@ class CollarShortCalculation(StrategyCalculation, strategy=Strategies.Collar.Sho
 
 
 class StrategyCalculator(Processor):
-    def __init__(self, *args, calculations=[], name=None, **kwargs):
-        assert isinstance(calculations, list) and all([strategy in list(Strategies) for strategy in calculations])
+    def __init__(self, *args, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
-        calculations = {variables["strategy"]: calculation for variables, calculation in ODict(list(StrategyCalculation)).items() if variables["strategy"] in calculations}
-        self.__calculations = {str(strategy.name).lower(): calculation(*args, **kwargs) for strategy, calculation in calculations.items()}
+        calculations = {variables["strategy"]: calculation for variables, calculation in ODict(list(StrategyCalculation)).items()}
+        self.__calculations = {strategy: calculation(*args, **kwargs) for strategy, calculation in calculations.items()}
         self.__variables = lambda **mapping: {key: xr.Variable(key, [value]).squeeze(key) for key, value in mapping.items()}
 
     def execute(self, contents, *args, **kwargs):
-        options = contents["option"]
+        options = contents[Variables.Instruments.OPTION]
         assert isinstance(options, pd.DataFrame)
         options = ODict(list(self.options(options, *args, **kwargs)))
         strategies = ODict(list(self.calculate(options, *args, **kwargs)))
-        strategies = {"strategies": list(strategies.values())}
-        if not bool(strategies["strategies"]):
+        strategies = list(strategies.values())
+        if not bool(strategies):
             return
+        strategies = {Variables.Datasets.STRATEGY: strategies}
         yield contents | strategies
 
     def calculate(self, options, *args, **kwargs):
         for strategy, calculation in self.calculations.items():
-            if not all([option in options.keys() for option in list(Strategies[strategy].options)]):
+            if not all([option in options.keys() for option in list(strategy.options)]):
                 continue
-            datasets = {option: options[option] for option in list(Strategies[strategy].options)}
-            variables = self.variables(strategy=strategy)
+            variables = self.variables(strategy=str(strategy))
+            datasets = {option: options[option] for option in list(strategy.options)}
             dataset = calculation(datasets, *args, **kwargs)
             if self.empty(dataset["size"]):
                 continue
@@ -118,19 +118,18 @@ class StrategyCalculator(Processor):
     def options(self, dataframe, *args, **kwargs):
         if bool(dataframe.empty):
             return
-        string = lambda variable, number: str(variable(number).name).lower()
         dataframe = dataframe.set_index(["ticker", "expire", "strike", "instrument", "option", "position"], drop=True, inplace=False)
         datasets = xr.Dataset.from_dataframe(dataframe)
         datasets = datasets.squeeze("ticker").squeeze("expire")
         for instrument, option, position in product(datasets["instrument"].values, datasets["option"].values, datasets["position"].values):
-            option = Securities[f"{string(Variables.Instruments, instrument)}|{str(Variables.Options, option)}|{string(Variables.Positions, position)}"]
-            dataset = datasets.sel({"instrument": instrument, "option": option, "position": position})
+            dataset = datasets.sel(indexers={"instrument": instrument, "option": option, "position": position})
             dataset = dataset.drop_vars(["instrument", "option", "position"], errors="ignore")
             if self.empty(dataset["size"]):
                 continue
-            dataset = dataset.rename({"strike": str(option)})
-            dataset["strike"] = dataset[str(option)]
-            yield option, dataset
+            axis = f"{str(instrument)}|{str(option)}|{str(position)}"
+            dataset = dataset.rename({"strike": str(axis)})
+            dataset["strike"] = dataset[str(axis)]
+            yield axis, dataset
 
     @staticmethod
     def empty(dataarray): return not bool(np.count_nonzero(~np.isnan(dataarray.values)))

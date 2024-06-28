@@ -64,14 +64,13 @@ class StochasticCalculation(TechnicalCalculation, technical=Variables.Technicals
 
 
 class TechnicalCalculator(Processor):
-    def __init__(self, *args, calculations=[], name=None, **kwargs):
-        assert isinstance(calculations, list) and all([technical in list(Variables.Technicals) for technical in calculations])
+    def __init__(self, *args, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
-        calculations = {variables["technical"]: calculation for variables, calculation in ODict(list(TechnicalCalculation)).items() if variables["technical"] in calculations}
-        self.__calculations = {str(technical.name).lower(): calculation(*args, **kwargs) for technical, calculation in calculations.items()}
+        calculations = {variables["technical"]: calculation for variables, calculation in ODict(list(TechnicalCalculation)).items()}
+        self.__calculations = {technical: calculation(*args, **kwargs) for technical, calculation in calculations.items()}
 
     def execute(self, contents, *args, **kwargs):
-        bars = contents["bars"]
+        bars = contents[Variables.Technicals.BARS]
         assert isinstance(bars, pd.DataFrame)
         technicals = ODict(list(self.calculate(bars, *args, **kwargs)))
         yield contents | technicals

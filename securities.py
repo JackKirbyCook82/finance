@@ -6,6 +6,7 @@ Created on Weds Jul 19 2023
 
 """
 
+
 import logging
 import numpy as np
 import pandas as pd
@@ -16,29 +17,33 @@ from collections import OrderedDict as ODict
 
 from finance.variables import Variables
 from support.calculations import Variable, Equation, Calculation
+from support.filtering import Filter, Criterion
 from support.pipelines import Processor
-from support.filtering import Filter
 from support.files import File
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["OptionFiles", "OptionFilter", "OptionCalculator"]
+__all__ = ["SecurityFiles", "SecurityFilter", "SecurityCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-option_index = {"ticker": str, "expire": np.datetime64, "strike": np.float32, "instrument": int, "option": int, "position": int}
+stock_index = {"ticker": str, "strike": np.float32, "instrument": Variables.Instruments, "position": Variables.Positions}
+stock_columns = {"current": np.datetime64, "price": np.float32, "size": np.float32, "volume": np.float32}
+option_index = {"ticker": str, "expire": np.datetime64, "strike": np.float32, "instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}
 option_columns = {"current": np.datetime64, "price": np.float32, "underlying": np.float32, "size": np.float32, "volume": np.float32, "interest": np.float32}
-option_parsers = {"instrument": lambda x: Variables.Instruments(int(x)), "option": lambda x: Variables.Options(int(x)), "position": lambda x: Variables.Positions(int(x))}
-option_filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
+security_criterion = {Criterion.FLOOR: {"volume": 25, "interest": 25, "size": 10}}
+security_filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
 
 
-class OptionFile(File, variable=Variables.Assets.OPTION, datatype=pd.DataFrame, filename=option_filename, header=option_index | option_columns, parsers=option_parsers): pass
-class OptionFilter(Filter, variables=[Variables.Assets.OPTION]): pass
+class StockFile(File, variable=Variables.Instruments.STOCK, datatype=pd.DataFrame, filename=security_filename, header=option_index | option_columns): pass
+class OptionFile(File, variable=Variables.Instruments.OPTION, datatype=pd.DataFrame, filename=security_filename, header=option_index | option_columns): pass
+class SecurityFilter(Filter, variables=[Variables.Instruments.STOCK, Variables.Instruments.OPTION], criterion=security_criterion): pass
 
 
-class OptionEquation(Equation):
+class SecurityEquation(Equation): pass
+class OptionEquation(SecurityEquation):
     τi = Variable("τi", "tau", np.int32, function=lambda ti, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(ti, "ns"), "D") / np.timedelta64(1, "D"))
     si = Variable("si", "ratio", np.float32, function=lambda xi, k: np.log(xi / k))
     yi = Variable("yi", "price", np.float32, function=lambda nzr, nzl: nzr - nzl)
@@ -61,7 +66,8 @@ class OptionEquation(Equation):
     ρ = Variable("ρ", "discount", np.float32, position="discount")
 
 
-class OptionCalculation(Calculation, equation=OptionEquation):
+class SecurityCalculation(Calculation, ABC, fields=["instrument"]): pass
+class OptionCalculation(SecurityCalculation, instrument=Variables.Instruments.OPTION, equation=OptionEquation):
     def execute(self, exposures, *args, discount, **kwargs):
         invert = lambda position: Variables.Positions(int(Variables.Positions.LONG) + int(Variables.Positions.SHORT) - int(position))
         equation = self.equation(*args, **kwargs)
@@ -72,30 +78,39 @@ class OptionCalculation(Calculation, equation=OptionEquation):
         yield equation.ti(exposures)
 
 
-class OptionCalculator(Processor):
-    def __init__(self, *args, name=None, size, volume, interest, **kwargs):
+class SecurityCalculator(Processor):
+    def __init__(self, *args, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
-        self.__functions = dict(size=size, volume=volume, interest=interest)
-        self.__calculation = OptionCalculation(*args, **kwargs)
+        calculations = {variables["instrument"]: calculation for variables, calculation in ODict(list(SecurityCalculation)).items()}
+        functions = dict(size=kwargs.get("size", lambda cols: np.int32(10)), volume=kwargs.get("volume", lambda cols: np.NaN), interest=kwargs.get("interest", lambda cols: np.NaN))
+        self.__calculations = {instrument: calculation(*args, **kwargs) for instrument, calculation in calculations.items()}
+        self.__functions = functions
 
     def execute(self, contents, *args, current, **kwargs):
-        statistics, exposures = contents["statistic"], contents["exposure"]
-        assert isinstance(statistics, pd.DataFrame) and isinstance(exposures, pd.DataFrame)
-        assert isinstance(current, Datetime)
+        exposures, statistics = contents[Variables.Datasets.EXPOSURE], contents[Variables.Technicals.STATISTIC]
+        assert isinstance(exposures, pd.DataFrame) and isinstance(statistics, pd.DataFrame) and isinstance(current, Datetime)
         statistics = statistics.where(statistics["date"] == pd.to_datetime(current))
         exposures = pd.merge(exposures, statistics, how="inner", on="ticker")
-        options = self.calculation(exposures, *args, **kwargs)
-        for column, function in self.functions.items():
-            options[column] = options.apply(function, axis=1)
-        yield contents | {"options": options}
+        exposures = ODict(list(self.calculate(exposures, *args, **kwargs)))
+        if not bool(exposures):
+            return
+        yield contents | exposures
+
+    def calculate(self, exposures, *args, **kwargs):
+        for instrument, calculation in self.calculations.items():
+            dataframe = calculation(exposures, *args, **kwargs)
+            for column, function in self.functions.items():
+                dataframe[column] = dataframe.apply(function, axis=1)
+            yield instrument, dataframe
 
     @property
-    def calculation(self): return self.__calculation
+    def calculations(self): return self.__calculations
     @property
     def functions(self): return self.__functions
 
 
-class OptionFiles(object):
+class SecurityFiles(object):
+    Stock = StockFile
     Option = OptionFile
 
 

@@ -8,7 +8,7 @@ Created on Sun Jan 28 2024
 
 import pandas as pd
 from abc import ABC
-from enum import IntEnum
+from enum import Enum, IntEnum
 from datetime import date as Date
 from functools import total_ordering
 from collections import namedtuple as ntuple
@@ -17,9 +17,19 @@ from support.dispatchers import typedispatcher
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["DateRange", "Variables", "Querys", "Securities", "Strategies"]
+__all__ = ["DateRange", "Variables", "Securities", "Strategies"]
 __copyright__ = "Copyright 2023,SE Jack Kirby Cook"
 __license__ = "MIT License"
+
+
+class MyEnum(Enum):
+    def __str__(self): pass
+    def __hash__(self): pass
+    def __call__(self, *args, **kwargs): pass
+
+    @classmethod
+    def parser(cls): pass
+    def formatter(self): pass
 
 
 class DateRange(ntuple("DateRange", "minimum maximum")):
@@ -66,15 +76,16 @@ class Strategy(Variable, ntuple("Strategy", "spread option position")):
     def __init__(self, *args, options=[], stocks=[], **kwargs): self.options, self.stocks = options, stocks
 
 
-Actions = IntEnum("Actions", ["OPEN", "CLOSE"], start=1)
-Instruments = IntEnum("Instruments", ["STOCK", "OPTION"], start=1)
-Options = IntEnum("Options", ["PUT", "CALL"], start=1)
-Positions = IntEnum("Positions", ["LONG", "SHORT"], start=1)
-Spreads = IntEnum("Strategy", ["STRANGLE", "COLLAR", "VERTICAL"], start=1)
-Valuations = IntEnum("Valuation", ["ARBITRAGE"], start=1)
-Scenarios = IntEnum("Scenarios", ["MINIMUM", "MAXIMUM"], start=1)
-Technicals = IntEnum("Technicals", ["BARS", "STATISTIC", "STOCHASTIC"], start=1)
-Status = IntEnum("Status", ["PROSPECT", "PURCHASED"], start=1)
+# Instruments = IntEnum("Instruments", ["STOCK", "OPTION"], start=1)
+# Options = IntEnum("Options", ["PUT", "CALL"], start=1)
+# Positions = IntEnum("Positions", ["LONG", "SHORT"], start=1)
+# Status = IntEnum("Status", ["PROSPECT", "PURCHASED"], start=1)
+# Spreads = Enum("Spreads", ["STRANGLE", "COLLAR", "VERTICAL"], start=1)
+# Valuations = Enum("Valuation", ["ARBITRAGE"], start=1)
+# Scenarios = Enum("Scenarios", ["MINIMUM", "MAXIMUM"], start=1)
+# Technicals = Enum("Technicals", ["BARS", "STATISTIC", "STOCHASTIC"], start=1)
+# Querys = Enum("Querys", {"SYMBOL": Symbol, "CONTRACT": Contract})
+# Datasets = Enum("Datasets", ["SECURITY", "STRATEGY", "VALUATION", "HOLDINGS", "EXPOSURE"], start=1)
 
 StockLong = Security(Instruments.STOCK, None, Positions.LONG)
 StockShort = Security(Instruments.STOCK, None, Positions.SHORT)
@@ -88,7 +99,7 @@ CollarLong = Strategy(Spreads.COLLAR, None, Positions.LONG, options=[OptionPutLo
 CollarShort = Strategy(Spreads.COLLAR, None, Positions.SHORT, options=[OptionCallLong, OptionPutShort], stocks=[StockShort])
 
 
-class VariablesMeta(type):
+class ContextMeta(type):
     def __init_subclass__(mcs, *args, variables, **kwargs): mcs.variables = variables
     def __getitem__(cls, value): return cls.get(value)
     def __iter__(cls): return iter(type(cls).variables)
@@ -103,7 +114,7 @@ class VariablesMeta(type):
     def string(cls, string): return {str(value): value for value in iter(cls)}[str(string).lower()]
 
 
-class SecuritiesMeta(VariablesMeta, variables=[StockLong, StockShort, OptionPutLong, OptionPutShort, OptionCallLong, OptionCallShort]):
+class SecuritiesMeta(ContextMeta, variables=[StockLong, StockShort, OptionPutLong, OptionPutShort, OptionCallLong, OptionCallShort]):
     def security(cls, instrument, option, position): return Securities[(cls.instrument(instrument), cls.option(option), cls.position(position))]
 
     @staticmethod
@@ -123,7 +134,7 @@ class SecuritiesMeta(VariablesMeta, variables=[StockLong, StockShort, OptionPutL
     def Calls(cls): return iter([OptionCallLong, OptionCallShort])
 
 
-class StrategiesMeta(VariablesMeta, variables=[CollarLong, CollarShort, VerticalPut, VerticalCall]):
+class StrategiesMeta(ContextMeta, variables=[CollarLong, CollarShort, VerticalPut, VerticalCall]):
     def strategy(cls, spread, instrument, position): return Strategies[(cls.spread(spread), cls.instrument(instrument), cls.position(position))]
 
     @staticmethod
@@ -159,12 +170,9 @@ class Strategies(object, metaclass=StrategiesMeta):
         Put = VerticalPut
         Call = VerticalCall
 
-class Querys(object):
-    Symbol = Symbol
-    Contract = Contract
-
 class Variables(object):
-    Actions = Actions
+    Security = Security
+    Strategy = Strategy
     Instruments = Instruments
     Options = Options
     Positions = Positions
@@ -173,6 +181,8 @@ class Variables(object):
     Scenarios = Scenarios
     Technicals = Technicals
     Status = Status
+    Querys = Querys
+    Datasets = Datasets
 
 
 

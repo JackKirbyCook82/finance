@@ -12,7 +12,7 @@ import pandas as pd
 from abc import ABC
 from itertools import product
 
-from finance.variables import Querys, Variables, Securities, Strategies
+from finance.variables import Variables, Securities, Strategies
 from support.pipelines import Producer, Consumer
 from support.tables import Tables, Options
 from support.files import File
@@ -25,18 +25,19 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-holdings_formats = {(lead, lag): lambda column: f"{column:.02f}" for lead, lag in product(["npv", "cost"], list(map(lambda scenario: str(scenario.name).lower(), Variables.Scenarios)))}
-holdings_formats.update({(lead, lag): lambda column: f"{column * 100:.02f}%" for lead, lag in product(["apy"], list(map(lambda scenario: str(scenario.name).lower(), Variables.Scenarios)))})
-holdings_formats.update({("priority", ""): lambda column: f"{column:.02f}"})
-holdings_formats.update({("status", ""): lambda column: str(Variables.Status(int(column)).name).lower()})
+holdings_formats = {(lead, lag): lambda column: f"{column:.02f}" for lead, lag in product(["npv", "cost"], list(map(lambda scenario: str(scenario), Variables.Scenarios)))}
+holdings_formats.update({(lead, lag): lambda column: f"{column * 100:.02f}%" for lead, lag in product(["apy"], list(map(lambda scenario: str(scenario), Variables.Scenarios)))})
+holdings_formats.update({("priority", ""): lambda priority: f"{priority:.02f}"})
+holdings_formats.update({("status", ""): lambda status: str(status)})
 holdings_options = Options.Dataframe(rows=20, columns=25, width=1000, formats=holdings_formats, numbers=lambda column: f"{column:.02f}")
-holdings_filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
-holdings_index = {"ticker": str, "strike": np.float32, "expire": np.datetime64, "instrument": int, "option": int, "position": int}
-holdings_parsers = {"instrument": lambda x: Variables.Instruments(int(x)), "option": lambda x: Variables.Options(int(x)), "position": lambda x: Variables.Positions(int(x))}
+holdings_index = {"ticker": str, "expire": np.datetime64, "strike": np.float32, "instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}
 holdings_columns = {"quantity": np.int32}
+holdings_filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
+priority_function = lambda cols: cols[("apy", str(Variables.Scenarios.MINIMUM))]
+liquidity_function = lambda cols: np.floor(cols["size"] * 0.1).astype(np.int32)
 
 
-class HoldingFile(File, variable="holdings", datatype=pd.DataFrame, filename=holdings_filename, header=holdings_index | holdings_columns, parsers=holdings_parsers):
+class HoldingFile(File, variable=Variables.Datasets.HOLDINGS, datatype=pd.DataFrame, filename=holdings_filename, header=holdings_index | holdings_columns):
     pass
 
 
@@ -84,10 +85,11 @@ class HoldingReader(Producer, ABC):
         holdings = self.holdings(securities, *args, **kwargs)
         index = list(holdings_index.keys())
         columns = list(holdings_columns.keys())
-        holdings = holdings.groupby(index, as_index=False)[columns].sum()
+        holdings = holdings.groupby(index, as_index=False, dropna=False)[columns].sum()
         for (ticker, expire), dataframe in iter(holdings.groupby(["ticker", "expire"])):
-            contract = Querys.Contract(ticker, expire)
-            yield dict(contract=contract, holdings=dataframe)
+            contract = Variables.Querys.Contract(ticker, expire)
+            holdings = {Variables.Querys.CONTRACT: contract, Variables.Datasets.HOLDINGS: dataframe}
+            yield holdings
 
     def read(self, *args, **kwargs):
         if not bool(self.source):
@@ -128,6 +130,7 @@ class HoldingReader(Producer, ABC):
         securities = [security for security in list(map(str, iter(Securities))) if security in dataframe.columns]
         contracts = [column for column in dataframe.columns if column not in securities]
         dataframe = dataframe.melt(id_vars=contracts, value_vars=securities, var_name="security", value_name="strike")
+        dataframe = dataframe.where(dataframe["strike"].notna()).dropna(how="all", inplace=False)
         dataframe["instrument"] = dataframe["security"].apply(instrument)
         dataframe["option"] = dataframe["security"].apply(option)
         dataframe["position"] = dataframe["security"].apply(position)
@@ -138,13 +141,12 @@ class HoldingReader(Producer, ABC):
 
 
 class HoldingWriter(Consumer, ABC):
-    def __init__(self, *args, destination, calculation, liquidity, priority, capacity=None, **kwargs):
-        assert callable(liquidity) and callable(priority)
+    def __init__(self, *args, destination, calculation=Variables.Valuations.ARBITRAGE, capacity=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.__calculation = str(calculation.name).lower()
+        self.__liquidity = kwargs.get("liquidity", liquidity_function)
+        self.__priority = kwargs.get("priority", priority_function)
+        self.__calculation = calculation
         self.__destination = destination
-        self.__liquidity = liquidity
-        self.__priority = priority
         self.__capacity = capacity
 
     def execute(self, contents, *args, **kwargs):
