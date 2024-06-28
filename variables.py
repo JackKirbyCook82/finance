@@ -8,7 +8,7 @@ Created on Sun Jan 28 2024
 
 import pandas as pd
 from abc import ABC
-from enum import Enum, IntEnum
+from enum import Enum
 from datetime import date as Date
 from functools import total_ordering
 from collections import namedtuple as ntuple
@@ -20,16 +20,6 @@ __author__ = "Jack Kirby Cook"
 __all__ = ["DateRange", "Variables", "Securities", "Strategies"]
 __copyright__ = "Copyright 2023,SE Jack Kirby Cook"
 __license__ = "MIT License"
-
-
-class MyEnum(Enum):
-    def __str__(self): pass
-    def __hash__(self): pass
-    def __call__(self, *args, **kwargs): pass
-
-    @classmethod
-    def parser(cls): pass
-    def formatter(self): pass
 
 
 class DateRange(ntuple("DateRange", "minimum maximum")):
@@ -60,9 +50,19 @@ class Contract(ntuple("Contract", "ticker expire")):
     def __lt__(self, other): return str(self.ticker) < str(other.ticker) and self.expire < other.expire
 
 
-class Variable(ABC):
-    def __int__(self): return sum([pow(10, index) * (int(value) if value is not None else 0) for index, value in enumerate(reversed(self))])
-    def __str__(self): return str("|".join([str(value.name).lower() for value in iter(self) if value is not None]))
+class Variable(Enum):
+    def __str__(self): pass
+    def __hash__(self): pass
+    def __call__(self, *args, **kwargs): pass
+
+    @classmethod
+    def parser(cls): pass
+    def formatter(self): pass
+
+
+class MultiVariable(ABC):
+    def __int__(self): return int(sum([pow(10, index) * int(value) for index, value in enumerate(reversed(self))]))
+    def __str__(self): return str("|".join([str(value) for value in iter(self) if bool(value)]))
     def __hash__(self): return hash(tuple(self.items()))
 
     def items(self): return list(zip(self.keys(), self.values()))
@@ -76,27 +76,28 @@ class Strategy(Variable, ntuple("Strategy", "spread option position")):
     def __init__(self, *args, options=[], stocks=[], **kwargs): self.options, self.stocks = options, stocks
 
 
-# Instruments = IntEnum("Instruments", ["STOCK", "OPTION"], start=1)
-# Options = IntEnum("Options", ["PUT", "CALL"], start=1)
-# Positions = IntEnum("Positions", ["LONG", "SHORT"], start=1)
-# Status = IntEnum("Status", ["PROSPECT", "PURCHASED"], start=1)
-# Spreads = Enum("Spreads", ["STRANGLE", "COLLAR", "VERTICAL"], start=1)
-# Valuations = Enum("Valuation", ["ARBITRAGE"], start=1)
-# Scenarios = Enum("Scenarios", ["MINIMUM", "MAXIMUM"], start=1)
-# Technicals = Enum("Technicals", ["BARS", "STATISTIC", "STOCHASTIC"], start=1)
-# Querys = Enum("Querys", {"SYMBOL": Symbol, "CONTRACT": Contract})
-# Datasets = Enum("Datasets", ["SECURITY", "STRATEGY", "VALUATION", "HOLDINGS", "EXPOSURE"], start=1)
+Instruments = Variable("Instruments", ["STOCK", "OPTION"])
+Options = Variable("Options", ["PUT", "CALL"])
+Positions = Variable("Positions", ["LONG", "SHORT"])
+Status = Variable("Status", ["PROSPECT", "PURCHASED"])
+Spreads = Variable("Spreads", ["STRANGLE", "COLLAR", "VERTICAL"])
+Valuations = Variable("Valuation", ["ARBITRAGE"])
+Scenarios = Variable("Scenarios", ["MINIMUM", "MAXIMUM"])
+Technicals = Variable("Technicals", ["BARS", "STATISTIC", "STOCHASTIC"])
+Querys = Variable("Querys", {"SYMBOL": Symbol, "CONTRACT": Contract})
+Datasets = Variable("Datasets", ["SECURITY", "STRATEGY", "VALUATION", "HOLDINGS", "EXPOSURE"])
 
-StockLong = Security(Instruments.STOCK, None, Positions.LONG)
-StockShort = Security(Instruments.STOCK, None, Positions.SHORT)
+
+StockLong = Security(Instruments.STOCK, Options.EMPTY, Positions.LONG)
+StockShort = Security(Instruments.STOCK, Options.EMPTY, Positions.SHORT)
 OptionPutLong = Security(Instruments.OPTION, Options.PUT, Positions.LONG)
 OptionPutShort = Security(Instruments.OPTION, Options.PUT, Positions.SHORT)
 OptionCallLong = Security(Instruments.OPTION, Options.CALL, Positions.LONG,)
 OptionCallShort = Security(Instruments.OPTION, Options.CALL, Positions.SHORT)
-VerticalPut = Strategy(Spreads.VERTICAL, Options.PUT, None, options=[OptionPutLong, OptionPutShort])
-VerticalCall = Strategy(Spreads.VERTICAL, Options.CALL, None, options=[OptionCallLong, OptionCallShort])
-CollarLong = Strategy(Spreads.COLLAR, None, Positions.LONG, options=[OptionPutLong, OptionCallShort], stocks=[StockLong])
-CollarShort = Strategy(Spreads.COLLAR, None, Positions.SHORT, options=[OptionCallLong, OptionPutShort], stocks=[StockShort])
+VerticalPut = Strategy(Spreads.VERTICAL, Options.PUT, Positions.EMPTY, options=[OptionPutLong, OptionPutShort])
+VerticalCall = Strategy(Spreads.VERTICAL, Options.CALL, Positions.EMPTY, options=[OptionCallLong, OptionCallShort])
+CollarLong = Strategy(Spreads.COLLAR, Options.EMTPY, Positions.LONG, options=[OptionPutLong, OptionCallShort], stocks=[StockLong])
+CollarShort = Strategy(Spreads.COLLAR, Options.EMPTY, Positions.SHORT, options=[OptionCallLong, OptionPutShort], stocks=[StockShort])
 
 
 class ContextMeta(type):
