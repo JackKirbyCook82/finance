@@ -50,14 +50,16 @@ class Contract(ntuple("Contract", "ticker expire")):
     def __lt__(self, other): return str(self.ticker) < str(other.ticker) and self.expire < other.expire
 
 
-class Variable(Enum):
-    def __str__(self): pass
-    def __hash__(self): pass
-    def __call__(self, *args, **kwargs): pass
+#    @staticmethod
+#    def parser(filename):
+#        ticker, expire = str(filename).split("_")
+#        ticker = str(ticker).upper()
+#        expire = Datetime.strptime(expire, "%Y%m%d")
+#        return Variables.Querys.CONTRACT(ticker, expire)
 
-    @classmethod
-    def parser(cls): pass
-    def formatter(self): pass
+
+class Variable(Enum):
+    pass
 
 
 class MultiVariable(ABC):

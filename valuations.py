@@ -30,11 +30,12 @@ __logger__ = logging.getLogger(__name__)
 
 arbitrage_index = {security: np.float32 for security in list(map(str, Securities.Options))} | {"strategy": str, "valuation": str, "scenario": str, "ticker": str, "expire": np.datetime64}
 arbitrage_columns = {"current": np.datetime64, "apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.float32, "underlying": np.float32}
+valuation_parsers = {"current": pd.to_datetime, "expire": pd.to_datetime}
 valuation_criterion = {Criterion.FLOOR: {"apy": 0.0, "size": 10}, Criterion.NULL: ["apy", "size"]}
 valuation_filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
 
 
-class ArbitrageFile(File, variable=Variables.Valuations.ARBITRAGE, filename=valuation_filename, datatype=pd.DataFrame, header=arbitrage_index | arbitrage_columns): pass
+class ArbitrageFile(File, variable=Variables.Valuations.ARBITRAGE, filename=valuation_filename, datatype=pd.DataFrame, header=arbitrage_index | arbitrage_columns, parsers=valuation_parsers): pass
 class ValuationFilter(Filter, variables=[Variables.Valuations.ARBITRAGE], criterion=valuation_criterion):
     @kwargsdispatcher("variable")
     def filter(self, dataframe, *args, variable, **kwargs): raise ValueError(variable)
@@ -133,7 +134,6 @@ class ValuationCalculator(Processor):
 
 class ValuationFiles(object):
     Arbitrage = ArbitrageFile
-
 
 
 
