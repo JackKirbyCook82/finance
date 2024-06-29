@@ -7,8 +7,8 @@ Created on Sun Jan 28 2024
 """
 
 import pandas as pd
-from abc import ABC
-from enum import Enum
+from abc import ABC, ABCMeta
+from enum import Enum, EnumMeta
 from datetime import date as Date
 from functools import total_ordering
 from collections import namedtuple as ntuple
@@ -50,14 +50,33 @@ class Contract(ntuple("Contract", "ticker expire")):
     def __lt__(self, other): return str(self.ticker) < str(other.ticker) and self.expire < other.expire
 
 
-class Variable(Enum):
-    def __str__(self): pass
-    def __hash__(self): pass
-    def __call__(self, *args, **kwargs): pass
+class VariableMeta(ABCMeta):
+    def __new__(mcs, name, bases, attrs, *args, **kwargs):
+        if not any([type(base) is VariableMeta for base in bases]):
+            cls = super(VariableMeta, mcs).__new__(mcs, name, bases, attrs, *args, **kwargs)
+            return cls
+        else:
 
-    @classmethod
-    def parser(cls): pass
-    def formatter(self): pass
+
+
+#    def __call__(cls, value, *args, names=[], **kwargs):
+#        if bool(cls._member_map_):
+#            parameters = dict()
+#        else:
+#            names = ["EMPTY"] + list(names)
+#            parameters = dict(names=names, start=1, type=None)
+#        instance = super(VariableMeta, cls).__new__(value, *args, **parameters, **kwargs)
+#        return instance
+
+
+class Variable(ABC, metaclass=VariableMeta):
+    def __new__(cls, value):
+        assert isinstance(value, (int, str, Variable))
+        value = str(value).upper() if isinstance(value, str) else value
+        return super().__new__(cls, value)
+
+    def __str__(self): return str(self.name).lower()
+    def __int__(self): return int(self.value)
 
 
 class MultiVariable(ABC):
@@ -76,16 +95,16 @@ class Strategy(Variable, ntuple("Strategy", "spread option position")):
     def __init__(self, *args, options=[], stocks=[], **kwargs): self.options, self.stocks = options, stocks
 
 
-Instruments = Variable("Instruments", ["STOCK", "OPTION"])
-Options = Variable("Options", ["PUT", "CALL"])
-Positions = Variable("Positions", ["LONG", "SHORT"])
-Status = Variable("Status", ["PROSPECT", "PURCHASED"])
-Spreads = Variable("Spreads", ["STRANGLE", "COLLAR", "VERTICAL"])
-Valuations = Variable("Valuation", ["ARBITRAGE"])
-Scenarios = Variable("Scenarios", ["MINIMUM", "MAXIMUM"])
-Technicals = Variable("Technicals", ["BARS", "STATISTIC", "STOCHASTIC"])
-Querys = Variable("Querys", {"SYMBOL": Symbol, "CONTRACT": Contract})
-Datasets = Variable("Datasets", ["SECURITY", "STRATEGY", "VALUATION", "HOLDINGS", "EXPOSURE"])
+Instruments = Variable("Instruments", members=["STOCK", "OPTION"])
+Options = Variable("Options", members=["PUT", "CALL"])
+Positions = Variable("Positions", members=["LONG", "SHORT"])
+Status = Variable("Status", members=["PROSPECT", "PURCHASED"])
+Spreads = Variable("Spreads", members=["STRANGLE", "COLLAR", "VERTICAL"])
+Valuations = Variable("Valuation", members=["ARBITRAGE"])
+Scenarios = Variable("Scenarios", members=["MINIMUM", "MAXIMUM"])
+Technicals = Variable("Technicals", members=["BARS", "STATISTIC", "STOCHASTIC"])
+Querys = Variable("Querys", members=["SYMBOL", "CONTRACT"])
+Datasets = Variable("Datasets", members=["SECURITY", "STRATEGY", "VALUATION", "HOLDINGS", "EXPOSURE"])
 
 
 StockLong = Security(Instruments.STOCK, Options.EMPTY, Positions.LONG)
