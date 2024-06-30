@@ -51,22 +51,23 @@ class Contract(ntuple("Contract", "ticker expire")):
 
 
 class Variable(EnumType):
-    @classmethod
-    def __prepare__(mcs, name, bases):
-        attrs = super(Variable, mcs).__prepare__(name, bases)
-        def __str__(self): return str(self.name).lower()
+    def __new__(mcs, name, bases, attrs, *args, members=[], **kwargs):
+        assert not any([issubclass(base, Enum) for base in bases])
+        assert isinstance(members, list) and bool(members)
+        def __str__(self): return str(self.name).upper()
         def __int__(self): return int(self.value)
-        update = dict(__str__=__str__, __int__=__int__)
-        return attrs | update
+        methods = dict(__str__=__str__, __int__=__int__)
+        base = type(name, (object,), methods)
+        members = list(map(str.upper, ["empty"] + list(members)))
+        members = {member: index for index, member in enumerate(members)}
+        for key, value in members.items():
+            attrs[key] = value
+        return super(Variable, mcs).__new__(mcs, name, (base, Enum), attrs)
 
-    def __call__(cls, category, members=[]):
-        parameters = dict()
-        if not bool(cls._member_map_):
-            members = ["empty"] + list(members)
-            members = list(map(str.upper, members))
-            update = dict(names=members, start=0, type=None)
-            parameters = parameters | update
-        return super(Variable, cls).__call__(category, **parameters)
+    def __call__(cls, variable, *args, **kwargs):
+        assert bool(cls._member_map_)
+        variable = str(variable).upper() if isinstance(variable, str) else variable
+        return super(Variable, cls).__call__(variable, *args, **kwargs)
 
 
 class MultiVariable(ABC):
@@ -79,23 +80,31 @@ class MultiVariable(ABC):
     def values(self): return list(self)
 
 
+class Instruments(members=["STOCK", "OPTION"], metaclass=Variable): pass
+class Options(members=["PUT", "CALL"], metaclass=Variable): pass
+class Positions(members=["LONG", "SHORT"], metaclass=Variable): pass
+class Spreads(members=["STRANGLE", "COLLAR", "VERTICAL"], metaclass=Variable): pass
+
 class Security(MultiVariable, ntuple("Security", "instrument option position")): pass
 class Strategy(MultiVariable, ntuple("Strategy", "spread option position")):
     def __new__(cls, spread, option, position, *args, **kwargs): return super().__new__(cls, spread, option, position)
     def __init__(self, *args, options=[], stocks=[], **kwargs): self.options, self.stocks = options, stocks
 
 
-Instruments = Variable("Instruments", ["STOCK", "OPTION"])
-Options = Variable("Options", ["PUT", "CALL"])
-Positions = Variable("Positions", ["LONG", "SHORT"])
-Spreads = Variable("Spreads", ["STRANGLE", "COLLAR", "VERTICAL"])
-
 Status = Enum("Status", ["PROSPECT", "PURCHASED"])
 Valuations = Enum("Valuation", ["ARBITRAGE"])
 Scenarios = Enum("Scenarios", ["MINIMUM", "MAXIMUM"])
 Technicals = Enum("Technicals", ["BARS", "STATISTIC", "STOCHASTIC"])
-Querys = Enum("Querys", {"SYMBOL": Symbol, "CONTRACT": Contract})
+Querys = Enum("Querys", ["SYMBOL", "CONTRACT"])
 Datasets = Enum("Datasets", ["SECURITY", "STRATEGY", "VALUATION", "HOLDINGS", "EXPOSURE"])
+
+
+print(Instruments.__str__)
+print(Instruments.__int__)
+print(Instruments.__members__)
+print(Technicals.__members__)
+raise Exception()
+
 
 StockLong = Security(Instruments.STOCK, Options.EMPTY, Positions.LONG)
 StockShort = Security(Instruments.STOCK, Options.EMPTY, Positions.SHORT)
