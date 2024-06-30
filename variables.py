@@ -8,7 +8,7 @@ Created on Sun Jan 28 2024
 
 import pandas as pd
 from abc import ABC
-from enum import Enum
+from enum import Enum, EnumType
 from datetime import date as Date
 from functools import total_ordering
 from collections import namedtuple as ntuple
@@ -50,16 +50,23 @@ class Contract(ntuple("Contract", "ticker expire")):
     def __lt__(self, other): return str(self.ticker) < str(other.ticker) and self.expire < other.expire
 
 
-#    @staticmethod
-#    def parser(filename):
-#        ticker, expire = str(filename).split("_")
-#        ticker = str(ticker).upper()
-#        expire = Datetime.strptime(expire, "%Y%m%d")
-#        return Variables.Querys.CONTRACT(ticker, expire)
+class Variable(EnumType):
+    @classmethod
+    def __prepare__(mcs, name, bases):
+        attrs = super(Variable, mcs).__prepare__(name, bases)
+        def __str__(self): return str(self.name).lower()
+        def __int__(self): return int(self.value)
+        update = dict(__str__=__str__, __int__=__int__)
+        return attrs | update
 
-
-class Variable(Enum):
-    pass
+    def __call__(cls, category, members=[]):
+        parameters = dict()
+        if not bool(cls._member_map_):
+            members = ["empty"] + list(members)
+            members = list(map(str.upper, members))
+            update = dict(names=members, start=0, type=None)
+            parameters = parameters | update
+        return super(Variable, cls).__call__(category, **parameters)
 
 
 class MultiVariable(ABC):
@@ -72,8 +79,8 @@ class MultiVariable(ABC):
     def values(self): return list(self)
 
 
-class Security(Variable, ntuple("Security", "instrument option position")): pass
-class Strategy(Variable, ntuple("Strategy", "spread option position")):
+class Security(MultiVariable, ntuple("Security", "instrument option position")): pass
+class Strategy(MultiVariable, ntuple("Strategy", "spread option position")):
     def __new__(cls, spread, option, position, *args, **kwargs): return super().__new__(cls, spread, option, position)
     def __init__(self, *args, options=[], stocks=[], **kwargs): self.options, self.stocks = options, stocks
 
@@ -81,14 +88,14 @@ class Strategy(Variable, ntuple("Strategy", "spread option position")):
 Instruments = Variable("Instruments", ["STOCK", "OPTION"])
 Options = Variable("Options", ["PUT", "CALL"])
 Positions = Variable("Positions", ["LONG", "SHORT"])
-Status = Variable("Status", ["PROSPECT", "PURCHASED"])
 Spreads = Variable("Spreads", ["STRANGLE", "COLLAR", "VERTICAL"])
-Valuations = Variable("Valuation", ["ARBITRAGE"])
-Scenarios = Variable("Scenarios", ["MINIMUM", "MAXIMUM"])
-Technicals = Variable("Technicals", ["BARS", "STATISTIC", "STOCHASTIC"])
-Querys = Variable("Querys", {"SYMBOL": Symbol, "CONTRACT": Contract})
-Datasets = Variable("Datasets", ["SECURITY", "STRATEGY", "VALUATION", "HOLDINGS", "EXPOSURE"])
 
+Status = Enum("Status", ["PROSPECT", "PURCHASED"])
+Valuations = Enum("Valuation", ["ARBITRAGE"])
+Scenarios = Enum("Scenarios", ["MINIMUM", "MAXIMUM"])
+Technicals = Enum("Technicals", ["BARS", "STATISTIC", "STOCHASTIC"])
+Querys = Enum("Querys", {"SYMBOL": Symbol, "CONTRACT": Contract})
+Datasets = Enum("Datasets", ["SECURITY", "STRATEGY", "VALUATION", "HOLDINGS", "EXPOSURE"])
 
 StockLong = Security(Instruments.STOCK, Options.EMPTY, Positions.LONG)
 StockShort = Security(Instruments.STOCK, Options.EMPTY, Positions.SHORT)
