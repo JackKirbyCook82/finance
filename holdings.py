@@ -24,20 +24,20 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
-
+holdings_index = {"ticker": str, "expire": np.datetime64, "strike": np.float32, "instrument": int, "option": int, "position": int}
+holdings_columns = {"quantity": np.int32}
+holdings_parsers = {"expire": pd.to_datetime, "instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}
+holdings_filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
+priority_function = lambda cols: cols[("apy", str(Variables.Scenarios.MINIMUM))]
+liquidity_function = lambda cols: np.floor(cols["size"] * 0.1).astype(np.int32)
 holdings_formats = {(lead, lag): lambda column: f"{column:.02f}" for lead, lag in product(["npv", "cost"], list(map(lambda scenario: str(scenario), Variables.Scenarios)))}
 holdings_formats.update({(lead, lag): lambda column: f"{column * 100:.02f}%" for lead, lag in product(["apy"], list(map(lambda scenario: str(scenario), Variables.Scenarios)))})
 holdings_formats.update({("priority", ""): lambda priority: f"{priority:.02f}"})
 holdings_formats.update({("status", ""): lambda status: str(status)})
 holdings_options = Options.Dataframe(rows=20, columns=25, width=1000, formats=holdings_formats, numbers=lambda column: f"{column:.02f}")
-holdings_index = {"ticker": str, "expire": np.datetime64, "strike": np.float32, "instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}
-holdings_columns = {"quantity": np.int32}
-holdings_filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
-priority_function = lambda cols: cols[("apy", str(Variables.Scenarios.MINIMUM))]
-liquidity_function = lambda cols: np.floor(cols["size"] * 0.1).astype(np.int32)
 
 
-class HoldingFile(File, variable=Variables.Datasets.HOLDINGS, datatype=pd.DataFrame, filename=holdings_filename, header=holdings_index | holdings_columns):
+class HoldingFile(File, variable=Variables.Datasets.HOLDINGS, datatype=pd.DataFrame, filename=holdings_filename, header=holdings_index | holdings_columns, parsers=holdings_parsers):
     pass
 
 
@@ -201,5 +201,6 @@ class HoldingWriter(Consumer, ABC):
 
 class HoldingFiles(object):
     Holding = HoldingFile
+
 
 

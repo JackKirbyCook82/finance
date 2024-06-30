@@ -7,8 +7,8 @@ Created on Sun Jan 28 2024
 """
 
 import pandas as pd
-from abc import ABC, ABCMeta
-from enum import Enum, EnumMeta
+from abc import ABC
+from enum import Enum, EnumType
 from datetime import date as Date
 from functools import total_ordering
 from collections import namedtuple as ntuple
@@ -50,33 +50,24 @@ class Contract(ntuple("Contract", "ticker expire")):
     def __lt__(self, other): return str(self.ticker) < str(other.ticker) and self.expire < other.expire
 
 
-class VariableMeta(ABCMeta):
-    def __new__(mcs, name, bases, attrs, *args, **kwargs):
-        if not any([type(base) is VariableMeta for base in bases]):
-            cls = super(VariableMeta, mcs).__new__(mcs, name, bases, attrs, *args, **kwargs)
-            return cls
-        else:
+class Variable(EnumType):
+    def __new__(mcs, name, bases, attrs, *args, members=[], **kwargs):
+        assert not any([issubclass(base, Enum) for base in bases])
+        assert isinstance(members, list) and bool(members)
+        def __str__(self): return str(self.name).upper()
+        def __int__(self): return int(self.value)
+        methods = dict(__str__=__str__, __int__=__int__)
+        base = type(name, (object,), methods)
+        members = list(map(str.upper, ["empty"] + list(members)))
+        members = {member: index for index, member in enumerate(members)}
+        for key, value in members.items():
+            attrs[key] = value
+        return super(Variable, mcs).__new__(mcs, name, (base, Enum), attrs)
 
-
-
-#    def __call__(cls, value, *args, names=[], **kwargs):
-#        if bool(cls._member_map_):
-#            parameters = dict()
-#        else:
-#            names = ["EMPTY"] + list(names)
-#            parameters = dict(names=names, start=1, type=None)
-#        instance = super(VariableMeta, cls).__new__(value, *args, **parameters, **kwargs)
-#        return instance
-
-
-class Variable(ABC, metaclass=VariableMeta):
-    def __new__(cls, value):
-        assert isinstance(value, (int, str, Variable))
-        value = str(value).upper() if isinstance(value, str) else value
-        return super().__new__(cls, value)
-
-    def __str__(self): return str(self.name).lower()
-    def __int__(self): return int(self.value)
+    def __call__(cls, variable, *args, **kwargs):
+        assert bool(cls._member_map_)
+        variable = str(variable).upper() if isinstance(variable, str) else variable
+        return super(Variable, cls).__call__(variable, *args, **kwargs)
 
 
 class MultiVariable(ABC):
@@ -89,22 +80,30 @@ class MultiVariable(ABC):
     def values(self): return list(self)
 
 
-class Security(Variable, ntuple("Security", "instrument option position")): pass
-class Strategy(Variable, ntuple("Strategy", "spread option position")):
+class Instruments(members=["STOCK", "OPTION"], metaclass=Variable): pass
+class Options(members=["PUT", "CALL"], metaclass=Variable): pass
+class Positions(members=["LONG", "SHORT"], metaclass=Variable): pass
+class Spreads(members=["STRANGLE", "COLLAR", "VERTICAL"], metaclass=Variable): pass
+
+class Security(MultiVariable, ntuple("Security", "instrument option position")): pass
+class Strategy(MultiVariable, ntuple("Strategy", "spread option position")):
     def __new__(cls, spread, option, position, *args, **kwargs): return super().__new__(cls, spread, option, position)
     def __init__(self, *args, options=[], stocks=[], **kwargs): self.options, self.stocks = options, stocks
 
 
-Instruments = Variable("Instruments", members=["STOCK", "OPTION"])
-Options = Variable("Options", members=["PUT", "CALL"])
-Positions = Variable("Positions", members=["LONG", "SHORT"])
-Status = Variable("Status", members=["PROSPECT", "PURCHASED"])
-Spreads = Variable("Spreads", members=["STRANGLE", "COLLAR", "VERTICAL"])
-Valuations = Variable("Valuation", members=["ARBITRAGE"])
-Scenarios = Variable("Scenarios", members=["MINIMUM", "MAXIMUM"])
-Technicals = Variable("Technicals", members=["BARS", "STATISTIC", "STOCHASTIC"])
-Querys = Variable("Querys", members=["SYMBOL", "CONTRACT"])
-Datasets = Variable("Datasets", members=["SECURITY", "STRATEGY", "VALUATION", "HOLDINGS", "EXPOSURE"])
+Status = Enum("Status", ["PROSPECT", "PURCHASED"])
+Valuations = Enum("Valuation", ["ARBITRAGE"])
+Scenarios = Enum("Scenarios", ["MINIMUM", "MAXIMUM"])
+Technicals = Enum("Technicals", ["BARS", "STATISTIC", "STOCHASTIC"])
+Querys = Enum("Querys", ["SYMBOL", "CONTRACT"])
+Datasets = Enum("Datasets", ["SECURITY", "STRATEGY", "VALUATION", "HOLDINGS", "EXPOSURE"])
+
+
+print(Instruments.__str__)
+print(Instruments.__int__)
+print(Instruments.__members__)
+print(Technicals.__members__)
+raise Exception()
 
 
 StockLong = Security(Instruments.STOCK, Options.EMPTY, Positions.LONG)
