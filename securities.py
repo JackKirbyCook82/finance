@@ -34,7 +34,7 @@ stock_columns = {"current": np.datetime64, "price": np.float32, "size": np.float
 option_index = {"ticker": str, "expire": np.datetime64, "strike": np.float32, "instrument": int, "option": int, "position": int}
 option_columns = {"current": np.datetime64, "price": np.float32, "underlying": np.float32, "size": np.float32, "volume": np.float32, "interest": np.float32}
 security_parsers = {"current": pd.to_datetime, "expire": pd.to_datetime, "instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}
-security_criterion = {Criterion.FLOOR: {"volume": 25, "interest": 25, "size": 10}}
+security_criterion = {Criterion.FLOOR: {"size": 10}}
 security_filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
 
 
@@ -48,8 +48,8 @@ class OptionEquation(SecurityEquation):
     τi = Variable("τi", "tau", np.int32, function=lambda ti, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(ti, "ns"), "D") / np.timedelta64(1, "D"))
     si = Variable("si", "ratio", np.float32, function=lambda xi, k: np.log(xi / k))
     yi = Variable("yi", "price", np.float32, function=lambda nzr, nzl: nzr - nzl)
-    nzr = Variable("nzr", "right", np.float32, function=lambda xi, zr, Θ: xi * Θ * norm.cdf(Θ * zr))
-    nzl = Variable("nzl", "left", np.float32, function=lambda k, zl, Θ, D: k * Θ * D * norm.cdf(Θ * zl))
+    nzr = Variable("nzr", "right", np.float32, function=lambda xi, zr, Θ: xi * int(Θ) * norm.cdf(int(Θ) * zr))
+    nzl = Variable("nzl", "left", np.float32, function=lambda k, zl, Θ, D: k * int(Θ) * D * norm.cdf(int(Θ) * zl))
     zr = Variable("zr", "right", np.float32, function=lambda α, β: α + β)
     zl = Variable("zl", "left", np.float32, function=lambda α, β: α - β)
     α = Variable("α", "alpha", np.float32, function=lambda si, A, B: (si / B) + (A / B))

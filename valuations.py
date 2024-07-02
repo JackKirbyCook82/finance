@@ -13,7 +13,7 @@ import xarray as xr
 from abc import ABC
 from collections import OrderedDict as ODict
 
-from finance.variables import Variables, Securities
+from finance.variables import Variables
 from support.calculations import Variable, Equation, Calculation
 from support.dispatchers import kwargsdispatcher
 from support.filtering import Filter, Criterion
@@ -28,9 +28,9 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-arbitrage_index = {security: np.float32 for security in list(map(str, Securities.Options))} | {"strategy": str, "valuation": str, "scenario": str, "ticker": str, "expire": np.datetime64}
+arbitrage_index = {security: np.float32 for security in list(map(str, Variables.Securities.Options))} | {"strategy": int, "valuation": int, "scenario": int, "ticker": str, "expire": np.datetime64}
 arbitrage_columns = {"current": np.datetime64, "apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.float32, "underlying": np.float32}
-valuation_parsers = {"current": pd.to_datetime, "expire": pd.to_datetime}
+valuation_parsers = {"current": pd.to_datetime, "expire": pd.to_datetime, "strategy": Variables.Strategies, "valuation": Variables.Valuations, "scenario": Variables.Scenarios}
 valuation_criterion = {Criterion.FLOOR: {"apy": 0.0, "size": 10}, Criterion.NULL: ["apy", "size"]}
 valuation_filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
 
@@ -41,7 +41,7 @@ class ValuationFilter(Filter, variables=[Variables.Valuations.ARBITRAGE], criter
     def filter(self, dataframe, *args, variable, **kwargs): raise ValueError(variable)
     @filter.register.value(Variables.Valuations.ARBITRAGE)
     def arbitrage(self, dataframe, *args, **kwargs):
-        variable = str(Variables.Scenarios.MINIMUM)
+        variable = Variables.Scenarios.MINIMUM
         columns = set(arbitrage_columns.keys())
         index = set(dataframe.columns) - ({"scenario"} | set(columns))
         dataframe = dataframe.pivot(columns="scenario", index=index)
@@ -107,7 +107,7 @@ class ValuationCalculator(Processor):
 
     def calculate(self, strategies, *args, **kwargs):
         for scenario, calculation in self.calculations.items():
-            variables = self.variables(valuation=str(self.calculation), scenario=str(scenario))
+            variables = self.variables(valuation=self.calculation, scenario=scenario)
             datasets = [calculation(dataset, *args, **kwargs) for dataset in strategies]
             datasets = [dataset.assign_coords(variables).expand_dims("scenario") for dataset in datasets]
             yield scenario, datasets

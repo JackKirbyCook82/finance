@@ -85,7 +85,7 @@ class ExposureCalculator(Processor):
         enumerical = lambda value: Variables.Positions.LONG if value > 0 else Variables.Positions.SHORT
         holdings = lambda cols: cols["quantity"] * numerical(cols["position"])
         dataframe["quantity"] = dataframe.apply(holdings, axis=1)
-        dataframe = dataframe.groupby(index, as_index=False).agg({"quantity": np.sum})
+        dataframe = dataframe.groupby(index, as_index=False, sort=False).agg({"quantity": np.sum})
         dataframe = dataframe.where(dataframe["quantity"] != 0).dropna(how="all", inplace=False)
         dataframe["position"] = dataframe["quantity"].apply(enumerical)
         dataframe["quantity"] = dataframe["quantity"].apply(np.abs)

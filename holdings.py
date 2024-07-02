@@ -12,7 +12,7 @@ import pandas as pd
 from abc import ABC
 from itertools import product
 
-from finance.variables import Variables, Securities, Strategies
+from finance.variables import Variables, Contract
 from support.pipelines import Producer, Consumer
 from support.tables import Tables, Options
 from support.files import File
@@ -28,7 +28,7 @@ holdings_index = {"ticker": str, "expire": np.datetime64, "strike": np.float32, 
 holdings_columns = {"quantity": np.int32}
 holdings_parsers = {"expire": pd.to_datetime, "instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}
 holdings_filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
-priority_function = lambda cols: cols[("apy", str(Variables.Scenarios.MINIMUM))]
+priority_function = lambda cols: cols[("apy", Variables.Scenarios.MINIMUM)]
 liquidity_function = lambda cols: np.floor(cols["size"] * 0.1).astype(np.int32)
 holdings_formats = {(lead, lag): lambda column: f"{column:.02f}" for lead, lag in product(["npv", "cost"], list(map(lambda scenario: str(scenario), Variables.Scenarios)))}
 holdings_formats.update({(lead, lag): lambda column: f"{column * 100:.02f}%" for lead, lag in product(["apy"], list(map(lambda scenario: str(scenario), Variables.Scenarios)))})
@@ -85,9 +85,9 @@ class HoldingReader(Producer, ABC):
         holdings = self.holdings(securities, *args, **kwargs)
         index = list(holdings_index.keys())
         columns = list(holdings_columns.keys())
-        holdings = holdings.groupby(index, as_index=False, dropna=False)[columns].sum()
+        holdings = holdings.groupby(index, as_index=False, dropna=False, sort=False)[columns].sum()
         for (ticker, expire), dataframe in iter(holdings.groupby(["ticker", "expire"])):
-            contract = Variables.Querys.Contract(ticker, expire)
+            contract = Contract(ticker, expire)
             holdings = {Variables.Querys.CONTRACT: contract, Variables.Datasets.HOLDINGS: dataframe}
             yield holdings
 
@@ -106,15 +106,15 @@ class HoldingReader(Producer, ABC):
 
     @staticmethod
     def options(dataframe, *args, **kwargs):
-        securities = list(map(str, iter(Securities.Options)))
+        securities = list(map(str, Variables.Securities.Options))
         securities = [column for column in securities if column in dataframe.columns]
         dataframe = dataframe.droplevel("scenario", axis=1)
         return dataframe[securities]
 
     @staticmethod
     def stocks(dataframe, *args, **kwargs):
-        securities = list(map(str, iter(Securities.Stocks)))
-        strategies = lambda cols: list(map(str, Strategies[cols["strategy"]].stocks))
+        securities = list(map(str, Variables.Securities.Stocks))
+        strategies = lambda cols: list(map(str, cols["strategy"].stocks))
         underlying = lambda cols: np.round(cols["underlying"], decimals=2)
         function = lambda cols: [underlying(cols) if column in strategies(cols) else np.NaN for column in securities]
         dataframe = dataframe.droplevel("scenario", axis=1)
@@ -124,16 +124,14 @@ class HoldingReader(Producer, ABC):
 
     @staticmethod
     def holdings(dataframe, *args, **kwargs):
-        instrument = lambda security: Securities[security].instrument
-        option = lambda security: Securities[security].option
-        position = lambda security: Securities[security].position
-        securities = [security for security in list(map(str, iter(Securities))) if security in dataframe.columns]
+        securities = [security for security in list(map(str, Variables.Securities)) if security in dataframe.columns]
         contracts = [column for column in dataframe.columns if column not in securities]
         dataframe = dataframe.melt(id_vars=contracts, value_vars=securities, var_name="security", value_name="strike")
         dataframe = dataframe.where(dataframe["strike"].notna()).dropna(how="all", inplace=False)
-        dataframe["instrument"] = dataframe["security"].apply(instrument)
-        dataframe["option"] = dataframe["security"].apply(option)
-        dataframe["position"] = dataframe["security"].apply(position)
+        dataframe["security"] = dataframe["security"].apply(Variables.Securities)
+        dataframe["instrument"] = dataframe["security"].apply(lambda security: security.instrument)
+        dataframe["option"] = dataframe["security"].apply(lambda security: security.option)
+        dataframe["position"] = dataframe["security"].apply(lambda security: security.position)
         return dataframe
 
     @property
@@ -201,6 +199,7 @@ class HoldingWriter(Consumer, ABC):
 
 class HoldingFiles(object):
     Holding = HoldingFile
+
 
 
 
