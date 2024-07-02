@@ -33,7 +33,7 @@ stock_index = {"ticker": str, "instrument": int, "position": int}
 stock_columns = {"current": np.datetime64, "price": np.float32, "size": np.float32, "volume": np.float32}
 option_index = {"ticker": str, "expire": np.datetime64, "strike": np.float32, "instrument": int, "option": int, "position": int}
 option_columns = {"current": np.datetime64, "price": np.float32, "underlying": np.float32, "size": np.float32, "volume": np.float32, "interest": np.float32}
-security_parsers = {"current": pd.to_datetime, "expire": pd.to_datetime, "instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}
+security_parsers = {"instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}
 security_criterion = {Criterion.FLOOR: {"size": 10}}
 security_filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
 

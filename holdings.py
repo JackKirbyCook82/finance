@@ -26,7 +26,7 @@ __logger__ = logging.getLogger(__name__)
 
 holdings_index = {"ticker": str, "expire": np.datetime64, "strike": np.float32, "instrument": int, "option": int, "position": int}
 holdings_columns = {"quantity": np.int32}
-holdings_parsers = {"expire": pd.to_datetime, "instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}
+holdings_parsers = {"instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}
 holdings_filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
 priority_function = lambda cols: cols[("apy", Variables.Scenarios.MINIMUM)]
 liquidity_function = lambda cols: np.floor(cols["size"] * 0.1).astype(np.int32)

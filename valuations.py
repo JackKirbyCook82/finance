@@ -30,7 +30,7 @@ __logger__ = logging.getLogger(__name__)
 
 arbitrage_index = {security: np.float32 for security in list(map(str, Variables.Securities.Options))} | {"strategy": int, "valuation": int, "scenario": int, "ticker": str, "expire": np.datetime64}
 arbitrage_columns = {"current": np.datetime64, "apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.float32, "underlying": np.float32}
-valuation_parsers = {"current": pd.to_datetime, "expire": pd.to_datetime, "strategy": Variables.Strategies, "valuation": Variables.Valuations, "scenario": Variables.Scenarios}
+valuation_parsers = {"strategy": Variables.Strategies, "valuation": Variables.Valuations, "scenario": Variables.Scenarios}
 valuation_criterion = {Criterion.FLOOR: {"apy": 0.0, "size": 10}, Criterion.NULL: ["apy", "size"]}
 valuation_filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
 
