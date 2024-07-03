@@ -24,7 +24,7 @@ __logger__ = logging.getLogger(__name__)
 
 exposure_index = {"ticker": str, "expire": np.datetime64, "strike": np.float32, "instrument": int, "option": int, "position": int}
 exposure_columns = {"quantity": np.int32}
-exposure_parsers = {"expire": np.datetime64, "instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}
+exposure_parsers = {"instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}
 exposure_filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
 
 
@@ -85,7 +85,7 @@ class ExposureCalculator(Processor):
         enumerical = lambda value: Variables.Positions.LONG if value > 0 else Variables.Positions.SHORT
         holdings = lambda cols: cols["quantity"] * numerical(cols["position"])
         dataframe["quantity"] = dataframe.apply(holdings, axis=1)
-        dataframe = dataframe.groupby(index, as_index=False).agg({"quantity": np.sum})
+        dataframe = dataframe.groupby(index, as_index=False, sort=False).agg({"quantity": np.sum})
         dataframe = dataframe.where(dataframe["quantity"] != 0).dropna(how="all", inplace=False)
         dataframe["position"] = dataframe["quantity"].apply(enumerical)
         dataframe["quantity"] = dataframe["quantity"].apply(np.abs)

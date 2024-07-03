@@ -13,7 +13,7 @@ from abc import ABC
 from itertools import product
 from collections import OrderedDict as ODict
 
-from finance.variables import Variables, Strategies
+from finance.variables import Variables
 from support.calculations import Variable, Equation, Calculation
 from support.pipelines import Processor
 
@@ -70,19 +70,19 @@ class StrategyCalculation(Calculation, ABC, fields=["strategy"]):
     def execute(self, options, *args, fees, **kwargs):
         positions = [option.position for option in options.keys()]
         assert len(set(positions)) == len(list(positions))
-        options = {str(option): dataset for option, dataset in options.items()}
+        options = {option.position: dataset for option, dataset in options.items()}
         equation = self.equation(*args, **kwargs)
-        yield equation.whτ(**options, fees=fees)
-        yield equation.wlτ(**options, fees=fees)
-        yield equation.wi(**options, fees=fees)
-        yield equation.xi(**options, fees=fees)
-        yield equation.qi(**options, fees=fees)
-        yield equation.ti(**options, fees=fees)
+        yield equation.whτ(options, fees=fees)
+        yield equation.wlτ(options, fees=fees)
+        yield equation.wi(options, fees=fees)
+        yield equation.xi(options, fees=fees)
+        yield equation.qi(options, fees=fees)
+        yield equation.ti(options, fees=fees)
 
-class VerticalPutCalculation(StrategyCalculation, strategy=Strategies.Vertical.Put, equation=VerticalPutEquation): pass
-class VerticalCallCalculation(StrategyCalculation, strategy=Strategies.Vertical.Call, equation=VerticalCallEquation): pass
-class CollarLongCalculation(StrategyCalculation, strategy=Strategies.Collar.Long, equation=CollarLongEquation): pass
-class CollarShortCalculation(StrategyCalculation, strategy=Strategies.Collar.Short, equation=CollarShortEquation): pass
+class VerticalPutCalculation(StrategyCalculation, strategy=Variables.Strategies.Vertical.Put, equation=VerticalPutEquation): pass
+class VerticalCallCalculation(StrategyCalculation, strategy=Variables.Strategies.Vertical.Call, equation=VerticalCallEquation): pass
+class CollarLongCalculation(StrategyCalculation, strategy=Variables.Strategies.Collar.Long, equation=CollarLongEquation): pass
+class CollarShortCalculation(StrategyCalculation, strategy=Variables.Strategies.Collar.Short, equation=CollarShortEquation): pass
 
 
 class StrategyCalculator(Processor):
@@ -107,7 +107,7 @@ class StrategyCalculator(Processor):
         for strategy, calculation in self.calculations.items():
             if not all([option in options.keys() for option in list(strategy.options)]):
                 continue
-            variables = self.variables(strategy=str(strategy))
+            variables = self.variables(strategy=strategy)
             datasets = {option: options[option] for option in list(strategy.options)}
             dataset = calculation(datasets, *args, **kwargs)
             if self.empty(dataset["size"]):
@@ -126,10 +126,10 @@ class StrategyCalculator(Processor):
             dataset = dataset.drop_vars(["instrument", "option", "position"], errors="ignore")
             if self.empty(dataset["size"]):
                 continue
-            axis = f"{str(instrument)}|{str(option)}|{str(position)}"
-            dataset = dataset.rename({"strike": str(axis)})
-            dataset["strike"] = dataset[str(axis)]
-            yield axis, dataset
+            security = Variables.Securities[instrument, option, position]
+            dataset = dataset.rename({"strike": str(security)})
+            dataset["strike"] = dataset[str(security)]
+            yield security, dataset
 
     @staticmethod
     def empty(dataarray): return not bool(np.count_nonzero(~np.isnan(dataarray.values)))
