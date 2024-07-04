@@ -21,14 +21,14 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
-
-exposure_index = {"ticker": str, "expire": np.datetime64, "strike": np.float32, "instrument": int, "option": int, "position": int}
-exposure_columns = {"quantity": np.int32}
+exposure_dates = {"expire": "%Y%m%d"}
 exposure_parsers = {"instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}
+exposure_formatters = {"instrument": int, "option": int, "position": int}
+exposure_types = {"ticker": str, "strike": np.float32, "quantity": np.int32}
 exposure_filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
 
 
-class ExposureFile(File, variable=Variables.Datasets.EXPOSURE, datatype=pd.DataFrame, filename=exposure_filename, header=exposure_index | exposure_columns, parsers=exposure_parsers):
+class ExposureFile(File, variable=Variables.Datasets.EXPOSURE, datatype=pd.DataFrame, filename=exposure_filename):
     pass
 
 

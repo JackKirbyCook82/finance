@@ -23,17 +23,15 @@ __copyright__ = "Copyright 2024, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-technical_index = {"date": np.datetime64}
-bars_columns = {"ticker": str, "high": np.float32, "low": np.float32, "open": np.float32, "close": np.float32, "price": np.float32, "volume": np.float32}
-statistic_columns = {"ticker": str, "price": np.float32, "trend": np.float32, "volatility": np.float32}
-stochastic_columns = {"ticker": str, "price": np.float32, "oscillator": np.float32}
-technical_parsers = {"date": pd.to_datetime}
+technical_dates = {"date": "%Y%m%d"}
+technical_types = {"ticker": str, "high": np.float32, "low": np.float32, "open": np.float32, "close": np.float32, "price": np.float32, "volume": np.float32}
+technical_types.update({"trend": np.float32, "volatility": np.float32, "oscillator": np.float32})
 technical_filename = lambda query: str(query.ticker).upper()
 
 
-class BarsFile(File, variable=Variables.Technicals.BARS, datatype=pd.DataFrame, filename=technical_filename, header=technical_index | bars_columns, parsers=technical_parsers): pass
-class StatisticFile(File, variable=Variables.Technicals.STATISTIC, datatype=pd.DataFrame, filename=technical_filename, header=technical_index | statistic_columns, parsers=technical_parsers): pass
-class StochasticFile(File, variable=Variables.Technicals.STOCHASTIC, datatype=pd.DataFrame, filename=technical_filename, header=technical_index | stochastic_columns, parsers=technical_parsers): pass
+class BarsFile(File, variable=Variables.Technicals.BARS, datatype=pd.DataFrame, filename=technical_filename): pass
+class StatisticFile(File, variable=Variables.Technicals.STATISTIC, datatype=pd.DataFrame, filename=technical_filename): pass
+class StochasticFile(File, variable=Variables.Technicals.STOCHASTIC, datatype=pd.DataFrame, filename=technical_filename): pass
 
 
 class TechnicalEquation(Equation): pass

@@ -24,6 +24,7 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
+
 holdings_index = {"ticker": str, "expire": np.datetime64, "strike": np.float32, "instrument": int, "option": int, "position": int}
 holdings_columns = {"quantity": np.int32}
 holdings_parsers = {"instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}
@@ -37,7 +38,7 @@ holdings_formats.update({("status", ""): lambda status: str(status)})
 holdings_options = Options.Dataframe(rows=20, columns=25, width=1000, formats=holdings_formats, numbers=lambda column: f"{column:.02f}")
 
 
-class HoldingFile(File, variable=Variables.Datasets.HOLDINGS, datatype=pd.DataFrame, filename=holdings_filename, header=holdings_index | holdings_columns, parsers=holdings_parsers):
+class HoldingFile(File, variable=Variables.Datasets.HOLDINGS, datatype=pd.DataFrame, filename=holdings_filename):
     pass
 
 

@@ -29,17 +29,16 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-stock_index = {"ticker": str, "instrument": int, "position": int}
-stock_columns = {"current": np.datetime64, "price": np.float32, "size": np.float32, "volume": np.float32}
-option_index = {"ticker": str, "expire": np.datetime64, "strike": np.float32, "instrument": int, "option": int, "position": int}
-option_columns = {"current": np.datetime64, "price": np.float32, "underlying": np.float32, "size": np.float32, "volume": np.float32, "interest": np.float32}
+security_dates = {"current": "%Y%m%d-%H%M", "expire": "%Y%m%d"}
 security_parsers = {"instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}
+security_formatters = {"instrument": int, "option": int, "position": int}
+security_types = {"ticker": str, "strike": np.float32, "price": np.float32, "underlying": np.float32, "size": np.float32, "volume": np.float32, "interest": np.float32}
 security_criterion = {Criterion.FLOOR: {"size": 10}}
 security_filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
 
 
-class StockFile(File, variable=Variables.Instruments.STOCK, datatype=pd.DataFrame, filename=security_filename, header=option_index | option_columns, parsers=security_parsers): pass
-class OptionFile(File, variable=Variables.Instruments.OPTION, datatype=pd.DataFrame, filename=security_filename, header=option_index | option_columns, parsers=security_parsers): pass
+class StockFile(File, variable=Variables.Instruments.STOCK, datatype=pd.DataFrame, filename=security_filename): pass
+class OptionFile(File, variable=Variables.Instruments.OPTION, datatype=pd.DataFrame, filename=security_filename): pass
 class SecurityFilter(Filter, variables=[Variables.Instruments.STOCK, Variables.Instruments.OPTION], criterion=security_criterion): pass
 
 

@@ -28,21 +28,23 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-arbitrage_index = {security: np.float32 for security in list(map(str, Variables.Securities.Options))} | {"strategy": int, "valuation": int, "scenario": int, "ticker": str, "expire": np.datetime64}
-arbitrage_columns = {"current": np.datetime64, "apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.float32, "underlying": np.float32}
+valuation_dates = {"current": "%Y%m%d-%H%M", "expire": "%Y%m%d"}
 valuation_parsers = {"strategy": Variables.Strategies, "valuation": Variables.Valuations, "scenario": Variables.Scenarios}
+valuation_formatters = {"strategy": int, "valuation": int, "scenario": int}
+valuation_types = {"ticker": str, "apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.float32, "underlying": np.float32}
+valuation_types.update({security: np.float32 for security in list(map(str, Variables.Securities.Options))} )
 valuation_criterion = {Criterion.FLOOR: {"apy": 0.0, "size": 10}, Criterion.NULL: ["apy", "size"]}
 valuation_filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
 
 
-class ArbitrageFile(File, variable=Variables.Valuations.ARBITRAGE, filename=valuation_filename, datatype=pd.DataFrame, header=arbitrage_index | arbitrage_columns, parsers=valuation_parsers): pass
+class ArbitrageFile(File, variable=Variables.Valuations.ARBITRAGE, datatype=pd.DataFrame, filename=valuation_filename): pass
 class ValuationFilter(Filter, variables=[Variables.Valuations.ARBITRAGE], criterion=valuation_criterion):
     @kwargsdispatcher("variable")
     def filter(self, dataframe, *args, variable, **kwargs): raise ValueError(variable)
     @filter.register.value(Variables.Valuations.ARBITRAGE)
     def arbitrage(self, dataframe, *args, **kwargs):
         variable = Variables.Scenarios.MINIMUM
-        columns = set(arbitrage_columns.keys())
+        columns = set(["current", "apy", "npv", "cost", "size", "underlying"])
         index = set(dataframe.columns) - ({"scenario"} | set(columns))
         dataframe = dataframe.pivot(columns="scenario", index=index)
         dataframe = super().filter(dataframe, *args, stack=[variable], **kwargs)
