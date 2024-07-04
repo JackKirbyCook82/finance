@@ -26,9 +26,11 @@ exposure_parsers = {"instrument": Variables.Instruments, "option": Variables.Opt
 exposure_formatters = {"instrument": int, "option": int, "position": int}
 exposure_types = {"ticker": str, "strike": np.float32, "quantity": np.int32}
 exposure_filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
+exposure_parameters = dict(datatype=pd.DataFrame, filename=exposure_filename, dates=exposure_dates, parsers=exposure_parsers, formatters=exposure_formatters, types=exposure_types)
+exposure_header = ["ticker", "expire", "strike", "instrument", "option", "position", "quantity"]
 
 
-class ExposureFile(File, variable=Variables.Datasets.EXPOSURE, datatype=pd.DataFrame, filename=exposure_filename):
+class ExposureFile(File, variable=Variables.Datasets.EXPOSURE, header=exposure_header, **exposure_parameters):
     pass
 
 

@@ -17,8 +17,8 @@ from collections import OrderedDict as ODict
 
 from finance.variables import Variables
 from support.calculations import Variable, Equation, Calculation
-from support.filtering import Filter, Criterion
 from support.pipelines import Processor
+from support.filtering import Filter
 from support.files import File
 
 __version__ = "1.0.0"
@@ -33,13 +33,15 @@ security_dates = {"current": "%Y%m%d-%H%M", "expire": "%Y%m%d"}
 security_parsers = {"instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}
 security_formatters = {"instrument": int, "option": int, "position": int}
 security_types = {"ticker": str, "strike": np.float32, "price": np.float32, "underlying": np.float32, "size": np.float32, "volume": np.float32, "interest": np.float32}
-security_criterion = {Criterion.FLOOR: {"size": 10}}
 security_filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
+security_parameters = dict(datatype=pd.DataFrame, filename=security_filename, dates=security_dates, parsers=security_parsers, formatters=security_formatters, types=security_types)
+stock_header = ["current", "ticker", "instrument", "position", "price", "volume", "size"]
+option_header = ["current", "ticker", "expire", "instrument", "option", "position", "strike", "volume", "size", "interest"]
 
 
-class StockFile(File, variable=Variables.Instruments.STOCK, datatype=pd.DataFrame, filename=security_filename): pass
-class OptionFile(File, variable=Variables.Instruments.OPTION, datatype=pd.DataFrame, filename=security_filename): pass
-class SecurityFilter(Filter, variables=[Variables.Instruments.STOCK, Variables.Instruments.OPTION], criterion=security_criterion): pass
+class StockFile(File, variable=Variables.Instruments.STOCK, header=stock_header, **security_parameters): pass
+class OptionFile(File, variable=Variables.Instruments.OPTION, header=option_header, **security_parameters): pass
+class SecurityFilter(Filter, variables=[Variables.Instruments.STOCK, Variables.Instruments.OPTION]): pass
 
 
 class SecurityEquation(Equation): pass

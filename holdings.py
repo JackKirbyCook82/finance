@@ -25,12 +25,14 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-holdings_index = {"ticker": str, "expire": np.datetime64, "strike": np.float32, "instrument": int, "option": int, "position": int}
-holdings_columns = {"quantity": np.int32}
+holdings_dates = {"expire": "%Y%m%d"}
 holdings_parsers = {"instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}
+holdings_formatters = {"instrument": int, "option": int, "position": int}
+holdings_types = {"ticker": str, "strike": np.float32, "quantity": np.int32}
 holdings_filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
-priority_function = lambda cols: cols[("apy", Variables.Scenarios.MINIMUM)]
-liquidity_function = lambda cols: np.floor(cols["size"] * 0.1).astype(np.int32)
+holdings_parameters = dict(datatype=pd.DataFrame, filename=holdings_filename, dates=holdings_dates, parsers=holdings_parsers, formatters=holdings_formatters, types=holdings_types)
+holdings_header = ["ticker", "expire", "strike", "instrument", "option", "position", "quantity"]
+
 holdings_formats = {(lead, lag): lambda column: f"{column:.02f}" for lead, lag in product(["npv", "cost"], list(map(lambda scenario: str(scenario), Variables.Scenarios)))}
 holdings_formats.update({(lead, lag): lambda column: f"{column * 100:.02f}%" for lead, lag in product(["apy"], list(map(lambda scenario: str(scenario), Variables.Scenarios)))})
 holdings_formats.update({("priority", ""): lambda priority: f"{priority:.02f}"})
@@ -38,7 +40,7 @@ holdings_formats.update({("status", ""): lambda status: str(status)})
 holdings_options = Options.Dataframe(rows=20, columns=25, width=1000, formats=holdings_formats, numbers=lambda column: f"{column:.02f}")
 
 
-class HoldingFile(File, variable=Variables.Datasets.HOLDINGS, datatype=pd.DataFrame, filename=holdings_filename):
+class HoldingFile(File, variable=Variables.Datasets.HOLDINGS, header=holdings_header, **holdings_parameters):
     pass
 
 
@@ -84,9 +86,8 @@ class HoldingReader(Producer, ABC):
         stocks = stocks.dropna(how="all", axis=1)
         securities = pd.concat([contract, options, stocks, valuations["quantity"]], axis=1, ignore_index=False)
         holdings = self.holdings(securities, *args, **kwargs)
-        index = list(holdings_index.keys())
-        columns = list(holdings_columns.keys())
-        holdings = holdings.groupby(index, as_index=False, dropna=False, sort=False)[columns].sum()
+        index = [column for column in holdings_header if column != "quantity"]
+        holdings = holdings.groupby(index, as_index=False, dropna=False, sort=False)["quantity"].sum()
         for (ticker, expire), dataframe in iter(holdings.groupby(["ticker", "expire"])):
             contract = Contract(ticker, expire)
             holdings = {Variables.Querys.CONTRACT: contract, Variables.Datasets.HOLDINGS: dataframe}
@@ -140,12 +141,12 @@ class HoldingReader(Producer, ABC):
 
 
 class HoldingWriter(Consumer, ABC):
-    def __init__(self, *args, destination, calculation=Variables.Valuations.ARBITRAGE, capacity=None, **kwargs):
+    def __init__(self, *args, destination, liquidity, priority, calculation=Variables.Valuations.ARBITRAGE, capacity=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.__liquidity = kwargs.get("liquidity", liquidity_function)
-        self.__priority = kwargs.get("priority", priority_function)
         self.__calculation = calculation
         self.__destination = destination
+        self.__liquidity = liquidity
+        self.__priority = priority
         self.__capacity = capacity
 
     def execute(self, contents, *args, **kwargs):
@@ -158,6 +159,14 @@ class HoldingWriter(Consumer, ABC):
         if bool(valuations.empty):
             return
         valuations = valuations.reset_index(drop=True, inplace=False)
+
+        exposure = contents[Variables.Datasets.EXPOSURE]
+        pd.set_option("display.max_columns", 100)
+        pd.set_option("display.width", 300)
+        print(valuations)
+        print(exposure)
+        raise Exception()
+
         self.write(valuations, *args, **kwargs)
 
     def market(self, dataframe, *args, **kwargs):

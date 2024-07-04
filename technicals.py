@@ -24,14 +24,17 @@ __license__ = "MIT License"
 
 
 technical_dates = {"date": "%Y%m%d"}
-technical_types = {"ticker": str, "high": np.float32, "low": np.float32, "open": np.float32, "close": np.float32, "price": np.float32, "volume": np.float32}
-technical_types.update({"trend": np.float32, "volatility": np.float32, "oscillator": np.float32})
+technical_types = {"ticker": str, "high": np.float32, "low": np.float32, "open": np.float32, "close": np.float32, "price": np.float32, "volume": np.float32, "trend": np.float32, "volatility": np.float32, "oscillator": np.float32}
 technical_filename = lambda query: str(query.ticker).upper()
+technical_parameters = dict(datatype=pd.DataFrame, filename=technical_filename, dates=technical_dates, types=technical_types)
+bars_header = ["date", "ticker", "high", "low", "open", "close", "price", "volume"]
+statistic_header = ["date", "ticker", "price", "trend", "volatility"]
+stochastic_header = ["date", "ticker", "price", "oscillator"]
 
 
-class BarsFile(File, variable=Variables.Technicals.BARS, datatype=pd.DataFrame, filename=technical_filename): pass
-class StatisticFile(File, variable=Variables.Technicals.STATISTIC, datatype=pd.DataFrame, filename=technical_filename): pass
-class StochasticFile(File, variable=Variables.Technicals.STOCHASTIC, datatype=pd.DataFrame, filename=technical_filename): pass
+class BarsFile(File, variable=Variables.Technicals.BARS, header=bars_header, **technical_parameters): pass
+class StatisticFile(File, variable=Variables.Technicals.STATISTIC, header=statistic_header, **technical_parameters): pass
+class StochasticFile(File, variable=Variables.Technicals.STOCHASTIC, header=stochastic_header, **technical_parameters): pass
 
 
 class TechnicalEquation(Equation): pass

@@ -16,8 +16,8 @@ from collections import OrderedDict as ODict
 from finance.variables import Variables
 from support.calculations import Variable, Equation, Calculation
 from support.dispatchers import kwargsdispatcher
-from support.filtering import Filter, Criterion
 from support.pipelines import Processor
+from support.filtering import Filter
 from support.files import File
 
 __version__ = "1.0.0"
@@ -31,14 +31,14 @@ __logger__ = logging.getLogger(__name__)
 valuation_dates = {"current": "%Y%m%d-%H%M", "expire": "%Y%m%d"}
 valuation_parsers = {"strategy": Variables.Strategies, "valuation": Variables.Valuations, "scenario": Variables.Scenarios}
 valuation_formatters = {"strategy": int, "valuation": int, "scenario": int}
-valuation_types = {"ticker": str, "apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.float32, "underlying": np.float32}
-valuation_types.update({security: np.float32 for security in list(map(str, Variables.Securities.Options))} )
-valuation_criterion = {Criterion.FLOOR: {"apy": 0.0, "size": 10}, Criterion.NULL: ["apy", "size"]}
+valuation_types = {"ticker": str, "apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.float32, "underlying": np.float32} | {security: np.float32 for security in list(map(str, Variables.Securities.Options))}
 valuation_filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
+valuation_parameters = dict(datatype=pd.DataFrame, filename=valuation_filename, dates=valuation_dates, parsers=valuation_parsers, formatters=valuation_formatters, types=valuation_types)
+arbitrage_header = ["current", "ticker", "expire", "strategy", "valuation", "scenario", "apy", "npv", "cost", "size", "underlying"] + list(map(str, Variables.Securities.Options))
 
 
-class ArbitrageFile(File, variable=Variables.Valuations.ARBITRAGE, datatype=pd.DataFrame, filename=valuation_filename): pass
-class ValuationFilter(Filter, variables=[Variables.Valuations.ARBITRAGE], criterion=valuation_criterion):
+class ArbitrageFile(File, variable=Variables.Valuations.ARBITRAGE, header=arbitrage_header, **valuation_parameters): pass
+class ValuationFilter(Filter, variables=[Variables.Valuations.ARBITRAGE]):
     @kwargsdispatcher("variable")
     def filter(self, dataframe, *args, variable, **kwargs): raise ValueError(variable)
     @filter.register.value(Variables.Valuations.ARBITRAGE)
