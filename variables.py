@@ -163,7 +163,6 @@ class MultiVariables(ABCMeta):
 class Theta(members=["PUT", "EMPTY", "CALL"], start=-1, metaclass=Variables): pass
 class Phi(members=["SHORT", "EMPTY", "LONG"], start=-1, metaclass=Variables): pass
 class Status(members=["PROSPECT", "PURCHASED"], metaclass=Variables): pass
-class Pricing(members=["BLACKSCHOLES", "INTRINSIC"], metaclass=Variables): pass
 class Valuations(members=["ARBITRAGE"], metaclass=Variables): pass
 class Scenarios(members=["MINIMUM", "MAXIMUM"], metaclass=Variables): pass
 class Technicals(members=["BARS", "STATISTIC", "STOCHASTIC"], metaclass=Variables): pass
@@ -221,7 +220,6 @@ class Variables:
     Valuations = Valuations
     Scenarios = Scenarios
     Technicals = Technicals
-    Pricing = Pricing
     Status = Status
     Querys = Querys
     Datasets = Datasets

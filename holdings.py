@@ -12,7 +12,6 @@ import pandas as pd
 import xarray as xr
 from abc import ABC
 from itertools import product
-from collections import OrderedDict as ODict
 
 from finance.variables import Variables, Contract
 from support.calculations import Variable, Equation, Calculation
@@ -72,8 +71,7 @@ class HoldingTable(Tables.Dataframe, datatype=pd.DataFrame, options=holdings_opt
         return index, column
 
 
-class HoldingEquation(Equation): pass
-class XXXEquation(HoldingEquation):
+class HoldingEquation(Equation):
     yi = Variable("yi", "price", np.float32, function=lambda x, k, Θ, Φ: Φ * np.max(Θ * (x - k), 0))
     Θ = Variable("Θ", "theta", np.int32, function=lambda m: int(Variables.Theta[str(m)]))
     Φ = Variable("Φ", "phi", np.int32, function=lambda n: int(Variables.Phi[str(n)]))
@@ -88,11 +86,10 @@ class XXXEquation(HoldingEquation):
         yield equation.yi(exposure)
 
 
-class HoldingCalculation(Calculation, ABC, fields=["xxx"]):
-class XXXCalculation(HoldingCalculation, xxx=, equation=XXXEquation):
+class HoldingCalculation(Calculation, equation=HoldingEquation):
     def execute(self, exposure, *args, **kwargs):
         equation = self.equation(*args, **kwargs)
-        yield equation.y(exposure)
+        yield equation.yi(exposure)
 
 
 class HoldingReader(Producer, ABC):
@@ -169,8 +166,7 @@ class HoldingReader(Producer, ABC):
 class HoldingWriter(Consumer, ABC):
     def __init__(self, *args, destination, liquidity, priority, valuation, capacity=None, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
-        calculations = {variables["pricing"]: calculation for variables, calculation in ODict(list(HoldingCalculation)).items()}
-        self.__calculation = calculations[](*args, **kwargs)
+        self.__calculation = HoldingCalculation(*args, **kwargs)
         self.__destination = destination
         self.__valuation = valuation
         self.__liquidity = liquidity
@@ -208,12 +204,6 @@ class HoldingWriter(Consumer, ABC):
     def portfolio(self, dataframe, *args, exposure, **kwargs):
         if exposure is None:
             return dataframe
-
-        pd.set_option("display.max_columns", 100)
-        pd.set_option("display.width", 300)
-        print(dataframe)
-        print(exposure)
-
         exposure = exposure.set_index(["ticker", "expire", "strike", "instrument", "option", "position"], drop=True, inplace=False)
         exposure = xr.Dataset.from_dataframe(exposure).fillna(0)
         exposure = exposure.squeeze("ticker").squeeze("expire").squeeze("instrument")
@@ -223,7 +213,6 @@ class HoldingWriter(Consumer, ABC):
 
         print(exposure)
         print(results)
-
         raise Exception()
 
     def write(self, dataframe, *args, **kwargs):

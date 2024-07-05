@@ -10,10 +10,8 @@ Created on Weds Jul 19 2023
 import logging
 import numpy as np
 import pandas as pd
-from abc import ABC
 from scipy.stats import norm
 from datetime import datetime as Datetime
-from collections import OrderedDict as ODict
 
 from finance.variables import Variables
 from support.calculations import Variable, Equation, Calculation
@@ -44,8 +42,7 @@ class OptionFile(File, variable=Variables.Instruments.OPTION, header=option_head
 class SecurityFilter(Filter, variables=[Variables.Instruments.STOCK, Variables.Instruments.OPTION]): pass
 
 
-class SecurityEquation(Equation): pass
-class BlackScholesEquation(SecurityEquation):
+class BlackScholesEquation(Equation):
     τi = Variable("τi", "tau", np.int32, function=lambda ti, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(ti, "ns"), "D") / np.timedelta64(1, "D"))
     si = Variable("si", "ratio", np.float32, function=lambda xi, k: np.log(xi / k))
     yi = Variable("yi", "price", np.float32, function=lambda nzr, nzl: nzr - nzl)
@@ -71,8 +68,7 @@ class BlackScholesEquation(SecurityEquation):
     ρ = Variable("ρ", "discount", np.float32, position="discount")
 
 
-class SecurityCalculation(Calculation, ABC, fields=["pricing"]): pass
-class BlackScholesCalculation(SecurityCalculation, pricing=Variables.Pricing.BLACKSCHOLES, equation=BlackScholesEquation):
+class BlackScholesCalculation(Calculation, equation=BlackScholesEquation):
     def execute(self, exposures, *args, discount, **kwargs):
         invert = lambda position: Variables.Positions(int(Variables.Positions.LONG) + int(Variables.Positions.SHORT) - int(position))
         equation = self.equation(*args, **kwargs)
@@ -84,11 +80,10 @@ class BlackScholesCalculation(SecurityCalculation, pricing=Variables.Pricing.BLA
 
 
 class SecurityCalculator(Processor):
-    def __init__(self, *args, pricing, name=None, **kwargs):
+    def __init__(self, *args, size, volume, interest, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
-        calculations = {variables["pricing"]: calculation for variables, calculation in ODict(list(SecurityCalculation)).items()}
-        self.__calculation = calculations[pricing](*args, **kwargs)
-        self.__functions = dict(size=kwargs.get("size", lambda cols: np.int32(10)), volume=kwargs.get("volume", lambda cols: np.NaN), interest=kwargs.get("interest", lambda cols: np.NaN))
+        self.__calculation = BlackScholesCalculation(*args, **kwargs)
+        self.__functions = dict(size=size, volume=volume, interest=interest)
 
     def execute(self, contents, *args, current, **kwargs):
         exposures, statistics = contents[Variables.Datasets.EXPOSURE], contents[Variables.Technicals.STATISTIC]
