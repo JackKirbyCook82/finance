@@ -79,6 +79,7 @@ class ArbitrageCalculation(ValuationCalculation, ABC, valuation=Variables.Valuat
         equation = self.equation(*args, **kwargs)
         yield equation.npv(strategies, discount=discount)
         yield equation.apy(strategies, discount=discount)
+        yield equation.inc(strategies, discount=discount)
         yield equation.exp(strategies, discount=discount)
         yield strategies["underlying"]
         yield strategies["current"]
@@ -89,12 +90,11 @@ class MaximumArbitrageCalculation(ArbitrageCalculation, scenario=Variables.Scena
 
 
 class ValuationCalculator(Processor):
-    def __init__(self, *args, calculation=Variables.Valuations.ARBITRAGE, name=None, **kwargs):
+    def __init__(self, *args, valuation, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
         calculations = {variables["scenario"]: calculation for variables, calculation in ODict(list(ValuationCalculation)).items() if variables["valuation"] is kwargs.get(calculation, Variables.Valuations.ARBITRAGE)}
         self.__calculations = {scenario: calculation(*args, **kwargs) for scenario, calculation in calculations.items()}
-        self.__variables = lambda **mapping: {key: xr.Variable(key, [value]).squeeze(key) for key, value in mapping.items()}
-        self.__calculation = calculation
+        self.__valuation = valuation
 
     def execute(self, contents, *args, **kwargs):
         strategies = contents[Variables.Datasets.STRATEGY]
@@ -104,12 +104,13 @@ class ValuationCalculator(Processor):
         if not bool(valuations):
             return
         valuations = pd.concat(list(valuations.values()), axis=0)
-        valuations = {self.calculation: valuations}
+        valuations = {self.valuation: valuations}
         yield contents | valuations
 
     def calculate(self, strategies, *args, **kwargs):
+        function = lambda **mapping: {key: xr.Variable(key, [value]).squeeze(key) for key, value in mapping.items()}
         for scenario, calculation in self.calculations.items():
-            variables = self.variables(valuation=self.calculation, scenario=scenario)
+            variables = function(valuation=self.valuation, scenario=scenario)
             datasets = [calculation(dataset, *args, **kwargs) for dataset in strategies]
             datasets = [dataset.assign_coords(variables).expand_dims("scenario") for dataset in datasets]
             yield scenario, datasets
@@ -129,9 +130,7 @@ class ValuationCalculator(Processor):
     @property
     def calculations(self): return self.__calculations
     @property
-    def calculation(self): return self.__calculation
-    @property
-    def variables(self): return self.__variables
+    def valuation(self): return self.__valuation
 
 
 class ValuationFiles(object):

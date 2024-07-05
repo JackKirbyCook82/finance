@@ -90,7 +90,6 @@ class StrategyCalculator(Processor):
         super().__init__(*args, name=name, **kwargs)
         calculations = {variables["strategy"]: calculation for variables, calculation in ODict(list(StrategyCalculation)).items()}
         self.__calculations = {strategy: calculation(*args, **kwargs) for strategy, calculation in calculations.items()}
-        self.__variables = lambda **mapping: {key: xr.Variable(key, [value]).squeeze(key) for key, value in mapping.items()}
 
     def execute(self, contents, *args, **kwargs):
         options = contents[Variables.Instruments.OPTION]
@@ -104,10 +103,11 @@ class StrategyCalculator(Processor):
         yield contents | strategies
 
     def calculate(self, options, *args, **kwargs):
+        function = lambda **mapping: {key: xr.Variable(key, [value]).squeeze(key) for key, value in mapping.items()}
         for strategy, calculation in self.calculations.items():
             if not all([option in options.keys() for option in list(strategy.options)]):
                 continue
-            variables = self.variables(strategy=strategy)
+            variables = function(strategy=strategy)
             datasets = {option: options[option] for option in list(strategy.options)}
             dataset = calculation(datasets, *args, **kwargs)
             if self.empty(dataset["size"]):
@@ -135,8 +135,6 @@ class StrategyCalculator(Processor):
     def empty(dataarray): return not bool(np.count_nonzero(~np.isnan(dataarray.values)))
     @property
     def calculations(self): return self.__calculations
-    @property
-    def variables(self): return self.__variables
 
 
 

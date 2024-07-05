@@ -45,12 +45,12 @@ class SecurityFilter(Filter, variables=[Variables.Instruments.STOCK, Variables.I
 
 
 class SecurityEquation(Equation): pass
-class OptionEquation(SecurityEquation):
+class BlackScholesEquation(SecurityEquation):
     τi = Variable("τi", "tau", np.int32, function=lambda ti, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(ti, "ns"), "D") / np.timedelta64(1, "D"))
     si = Variable("si", "ratio", np.float32, function=lambda xi, k: np.log(xi / k))
     yi = Variable("yi", "price", np.float32, function=lambda nzr, nzl: nzr - nzl)
-    nzr = Variable("nzr", "right", np.float32, function=lambda xi, zr, Θ: xi * int(Θ) * norm.cdf(int(Θ) * zr))
-    nzl = Variable("nzl", "left", np.float32, function=lambda k, zl, Θ, D: k * int(Θ) * D * norm.cdf(int(Θ) * zl))
+    nzr = Variable("nzr", "right", np.float32, function=lambda xi, zr, Θ: xi * Θ * norm.cdf(Θ * zr))
+    nzl = Variable("nzl", "left", np.float32, function=lambda k, zl, Θ, D: k * Θ * D * norm.cdf(Θ * zl))
     zr = Variable("zr", "right", np.float32, function=lambda α, β: α + β)
     zl = Variable("zl", "left", np.float32, function=lambda α, β: α - β)
     α = Variable("α", "alpha", np.float32, function=lambda si, A, B: (si / B) + (A / B))
@@ -58,18 +58,21 @@ class OptionEquation(SecurityEquation):
     A = Variable("A", "alpha", np.float32, function=lambda τi, ρ: np.multiply(τi, ρ))
     B = Variable("B", "beta", np.float32, function=lambda τi, δi: np.multiply(np.sqrt(τi), δi))
     D = Variable("D", "discount", np.float32, function=lambda τi, ρ: np.power(np.exp(τi * ρ), -1))
+    Θ = Variable("Θ", "theta", np.int32, function=lambda m: int(Variables.Theta(str(m))))
+    Φ = Variable("Φ", "phi", np.int32, function=lambda n: int(Variables.Phi(str(n))))
 
+    m = Variable("m", "option", Variables.Options, position=0, locator="option")
+    n = Variable("n", "position", Variables.Positions, position=0, locator="position")
     δi = Variable("δi", "volatility", np.float32, position=0, locator="volatility")
     xi = Variable("xi", "underlying", np.float32, position=0, locator="price")
     tτ = Variable("tτ", "expire", np.datetime64, position=0, locator="expire")
     ti = Variable("ti", "current", np.datetime64, position=0, locator="date")
     k = Variable("k", "strike", np.float32, position=0, locator="strike")
-    Θ = Variable("Θ", "option", np.int32, position=0, locator="option")
     ρ = Variable("ρ", "discount", np.float32, position="discount")
 
 
-class SecurityCalculation(Calculation, ABC, fields=["instrument"]): pass
-class OptionCalculation(SecurityCalculation, instrument=Variables.Instruments.OPTION, equation=OptionEquation):
+class SecurityCalculation(Calculation, ABC, fields=["pricing"]): pass
+class BlackScholesCalculation(SecurityCalculation, pricing=Variables.Pricing.BLACKSCHOLES, equation=BlackScholesEquation):
     def execute(self, exposures, *args, discount, **kwargs):
         invert = lambda position: Variables.Positions(int(Variables.Positions.LONG) + int(Variables.Positions.SHORT) - int(position))
         equation = self.equation(*args, **kwargs)
@@ -81,32 +84,31 @@ class OptionCalculation(SecurityCalculation, instrument=Variables.Instruments.OP
 
 
 class SecurityCalculator(Processor):
-    def __init__(self, *args, name=None, **kwargs):
+    def __init__(self, *args, pricing, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
-        calculations = {variables["instrument"]: calculation for variables, calculation in ODict(list(SecurityCalculation)).items()}
-        functions = dict(size=kwargs.get("size", lambda cols: np.int32(10)), volume=kwargs.get("volume", lambda cols: np.NaN), interest=kwargs.get("interest", lambda cols: np.NaN))
-        self.__calculations = {instrument: calculation(*args, **kwargs) for instrument, calculation in calculations.items()}
-        self.__functions = functions
+        calculations = {variables["pricing"]: calculation for variables, calculation in ODict(list(SecurityCalculation)).items()}
+        self.__calculation = calculations[pricing](*args, **kwargs)
+        self.__functions = dict(size=kwargs.get("size", lambda cols: np.int32(10)), volume=kwargs.get("volume", lambda cols: np.NaN), interest=kwargs.get("interest", lambda cols: np.NaN))
 
     def execute(self, contents, *args, current, **kwargs):
         exposures, statistics = contents[Variables.Datasets.EXPOSURE], contents[Variables.Technicals.STATISTIC]
         assert isinstance(exposures, pd.DataFrame) and isinstance(statistics, pd.DataFrame) and isinstance(current, Datetime)
         statistics = statistics.where(statistics["date"] == pd.to_datetime(current))
         exposures = pd.merge(exposures, statistics, how="inner", on="ticker")
-        exposures = ODict(list(self.calculate(exposures, *args, **kwargs)))
-        if not bool(exposures):
+        options = self.calculate(exposures, *args, **kwargs)
+        if bool(options.empty):
             return
-        yield contents | exposures
+        options = {Variables.Instruments.OPTION: options}
+        yield contents | options
 
     def calculate(self, exposures, *args, **kwargs):
-        for instrument, calculation in self.calculations.items():
-            dataframe = calculation(exposures, *args, **kwargs)
-            for column, function in self.functions.items():
-                dataframe[column] = dataframe.apply(function, axis=1)
-            yield instrument, dataframe
+        dataframe = self.calculation(exposures, *args, **kwargs)
+        for column, function in self.functions.items():
+            dataframe[column] = dataframe.apply(function, axis=1)
+        return dataframe
 
     @property
-    def calculations(self): return self.__calculations
+    def calculation(self): return self.__calculation
     @property
     def functions(self): return self.__functions
 
