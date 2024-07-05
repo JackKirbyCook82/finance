@@ -72,14 +72,15 @@ class HoldingTable(Tables.Dataframe, datatype=pd.DataFrame, options=holdings_opt
 
 
 class HoldingEquation(Equation):
-    yi = Variable("yi", "price", np.float32, function=lambda x, k, Θ, Φ: Φ * np.max(Θ * (x - k), 0))
+    yi = Variable("yi", "price", np.float32, function=lambda xi, k, q, Θ, Φ: q * Θ * Φ * np.abs(xi - k) * int(xi >= k))
     Θ = Variable("Θ", "theta", np.int32, function=lambda m: int(Variables.Theta[str(m)]))
     Φ = Variable("Φ", "phi", np.int32, function=lambda n: int(Variables.Phi[str(n)]))
 
+    xi = Variable("xi", "underlying", np.float32, position=0, locator="underlying")
     m = Variable("m", "option", Variables.Options, position=0, locator="option")
     n = Variable("n", "position", Variables.Positions, position=0, locator="position")
-    xi = Variable("xi", "underlying", np.float32, position=0, locator="underlying")
     k = Variable("k", "strike", np.float32, position=0, locator="strike")
+    q = Variable("q", "quantity", np.int32, position=0, locator="quantity")
 
     def execute(self, exposure, *args, **kwargs):
         equation = self.equation(*args, **kwargs)
