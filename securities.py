@@ -39,15 +39,20 @@ option_header = ["current", "ticker", "expire", "instrument", "option", "positio
 
 class StockFile(File, variable=Variables.Instruments.STOCK, header=stock_header, **security_parameters): pass
 class OptionFile(File, variable=Variables.Instruments.OPTION, header=option_header, **security_parameters): pass
-class SecurityFilter(Filter, variables=[Variables.Instruments.STOCK, Variables.Instruments.OPTION]): pass
+class SecurityFiles(object): Stock = StockFile; Option = OptionFile
+
+
+class SecurityFilter(Filter, variables=[Variables.Instruments.STOCK, Variables.Instruments.OPTION]):
+    pass
 
 
 class BlackScholesEquation(Equation):
     τi = Variable("τi", "tau", np.int32, function=lambda ti, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(ti, "ns"), "D") / np.timedelta64(1, "D"))
-    si = Variable("si", "ratio", np.float32, function=lambda xi, k: np.log(xi / k))
+    si = Variable("si", "ratio", np.float32, function=lambda xi, ki: np.log(xi / ki))
     yi = Variable("yi", "price", np.float32, function=lambda nzr, nzl: nzr - nzl)
+    Θi = Variable("Θ", "theta", np.int32, function=lambda i: int(Variables.Theta(str(i))))
     nzr = Variable("nzr", "right", np.float32, function=lambda xi, zr, Θ: xi * Θ * norm.cdf(Θ * zr))
-    nzl = Variable("nzl", "left", np.float32, function=lambda k, zl, Θ, D: k * Θ * D * norm.cdf(Θ * zl))
+    nzl = Variable("nzl", "left", np.float32, function=lambda ki, zl, Θ, D: ki * Θ * D * norm.cdf(Θ * zl))
     zr = Variable("zr", "right", np.float32, function=lambda α, β: α + β)
     zl = Variable("zl", "left", np.float32, function=lambda α, β: α - β)
     α = Variable("α", "alpha", np.float32, function=lambda si, A, B: (si / B) + (A / B))
@@ -55,16 +60,13 @@ class BlackScholesEquation(Equation):
     A = Variable("A", "alpha", np.float32, function=lambda τi, ρ: np.multiply(τi, ρ))
     B = Variable("B", "beta", np.float32, function=lambda τi, δi: np.multiply(np.sqrt(τi), δi))
     D = Variable("D", "discount", np.float32, function=lambda τi, ρ: np.power(np.exp(τi * ρ), -1))
-    Θ = Variable("Θ", "theta", np.int32, function=lambda m: int(Variables.Theta(str(m))))
-    Φ = Variable("Φ", "phi", np.int32, function=lambda n: int(Variables.Phi(str(n))))
 
-    m = Variable("m", "option", Variables.Options, position=0, locator="option")
-    n = Variable("n", "position", Variables.Positions, position=0, locator="position")
     δi = Variable("δi", "volatility", np.float32, position=0, locator="volatility")
     xi = Variable("xi", "underlying", np.float32, position=0, locator="price")
     tτ = Variable("tτ", "expire", np.datetime64, position=0, locator="expire")
     ti = Variable("ti", "current", np.datetime64, position=0, locator="date")
-    k = Variable("k", "strike", np.float32, position=0, locator="strike")
+    ki = Variable("ki", "strike", np.float32, position=0, locator="strike")
+    i = Variable("i", "option", Variables.Options, position=0, locator="option")
     ρ = Variable("ρ", "discount", np.float32, position="discount")
 
 
@@ -107,10 +109,6 @@ class SecurityCalculator(Processor):
     @property
     def functions(self): return self.__functions
 
-
-class SecurityFiles(object):
-    Stock = StockFile
-    Option = OptionFile
 
 
 

@@ -101,7 +101,8 @@ class Variables(EnumType):
     def variable(name):
         def __str__(self): return str(self.value).lower()
         def __int__(self): return int(self.value)
-        attrs = dict(__int__=__int__, __str__=__str__)
+        def __bool__(self): return bool(self.value)
+        attrs = dict(__int__=__int__, __str__=__str__, __bool__=__bool__)
         return type(name, (object,), attrs)
 
     @staticmethod
@@ -160,15 +161,17 @@ class MultiVariables(ABCMeta):
     def fromstr(cls, string): return {str(variable): variable for variable in iter(cls)}[string]
 
 
-class Theta(members=["PUT", "EMPTY", "CALL"], start=-1, metaclass=Variables): pass
-class Phi(members=["SHORT", "EMPTY", "LONG"], start=-1, metaclass=Variables): pass
-class Status(members=["PROSPECT", "PURCHASED"], metaclass=Variables): pass
-class Valuations(members=["ARBITRAGE"], metaclass=Variables): pass
-class Scenarios(members=["MINIMUM", "MAXIMUM"], metaclass=Variables): pass
+class Theta(members=["PUT", "NEUTRAL", "CALL"], start=-1, metaclass=Variables): pass
+class Phi(members=["SHORT", "NEUTRAL", "LONG"], start=-1, metaclass=Variables): pass
+class Omega(members=["BEAR", "NEUTRAL", "BULL"], start=-1, metaclass=Variables): pass
 class Technicals(members=["BARS", "STATISTIC", "STOCHASTIC"], metaclass=Variables): pass
+class Scenarios(members=["MINIMUM", "MAXIMUM"], metaclass=Variables): pass
+class Valuations(members=["ARBITRAGE"], metaclass=Variables): pass
+class Datasets(members=["STRATEGY", "HOLDINGS", "EXPOSURE"], metaclass=Variables): pass
 class Querys(members=["SYMBOL", "CONTRACT"], metaclass=Variables): pass
-class Datasets(members=["SECURITY", "STRATEGY", "VALUATION", "HOLDINGS", "EXPOSURE"], metaclass=Variables): pass
+class Status(members=["PROSPECT", "PURCHASED"], metaclass=Variables): pass
 
+class Markets(members=["EMPTY", "BEAR", "BULL"], start=0, metaclass=Variables): pass
 class Instruments(members=["EMPTY", "STOCK", "OPTION"], start=0, metaclass=Variables): pass
 class Options(members=["EMPTY", "PUT", "CALL"], start=0, metaclass=Variables): pass
 class Positions(members=["EMPTY", "LONG", "SHORT"], start=0, metaclass=Variables): pass
@@ -213,6 +216,7 @@ class Strategies(variables=[VerticalPut, VerticalCall, CollarLong, CollarShort],
 class Variables:
     Securities = Securities
     Strategies = Strategies
+    Markets = Markets
     Instruments = Instruments
     Options = Options
     Positions = Positions
@@ -223,6 +227,7 @@ class Variables:
     Status = Status
     Querys = Querys
     Datasets = Datasets
+    Omega = Omega
     Theta = Theta
     Phi = Phi
 

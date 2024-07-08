@@ -38,6 +38,9 @@ arbitrage_header = ["current", "ticker", "expire", "strategy", "valuation", "sce
 
 
 class ArbitrageFile(File, variable=Variables.Valuations.ARBITRAGE, header=arbitrage_header, **valuation_parameters): pass
+class ValuationFiles(object): Arbitrage = ArbitrageFile
+
+
 class ValuationFilter(Filter, variables=[Variables.Valuations.ARBITRAGE]):
     @kwargsdispatcher("variable")
     def filter(self, dataframe, *args, variable, **kwargs): raise ValueError(variable)
@@ -79,7 +82,6 @@ class ArbitrageCalculation(ValuationCalculation, ABC, valuation=Variables.Valuat
         equation = self.equation(*args, **kwargs)
         yield equation.npv(strategies, discount=discount)
         yield equation.apy(strategies, discount=discount)
-        yield equation.inc(strategies, discount=discount)
         yield equation.exp(strategies, discount=discount)
         yield strategies["underlying"]
         yield strategies["current"]
@@ -107,17 +109,17 @@ class ValuationCalculator(Processor):
         valuations = {self.valuation: valuations}
         yield contents | valuations
 
-    def calculate(self, strategies, *args, **kwargs):
+    def calculate(self, valuations, *args, **kwargs):
         function = lambda **mapping: {key: xr.Variable(key, [value]).squeeze(key) for key, value in mapping.items()}
         for scenario, calculation in self.calculations.items():
             variables = function(valuation=self.valuation, scenario=scenario)
-            datasets = [calculation(dataset, *args, **kwargs) for dataset in strategies]
+            datasets = [calculation(dataset, *args, **kwargs) for dataset in valuations]
             datasets = [dataset.assign_coords(variables).expand_dims("scenario") for dataset in datasets]
             yield scenario, datasets
 
     @staticmethod
-    def flatten(valuations, *args, **kwargs):
-        for scenario, datasets in valuations.items():
+    def flatten(options, *args, **kwargs):
+        for scenario, datasets in options.items():
             datasets = [dataset.drop_vars(["instrument", "option", "position"], errors="ignore") for dataset in datasets]
             datasets = [dataset.expand_dims(list(set(iter(dataset.coords)) - set(iter(dataset.dims)))) for dataset in datasets]
             dataframes = [dataset.to_dataframe().dropna(how="all", inplace=False) for dataset in datasets]
@@ -132,9 +134,6 @@ class ValuationCalculator(Processor):
     @property
     def valuation(self): return self.__valuation
 
-
-class ValuationFiles(object):
-    Arbitrage = ArbitrageFile
 
 
 

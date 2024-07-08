@@ -9,12 +9,10 @@ Created on Thurs Jan 31 2024
 import logging
 import numpy as np
 import pandas as pd
-import xarray as xr
 from abc import ABC
 from itertools import product
 
 from finance.variables import Variables, Contract
-from support.calculations import Variable, Equation, Calculation
 from support.pipelines import Producer, Consumer
 from support.tables import Tables, Options
 from support.files import File
@@ -42,8 +40,8 @@ holdings_formats.update({("status", ""): lambda status: str(status)})
 holdings_options = Options.Dataframe(rows=20, columns=25, width=1000, formats=holdings_formats, numbers=lambda column: f"{column:.02f}")
 
 
-class HoldingFile(File, variable=Variables.Datasets.HOLDINGS, header=holdings_header, **holdings_parameters):
-    pass
+class HoldingFile(File, variable=Variables.Datasets.HOLDINGS, header=holdings_header, **holdings_parameters): pass
+class HoldingFiles(object): Holding = HoldingFile
 
 
 class HoldingTable(Tables.Dataframe, datatype=pd.DataFrame, options=holdings_options):
@@ -69,28 +67,6 @@ class HoldingTable(Tables.Dataframe, datatype=pd.DataFrame, options=holdings_opt
             assert len(column) == 2
             column = list(self.table.columns).index(column)
         return index, column
-
-
-class HoldingEquation(Equation):
-    yi = Variable("yi", "price", np.float32, function=lambda xi, k, q, Θ, Φ: q * Θ * Φ * np.abs(xi - k) * int(xi >= k))
-    Θ = Variable("Θ", "theta", np.int32, function=lambda m: int(Variables.Theta[str(m)]))
-    Φ = Variable("Φ", "phi", np.int32, function=lambda n: int(Variables.Phi[str(n)]))
-
-    xi = Variable("xi", "underlying", np.float32, position=0, locator="underlying")
-    m = Variable("m", "option", Variables.Options, position=0, locator="option")
-    n = Variable("n", "position", Variables.Positions, position=0, locator="position")
-    k = Variable("k", "strike", np.float32, position=0, locator="strike")
-    q = Variable("q", "quantity", np.int32, position=0, locator="quantity")
-
-    def execute(self, exposure, *args, **kwargs):
-        equation = self.equation(*args, **kwargs)
-        yield equation.yi(exposure)
-
-
-class HoldingCalculation(Calculation, equation=HoldingEquation):
-    def execute(self, exposure, *args, **kwargs):
-        equation = self.equation(*args, **kwargs)
-        yield equation.yi(exposure)
 
 
 class HoldingReader(Producer, ABC):
@@ -126,33 +102,33 @@ class HoldingReader(Producer, ABC):
         return dataframe
 
     @staticmethod
-    def contract(dataframe, *args, **kwargs):
-        dataframe = dataframe.droplevel("scenario", axis=1)
+    def contract(valuations, *args, **kwargs):
+        dataframe = valuations.droplevel("scenario", axis=1)
         return dataframe[["ticker", "expire"]]
 
     @staticmethod
-    def options(dataframe, *args, **kwargs):
+    def options(valuations, *args, **kwargs):
         securities = list(map(str, Variables.Securities.Options))
-        securities = [column for column in securities if column in dataframe.columns]
-        dataframe = dataframe.droplevel("scenario", axis=1)
+        securities = [column for column in securities if column in valuations.columns]
+        dataframe = valuations.droplevel("scenario", axis=1)
         return dataframe[securities]
 
     @staticmethod
-    def stocks(dataframe, *args, **kwargs):
+    def stocks(valuations, *args, **kwargs):
         securities = list(map(str, Variables.Securities.Stocks))
         strategies = lambda cols: list(map(str, cols["strategy"].stocks))
         underlying = lambda cols: np.round(cols["underlying"], decimals=2)
         function = lambda cols: [underlying(cols) if column in strategies(cols) else np.NaN for column in securities]
-        dataframe = dataframe.droplevel("scenario", axis=1)
+        dataframe = valuations.droplevel("scenario", axis=1)
         dataframe = dataframe.apply(function, axis=1, result_type="expand")
         dataframe.columns = securities
         return dataframe
 
     @staticmethod
-    def holdings(dataframe, *args, **kwargs):
-        securities = [security for security in list(map(str, Variables.Securities)) if security in dataframe.columns]
-        contracts = [column for column in dataframe.columns if column not in securities]
-        dataframe = dataframe.melt(id_vars=contracts, value_vars=securities, var_name="security", value_name="strike")
+    def holdings(securities, *args, **kwargs):
+        columns = [security for security in list(map(str, Variables.Securities)) if security in securities.columns]
+        contracts = [column for column in securities.columns if column not in columns]
+        dataframe = securities.melt(id_vars=contracts, value_vars=columns, var_name="security", value_name="strike")
         dataframe = dataframe.where(dataframe["strike"].notna()).dropna(how="all", inplace=False)
         dataframe["security"] = dataframe["security"].apply(Variables.Securities)
         dataframe["instrument"] = dataframe["security"].apply(lambda security: security.instrument)
@@ -167,7 +143,6 @@ class HoldingReader(Producer, ABC):
 class HoldingWriter(Consumer, ABC):
     def __init__(self, *args, destination, liquidity, priority, valuation, capacity=None, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
-        self.__calculation = HoldingCalculation(*args, **kwargs)
         self.__destination = destination
         self.__valuation = valuation
         self.__liquidity = liquidity
@@ -176,45 +151,29 @@ class HoldingWriter(Consumer, ABC):
 
     def execute(self, contents, *args, **kwargs):
         valuations = contents[self.valuation]
-        exposure = contents.get(Variables.Datasets.EXPOSURE, None)
         assert isinstance(valuations, pd.DataFrame)
         if bool(valuations.empty):
             return
         valuations = self.market(valuations, *args, **kwargs)
         valuations = self.prioritize(valuations, *args, **kwargs)
-        valuations = self.portfolio(valuations, *args, exposure=exposure, **kwargs)
         if bool(valuations.empty):
             return
         valuations = valuations.reset_index(drop=True, inplace=False)
         self.write(valuations, *args, **kwargs)
 
-    def market(self, dataframe, *args, **kwargs):
-        index = set(dataframe.columns) - {"scenario", "apy", "npv", "cost"}
-        dataframe = dataframe.pivot(index=index, columns="scenario")
+    def market(self, valuations, *args, **kwargs):
+        index = set(valuations.columns) - {"scenario", "apy", "npv", "cost"}
+        dataframe = valuations.pivot(index=index, columns="scenario")
         dataframe = dataframe.reset_index(drop=False, inplace=False)
         dataframe["liquidity"] = dataframe.apply(self.liquidity, axis=1)
         return dataframe
 
-    def prioritize(self, dataframe, *args, **kwargs):
-        dataframe["priority"] = dataframe.apply(self.priority, axis=1)
-        dataframe = dataframe.sort_values("priority", axis=0, ascending=False, inplace=False, ignore_index=False)
+    def prioritize(self, valuations, *args, **kwargs):
+        valuations["priority"] = valuations.apply(self.priority, axis=1)
+        dataframe = valuations.sort_values("priority", axis=0, ascending=False, inplace=False, ignore_index=False)
         dataframe = dataframe.where(dataframe["priority"] > 0).dropna(axis=0, how="all")
         dataframe = dataframe.reset_index(drop=True, inplace=False)
         return dataframe
-
-    def portfolio(self, dataframe, *args, exposure, **kwargs):
-        if exposure is None:
-            return dataframe
-        exposure = exposure.set_index(["ticker", "expire", "strike", "instrument", "option", "position"], drop=True, inplace=False)
-        exposure = xr.Dataset.from_dataframe(exposure).fillna(0)
-        exposure = exposure.squeeze("ticker").squeeze("expire").squeeze("instrument")
-        exposure["underlying"] = np.unique(exposure["strike"].values)
-        exposure = exposure.stack({"holdings": ["strike", "option", "position"]})
-        results = self.calculation(exposure, *args, **kwargs)
-
-        print(exposure)
-        print(results)
-        raise Exception()
 
     def write(self, dataframe, *args, **kwargs):
         dataframe["status"] = Variables.Status.PROSPECT
@@ -231,8 +190,6 @@ class HoldingWriter(Consumer, ABC):
     @property
     def destination(self): return self.__destination
     @property
-    def calculation(self): return self.__calculation
-    @property
     def valuation(self): return self.__valuation
     @property
     def liquidity(self): return self.__liquidity
@@ -240,10 +197,6 @@ class HoldingWriter(Consumer, ABC):
     def priority(self): return self.__priority
     @property
     def capacity(self): return self.__capacity
-
-
-class HoldingFiles(object):
-    Holding = HoldingFile
 
 
 

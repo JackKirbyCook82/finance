@@ -108,17 +108,17 @@ class StrategyCalculator(Processor):
             if not all([option in options.keys() for option in list(strategy.options)]):
                 continue
             variables = function(strategy=strategy)
-            datasets = {option: options[option] for option in list(strategy.options)}
-            dataset = calculation(datasets, *args, **kwargs)
+            dataset = {option: options[option] for option in list(strategy.options)}
+            dataset = calculation(dataset, *args, **kwargs)
             if self.empty(dataset["size"]):
                 continue
             dataset = dataset.assign_coords(variables)
             yield strategy, dataset
 
-    def options(self, dataframe, *args, **kwargs):
-        if bool(dataframe.empty):
+    def options(self, options, *args, **kwargs):
+        if bool(options.empty):
             return
-        dataframe = dataframe.set_index(["ticker", "expire", "strike", "instrument", "option", "position"], drop=True, inplace=False)
+        dataframe = options.set_index(["ticker", "expire", "strike", "instrument", "option", "position"], drop=True, inplace=False)
         datasets = xr.Dataset.from_dataframe(dataframe)
         datasets = datasets.squeeze("ticker").squeeze("expire")
         for instrument, option, position in product(datasets["instrument"].values, datasets["option"].values, datasets["position"].values):

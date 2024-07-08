@@ -35,6 +35,7 @@ stochastic_header = ["date", "ticker", "price", "oscillator"]
 class BarsFile(File, variable=Variables.Technicals.BARS, header=bars_header, **technical_parameters): pass
 class StatisticFile(File, variable=Variables.Technicals.STATISTIC, header=statistic_header, **technical_parameters): pass
 class StochasticFile(File, variable=Variables.Technicals.STOCHASTIC, header=stochastic_header, **technical_parameters): pass
+class TechnicalFiles(object): Bars = BarsFile; Statistic = StatisticFile; Stochastic = StochasticFile
 
 
 class TechnicalEquation(Equation): pass
@@ -84,12 +85,6 @@ class TechnicalCalculator(Processor):
 
     @property
     def calculations(self): return self.__calculations
-
-
-class TechnicalFiles(object):
-    Bars = BarsFile
-    Statistic = StatisticFile
-    Stochastic = StochasticFile
 
 
 

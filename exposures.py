@@ -9,29 +9,40 @@ Created on Fri May 17 2024
 import logging
 import numpy as np
 import pandas as pd
+import xarray as xr
 
 from finance.variables import Variables
+from support.calculations import Variable, Equation, Calculation
 from support.pipelines import Processor
-from support.files import File
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["ExposureFiles", "ExposureCalculator"]
+__all__ = ["ExposureCalculator", "StabilityCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
-exposure_dates = {"expire": "%Y%m%d"}
-exposure_parsers = {"instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}
-exposure_formatters = {"instrument": int, "option": int, "position": int}
-exposure_types = {"ticker": str, "strike": np.float32, "quantity": np.int32}
-exposure_filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
-exposure_parameters = dict(datatype=pd.DataFrame, filename=exposure_filename, dates=exposure_dates, parsers=exposure_parsers, formatters=exposure_formatters, types=exposure_types)
-exposure_header = ["ticker", "expire", "strike", "instrument", "option", "position", "quantity"]
+
+class StabilityEquation(Equation):
+    y = Variable("y", "value", np.float32, function=lambda q, Θ, Φ, Ω, Δ: q * Θ * Φ * Δ * (1 - Θ * Ω) / 2)
+    m = Variable("m", "trend", np.int32, function=lambda q, Θ, Φ, Ω: q * Θ * Φ * Ω)
+    Ω = Variable("Ω", "omega", np.int32, function=lambda x, k: np.sign(x / k - 1))
+    Δ = Variable("Δ", "delta", np.int32, function=lambda x, k: np.subtract(x, k))
+    Θ = Variable("Θ", "theta", np.int32, function=lambda i: int(Variables.Theta(str(i))))
+    Φ = Variable("Φ", "phi", np.int32, function=lambda j: int(Variables.Phi(str(j))))
+
+    x = Variable("x", "underlying", np.float32, position=0, locator="underlying")
+    q = Variable("q", "quantity", np.int32, position=0, locator="quantity")
+    i = Variable("i", "option", Variables.Options, position=0, locator="option")
+    j = Variable("j", "position", Variables.Positions, position=0, locator="position")
+    k = Variable("k", "strike", np.float32, position=0, locator="strike")
 
 
-class ExposureFile(File, variable=Variables.Datasets.EXPOSURE, header=exposure_header, **exposure_parameters):
-    pass
+class StabilityCalculation(Calculation, equation=StabilityEquation):
+    def execute(self, exposures, *args, **kwargs):
+        equation = self.equation(*args, **kwargs)
+        yield equation.y(exposures)
+        yield equation.m(exposures)
 
 
 class ExposureCalculator(Processor):
@@ -48,30 +59,30 @@ class ExposureCalculator(Processor):
         yield contents | exposures
 
     @staticmethod
-    def stocks(dataframe, *args, **kwargs):
-        stocks = dataframe["instrument"] == Variables.Instruments.STOCK
-        dataframe = dataframe.where(stocks).dropna(how="all", inplace=False)
+    def stocks(holdings, *args, **kwargs):
+        stocks = holdings["instrument"] == Variables.Instruments.STOCK
+        dataframe = holdings.where(stocks).dropna(how="all", inplace=False)
         return dataframe
 
     @staticmethod
-    def options(dataframe, *args, **kwargs):
-        options = dataframe["instrument"] == Variables.Instruments.OPTION
-        dataframe = dataframe.where(options).dropna(how="all", inplace=False)
+    def options(holdings, *args, **kwargs):
+        options = holdings["instrument"] == Variables.Instruments.OPTION
+        dataframe = holdings.where(options).dropna(how="all", inplace=False)
         puts = dataframe["option"] == Variables.Options.PUT
         calls = dataframe["option"] == Variables.Options.CALL
         dataframe = dataframe.where(puts | calls).dropna(how="all", inplace=False)
         return dataframe
 
     @staticmethod
-    def virtuals(dataframe, *args, **kwargs):
+    def virtuals(stocks, *args, **kwargs):
         security = lambda instrument, option, position: dict(instrument=instrument, option=option, position=position)
         function = lambda records, instrument, option, position: pd.DataFrame.from_records([record | security(instrument, option, position) for record in records])
-        if bool(dataframe.empty):
+        if bool(stocks.empty):
             return pd.DataFrame()
-        stocklong = dataframe["position"] == Variables.Positions.LONG
-        stocklong = dataframe.where(stocklong).dropna(how="all", inplace=False)
-        stockshort = dataframe["position"] == Variables.Positions.SHORT
-        stockshort = dataframe.where(stockshort).dropna(how="all", inplace=False)
+        stocklong = stocks["position"] == Variables.Positions.LONG
+        stocklong = stocks.where(stocklong).dropna(how="all", inplace=False)
+        stockshort = stocks["position"] == Variables.Positions.SHORT
+        stockshort = stocks.where(stockshort).dropna(how="all", inplace=False)
         putlong = function(stockshort.to_dict("records"), Variables.Instruments.OPTION, Variables.Options.PUT, Variables.Positions.LONG)
         putshort = function(stocklong.to_dict("records"), Variables.Instruments.OPTION, Variables.Options.PUT, Variables.Positions.SHORT)
         calllong = function(stocklong.to_dict("records"), Variables.Instruments.OPTION, Variables.Options.CALL, Variables.Positions.LONG)
@@ -81,21 +92,90 @@ class ExposureCalculator(Processor):
         return virtuals
 
     @staticmethod
-    def holdings(dataframe, *args, **kwargs):
-        index = [value for value in dataframe.columns if value not in ("position", "quantity")]
+    def holdings(securities, *args, **kwargs):
+        index = [value for value in securities.columns if value not in ("position", "quantity")]
         numerical = lambda position: 2 * int(bool(position is Variables.Positions.LONG)) - 1
         enumerical = lambda value: Variables.Positions.LONG if value > 0 else Variables.Positions.SHORT
         holdings = lambda cols: cols["quantity"] * numerical(cols["position"])
-        dataframe["quantity"] = dataframe.apply(holdings, axis=1)
-        dataframe = dataframe.groupby(index, as_index=False, sort=False).agg({"quantity": np.sum})
+        securities["quantity"] = securities.apply(holdings, axis=1)
+        dataframe = securities.groupby(index, as_index=False, sort=False).agg({"quantity": np.sum})
         dataframe = dataframe.where(dataframe["quantity"] != 0).dropna(how="all", inplace=False)
         dataframe["position"] = dataframe["quantity"].apply(enumerical)
         dataframe["quantity"] = dataframe["quantity"].apply(np.abs)
         return dataframe
 
 
-class ExposureFiles(object):
-    Exposure = ExposureFile
+class StabilityCalculator(Processor):
+    def __init__(self, *args, valuation, name=None, **kwargs):
+        super().__init__(*args, name=name, **kwargs)
+        self.__calculation = StabilityCalculation(*args, **kwargs)
+        self.__valuation = valuation
+
+    def execute(self, contents, *args, **kwargs):
+        valuations, exposures = contents[self.valuation], contents[Variables.Datasets.EXPOSURE]
+        assert isinstance(valuations, pd.DataFrame) and isinstance(exposures, pd.DataFrame)
+        valuations = self.valuations(valuations, *args, **kwargs)
+        if bool(valuations.empty):
+            return
+
+        pd.set_option("display.max_columns", 100)
+        pd.set_option("display.width", 250)
+        xr.set_options(display_width=250)
+
+        exposures = self.exposures(exposures, *args, **kwargs)
+        valuations = self.calculate(valuations, exposures, *args, **kwargs)
+        if bool(valuations.empty):
+            return
+        valuations = valuations.reset_index(drop=True, inplace=False)
+        valuations = {self.valuation: valuations}
+        yield contents | valuations
+
+    def calculate(self, valuations, exposures, *args, **kwargs):
+        columns = list(map(str, Variables.Securities.Options))
+        options = valuations[columns].droplevel(level="scenario", axis=1)
+        valuations["stable"] = options.apply(self.stability, axis=1, exposures=exposures)
+        valuations = valuations.where(valuations["stable"])
+        valuations = valuations.dropna(how="all", inplace=False)
+        valuations = valuations.drop("stable", inplace=False)
+        return valuations
+
+    def stability(self, options, *args, exposures, **kwargs):
+        options = options.dropna(how="all", inplace=False).to_dict()
+        options = {Variables.Securities(key): value for key, value in options.items()}
+        empty = xr.zeros_like(exposures).merge()
+
+        print(options)
+        print(exposures)
+        print(empty)
+        raise Exception()
+
+        dataset = self.calculation(exposures, *args, **kwargs)
+        dataset = dataset.reduce(np.sum, dim="holdings", keepdims=False)
+
+
+
+    @staticmethod
+    def valuations(valuations, *args, **kwargs):
+        index = set(valuations.columns) - {"scenario", "apy", "npv", "cost"}
+        dataframe = valuations.pivot(index=index, columns="scenario")
+        dataframe = dataframe.reset_index(drop=False, inplace=False)
+        return dataframe
+
+    @staticmethod
+    def exposures(exposures, *args, **kwargs):
+        dataframe = exposures.set_index(["ticker", "expire", "strike", "instrument", "option", "position"], drop=True, inplace=False)
+        dataset = xr.Dataset.from_dataframe(dataframe).fillna(0)
+        dataset = dataset.squeeze("ticker").squeeze("expire").squeeze("instrument")
+        underlying = np.unique(dataset["strike"].values)
+        underlying = np.sort(np.concatenate([underlying - 0.001, underlying + 0.001]))
+        dataset["underlying"] = underlying
+        dataset = dataset.stack({"holdings": ["strike", "option", "position"]})
+        return dataset
+
+    @property
+    def calculation(self): return self.__calculation
+    @property
+    def valuation(self): return self.__valuation
 
 
 
