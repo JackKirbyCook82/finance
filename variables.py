@@ -133,7 +133,7 @@ class MultiVariable(ABC):
     def __reversed__(self): return reversed(self.variables)
     def __iter__(self): return iter(self.variables)
 
-    def item(self): return tuple(zip(self.variables, self.fields))
+    def items(self): return tuple(zip(self.variables, self.fields))
     def values(self): return tuple(self.variables)
     def keys(self): return tuple(self.fields)
 

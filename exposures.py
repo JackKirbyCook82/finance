@@ -114,68 +114,58 @@ class StabilityCalculator(Processor):
     def execute(self, contents, *args, **kwargs):
         valuations, exposures = contents[self.valuation], contents[Variables.Datasets.EXPOSURE]
         assert isinstance(valuations, pd.DataFrame) and isinstance(exposures, pd.DataFrame)
-        valuations = self.valuations(valuations, *args, **kwargs)
-        if bool(valuations.empty):
-            return
 
         pd.set_option("display.max_columns", 100)
         pd.set_option("display.width", 250)
         xr.set_options(display_width=250)
+        np.set_printoptions(linewidth=250)
 
-        exposures = self.exposures(exposures, *args, **kwargs)
-        valuations = self.calculate(valuations, exposures, *args, **kwargs)
-        if bool(valuations.empty):
-            return
-        valuations = valuations.reset_index(drop=True, inplace=False)
-        valuations = {self.valuation: valuations}
-        yield contents | valuations
+        series = exposures.set_index(["ticker", "expire", "strike", "instrument", "option", "position"], drop=True, inplace=False).squeeze()
+        exposures = xr.DataArray.from_series(series).fillna(0)
+        exposures = exposures.squeeze("ticker").squeeze("expire").squeeze("instrument")
+        exposures = exposures.stack({"holdings": ["strike", "option", "position"]})
+        print(exposures, "\n")
 
-    def calculate(self, valuations, exposures, *args, **kwargs):
-        columns = list(map(str, Variables.Securities.Options))
-        options = valuations[columns].droplevel(level="scenario", axis=1)
-        valuations["stable"] = options.apply(self.stability, axis=1, exposures=exposures)
-        valuations = valuations.where(valuations["stable"])
-        valuations = valuations.dropna(how="all", inplace=False)
-        valuations = valuations.drop("stable", inplace=False)
-        return valuations
+        index = ["ticker", "expire", "strategy", "valuation"] + list(map(str, Variables.Securities.Options))
+        valuations = valuations.pivot(index=index, columns="scenario").reset_index(drop=False, inplace=False)
+        print(valuations, "\n")
 
-    def stability(self, options, *args, exposures, **kwargs):
-        options = options.dropna(how="all", inplace=False).to_dict()
-        options = {Variables.Securities(key): value for key, value in options.items()}
-        empty = xr.zeros_like(exposures).merge()
-
-        print(options)
-        print(exposures)
-        print(empty)
+        records = list(valuations.droplevel(level="scenario", axis=1)[index].to_dict("records"))
+        function = lambda key, value: key in list(map(str, Variables.Securities.Options)) and not np.isnan(value)
+        records = [{key: value for key, value in record.items() if function(key, value)} for record in records]
+        options = [{Variables.Securities(option): strike for option, strike in record.items()} for record in records]
+        for index, option in enumerate(options):
+            for key, value in option.items():
+                print(str(index), str(key), str(value))
         raise Exception()
-
-        dataset = self.calculation(exposures, *args, **kwargs)
-        dataset = dataset.reduce(np.sum, dim="holdings", keepdims=False)
-
-
-
-    @staticmethod
-    def valuations(valuations, *args, **kwargs):
-        index = set(valuations.columns) - {"scenario", "apy", "npv", "cost"}
-        dataframe = valuations.pivot(index=index, columns="scenario")
-        dataframe = dataframe.reset_index(drop=False, inplace=False)
-        return dataframe
-
-    @staticmethod
-    def exposures(exposures, *args, **kwargs):
-        dataframe = exposures.set_index(["ticker", "expire", "strike", "instrument", "option", "position"], drop=True, inplace=False)
-        dataset = xr.Dataset.from_dataframe(dataframe).fillna(0)
-        dataset = dataset.squeeze("ticker").squeeze("expire").squeeze("instrument")
-        underlying = np.unique(dataset["strike"].values)
-        underlying = np.sort(np.concatenate([underlying - 0.001, underlying + 0.001]))
-        dataset["underlying"] = underlying
-        dataset = dataset.stack({"holdings": ["strike", "option", "position"]})
-        return dataset
 
     @property
     def calculation(self): return self.__calculation
     @property
     def valuation(self): return self.__valuation
+
+
+#    def calculate(self, valuations, exposures, *args, **kwargs):
+#        adjustment = xr.DataArray(data=, coords=exposures.coords)
+#        columns = list(map(str, Variables.Securities.Options))
+#        options = valuations[columns].droplevel(level="scenario", axis=1)
+#        valuations["stable"] = options.apply(self.stability, axis=1, exposures=exposures)
+#        valuations = valuations.where(valuations["stable"])
+#        valuations = valuations.dropna(how="all", inplace=False)
+#        valuations = valuations.drop("stable", inplace=False)
+#        return valuations
+
+#    def stability(self, options, *args, exposures, **kwargs):
+#        options = options.dropna(how="all", inplace=False).to_dict()
+#        options = {Variables.Securities(key): value for key, value in options.items()}
+#        adjustment = xr.zeros_like(exposures)
+#        dataset = self.calculation(exposures, *args, **kwargs)
+#        dataset = dataset.reduce(np.sum, dim="holdings", keepdims=False)
+
+#        underlying = np.unique(dataset["strike"].values)
+#        underlying = np.sort(np.concatenate([underlying - 0.001, underlying + 0.001]))
+#        dataset["underlying"] = underlying
+
 
 
 

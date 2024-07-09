@@ -34,10 +34,11 @@ valuation_formatters = {"strategy": int, "valuation": int, "scenario": int}
 valuation_types = {"ticker": str, "apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.float32, "underlying": np.float32} | {security: np.float32 for security in list(map(str, Variables.Securities.Options))}
 valuation_filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
 valuation_parameters = dict(datatype=pd.DataFrame, filename=valuation_filename, dates=valuation_dates, parsers=valuation_parsers, formatters=valuation_formatters, types=valuation_types)
-arbitrage_header = ["current", "ticker", "expire", "strategy", "valuation", "scenario", "apy", "npv", "cost", "size", "underlying"] + list(map(str, Variables.Securities.Options))
+valuation_index = ["ticker", "expire", "strategy", "valuation", "scenario"] + list(map(str, Variables.Securities.Options))
+valuation_column = ["current", "apy", "npv", "cost", "size", "underlying"]
 
 
-class ArbitrageFile(File, variable=Variables.Valuations.ARBITRAGE, header=arbitrage_header, **valuation_parameters): pass
+class ArbitrageFile(File, variable=Variables.Valuations.ARBITRAGE, header=valuation_index + valuation_column, **valuation_parameters): pass
 class ValuationFiles(object): Arbitrage = ArbitrageFile
 
 
@@ -47,9 +48,8 @@ class ValuationFilter(Filter, variables=[Variables.Valuations.ARBITRAGE]):
     @filter.register.value(Variables.Valuations.ARBITRAGE)
     def arbitrage(self, dataframe, *args, **kwargs):
         variable = Variables.Scenarios.MINIMUM
-        columns = set(["current", "apy", "npv", "cost", "size", "underlying"])
-        index = set(dataframe.columns) - ({"scenario"} | set(columns))
-        dataframe = dataframe.pivot(columns="scenario", index=index)
+        index = set(dataframe.columns) - ({"scenario"} | set(valuation_column))
+        dataframe = dataframe.pivot(index=list(index), columns="scenario")
         dataframe = super().filter(dataframe, *args, stack=[variable], **kwargs)
         dataframe = dataframe.stack("scenario")
         dataframe = dataframe.reset_index(drop=False, inplace=False)
