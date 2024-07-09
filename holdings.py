@@ -32,7 +32,10 @@ holdings_types = {"ticker": str, "strike": np.float32, "quantity": np.int32}
 holdings_filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
 holdings_parameters = dict(datatype=pd.DataFrame, filename=holdings_filename, dates=holdings_dates, parsers=holdings_parsers, formatters=holdings_formatters, types=holdings_types)
 holdings_header = ["ticker", "expire", "strike", "instrument", "option", "position", "quantity"]
-holdings_valuations = {Variables.Valuations.ARBITRAGE: {"apy", "npv", "cost"}}
+holdings_options = list(map(str, Variables.Securities.Options))
+holdings_index = ["ticker", "expire", "strategy", "valuation", "scenario"]
+holdings_columns = ["current", "apy", "npv", "cost", "size", "underlying"]
+holdings_stacking = {Variables.Valuations.ARBITRAGE: {"apy", "npv", "cost"}}
 
 holdings_formats = {(lead, lag): lambda column: f"{column:.02f}" for lead, lag in product(["npv", "cost"], list(map(lambda scenario: str(scenario), Variables.Scenarios)))}
 holdings_formats.update({(lead, lag): lambda column: f"{column * 100:.02f}%" for lead, lag in product(["apy"], list(map(lambda scenario: str(scenario), Variables.Scenarios)))})
@@ -163,7 +166,7 @@ class HoldingWriter(Consumer, ABC):
         self.write(valuations, *args, **kwargs)
 
     def market(self, valuations, *args, **kwargs):
-        index = set(valuations.columns) - ({"scenario"} | holdings_valuations[self.valuation])
+        index = set(valuations.columns) - ({"scenario"} | holdings_stacking[self.valuation])
         dataframe = valuations.pivot(index=list(index), columns="scenario")
         dataframe = dataframe.reset_index(drop=False, inplace=False)
         dataframe["liquidity"] = dataframe.apply(self.liquidity, axis=1)

@@ -120,23 +120,29 @@ class StabilityCalculator(Processor):
         xr.set_options(display_width=250)
         np.set_printoptions(linewidth=250)
 
+        stacking = {Variables.Valuations.ARBITRAGE: {"apy", "npv", "cost"}}
+        index = set(valuations.columns) - ({"scenario"} | stacking[self.valuation])
+        columns = [column for column in exposures.columns if column in valuations.columns]
+        options = list(map(str, Variables.Securities.Options))
+
         series = exposures.set_index(["ticker", "expire", "strike", "instrument", "option", "position"], drop=True, inplace=False).squeeze()
         exposures = xr.DataArray.from_series(series).fillna(0)
         exposures = exposures.squeeze("ticker").squeeze("expire").squeeze("instrument")
         exposures = exposures.stack({"holdings": ["strike", "option", "position"]})
         print(exposures, "\n")
 
-        index = ["ticker", "expire", "strategy", "valuation"] + list(map(str, Variables.Securities.Options))
-        valuations = valuations.pivot(index=index, columns="scenario").reset_index(drop=False, inplace=False)
+        valuations = valuations.pivot(index=index, columns="scenario")
+        valuations = valuations.reset_index(drop=False, inplace=False)
         print(valuations, "\n")
 
-        records = list(valuations.droplevel(level="scenario", axis=1)[index].to_dict("records"))
-        function = lambda key, value: key in list(map(str, Variables.Securities.Options)) and not np.isnan(value)
-        records = [{key: value for key, value in record.items() if function(key, value)} for record in records]
-        options = [{Variables.Securities(option): strike for option, strike in record.items()} for record in records]
-        for index, option in enumerate(options):
-            for key, value in option.items():
-                print(str(index), str(key), str(value))
+        dataframe = valuations[columns + options].droplevel(level="scenario", axis=1)
+        records = list(dataframe.to_dict("records"))
+        contracts = [{"ticker": record["ticker"], "expire": record["expire"]} for record in records]
+        securities = [{Variables.Securities(option): record[option] for option in options} for record in records]
+        securities = [{option: strike for option, strike in record.items() if pd.notna(strike)} for record in securities]
+        securities = [[{"instrument": security.instrument, "option": security.option, "position": security.position, "strike": strike} for security, strike in record.items()] for record in securities]
+        print(contracts)
+        print(securities)
         raise Exception()
 
     @property
