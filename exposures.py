@@ -136,19 +136,32 @@ class StabilityCalculator(Processor):
         print(valuations, "\n")
 
         dataframe = valuations[columns + options].droplevel(level="scenario", axis=1)
-        records = list(dataframe.to_dict("records"))
-        contracts = [{"ticker": record["ticker"], "expire": record["expire"]} for record in records]
-        securities = [{Variables.Securities(option): record[option] for option in options} for record in records]
-        securities = [{option: strike for option, strike in record.items() if pd.notna(strike)} for record in securities]
-        securities = [[{"instrument": security.instrument, "option": security.option, "position": security.position, "strike": strike} for security, strike in record.items()] for record in securities]
-        print(contracts)
-        print(securities)
+        function = lambda cols: list(Variables.Securities(cols["security"]))
+        for index, row in dataframe.iterrows():
+            contract = row.drop(options, axis=0, inplace=False).to_frame("contract")
+            securities = row[options].dropna(how="all", inplace=False).to_frame("strike")
+            securities = securities.reset_index(names="security", drop=False, inplace=False)
+            securities[["instrument", "option", "position"]] = securities.apply(function, axis=1, result_type="expand")
+            print(contract, "\n")
+            print(securities, "\n")
+
         raise Exception()
+
 
     @property
     def calculation(self): return self.__calculation
     @property
     def valuation(self): return self.__valuation
+
+#        dataframe = valuations[columns + options].droplevel(level="scenario", axis=1)
+#        records = list(dataframe.to_dict("records"))
+#        contracts = [{"ticker": record["ticker"], "expire": record["expire"]} for record in records]
+#        securities = [{Variables.Securities(option): record[option] for option in options} for record in records]
+#        securities = [{option: strike for option, strike in record.items() if pd.notna(strike)} for record in securities]
+#        securities = [[{"instrument": security.instrument, "option": security.option, "position": security.position, "strike": strike} for security, strike in record.items()] for record in securities]
+#        print(contracts)
+#        print(securities)
+#        raise Exception()
 
 
 #    def calculate(self, valuations, exposures, *args, **kwargs):
