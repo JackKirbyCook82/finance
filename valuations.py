@@ -35,10 +35,10 @@ valuation_types = {"ticker": str, "apy": np.float32, "npv": np.float32, "cost": 
 valuation_filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
 valuation_parameters = dict(datatype=pd.DataFrame, filename=valuation_filename, dates=valuation_dates, parsers=valuation_parsers, formatters=valuation_formatters, types=valuation_types)
 valuation_index = ["ticker", "expire", "strategy", "valuation", "scenario"] + list(map(str, Variables.Securities.Options))
-valuation_column = ["current", "apy", "npv", "cost", "size", "underlying"]
+valuation_columns = ["current", "apy", "npv", "cost", "size", "underlying"]
 
 
-class ArbitrageFile(File, variable=Variables.Valuations.ARBITRAGE, header=valuation_index + valuation_column, **valuation_parameters): pass
+class ArbitrageFile(File, variable=Variables.Valuations.ARBITRAGE, header=valuation_index + valuation_columns, **valuation_parameters): pass
 class ValuationFiles(object): Arbitrage = ArbitrageFile
 
 
@@ -48,7 +48,7 @@ class ValuationFilter(Filter, variables=[Variables.Valuations.ARBITRAGE]):
     @filter.register.value(Variables.Valuations.ARBITRAGE)
     def arbitrage(self, dataframe, *args, **kwargs):
         variable = Variables.Scenarios.MINIMUM
-        index = set(dataframe.columns) - ({"scenario"} | set(valuation_column))
+        index = set(dataframe.columns) - ({"scenario"} | set(valuation_columns))
         dataframe = dataframe.pivot(index=list(index), columns="scenario")
         dataframe = super().filter(dataframe, *args, stack=[variable], **kwargs)
         dataframe = dataframe.stack("scenario")

@@ -147,8 +147,6 @@ class MultiVariables(ABCMeta):
 
     def __getitem__(cls, variable): return cls.retrieve(variable)
     def __call__(cls, variable):
-        print(variable)
-
         variable = int(variable) if str(variable).isdigit() else str(variable)
         return cls.create(variable)
 

@@ -10,6 +10,7 @@ import logging
 import numpy as np
 import pandas as pd
 import xarray as xr
+from collections import OrderedDict as ODict
 
 from finance.variables import Variables
 from support.calculations import Variable, Equation, Calculation
@@ -21,6 +22,13 @@ __all__ = ["ExposureCalculator", "StabilityCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
+
+
+portfolio_options = list(map(str, Variables.Securities.Options))
+portfolio_contract = ["ticker", "expire"]
+portfolio_columns = portfolio_contract + portfolio_options
+exposure_index = ["ticker", "expire", "strike", "instrument", "option", "position"]
+exposure_stacking = {Variables.Valuations.ARBITRAGE: {"apy", "npv", "cost"}}
 
 
 class StabilityEquation(Equation):
@@ -39,10 +47,10 @@ class StabilityEquation(Equation):
 
 
 class StabilityCalculation(Calculation, equation=StabilityEquation):
-    def execute(self, exposures, *args, **kwargs):
+    def execute(self, portfolios, *args, **kwargs):
         equation = self.equation(*args, **kwargs)
-        yield equation.y(exposures)
-        yield equation.m(exposures)
+        yield equation.y(portfolios)
+        yield equation.m(portfolios)
 
 
 class ExposureCalculator(Processor):
@@ -114,76 +122,84 @@ class StabilityCalculator(Processor):
     def execute(self, contents, *args, **kwargs):
         valuations, exposures = contents[self.valuation], contents[Variables.Datasets.EXPOSURE]
         assert isinstance(valuations, pd.DataFrame) and isinstance(exposures, pd.DataFrame)
+        valuations = self.valuations(valuations, *args, **kwargs)
+        exposures = self.exposures(exposures, *args, **kwargs)
+        divestitures = ODict(list(self.divestitures(valuations, *args, **kwargs)))
+        portfolios = self.portfolios(exposures, divestitures, *args, **kwargs)
+        portfolios = self.underlying(portfolios, *args, **kwargs)
+        portfolios = self.calculation(portfolios, *args, **kwargs)
+        portfolios = self.calculate(portfolios, *args, **kwargs)
 
-        pd.set_option("display.max_columns", 100)
-        pd.set_option("display.width", 250)
-        xr.set_options(display_width=250)
-        np.set_printoptions(linewidth=250)
+        print(valuations, "\n")
+        print(portfolios, "\n")
+        raise Exception()
 
-        stacking = {Variables.Valuations.ARBITRAGE: {"apy", "npv", "cost"}}
-        index = set(valuations.columns) - ({"scenario"} | stacking[self.valuation])
-        columns = [column for column in exposures.columns if column in valuations.columns]
-        options = list(map(str, Variables.Securities.Options))
+    def valuations(self, valuations, *args, **kwargs):
+        index = set(valuations.columns) - ({"scenario"} | exposure_stacking[self.valuation])
+        valuations = valuations.pivot(index=index, columns="scenario")
+        valuations = valuations.reset_index(drop=False, inplace=False)
+        valuations.index = pd.RangeIndex(start=1, stop=len(valuations.index) + 1, name="portfolio")
+        return valuations
 
-        series = exposures.set_index(["ticker", "expire", "strike", "instrument", "option", "position"], drop=True, inplace=False).squeeze()
+    @staticmethod
+    def exposures(exposures, *args, **kwargs):
+        series = exposures.set_index(exposure_index, drop=True, inplace=False).squeeze()
         exposures = xr.DataArray.from_series(series).fillna(0)
         exposures = exposures.squeeze("ticker").squeeze("expire").squeeze("instrument")
         exposures = exposures.stack({"holdings": ["strike", "option", "position"]})
-        print(exposures, "\n")
+        return exposures
 
-        valuations = valuations.pivot(index=index, columns="scenario")
-        valuations = valuations.reset_index(drop=False, inplace=False)
-        print(valuations, "\n")
+    @staticmethod
+    def divestitures(valuations, *args, **kwargs):
+        position = lambda cols: Variables.Positions.LONG if cols["position"] == Variables.Positions.SHORT else Variables.Positions.SHORT
+        security = lambda cols: list(Variables.Securities(cols["security"]))
+        dataframe = valuations[portfolio_columns].droplevel(level="scenario", axis=1)
+        for portfolio, series in dataframe.iterrows():
+            options = series[portfolio_options].dropna(how="all", inplace=False).to_frame("strike")
+            options = options.reset_index(names="security", drop=False, inplace=False)
+            options[["instrument", "option", "position"]] = options.apply(security, axis=1, result_type="expand")
+            options = options[[column for column in options.columns if column != "security"]]
+            for key, value in series[portfolio_contract].to_dict().items():
+                options[key] = value
+            options["position"] = options.apply(position, axis=1)
+            options["quantity"] = 1
+            index = [column for column in options.columns if column != "quantity"]
+            options = options.set_index(index, drop=True, inplace=False).squeeze()
+            options = xr.DataArray.from_series(options).fillna(0)
+            options = options.squeeze("ticker").squeeze("expire").squeeze("instrument")
+            options = options.stack({"holdings": ["strike", "option", "position"]})
+            yield portfolio, options
 
-        dataframe = valuations[columns + options].droplevel(level="scenario", axis=1)
-        function = lambda cols: list(Variables.Securities(cols["security"]))
-        for index, row in dataframe.iterrows():
-            contract = row.drop(options, axis=0, inplace=False).to_frame("contract")
-            securities = row[options].dropna(how="all", inplace=False).to_frame("strike")
-            securities = securities.reset_index(names="security", drop=False, inplace=False)
-            securities[["instrument", "option", "position"]] = securities.apply(function, axis=1, result_type="expand")
-            print(contract, "\n")
-            print(securities, "\n")
+    @staticmethod
+    def portfolios(exposures, divestitures, *args, **kwargs):
+        divestitures = {key: xr.align(value, exposures, join="right")[0].fillna(0) for key, value in divestitures.items()}
+        portfolios = {key: exposures - value for key, value in divestitures.items()}
+        portfolios = [portfolio.assign_coords(portfolio=index) for index, portfolio in portfolios.items()]
+        portfolios = xr.concat([exposures.assign_coords(portfolio=0)] + portfolios, dim="portfolio")
+        portfolios = portfolios.to_dataset(name="quantity")
+        return portfolios
 
-        raise Exception()
+    @staticmethod
+    def underlying(portfolios, *args, **kwargs):
+        underlying = np.unique(portfolios["strike"].values)
+        underlying = np.sort(np.concatenate([underlying - 0.001, underlying + 0.001]))
+        portfolios["underlying"] = underlying
+        return portfolios
 
+    @staticmethod
+    def calculate(portfolios, *args, **kwargs):
+        portfolios = portfolios.sum(dim="holdings")
+        portfolios["maximum"] = portfolios["value"].max(dim="underlying")
+        portfolios["minimum"] = portfolios["value"].min(dim="underlying")
+        portfolios["bull"] = portfolios["trend"].isel(underlying=0)
+        portfolios["bear"] = portfolios["trend"].isel(underlying=-1)
+        return portfolios
 
     @property
     def calculation(self): return self.__calculation
     @property
     def valuation(self): return self.__valuation
 
-#        dataframe = valuations[columns + options].droplevel(level="scenario", axis=1)
-#        records = list(dataframe.to_dict("records"))
-#        contracts = [{"ticker": record["ticker"], "expire": record["expire"]} for record in records]
-#        securities = [{Variables.Securities(option): record[option] for option in options} for record in records]
-#        securities = [{option: strike for option, strike in record.items() if pd.notna(strike)} for record in securities]
-#        securities = [[{"instrument": security.instrument, "option": security.option, "position": security.position, "strike": strike} for security, strike in record.items()] for record in securities]
-#        print(contracts)
-#        print(securities)
-#        raise Exception()
-
-
-#    def calculate(self, valuations, exposures, *args, **kwargs):
-#        adjustment = xr.DataArray(data=, coords=exposures.coords)
-#        columns = list(map(str, Variables.Securities.Options))
-#        options = valuations[columns].droplevel(level="scenario", axis=1)
-#        valuations["stable"] = options.apply(self.stability, axis=1, exposures=exposures)
-#        valuations = valuations.where(valuations["stable"])
-#        valuations = valuations.dropna(how="all", inplace=False)
-#        valuations = valuations.drop("stable", inplace=False)
-#        return valuations
-
-#    def stability(self, options, *args, exposures, **kwargs):
-#        options = options.dropna(how="all", inplace=False).to_dict()
-#        options = {Variables.Securities(key): value for key, value in options.items()}
-#        adjustment = xr.zeros_like(exposures)
-#        dataset = self.calculation(exposures, *args, **kwargs)
-#        dataset = dataset.reduce(np.sum, dim="holdings", keepdims=False)
-
-#        underlying = np.unique(dataset["strike"].values)
-#        underlying = np.sort(np.concatenate([underlying - 0.001, underlying + 0.001]))
-#        dataset["underlying"] = underlying
 
 
 
