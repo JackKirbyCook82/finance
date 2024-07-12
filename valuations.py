@@ -58,15 +58,15 @@ class ValuationFilter(Filter, variables=[Variables.Valuations.ARBITRAGE]):
 
 class ValuationEquation(Equation): pass
 class ArbitrageEquation(ValuationEquation):
-    tau = Variable("tau", "tau", np.int32, function=lambda ti, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(ti, "ns"), "D") / np.timedelta64(1, "D"))
-    inc = Variable("inc", "income", np.float32, function=lambda vi, vτ: + np.maximum(vi, 0) + np.maximum(vτ, 0))
-    exp = Variable("exp", "cost", np.float32, function=lambda vi, vτ: - np.minimum(vi, 0) - np.minimum(vτ, 0))
+    tau = Variable("tau", "tau", np.int32, function=lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
+    inc = Variable("inc", "income", np.float32, function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
+    exp = Variable("exp", "cost", np.float32, function=lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0))
     npv = Variable("npv", "npv", np.float32, function=lambda inc, exp, tau, ρ: np.divide(inc, np.power(1 + ρ, tau / 365)) - exp)
     irr = Variable("irr", "irr", np.float32, function=lambda inc, exp, tau: np.power(np.divide(inc, exp), np.power(tau, -1)) - 1)
     apy = Variable("apy", "apy", np.float32, function=lambda irr, tau: np.power(irr + 1, np.power(tau / 365, -1)) - 1)
     tτ = Variable("tτ", "expire", np.datetime64, position=0, locator="expire")
-    ti = Variable("ti", "current", np.datetime64, position=0, locator="current")
-    vi = Variable("vi", "spot", np.float32, position=0, locator="spot")
+    to = Variable("to", "current", np.datetime64, position=0, locator="current")
+    vo = Variable("vo", "spot", np.float32, position=0, locator="spot")
     ρ = Variable("ρ", "discount", np.float32, position="discount")
 
 class MinimumArbitrageEquation(ArbitrageEquation):

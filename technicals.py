@@ -40,10 +40,10 @@ class TechnicalFiles(object): Bars = BarsFile; Statistic = StatisticFile; Stocha
 
 class TechnicalEquation(Equation): pass
 class StochasticEquation(TechnicalEquation):
-    xki = Variable("xki", "oscillator", np.float32, function=lambda xi, xli, xhi: (xi - xli) * 100 / (xhi - xli))
-    xi = Variable("xi", "price", np.float32, position=0, locator="price")
-    xli = Variable("xli", "lowest", np.float32, position=0, locator="lowest")
-    xhi = Variable("xhi", "highest", np.float32, position=0, locator="highest")
+    xk = Variable("xk", "oscillator", np.float32, function=lambda x, xl, xh: (x - xl) * 100 / (xh - xl))
+    xh = Variable("xh", "highest", np.float32, position=0, locator="highest")
+    xl = Variable("xl", "lowest", np.float32, position=0, locator="lowest")
+    x = Variable("x", "price", np.float32, position=0, locator="price")
 
 
 class TechnicalCalculation(Calculation, ABC, fields=["technical"]): pass
@@ -63,7 +63,7 @@ class StochasticCalculation(TechnicalCalculation, technical=Variables.Technicals
         highest = bars["high"].rolling(period).max().rename("highest")
         bars = pd.concat([bars, lowest, highest], axis=1)
         yield from iter([bars["ticker"], bars["date"], bars["price"]])
-        yield equation.xki(bars)
+        yield equation.xk(bars)
 
 
 class TechnicalCalculator(Processor):

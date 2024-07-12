@@ -18,26 +18,25 @@ from support.pipelines import Processor
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["ExposureCalculator", "StabilityCalculator"]
+__all__ = ["ExposureCalculator", "FeasibilityCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-portfolio_options = list(map(str, Variables.Securities.Options))
-portfolio_contract = ["ticker", "expire"]
-portfolio_columns = portfolio_contract + portfolio_options
-exposure_index = ["ticker", "expire", "strike", "instrument", "option", "position"]
-exposure_stacking = {Variables.Valuations.ARBITRAGE: {"apy", "npv", "cost"}}
+feasibility_index = ["ticker", "expire", "strike", "instrument", "option", "position"]
+feasibility_columns = ["current", "apy", "npv", "cost", "size", "underlying"]
+feasibility_options = list(map(str, Variables.Securities.Options))
+feasibility_contract = ["ticker", "expire"]
 
 
-class StabilityEquation(Equation):
+class FeasibilityEquation(Equation):
     y = Variable("y", "value", np.float32, function=lambda q, Θ, Φ, Ω, Δ: q * Θ * Φ * Δ * (1 - Θ * Ω) / 2)
     m = Variable("m", "trend", np.int32, function=lambda q, Θ, Φ, Ω: q * Θ * Φ * Ω)
     Ω = Variable("Ω", "omega", np.int32, function=lambda x, k: np.sign(x / k - 1))
     Δ = Variable("Δ", "delta", np.int32, function=lambda x, k: np.subtract(x, k))
-    Θ = Variable("Θ", "theta", np.int32, function=lambda i: int(Variables.Theta(str(i))))
-    Φ = Variable("Φ", "phi", np.int32, function=lambda j: int(Variables.Phi(str(j))))
+    Θ = Variable("Θ", "theta", np.int32, function=lambda i: + int(Variables.Theta(str(i))))
+    Φ = Variable("Φ", "phi", np.int32, function=lambda j: + int(Variables.Phi(str(j))))
 
     x = Variable("x", "underlying", np.float32, position=0, locator="underlying")
     q = Variable("q", "quantity", np.int32, position=0, locator="quantity")
@@ -46,7 +45,7 @@ class StabilityEquation(Equation):
     k = Variable("k", "strike", np.float32, position=0, locator="strike")
 
 
-class StabilityCalculation(Calculation, equation=StabilityEquation):
+class FeasibilityCalculation(Calculation, equation=FeasibilityEquation):
     def execute(self, portfolios, *args, **kwargs):
         equation = self.equation(*args, **kwargs)
         yield equation.y(portfolios)
@@ -113,10 +112,10 @@ class ExposureCalculator(Processor):
         return dataframe
 
 
-class StabilityCalculator(Processor):
+class FeasibilityCalculator(Processor):
     def __init__(self, *args, valuation, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
-        self.__calculation = StabilityCalculation(*args, **kwargs)
+        self.__calculation = FeasibilityCalculation(*args, **kwargs)
         self.__valuation = valuation
 
     def execute(self, contents, *args, **kwargs):
@@ -127,23 +126,27 @@ class StabilityCalculator(Processor):
         divestitures = ODict(list(self.divestitures(valuations, *args, **kwargs)))
         portfolios = self.portfolios(exposures, divestitures, *args, **kwargs)
         portfolios = self.underlying(portfolios, *args, **kwargs)
-        portfolios = self.calculation(portfolios, *args, **kwargs)
-        portfolios = self.calculate(portfolios, *args, **kwargs)
+        payoffs = self.calculation(portfolios, *args, **kwargs)
+        stable = self.stability(payoffs, *args, **kwargs)
+        valuations = self.feasibility(valuations, stable, *args, **kwargs)
+        if bool(valuations.empty):
+            return
+        valuations = {self.valuation: valuations}
+        yield contents | valuations
 
-        print(valuations, "\n")
-        print(portfolios, "\n")
-        raise Exception()
-
-    def valuations(self, valuations, *args, **kwargs):
-        index = set(valuations.columns) - ({"scenario"} | exposure_stacking[self.valuation])
-        valuations = valuations.pivot(index=index, columns="scenario")
-        valuations = valuations.reset_index(drop=False, inplace=False)
-        valuations.index = pd.RangeIndex(start=1, stop=len(valuations.index) + 1, name="portfolio")
+    @staticmethod
+    def valuations(valuations, *args, **kwargs):
+        index = set(valuations.columns) - ({"scenario"} | set(feasibility_columns))
+        valuations = valuations.pivot(index=list(index), columns="scenario")
+        portfolios = pd.Series(range(1, len(valuations)+1), name="portfolio")
+        securities = valuations.index.to_frame().reset_index(drop=True, inplace=False)
+        portfolios = pd.concat([portfolios, securities], axis=1)
+        valuations.index = pd.MultiIndex.from_frame(portfolios)
         return valuations
 
     @staticmethod
     def exposures(exposures, *args, **kwargs):
-        series = exposures.set_index(exposure_index, drop=True, inplace=False).squeeze()
+        series = exposures.set_index(feasibility_index, drop=True, inplace=False).squeeze()
         exposures = xr.DataArray.from_series(series).fillna(0)
         exposures = exposures.squeeze("ticker").squeeze("expire").squeeze("instrument")
         exposures = exposures.stack({"holdings": ["strike", "option", "position"]})
@@ -153,13 +156,13 @@ class StabilityCalculator(Processor):
     def divestitures(valuations, *args, **kwargs):
         position = lambda cols: Variables.Positions.LONG if cols["position"] == Variables.Positions.SHORT else Variables.Positions.SHORT
         security = lambda cols: list(Variables.Securities(cols["security"]))
-        dataframe = valuations[portfolio_columns].droplevel(level="scenario", axis=1)
+        dataframe = valuations.index.to_frame().set_index("portfolio", drop=True, inplace=False)
         for portfolio, series in dataframe.iterrows():
-            options = series[portfolio_options].dropna(how="all", inplace=False).to_frame("strike")
+            options = series[feasibility_options].dropna(how="all", inplace=False).to_frame("strike")
             options = options.reset_index(names="security", drop=False, inplace=False)
             options[["instrument", "option", "position"]] = options.apply(security, axis=1, result_type="expand")
             options = options[[column for column in options.columns if column != "security"]]
-            for key, value in series[portfolio_contract].to_dict().items():
+            for key, value in series[feasibility_contract].to_dict().items():
                 options[key] = value
             options["position"] = options.apply(position, axis=1)
             options["quantity"] = 1
@@ -187,20 +190,30 @@ class StabilityCalculator(Processor):
         return portfolios
 
     @staticmethod
-    def calculate(portfolios, *args, **kwargs):
-        portfolios = portfolios.sum(dim="holdings")
-        portfolios["maximum"] = portfolios["value"].max(dim="underlying")
-        portfolios["minimum"] = portfolios["value"].min(dim="underlying")
-        portfolios["bull"] = portfolios["trend"].isel(underlying=0)
-        portfolios["bear"] = portfolios["trend"].isel(underlying=-1)
-        return portfolios
+    def stability(payoffs, *args, **kwargs):
+        payoffs = payoffs.sum(dim="holdings")
+        payoffs["maximum"] = payoffs["value"].max(dim="underlying")
+        payoffs["minimum"] = payoffs["value"].min(dim="underlying")
+        payoffs["bull"] = payoffs["trend"].isel(underlying=0)
+        payoffs["bear"] = payoffs["trend"].isel(underlying=-1)
+        payoffs["stable"] = (payoffs["bear"] == 0) & (payoffs["bull"] == 0)
+        stable = payoffs["stable"].to_series()
+        return stable
+
+    @staticmethod
+    def feasibility(valuations, stable, *args, **kwargs):
+        valuations = valuations.stack("scenario")
+        valuations = valuations.reset_index(drop=False, inplace=False)
+        valuations = valuations.set_index("portfolio", drop=True, inplace=False)
+        valuations = pd.merge(valuations, stable, how="left", on="portfolio")
+        valuations = valuations.where(valuations["stable"]).dropna(how="all", inplace=False)
+        valuations = valuations.reset_index(drop=True, inplace=False).drop("stable", axis=1)
+        return valuations
 
     @property
     def calculation(self): return self.__calculation
     @property
     def valuation(self): return self.__valuation
-
-
 
 
 

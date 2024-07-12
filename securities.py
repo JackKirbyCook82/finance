@@ -47,38 +47,42 @@ class SecurityFilter(Filter, variables=[Variables.Instruments.STOCK, Variables.I
 
 
 class BlackScholesEquation(Equation):
-    τi = Variable("τi", "tau", np.int32, function=lambda ti, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(ti, "ns"), "D") / np.timedelta64(1, "D"))
-    si = Variable("si", "ratio", np.float32, function=lambda xi, ki: np.log(xi / ki))
-    yi = Variable("yi", "price", np.float32, function=lambda nzr, nzl: nzr - nzl)
-    Θi = Variable("Θ", "theta", np.int32, function=lambda i: int(Variables.Theta(str(i))))
-    nzr = Variable("nzr", "right", np.float32, function=lambda xi, zr, Θ: xi * Θ * norm.cdf(Θ * zr))
-    nzl = Variable("nzl", "left", np.float32, function=lambda ki, zl, Θ, D: ki * Θ * D * norm.cdf(Θ * zl))
+    τ = Variable("τ", "tau", np.int32, function=lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
+    so = Variable("so", "ratio", np.float32, function=lambda xo, k: np.log(xo / k))
+    yo = Variable("yo", "price", np.float32, function=lambda nzr, nzl, F: (nzr - nzl) * F)
+    Θ = Variable("Θ", "theta", np.int32, function=lambda i: + int(Variables.Theta(str(i))))
+    Φ = Variable("Φ", "phi", np.int32, function=lambda j: - int(Variables.Phi(str(j))))
+    nzr = Variable("nzr", "right", np.float32, function=lambda xo, zr, Θ: xo * Θ * norm.cdf(Θ * zr))
+    nzl = Variable("nzl", "left", np.float32, function=lambda k, zl, Θ, D: k * Θ * D * norm.cdf(Θ * zl))
     zr = Variable("zr", "right", np.float32, function=lambda α, β: α + β)
     zl = Variable("zl", "left", np.float32, function=lambda α, β: α - β)
-    α = Variable("α", "alpha", np.float32, function=lambda si, A, B: (si / B) + (A / B))
+    α = Variable("α", "alpha", np.float32, function=lambda so, A, B: (so / B) + (A / B))
     β = Variable("β", "beta", np.float32, function=lambda B: (B ** 2) / (B * 2))
-    A = Variable("A", "alpha", np.float32, function=lambda τi, ρ: np.multiply(τi, ρ))
-    B = Variable("B", "beta", np.float32, function=lambda τi, δi: np.multiply(np.sqrt(τi), δi))
-    D = Variable("D", "discount", np.float32, function=lambda τi, ρ: np.power(np.exp(τi * ρ), -1))
+    A = Variable("A", "alpha", np.float32, function=lambda τ, ρ: np.multiply(τ, ρ))
+    B = Variable("B", "beta", np.float32, function=lambda τ, δ: np.multiply(np.sqrt(τ), δ))
+    D = Variable("D", "discount", np.float32, function=lambda τ, ρ: np.power(np.exp(τ * ρ), -1))
+    F = Variable("F", "factor", np.float32, function=lambda Φ, ε: 1 - (Φ * ε))
 
-    δi = Variable("δi", "volatility", np.float32, position=0, locator="volatility")
-    xi = Variable("xi", "underlying", np.float32, position=0, locator="price")
     tτ = Variable("tτ", "expire", np.datetime64, position=0, locator="expire")
-    ti = Variable("ti", "current", np.datetime64, position=0, locator="date")
-    ki = Variable("ki", "strike", np.float32, position=0, locator="strike")
+    to = Variable("to", "current", np.datetime64, position=0, locator="date")
+    xo = Variable("xo", "underlying", np.float32, position=0, locator="price")
+    δ = Variable("δ", "volatility", np.float32, position=0, locator="volatility")
     i = Variable("i", "option", Variables.Options, position=0, locator="option")
+    j = Variable("j", "position", Variables.Positions, position=0, locator="position")
+    k = Variable("k", "strike", np.float32, position=0, locator="strike")
     ρ = Variable("ρ", "discount", np.float32, position="discount")
+    ε = Variable("ε", "factor", np.float32, position="factor")
 
 
 class BlackScholesCalculation(Calculation, equation=BlackScholesEquation):
-    def execute(self, exposures, *args, discount, **kwargs):
+    def execute(self, exposures, *args, discount, factor, **kwargs):
         invert = lambda position: Variables.Positions(int(Variables.Positions.LONG) + int(Variables.Positions.SHORT) - int(position))
         equation = self.equation(*args, **kwargs)
         yield from iter([exposures["ticker"], exposures["expire"]])
         yield from iter([exposures["instrument"], exposures["option"], exposures["position"].apply(invert), exposures["strike"]])
-        yield equation.yi(exposures, discount=discount)
-        yield equation.xi(exposures)
-        yield equation.ti(exposures)
+        yield equation.yo(exposures, discount=discount, factor=factor)
+        yield equation.xo(exposures)
+        yield equation.to(exposures)
 
 
 class SecurityCalculator(Processor):

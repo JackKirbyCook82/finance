@@ -25,12 +25,12 @@ __license__ = "MIT License"
 
 
 class StrategyEquation(Equation):
-    ti = Variable("ti", "current", np.datetime64, function=lambda tα, tβ: np.minimum(np.datetime64(tα, "ns"), np.datetime64(tβ, "ns")))
-    qi = Variable("qi", "size", np.float32, function=lambda qα, qβ: np.minimum(qα, qβ))
-    xi = Variable("xi", "underlying", np.float32, function=lambda xα, xβ: (xα + xβ) / 2)
-    wi = Variable("wi", "spot", np.float32, function=lambda yi, ε: yi * 100 - ε)
-    whτ = Variable("whτ", "maximum", np.float32, function=lambda yhτ, ε: yhτ * 100 - ε)
-    wlτ = Variable("wlτ", "minimum", np.float32, function=lambda ylτ, ε: ylτ * 100 - ε)
+    t = Variable("t", "current", np.datetime64, function=lambda tα, tβ: np.minimum(np.datetime64(tα, "ns"), np.datetime64(tβ, "ns")))
+    q = Variable("q", "size", np.float32, function=lambda qα, qβ: np.minimum(qα, qβ))
+    x = Variable("x", "underlying", np.float32, function=lambda xα, xβ: (xα + xβ) / 2)
+    w = Variable("w", "spot", np.float32, function=lambda y, ε: y * 100 - ε)
+    wh = Variable("wh", "maximum", np.float32, function=lambda yh, ε: yh * 100 - ε)
+    wl = Variable("wl", "minimum", np.float32, function=lambda yl, ε: yl * 100 - ε)
     tα = Variable("tα", "current", np.datetime64, position=Variables.Positions.LONG, locator="current")
     qα = Variable("qα", "size", np.float32, position=Variables.Positions.LONG, locator="size")
     xα = Variable("xα", "underlying", np.float32, position=Variables.Positions.LONG, locator="underlying")
@@ -44,26 +44,26 @@ class StrategyEquation(Equation):
     ε = Variable("ε", "fees", np.float32, position="fees")
 
 class VerticalEquation(StrategyEquation):
-    yi = Variable("yi", "spot", np.float32, function=lambda yα, yβ: - yα + yβ)
+    y = Variable("y", "spot", np.float32, function=lambda yα, yβ: - yα + yβ)
 
 class CollarEquation(StrategyEquation):
-    yi = Variable("yi", "spot", np.float32, function=lambda yα, yβ, xi: - yα + yβ - xi)
+    y = Variable("y", "spot", np.float32, function=lambda yα, yβ, x: - yα + yβ - x)
 
 class VerticalPutEquation(VerticalEquation):
-    yhτ = Variable("yhτ", "maximum", np.float32, function=lambda kα, kβ: np.maximum(kα - kβ, 0))
-    ylτ = Variable("ylτ", "minimum", np.float32, function=lambda kα, kβ: np.minimum(kα - kβ, 0))
+    yh = Variable("yh", "maximum", np.float32, function=lambda kα, kβ: np.maximum(kα - kβ, 0))
+    yl = Variable("yl", "minimum", np.float32, function=lambda kα, kβ: np.minimum(kα - kβ, 0))
 
 class VerticalCallEquation(VerticalEquation):
-    yhτ = Variable("yhτ", "maximum", np.float32, function=lambda kα, kβ: np.maximum(-kα + kβ, 0))
-    ylτ = Variable("ylτ", "minimum", np.float32, function=lambda kα, kβ: np.minimum(-kα + kβ, 0))
+    yh = Variable("yh", "maximum", np.float32, function=lambda kα, kβ: np.maximum(-kα + kβ, 0))
+    yl = Variable("yl", "minimum", np.float32, function=lambda kα, kβ: np.minimum(-kα + kβ, 0))
 
 class CollarLongEquation(CollarEquation):
-    yhτ = Variable("yhτ", "maximum", np.float32, function=lambda kα, kβ: np.maximum(kα, kβ))
-    ylτ = Variable("ylτ", "minimum", np.float32, function=lambda kα, kβ: np.minimum(kα, kβ))
+    yh = Variable("yh", "maximum", np.float32, function=lambda kα, kβ: np.maximum(kα, kβ))
+    yl = Variable("yl", "minimum", np.float32, function=lambda kα, kβ: np.minimum(kα, kβ))
 
 class CollarShortEquation(CollarEquation):
-    yhτ = Variable("yhτ", "maximum", np.float32, function=lambda kα, kβ: np.maximum(-kα, -kβ))
-    ylτ = Variable("ylτ", "minimum", np.float32, function=lambda kα, kβ: np.minimum(-kα, -kβ))
+    yh = Variable("yh", "maximum", np.float32, function=lambda kα, kβ: np.maximum(-kα, -kβ))
+    yl = Variable("yl", "minimum", np.float32, function=lambda kα, kβ: np.minimum(-kα, -kβ))
 
 
 class StrategyCalculation(Calculation, ABC, fields=["strategy"]):
@@ -72,12 +72,12 @@ class StrategyCalculation(Calculation, ABC, fields=["strategy"]):
         assert len(set(positions)) == len(list(positions))
         options = {option.position: dataset for option, dataset in options.items()}
         equation = self.equation(*args, **kwargs)
-        yield equation.whτ(options, fees=fees)
-        yield equation.wlτ(options, fees=fees)
-        yield equation.wi(options, fees=fees)
-        yield equation.xi(options, fees=fees)
-        yield equation.qi(options, fees=fees)
-        yield equation.ti(options, fees=fees)
+        yield equation.wh(options, fees=fees)
+        yield equation.wl(options, fees=fees)
+        yield equation.w(options, fees=fees)
+        yield equation.x(options, fees=fees)
+        yield equation.q(options, fees=fees)
+        yield equation.t(options, fees=fees)
 
 class VerticalPutCalculation(StrategyCalculation, strategy=Variables.Strategies.Vertical.Put, equation=VerticalPutEquation): pass
 class VerticalCallCalculation(StrategyCalculation, strategy=Variables.Strategies.Vertical.Call, equation=VerticalCallEquation): pass
