@@ -86,7 +86,7 @@ class BlackScholesCalculation(Calculation, equation=BlackScholesEquation):
 
 
 class SecurityCalculator(Processor):
-    def __init__(self, *args, size, volume, interest, name=None, **kwargs):
+    def __init__(self, *args, size, volume=lambda cols: np.NaN, interest=lambda cols: np.NaN, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
         self.__calculation = BlackScholesCalculation(*args, **kwargs)
         self.__functions = dict(size=size, volume=volume, interest=interest)
