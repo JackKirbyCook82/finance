@@ -32,8 +32,7 @@ holdings_types = {"ticker": str, "strike": np.float32, "quantity": np.int32}
 holdings_filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
 holdings_parameters = dict(datatype=pd.DataFrame, filename=holdings_filename, dates=holdings_dates, parsers=holdings_parsers, formatters=holdings_formatters, types=holdings_types)
 holdings_header = ["ticker", "expire", "strike", "instrument", "option", "position", "quantity"]
-holdings_index = ["ticker", "expire", "strategy", "valuation", "scenario"]
-holdings_columns = ["current", "apy", "npv", "cost", "size", "underlying"]
+holdings_columns = ["ticker", "expire"] + list(map(str, Variables.Securities.Options)) + ["quantity"]
 holdings_stacking = {Variables.Valuations.ARBITRAGE: {"apy", "npv", "cost"}}
 
 holdings_formats = {(lead, lag): lambda column: f"{column:.02f}" for lead, lag in product(["npv", "cost"], list(map(lambda scenario: str(scenario), Variables.Scenarios)))}
@@ -80,15 +79,10 @@ class HoldingWriter(Consumer, ABC):
 #        self.destination.sort("priority", reverse=True)
 
     def parse(self, dataframe, *args, **kwargs):
-        pass
-
-#        index = set(dataframe.columns) - ({"scenario"} | holdings_stacking[self.valuation])
-#        dataframe = dataframe.pivot(index=list(index), columns="scenario")
-#        dataframe = dataframe.reset_index(drop=False, inplace=False)
-#        index = list(holdings_index) + list(map(str, Variables.Securities.Options))
-#        index = [column for column in index if column != "scenario"]
-#        dataframe = dataframe.set_index(list(index), drop=True, inplace=False)
-#        return dataframe
+        index = set(dataframe.columns) - ({"scenario"} | holdings_stacking[self.valuation])
+        dataframe = dataframe.pivot(index=list(index), columns="scenario")
+        dataframe = dataframe.reset_index(drop=False, inplace=False)
+        return dataframe
 
     def market(self, dataframe, *args, tenure=None, **kwargs):
         if tenure is not None:
@@ -125,10 +119,8 @@ class HoldingReader(Producer, ABC):
         if bool(dataframe.empty):
             return
         dataframe = self.parse(dataframe, *args, **kwargs)
-        contract = self.contract(dataframe, *args, **kwargs)
-        options = self.options(dataframe, *args, **kwargs)
         stocks = self.stocks(dataframe, *args, **kwargs)
-        securities = pd.concat([contract, options, stocks, dataframe["quantity"]], axis=1, ignore_index=False)
+        securities = pd.concat([dataframe, stocks], axis=1, ignore_index=False)
         holdings = self.holdings(securities, *args, **kwargs)
         index = [column for column in holdings_header if column != "quantity"]
         holdings = holdings.groupby(index, as_index=False, dropna=False, sort=False)["quantity"].sum()
@@ -150,25 +142,17 @@ class HoldingReader(Producer, ABC):
 
     @staticmethod
     def parse(dataframe, *args, **kwargs):
-        pass
+        dataframe = dataframe.droplevel("scenario", axis=1)
+        dataframe = dataframe[holdings_columns]
+        return dataframe
 
-#        dataframe = dataframe.droplevel("scenario", axis=1)
-#        dataframe = dataframe[["underlying", "quantity"]]
-#        dataframe = dataframe.reset_index(drop=False, inplace=False)
-#        return dataframe
-
-    @staticmethod
-    def contract(dataframe, *args, **kwargs): return dataframe[["ticker", "expire"]]
-    @staticmethod
-    def options(dataframe, *args, **kwargs): return dataframe[list(map(str, Variables.Securities.Options))]
     @staticmethod
     def stocks(dataframe, *args, **kwargs):
         securities = list(map(str, Variables.Securities.Stocks))
         strategies = lambda cols: list(map(str, cols["strategy"].stocks))
         underlying = lambda cols: np.round(cols["underlying"], decimals=2)
-        function = lambda cols: [underlying(cols) if column in strategies(cols) else np.NaN for column in securities]
+        function = lambda cols: {column: underlying(cols) if column in strategies(cols) else np.NaN for column in securities}
         dataframe = dataframe.apply(function, axis=1, result_type="expand")
-        dataframe.columns = securities
         dataframe = dataframe.dropna(how="all", axis=1)
         return dataframe
 
