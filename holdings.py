@@ -50,81 +50,6 @@ class HoldingTable(Tables.Dataframe, datatype=pd.DataFrame, options=holdings_opt
     pass
 
 
-class HoldingReader(Producer, ABC):
-    def __init__(self, *args, source, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.__source = source
-
-    def execute(self, *args, **kwargs):
-        with self.source.mutex:
-            dataframe = self.read()
-        assert isinstance(dataframe, pd.DataFrame)
-        if bool(dataframe.empty):
-            return
-        dataframe = self.parse(dataframe, *args, **kwargs)
-        contract = self.contract(dataframe, *args, **kwargs)
-        options = self.options(dataframe, *args, **kwargs)
-        stocks = self.stocks(dataframe, *args, **kwargs)
-        stocks = stocks.dropna(how="all", axis=1)
-        securities = pd.concat([contract, options, stocks, dataframe["quantity"]], axis=1, ignore_index=False)
-        holdings = self.holdings(securities, *args, **kwargs)
-        index = [column for column in holdings_header if column != "quantity"]
-        holdings = holdings.groupby(index, as_index=False, dropna=False, sort=False)["quantity"].sum()
-        for (ticker, expire), dataframe in iter(holdings.groupby(["ticker", "expire"])):
-            contract = Contract(ticker, expire)
-            holdings = {Variables.Querys.CONTRACT: contract, Variables.Datasets.HOLDINGS: dataframe}
-            yield holdings
-
-    def read(self):
-        if not bool(self.source):
-            return pd.DataFrame()
-        mask = self.source["status"] == Variables.Status.PURCHASED
-        dataframe = self.source.where(mask)
-        self.source.remove(dataframe)
-        dataframe["quantity"] = 1
-        return dataframe
-
-    @staticmethod
-    def parse(dataframe, *args, **kwargs):
-        dataframe = dataframe.droplevel("scenario", axis=1)
-        dataframe = dataframe[["underlying", "quantity"]]
-        dataframe = dataframe.reset_index(drop=False, inplace=False)
-        return dataframe
-
-    @staticmethod
-    def contract(dataframe, *args, **kwargs): return dataframe[["ticker", "expire"]]
-    @staticmethod
-    def options(dataframe, *args, **kwargs):
-        securities = list(map(str, Variables.Securities.Options))
-        securities = [column for column in securities if column in dataframe.columns]
-        return dataframe[securities]
-
-    @staticmethod
-    def stocks(dataframe, *args, **kwargs):
-        securities = list(map(str, Variables.Securities.Stocks))
-        strategies = lambda cols: list(map(str, cols["strategy"].stocks))
-        underlying = lambda cols: np.round(cols["underlying"], decimals=2)
-        function = lambda cols: [underlying(cols) if column in strategies(cols) else np.NaN for column in securities]
-        dataframe = dataframe.apply(function, axis=1, result_type="expand")
-        dataframe.columns = securities
-        return dataframe
-
-    @staticmethod
-    def holdings(securities, *args, **kwargs):
-        columns = [security for security in list(map(str, Variables.Securities)) if security in securities.columns]
-        contracts = [column for column in securities.columns if column not in columns]
-        dataframe = securities.melt(id_vars=contracts, value_vars=columns, var_name="security", value_name="strike")
-        dataframe = dataframe.where(dataframe["strike"].notna()).dropna(how="all", inplace=False)
-        dataframe["security"] = dataframe["security"].apply(Variables.Securities)
-        dataframe["instrument"] = dataframe["security"].apply(lambda security: security.instrument)
-        dataframe["option"] = dataframe["security"].apply(lambda security: security.option)
-        dataframe["position"] = dataframe["security"].apply(lambda security: security.position)
-        return dataframe
-
-    @property
-    def source(self): return self.__source
-
-
 class HoldingWriter(Consumer, ABC):
     def __init__(self, *args, destination, liquidity, priority, valuation, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
@@ -146,14 +71,24 @@ class HoldingWriter(Consumer, ABC):
         with self.destination.mutex:
             self.write(dataframe)
 
+    def write(self, dataframe):
+        pass
+
+#        dataframe["status"] = self.destination["status"] if bool(self.destination) else np.NaN
+#        dataframe["status"] = dataframe["status"].fillna(Variables.Status.PROSPECT)
+#        self.destination.update(dataframe)
+#        self.destination.sort("priority", reverse=True)
+
     def parse(self, dataframe, *args, **kwargs):
-        index = set(dataframe.columns) - ({"scenario"} | holdings_stacking[self.valuation])
-        dataframe = dataframe.pivot(index=list(index), columns="scenario")
-        dataframe = dataframe.reset_index(drop=False, inplace=False)
-        index = list(holdings_index) + list(map(str, Variables.Securities.Options))
-        index = [column for column in index if column != "scenario"]
-        dataframe = dataframe.set_index(list(index), drop=True, inplace=False)
-        return dataframe
+        pass
+
+#        index = set(dataframe.columns) - ({"scenario"} | holdings_stacking[self.valuation])
+#        dataframe = dataframe.pivot(index=list(index), columns="scenario")
+#        dataframe = dataframe.reset_index(drop=False, inplace=False)
+#        index = list(holdings_index) + list(map(str, Variables.Securities.Options))
+#        index = [column for column in index if column != "scenario"]
+#        dataframe = dataframe.set_index(list(index), drop=True, inplace=False)
+#        return dataframe
 
     def market(self, dataframe, *args, tenure=None, **kwargs):
         if tenure is not None:
@@ -168,12 +103,6 @@ class HoldingWriter(Consumer, ABC):
         dataframe = dataframe.where(dataframe["priority"] > 0).dropna(axis=0, how="all")
         return dataframe
 
-    def write(self, dataframe):
-        dataframe["status"] = self.destination["status"] if bool(self.destination) else np.NaN
-        dataframe["status"] = dataframe["status"].fillna(Variables.Status.PROSPECT)
-        self.destination.update(dataframe)
-        self.destination.sort("priority", reverse=True)
-
     @property
     def destination(self): return self.__destination
     @property
@@ -182,6 +111,81 @@ class HoldingWriter(Consumer, ABC):
     def liquidity(self): return self.__liquidity
     @property
     def priority(self): return self.__priority
+
+
+class HoldingReader(Producer, ABC):
+    def __init__(self, *args, source, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.__source = source
+
+    def execute(self, *args, **kwargs):
+        with self.source.mutex:
+            dataframe = self.read()
+        assert isinstance(dataframe, pd.DataFrame)
+        if bool(dataframe.empty):
+            return
+        dataframe = self.parse(dataframe, *args, **kwargs)
+        contract = self.contract(dataframe, *args, **kwargs)
+        options = self.options(dataframe, *args, **kwargs)
+        stocks = self.stocks(dataframe, *args, **kwargs)
+        securities = pd.concat([contract, options, stocks, dataframe["quantity"]], axis=1, ignore_index=False)
+        holdings = self.holdings(securities, *args, **kwargs)
+        index = [column for column in holdings_header if column != "quantity"]
+        holdings = holdings.groupby(index, as_index=False, dropna=False, sort=False)["quantity"].sum()
+        for (ticker, expire), dataframe in iter(holdings.groupby(["ticker", "expire"])):
+            contract = Contract(ticker, expire)
+            holdings = {Variables.Querys.CONTRACT: contract, Variables.Datasets.HOLDINGS: dataframe}
+            yield holdings
+
+    def read(self):
+        pass
+
+#        if not bool(self.source):
+#            return pd.DataFrame()
+#        mask = self.source["status"] == Variables.Status.PURCHASED
+#        dataframe = self.source.where(mask)
+#        self.source.remove(dataframe)
+#        dataframe["quantity"] = 1
+#        return dataframe
+
+    @staticmethod
+    def parse(dataframe, *args, **kwargs):
+        pass
+
+#        dataframe = dataframe.droplevel("scenario", axis=1)
+#        dataframe = dataframe[["underlying", "quantity"]]
+#        dataframe = dataframe.reset_index(drop=False, inplace=False)
+#        return dataframe
+
+    @staticmethod
+    def contract(dataframe, *args, **kwargs): return dataframe[["ticker", "expire"]]
+    @staticmethod
+    def options(dataframe, *args, **kwargs): return dataframe[list(map(str, Variables.Securities.Options))]
+    @staticmethod
+    def stocks(dataframe, *args, **kwargs):
+        securities = list(map(str, Variables.Securities.Stocks))
+        strategies = lambda cols: list(map(str, cols["strategy"].stocks))
+        underlying = lambda cols: np.round(cols["underlying"], decimals=2)
+        function = lambda cols: [underlying(cols) if column in strategies(cols) else np.NaN for column in securities]
+        dataframe = dataframe.apply(function, axis=1, result_type="expand")
+        dataframe.columns = securities
+        dataframe = dataframe.dropna(how="all", axis=1)
+        return dataframe
+
+    @staticmethod
+    def holdings(securities, *args, **kwargs):
+        columns = [security for security in list(map(str, Variables.Securities)) if security in securities.columns]
+        contracts = [column for column in securities.columns if column not in columns]
+        dataframe = securities.melt(id_vars=contracts, value_vars=columns, var_name="security", value_name="strike")
+        dataframe = dataframe.where(dataframe["strike"].notna()).dropna(how="all", inplace=False)
+        dataframe["security"] = dataframe["security"].apply(Variables.Securities)
+        dataframe["instrument"] = dataframe["security"].apply(lambda security: security.instrument)
+        dataframe["option"] = dataframe["security"].apply(lambda security: security.option)
+        dataframe["position"] = dataframe["security"].apply(lambda security: security.position)
+        return dataframe
+
+    @property
+    def source(self): return self.__source
 
 
 

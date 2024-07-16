@@ -75,14 +75,29 @@ class BlackScholesEquation(Equation):
 
 
 class BlackScholesCalculation(Calculation, equation=BlackScholesEquation):
+    def __init__(self, *args, factor=lambda count: 0 * count, **kwargs):
+        assert callable(factor)
+        super().__init__(*args, **kwargs)
+        self.__factor = factor
+        self.__count = 0
+
     def execute(self, exposures, *args, discount, factor, **kwargs):
         invert = lambda position: Variables.Positions(int(Variables.Positions.LONG) + int(Variables.Positions.SHORT) - int(position))
         equation = self.equation(*args, **kwargs)
+        factor = self.factor(count=self.count)
         yield from iter([exposures["ticker"], exposures["expire"]])
         yield from iter([exposures["instrument"], exposures["option"], exposures["position"].apply(invert), exposures["strike"]])
         yield equation.yo(exposures, discount=discount, factor=factor)
         yield equation.xo(exposures)
         yield equation.to(exposures)
+        self.count += 1
+
+    @property
+    def factor(self): return self.__factor
+    @property
+    def count(self): return self.__count
+    @count.setter
+    def count(self, count): self.__count = count
 
 
 class SecurityCalculator(Processor):
