@@ -53,6 +53,7 @@ class HoldingTable(Tables.Dataframe, datatype=pd.DataFrame, options=holdings_opt
 class HoldingWriter(Consumer, ABC):
     def __init__(self, *args, destination, liquidity, priority, valuation, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
+        self.__identify = np.arange(0, dtype=np.int32)
         self.__destination = destination
         self.__valuation = valuation
         self.__liquidity = liquidity
@@ -69,6 +70,7 @@ class HoldingWriter(Consumer, ABC):
         dataframe = self.market(dataframe, *args, **kwargs)
         dataframe = self.prioritize(dataframe, *args, **kwargs)
         dataframe = self.status(dataframe, *args, **kwargs)
+        dataframe = self.tagging(dataframe, *args, **kwargs)
         if bool(dataframe.empty):
             return
         with self.destination.mutex:
@@ -108,6 +110,12 @@ class HoldingWriter(Consumer, ABC):
         dataframe["status"] = dataframe["status"].fillna(Variables.Status.PROSPECT)
         return dataframe
 
+    def tagging(self, dataframe, *args, **kwargs):
+        function = lambda tag: next(self.identify) if pd.isna(tag) else tag
+        dataframe["tag"] = self.destination[:, "tag"] if bool(self.destination) else np.NaN
+        dataframe["tag"] = dataframe["tag"].apply(function)
+        return dataframe
+
     def write(self, dataframe, *args, **kwargs):
         self.destination.concat(dataframe, duplicates=holdings_index)
         self.destination.sort("priority", reverse=True)
@@ -120,6 +128,8 @@ class HoldingWriter(Consumer, ABC):
     def liquidity(self): return self.__liquidity
     @property
     def priority(self): return self.__priority
+    @property
+    def identify(self): return self.__identify
 
 
 class HoldingReader(Producer, ABC):
