@@ -32,7 +32,8 @@ holdings_types = {"ticker": str, "strike": np.float32, "quantity": np.int32}
 holdings_filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
 holdings_parameters = dict(datatype=pd.DataFrame, filename=holdings_filename, dates=holdings_dates, parsers=holdings_parsers, formatters=holdings_formatters, types=holdings_types)
 holdings_header = ["ticker", "expire", "strike", "instrument", "option", "position", "quantity"]
-holdings_columns = ["ticker", "expire"] + list(map(str, Variables.Securities.Options)) + ["quantity"]
+holdings_index = ["ticker", "expire"] + list(map(str, Variables.Securities.Options)) + ["strategy", "valuation"]
+holdings_columns = ["ticker", "expire"] + list(map(str, Variables.Securities.Options)) + ["strategy", "quantity", "underlying"]
 holdings_stacking = {Variables.Valuations.ARBITRAGE: {"apy", "npv", "cost"}}
 
 holdings_formats = {(lead, lag): lambda column: f"{column:.02f}" for lead, lag in product(["npv", "cost"], list(map(lambda scenario: str(scenario), Variables.Scenarios)))}
@@ -58,25 +59,30 @@ class HoldingWriter(Consumer, ABC):
         self.__priority = priority
 
     def execute(self, contents, *args, **kwargs):
-        dataframe = contents[self.valuation]
+        contract, dataframe = contents[Variables.Querys.CONTRACT], contents[self.valuation]
         assert isinstance(dataframe, pd.DataFrame)
         if bool(dataframe.empty):
+            return
+        if self.blocking(contract, *args, **kwargs):
             return
         dataframe = self.parse(dataframe, *args, **kwargs)
         dataframe = self.market(dataframe, *args, **kwargs)
         dataframe = self.prioritize(dataframe, *args, **kwargs)
+        dataframe = self.status(dataframe, *args, **kwargs)
         if bool(dataframe.empty):
             return
         with self.destination.mutex:
-            self.write(dataframe)
+            self.write(dataframe, *args, **kwargs)
 
-    def write(self, dataframe):
-        pass
-
-#        dataframe["status"] = self.destination["status"] if bool(self.destination) else np.NaN
-#        dataframe["status"] = dataframe["status"].fillna(Variables.Status.PROSPECT)
-#        self.destination.update(dataframe)
-#        self.destination.sort("priority", reverse=True)
+    def blocking(self, contract, *args, **kwargs):
+        if not bool(self.destination):
+            return False
+        ticker = self.destination[:, "ticker"] == contract.ticker
+        expire = self.destination[:, "expire"] == contract.expire
+        prospect = self.destination[:, "status"] != Variables.Status.PROSPECT
+        purchased = self.destination[:, "status"] != Variables.Status.PURCHASED
+        blocking = (prospect & purchased)
+        return (ticker & expire & blocking).any()
 
     def parse(self, dataframe, *args, **kwargs):
         index = set(dataframe.columns) - ({"scenario"} | holdings_stacking[self.valuation])
@@ -97,6 +103,15 @@ class HoldingWriter(Consumer, ABC):
         dataframe = dataframe.where(dataframe["priority"] > 0).dropna(axis=0, how="all")
         return dataframe
 
+    def status(self, dataframe, *args, **kwargs):
+        dataframe["status"] = self.destination[:, "status"] if bool(self.destination) else np.NaN
+        dataframe["status"] = dataframe["status"].fillna(Variables.Status.PROSPECT)
+        return dataframe
+
+    def write(self, dataframe, *args, **kwargs):
+        self.destination.concat(dataframe, duplicates=holdings_index)
+        self.destination.sort("priority", reverse=True)
+
     @property
     def destination(self): return self.__destination
     @property
@@ -114,7 +129,7 @@ class HoldingReader(Producer, ABC):
 
     def execute(self, *args, **kwargs):
         with self.source.mutex:
-            dataframe = self.read()
+            dataframe = self.read(*args, **kwargs)
         assert isinstance(dataframe, pd.DataFrame)
         if bool(dataframe.empty):
             return
@@ -129,16 +144,14 @@ class HoldingReader(Producer, ABC):
             holdings = {Variables.Querys.CONTRACT: contract, Variables.Datasets.HOLDINGS: dataframe}
             yield holdings
 
-    def read(self):
-        pass
-
-#        if not bool(self.source):
-#            return pd.DataFrame()
-#        mask = self.source["status"] == Variables.Status.PURCHASED
-#        dataframe = self.source.where(mask)
-#        self.source.remove(dataframe)
-#        dataframe["quantity"] = 1
-#        return dataframe
+    def read(self, *args, **kwargs):
+        if not bool(self.source):
+            return pd.DataFrame()
+        mask = self.source[:, "status"] == Variables.Status.PURCHASED
+        dataframe = self.source.where(mask)
+        self.source.remove(dataframe)
+        dataframe["quantity"] = 1
+        return dataframe
 
     @staticmethod
     def parse(dataframe, *args, **kwargs):
