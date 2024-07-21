@@ -31,11 +31,11 @@ __logger__ = logging.getLogger(__name__)
 valuation_dates = {"current": "%Y%m%d-%H%M", "expire": "%Y%m%d"}
 valuation_parsers = {"strategy": Variables.Strategies, "valuation": Variables.Valuations, "scenario": Variables.Scenarios}
 valuation_formatters = {"strategy": int, "valuation": int, "scenario": int}
-valuation_types = {"ticker": str, "apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.float32, "underlying": np.float32} | {security: np.float32 for security in list(map(str, Variables.Securities.Options))}
+valuation_types = {"ticker": str, "apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.float32, "tau": np.int32} | {security: np.float32 for security in list(map(str, Variables.Securities))}
 valuation_filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
 valuation_parameters = dict(datatype=pd.DataFrame, filename=valuation_filename, dates=valuation_dates, parsers=valuation_parsers, formatters=valuation_formatters, types=valuation_types)
-valuation_index = ["ticker", "expire", "strategy", "valuation", "scenario"] + list(map(str, Variables.Securities.Options))
-valuation_columns = ["current", "apy", "npv", "cost", "size", "underlying"]
+valuation_index = ["ticker", "expire", "strategy", "valuation", "scenario"] + list(map(str, Variables.Securities))
+valuation_columns = ["current", "apy", "npv", "cost", "size", "tau"]
 
 
 class ArbitrageFile(File, variable=Variables.Valuations.ARBITRAGE, header=valuation_index + valuation_columns, **valuation_parameters): pass
@@ -58,12 +58,16 @@ class ValuationFilter(Filter, variables=[Variables.Valuations.ARBITRAGE]):
 
 class ValuationEquation(Equation): pass
 class ArbitrageEquation(ValuationEquation):
+    xα = Variable("xα", str(Variables.Securities.Stock.Long), np.float32, function=lambda xo, stg: np.round(xo, decimals=2) if Variables.Securities.Stock.Long in list(stg.stocks) else np.NaN)
+    xβ = Variable("xβ", str(Variables.Securities.Stock.Short), np.float32, function=lambda xo, stg: np.round(xo, decimals=2) if Variables.Securities.Stock.Short in list(stg.stocks) else np.NaN)
     tau = Variable("tau", "tau", np.int32, function=lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
+    irr = Variable("irr", "irr", np.float32, function=lambda inc, exp, tau: np.power(np.divide(inc, exp), np.power(tau, -1)) - 1)
+    npv = Variable("npv", "npv", np.float32, function=lambda inc, exp, tau, ρ: np.divide(inc, np.power(1 + ρ, tau / 365)) - exp)
+    apy = Variable("apy", "apy", np.float32, function=lambda irr, tau: np.power(irr + 1, np.power(tau / 365, -1)) - 1)
     inc = Variable("inc", "income", np.float32, function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
     exp = Variable("exp", "cost", np.float32, function=lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0))
-    npv = Variable("npv", "npv", np.float32, function=lambda inc, exp, tau, ρ: np.divide(inc, np.power(1 + ρ, tau / 365)) - exp)
-    irr = Variable("irr", "irr", np.float32, function=lambda inc, exp, tau: np.power(np.divide(inc, exp), np.power(tau, -1)) - 1)
-    apy = Variable("apy", "apy", np.float32, function=lambda irr, tau: np.power(irr + 1, np.power(tau / 365, -1)) - 1)
+    stg = Variable("stg", "strategy", Variables.Strategies, position=0, locator="strategy")
+    xo = Variable("xo", "underlying", np.float32, position=0, locator="underlying")
     tτ = Variable("tτ", "expire", np.datetime64, position=0, locator="expire")
     to = Variable("to", "current", np.datetime64, position=0, locator="current")
     vo = Variable("vo", "spot", np.float32, position=0, locator="spot")
@@ -83,7 +87,9 @@ class ArbitrageCalculation(ValuationCalculation, ABC, valuation=Variables.Valuat
         yield equation.npv(strategies, discount=discount)
         yield equation.apy(strategies, discount=discount)
         yield equation.exp(strategies, discount=discount)
-        yield strategies["underlying"]
+        yield equation.tau(strategies)
+        yield equation.xα(strategies)
+        yield equation.xβ(strategies)
         yield strategies["current"]
         yield strategies["size"]
 
