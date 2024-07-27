@@ -8,7 +8,7 @@ Created on Sun Jan 28 2024
 
 import pandas as pd
 from abc import ABC, ABCMeta
-from enum import Enum, EnumType
+from enum import Enum, EnumMeta
 from functools import total_ordering
 from datetime import date as Date
 from datetime import datetime as Datetime
@@ -80,7 +80,7 @@ class Variable(object):
     def name(self): return self.__name
 
 
-class Variables(EnumType):
+class Variables(EnumMeta):
     def __new__(mcs, name, bases, attrs, *args, **kwargs):
         assert not any([issubclass(base, Enum) for base in bases])
         bases = (mcs.variable(name), Enum)
