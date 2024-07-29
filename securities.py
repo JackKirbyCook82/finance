@@ -101,10 +101,11 @@ class BlackScholesCalculation(Calculation, equation=BlackScholesEquation):
 
 
 class SecurityCalculator(Processor):
-    def __init__(self, *args, size, volume=lambda cols: np.NaN, interest=lambda cols: np.NaN, name=None, **kwargs):
+    def __init__(self, *args, factor, size, volume=lambda cols: np.NaN, interest=lambda cols: np.NaN, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
         self.__calculation = BlackScholesCalculation(*args, **kwargs)
         self.__functions = dict(size=size, volume=volume, interest=interest)
+        self.__factor = factor
 
     def execute(self, contents, *args, current, **kwargs):
         exposures, statistics = contents[Variables.Datasets.EXPOSURE], contents[Variables.Technicals.STATISTIC]
@@ -118,7 +119,7 @@ class SecurityCalculator(Processor):
         yield contents | options
 
     def calculate(self, exposures, *args, **kwargs):
-        dataframe = self.calculation(exposures, *args, **kwargs)
+        dataframe = self.calculation(exposures, *args, factor=self.factor, **kwargs)
         for column, function in self.functions.items():
             dataframe[column] = dataframe.apply(function, axis=1)
         return dataframe
@@ -127,6 +128,8 @@ class SecurityCalculator(Processor):
     def calculation(self): return self.__calculation
     @property
     def functions(self): return self.__functions
+    @property
+    def factor(self): return self.__factor
 
 
 

@@ -10,7 +10,7 @@ import logging
 import numpy as np
 import pandas as pd
 from abc import ABC
-from itertools import product
+from itertools import product, count
 
 from finance.variables import Variables, Contract
 from support.pipelines import Producer, Consumer
@@ -31,13 +31,14 @@ holdings_formatters = {"instrument": int, "option": int, "position": int}
 holdings_types = {"ticker": str, "strike": np.float32, "quantity": np.int32}
 holdings_filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
 holdings_parameters = dict(datatype=pd.DataFrame, filename=holdings_filename, dates=holdings_dates, parsers=holdings_parsers, formatters=holdings_formatters, types=holdings_types)
-holdings_header = ["ticker", "expire", "strike", "instrument", "option", "position", "quantity"]
-valuation_index = ["ticker", "expire", "strategy", "valuation"] + list(map(str, Variables.Securities))
+holdings_header = ["ticker", "expire", "strike", "instrument", "option", "position", "quantity", "underlying"]
+
+valuation_index = ["ticker", "expire", "strategy", "valuation"] + list(map(str, Variables.Securities.Options))
 valuation_stacking = {Variables.Valuations.ARBITRAGE: {"apy", "npv", "cost"}}
 
 holdings_formats = {(lead, lag): lambda column: f"{column:.02f}" for lead, lag in product(["npv", "cost"], list(map(lambda scenario: str(scenario), Variables.Scenarios)))}
 holdings_formats.update({(lead, lag): lambda column: f"{column * 100:.02f}%" for lead, lag in product(["apy"], list(map(lambda scenario: str(scenario), Variables.Scenarios)))})
-holdings_formats.update({("priority", ""): lambda priority: f"{priority:.02f}", ("status", ""): lambda status: str(status)})
+holdings_formats.update({("priority", ""): lambda priority: f"{priority:.04f}", ("status", ""): lambda status: str(status)})
 holdings_options = Options.Dataframe(rows=20, columns=25, width=1000, formats=holdings_formats, numbers=lambda column: f"{column:.02f}")
 
 
@@ -52,7 +53,7 @@ class HoldingTable(Tables.Dataframe, datatype=pd.DataFrame, options=holdings_opt
 class HoldingWriter(Consumer, ABC):
     def __init__(self, *args, destination, liquidity, priority, valuation, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
-        self.__identify = np.arange(0, dtype=np.int32)
+        self.__identity = count(1, step=1)
         self.__destination = destination
         self.__valuation = valuation
         self.__liquidity = liquidity
@@ -63,27 +64,14 @@ class HoldingWriter(Consumer, ABC):
         assert isinstance(valuations, pd.DataFrame)
         if bool(valuations.empty):
             return
-        if self.blocking(contract, *args, **kwargs):
-            return
         valuations = self.parse(valuations, *args, **kwargs)
+        valuations = self.compare(valuations, *args, **kwargs)
         valuations = self.market(valuations, *args, **kwargs)
         valuations = self.prioritize(valuations, *args, **kwargs)
-        valuations = self.status(valuations, *args, **kwargs)
-        valuations = self.tagging(valuations, *args, **kwargs)
+        valuations = self.identify(valuations, *args, **kwargs)
         if bool(valuations.empty):
             return
-        with self.destination.mutex:
-            self.write(valuations, *args, **kwargs)
-
-    def blocking(self, contract, *args, **kwargs):
-        if not bool(self.destination):
-            return False
-        ticker = self.destination[:, "ticker"] == contract.ticker
-        expire = self.destination[:, "expire"] == contract.expire
-        prospect = self.destination[:, "status"] != Variables.Status.PROSPECT
-        purchased = self.destination[:, "status"] != Variables.Status.PURCHASED
-        blocking = (prospect & purchased)
-        return (ticker & expire & blocking).any()
+        self.write(valuations, *args, **kwargs)
 
     def parse(self, valuations, *args, **kwargs):
         index = set(valuations.columns) - ({"scenario"} | valuation_stacking[self.valuation])
@@ -91,9 +79,18 @@ class HoldingWriter(Consumer, ABC):
         valuations = valuations.reset_index(drop=False, inplace=False)
         return valuations
 
+    def compare(self, valuations, *args, **kwargs):
+        if not bool(self.destination):
+            return valuations
+        overlap = pd.merge(valuations, self.destination.table, how="inner", on=valuation_index, suffixes=("", "|expired"))
+        overlap = overlap[self.destination.columns]
+        index = [(value, "") for value in valuation_index]
+        valuations = pd.concat([valuations, overlap], axis=0) .drop_duplicates(subset=index, inplace=False, keep="last")
+        return valuations
+
     def market(self, valuations, *args, tenure=None, **kwargs):
         if tenure is not None:
-            current = (pd.to_datetime("now") - valuations["current"]) <= tenure
+            current = (pd.to_datetime("now") - valuations["current"]) <= self.tenure
             valuations = valuations.where(current).dropna(how="all", inplace=False)
         valuations["liquidity"] = valuations.apply(self.liquidity, axis=1)
         return valuations
@@ -104,20 +101,23 @@ class HoldingWriter(Consumer, ABC):
         valuations = valuations.where(valuations["priority"] > 0).dropna(axis=0, how="all")
         return valuations
 
-    def status(self, valuations, *args, **kwargs):
-        valuations["status"] = self.destination[:, "status"] if bool(self.destination) else np.NaN
+    def identify(self, valuations, *args, **kwargs):
+        if not bool(self.destination):
+            valuations["status"] = np.NaN
+            valuations["tag"] = np.NaN
+        function = lambda tag: next(self.identity) if np.isnan(tag) else tag
         valuations["status"] = valuations["status"].fillna(Variables.Status.PROSPECT)
-        return valuations
-
-    def tagging(self, valuations, *args, **kwargs):
-        function = lambda tag: next(self.identify) if pd.isna(tag) else tag
-        valuations["tag"] = self.destination[:, "tag"] if bool(self.destination) else np.NaN
         valuations["tag"] = valuations["tag"].apply(function)
         return valuations
 
-    def write(self, valuations, *args, **kwargs):
-        self.destination.concat(valuations, duplicates=valuation_index)
-        self.destination.sort("priority", reverse=True)
+    def write(self, valuations, *args, tenure=None, **kwargs):
+        function = lambda dataframe: (pd.to_datetime("now") - dataframe["current"]) <= tenure
+        with self.destination.mutex:
+            self.destination.concat(valuations)
+            self.destination.unique(valuation_index)
+            if tenure is not None:
+                self.destination.where(function)
+            self.destination.sort("priority", reverse=True)
 
     @property
     def destination(self): return self.__destination
@@ -128,21 +128,22 @@ class HoldingWriter(Consumer, ABC):
     @property
     def priority(self): return self.__priority
     @property
-    def identify(self): return self.__identify
+    def identity(self): return self.__identity
 
 
 class HoldingReader(Producer, ABC):
-    def __init__(self, *args, source, **kwargs):
+    def __init__(self, *args, source, valuation, **kwargs):
         super().__init__(*args, **kwargs)
         self.__source = source
+        self.__valuation = valuation
 
     def execute(self, *args, **kwargs):
-        with self.source.mutex:
-            valuations = self.read(*args, **kwargs)
+        valuations = self.read(*args, **kwargs)
         assert isinstance(valuations, pd.DataFrame)
         if bool(valuations.empty):
             return
         valuations = self.parse(valuations, *args, **kwargs)
+        valuations = self.stocks(valuations, *args, **kwargs)
         holdings = self.holdings(valuations, *args, **kwargs)
         for (ticker, expire), dataframe in self.groupings(holdings, *args, **kwargs):
             contract = Contract(ticker, expire)
@@ -152,24 +153,32 @@ class HoldingReader(Producer, ABC):
     def read(self, *args, **kwargs):
         if not bool(self.source):
             return pd.DataFrame()
-        mask = self.source[:, "status"] == Variables.Status.PURCHASED
-        dataframe = self.source.where(mask)
-        self.source.remove(dataframe)
-        dataframe["quantity"] = 1
-        return dataframe
+        function = lambda status: lambda dataframe: dataframe["status"] == status
+        self.source.remove(function(Variables.Status.REJECTED))
+        accepted = self.source.remove(function(Variables.Status.ACCEPTED))
+        return accepted
 
-    @staticmethod
-    def parse(valuations, *args, **kwargs):
-        valuations = valuations.droplevel("scenario", axis=1)
-        columns = [column for column in holdings_header if column in valuations.columns]
-        valuations = valuations[columns + list(Variables.Securities)]
+    def parse(self, valuations, *args, **kwargs):
+        columns = set(valuations.columns) - ({"scenario"} | valuation_stacking[self.valuation])
+        valuations = valuations[list(columns)].droplevel("scenario", axis=1)
         return valuations
 
     @staticmethod
-    def holdings(securities, *args, **kwargs):
-        columns = [security for security in list(map(str, Variables.Securities)) if security in securities.columns]
-        contracts = [column for column in securities.columns if column not in columns]
-        dataframe = securities.melt(id_vars=contracts, value_vars=columns, var_name="security", value_name="strike")
+    def stocks(valuations, *args, **kwargs):
+        stocks = list(map(str, Variables.Securities.Stocks))
+        strategy = lambda cols: list(map(str, cols["strategy"].stocks))
+        function = lambda cols: {stock: cols["underlying"] if stock in strategy(cols) else np.NaN for stock in stocks}
+        stocks = valuations.apply(function, axis=1, result_type="expand")
+        valuations = pd.concat([valuations, stocks], axis=1)
+        return valuations
+
+    @staticmethod
+    def holdings(valuations, *args, **kwargs):
+        columns = [column for column in holdings_header if column in valuations.columns] + list(map(str, Variables.Securities))
+        valuations = valuations[columns]
+        securities = list(map(str, Variables.Securities))
+        contracts = [column for column in valuations.columns if column not in securities]
+        dataframe = valuations.melt(id_vars=contracts, value_vars=securities, var_name="security", value_name="strike")
         dataframe = dataframe.where(dataframe["strike"].notna()).dropna(how="all", inplace=False)
         dataframe["security"] = dataframe["security"].apply(Variables.Securities)
         dataframe["instrument"] = dataframe["security"].apply(lambda security: security.instrument)
@@ -179,14 +188,16 @@ class HoldingReader(Producer, ABC):
 
     @staticmethod
     def groupings(holdings, *args, **kwargs):
-        index = [column for column in holdings_header if column != "quantity"]
+        index = list(holdings.columns.values)
+        holdings["quantity"] = 1
         holdings = holdings.groupby(index, as_index=False, dropna=False, sort=False)["quantity"].sum()
         for (ticker, expire), dataframe in iter(holdings.groupby(["ticker", "expire"])):
             yield (ticker, expire), dataframe
 
     @property
     def source(self): return self.__source
-
+    @property
+    def valuation(self): return self.__valuation
 
 
 
