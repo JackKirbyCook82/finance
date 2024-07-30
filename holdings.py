@@ -14,7 +14,7 @@ from itertools import product, count
 
 from finance.variables import Variables, Contract
 from support.pipelines import Producer, Consumer
-from support.tables import Tables, Options
+from support.tables import Tables, Views
 from support.files import File
 
 __version__ = "1.0.0"
@@ -38,16 +38,30 @@ valuation_stacking = {Variables.Valuations.ARBITRAGE: {"apy", "npv", "cost"}}
 
 holdings_formats = {(lead, lag): lambda column: f"{column:.02f}" for lead, lag in product(["npv", "cost"], list(map(lambda scenario: str(scenario), Variables.Scenarios)))}
 holdings_formats.update({(lead, lag): lambda column: f"{column * 100:.02f}%" for lead, lag in product(["apy"], list(map(lambda scenario: str(scenario), Variables.Scenarios)))})
-holdings_formats.update({("priority", ""): lambda priority: f"{priority:.04f}", ("status", ""): lambda status: str(status)})
-holdings_options = Options.Dataframe(rows=20, columns=25, width=1000, formats=holdings_formats, numbers=lambda column: f"{column:.02f}")
+holdings_formats.update({("priority", ""): lambda priority: f"{priority * 100:.04f}%", ("status", ""): lambda status: str(status)})
+holdings_numbers = lambda column: f"{column:.02f}"
 
 
+class HoldingView(Views.Dataframe, rows=20, columns=30, width=250, formats=holdings_formats, numbers=holdings_numbers):
+    @staticmethod
+    def execute(*args, table, **kwargs):
+        assert isinstance(table, pd.DataFrame)
+        prospects = (table.status == Variables.Status.PROSPECT).sum()
+        accepted = (table.status == Variables.Status.ACCEPTED).sum()
+        rejected = (table.status == Variables.Status.REJECTED).sum()
+        low = (table.liquidity <= 3).sum()
+        middle = table.liquidity.isin([4, 5, 6, 7]).sum()
+        high = (table.liquidity >= 8).sum()
+        status = f"STATUS: Prospect[{prospects:.0f}], Accepted[{accepted:.0f}], Rejected[{rejected:.0f}]"
+        liquidity = f"LIQUID: Low[{low:.0f}], Middle[{middle:.0f}], High[{high:.0f}]"
+        apy = f"APY: {100 * table[('apy', Variables.Scenarios.MINIMUM)].min():.02f}% -> {100 * table[('apy', Variables.Scenarios.MAXIMUM)].max():.02f}%"
+        tau = f"TAU: {table[('tau', '')].min():.0f}# -> {table[('tau', '')].max():.0f}#"
+        return [status, liquidity, apy, tau]
+
+
+class HoldingTable(Tables.Dataframe, datatype=pd.DataFrame, tableview=HoldingView): pass
 class HoldingFile(File, variable=Variables.Datasets.HOLDINGS, header=holdings_header, **holdings_parameters): pass
 class HoldingFiles(object): Holding = HoldingFile
-
-
-class HoldingTable(Tables.Dataframe, datatype=pd.DataFrame, options=holdings_options):
-    pass
 
 
 class HoldingWriter(Consumer, ABC):
