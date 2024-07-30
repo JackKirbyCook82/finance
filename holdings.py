@@ -42,23 +42,7 @@ holdings_formats.update({("priority", ""): lambda priority: f"{priority * 100:.0
 holdings_numbers = lambda column: f"{column:.02f}"
 
 
-class HoldingView(Views.Dataframe, rows=20, columns=30, width=250, formats=holdings_formats, numbers=holdings_numbers):
-    @staticmethod
-    def execute(*args, table, **kwargs):
-        assert isinstance(table, pd.DataFrame)
-        prospects = (table.status == Variables.Status.PROSPECT).sum()
-        accepted = (table.status == Variables.Status.ACCEPTED).sum()
-        rejected = (table.status == Variables.Status.REJECTED).sum()
-        low = (table.liquidity <= 3).sum()
-        middle = table.liquidity.isin([4, 5, 6, 7]).sum()
-        high = (table.liquidity >= 8).sum()
-        status = f"STATUS: Prospect[{prospects:.0f}], Accepted[{accepted:.0f}], Rejected[{rejected:.0f}]"
-        liquidity = f"LIQUID: Low[{low:.0f}], Middle[{middle:.0f}], High[{high:.0f}]"
-        apy = f"APY: {100 * table[('apy', Variables.Scenarios.MINIMUM)].min():.02f}% -> {100 * table[('apy', Variables.Scenarios.MAXIMUM)].max():.02f}%"
-        tau = f"TAU: {table[('tau', '')].min():.0f}# -> {table[('tau', '')].max():.0f}#"
-        return [status, liquidity, apy, tau]
-
-
+class HoldingView(Views.Dataframe, rows=20, columns=30, width=250, formats=holdings_formats, numbers=holdings_numbers): pass
 class HoldingTable(Tables.Dataframe, datatype=pd.DataFrame, tableview=HoldingView): pass
 class HoldingFile(File, variable=Variables.Datasets.HOLDINGS, header=holdings_header, **holdings_parameters): pass
 class HoldingFiles(object): Holding = HoldingFile
