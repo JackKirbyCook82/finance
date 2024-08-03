@@ -36,9 +36,9 @@ holdings_header = ["ticker", "expire", "strike", "instrument", "option", "positi
 valuation_index = ["ticker", "expire", "strategy", "valuation"] + list(map(str, Variables.Securities.Options))
 valuation_stacking = {Variables.Valuations.ARBITRAGE: {"apy", "npv", "cost"}}
 
-holdings_formats = {(lead, lag): lambda column: f"{column:.02f}" for lead, lag in product(["npv", "cost"], list(map(lambda scenario: str(scenario), Variables.Scenarios)))}
-holdings_formats.update({(lead, lag): lambda column: f"{column * 100:.02f}%" for lead, lag in product(["apy"], list(map(lambda scenario: str(scenario), Variables.Scenarios)))})
-holdings_formats.update({("priority", ""): lambda priority: f"{priority * 100:.04f}%", ("status", ""): lambda status: str(status)})
+holdings_formats = {(lead, lag): lambda column: f"{column:.02f}" for lead, lag in product(["npv", "cost"], Variables.Scenarios)}
+holdings_formats.update({(lead, lag): lambda column: f"{column * 100:.02f}%" for lead, lag in product(["apy"], Variables.Scenarios)})
+holdings_formats.update({("priority", ""): lambda priority: f"{priority * 100:.02f}%", ("status", ""): lambda status: str(status)})
 holdings_numbers = lambda column: f"{column:.02f}"
 
 
@@ -111,6 +111,7 @@ class HoldingWriter(Consumer, ABC):
     def write(self, valuations, *args, tenure=None, **kwargs):
         function = lambda dataframe: (pd.to_datetime("now") - dataframe["current"]) <= tenure
         with self.destination.mutex:
+            valuations = valuations.set_index("tag", drop=False, inplace=False)
             self.destination.concat(valuations)
             self.destination.unique(valuation_index)
             if tenure is not None:
