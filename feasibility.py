@@ -24,6 +24,7 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
+feasibility_formatter = lambda self, *, query, elapsed, **kw: f"{str(self.title)}: {repr(self)}|{str(query[Variables.Querys.CONTRACT])}[{elapsed:.02f}s]"
 feasibility_index = ["ticker", "expire", "strike", "instrument", "option", "position"]
 feasibility_columns = ["current", "apy", "npv", "cost", "size", "underlying"]
 feasibility_options = list(map(str, Variables.Securities.Options))
@@ -52,8 +53,8 @@ class FeasibilityCalculation(Calculation, equation=FeasibilityEquation):
         yield equation.m(portfolios)
 
 
-class ExposureCalculator(Processor):
-    def execute(self, contents, *args, **kwargs):
+class ExposureCalculator(Processor, formatter=feasibility_formatter):
+    def processor(self, contents, *args, **kwargs):
         holdings = contents[Variables.Datasets.HOLDINGS]
         stocks = self.stocks(holdings, *args, **kwargs)
         options = self.options(holdings, *args, **kwargs)
@@ -112,13 +113,13 @@ class ExposureCalculator(Processor):
         return dataframe
 
 
-class FeasibilityCalculator(Processor):
+class FeasibilityCalculator(Processor, formatter=feasibility_formatter):
     def __init__(self, *args, valuation, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
         self.__calculation = FeasibilityCalculation(*args, **kwargs)
         self.__valuation = valuation
 
-    def execute(self, contents, *args, **kwargs):
+    def processor(self, contents, *args, **kwargs):
         valuations, exposures = contents[self.valuation], contents[Variables.Datasets.EXPOSURE]
         assert isinstance(valuations, pd.DataFrame) and isinstance(exposures, pd.DataFrame)
         valuations = self.valuations(valuations, *args, **kwargs)

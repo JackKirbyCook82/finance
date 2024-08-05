@@ -32,6 +32,7 @@ security_parsers = {"instrument": Variables.Instruments, "option": Variables.Opt
 security_formatters = {"instrument": int, "option": int, "position": int}
 security_types = {"ticker": str, "strike": np.float32, "price": np.float32, "underlying": np.float32, "size": np.float32, "volume": np.float32, "interest": np.float32}
 security_filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
+security_formatter = lambda self, *, query, elapsed, **kw: f"{str(self.title)}: {repr(self)}|{str(query[Variables.Querys.CONTRACT])}[{elapsed:.02f}s]"
 security_parameters = dict(datatype=pd.DataFrame, filename=security_filename, dates=security_dates, parsers=security_parsers, formatters=security_formatters, types=security_types)
 stock_header = ["current", "ticker", "instrument", "position", "price", "volume", "size"]
 option_header = ["current", "ticker", "expire", "instrument", "option", "position", "strike", "volume", "size", "interest"]
@@ -42,7 +43,7 @@ class OptionFile(File, variable=Variables.Instruments.OPTION, header=option_head
 class SecurityFiles(object): Stock = StockFile; Option = OptionFile
 
 
-class SecurityFilter(Filter, variables=[Variables.Instruments.STOCK, Variables.Instruments.OPTION]):
+class SecurityFilter(Filter, variables=[Variables.Instruments.STOCK, Variables.Instruments.OPTION], formatter=security_formatter):
     pass
 
 
@@ -100,14 +101,14 @@ class BlackScholesCalculation(Calculation, equation=BlackScholesEquation):
     def count(self, count): self.__count = count
 
 
-class SecurityCalculator(Processor):
+class SecurityCalculator(Processor, formatter=security_formatter):
     def __init__(self, *args, factor, size, volume=lambda cols: np.NaN, interest=lambda cols: np.NaN, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
         self.__calculation = BlackScholesCalculation(*args, **kwargs)
         self.__functions = dict(size=size, volume=volume, interest=interest)
         self.__factor = factor
 
-    def execute(self, contents, *args, current, **kwargs):
+    def processor(self, contents, *args, current, **kwargs):
         exposures, statistics = contents[Variables.Datasets.EXPOSURE], contents[Variables.Technicals.STATISTIC]
         assert isinstance(exposures, pd.DataFrame) and isinstance(statistics, pd.DataFrame) and isinstance(current, Datetime)
         statistics = statistics.where(statistics["date"] == pd.to_datetime(current))

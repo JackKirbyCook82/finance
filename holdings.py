@@ -9,7 +9,6 @@ Created on Thurs Jan 31 2024
 import logging
 import numpy as np
 import pandas as pd
-from abc import ABC
 from itertools import product, count
 
 from finance.variables import Variables, Contract
@@ -30,6 +29,7 @@ holdings_parsers = {"instrument": Variables.Instruments, "option": Variables.Opt
 holdings_formatters = {"instrument": int, "option": int, "position": int}
 holdings_types = {"ticker": str, "strike": np.float32, "quantity": np.int32}
 holdings_filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
+holdings_formatter = lambda self, *, query, elapsed, **kw: f"{str(self.title)}: {repr(self)}|{str(query[Variables.Querys.CONTRACT])}[{elapsed:.02f}s]"
 holdings_parameters = dict(datatype=pd.DataFrame, filename=holdings_filename, dates=holdings_dates, parsers=holdings_parsers, formatters=holdings_formatters, types=holdings_types)
 holdings_header = ["ticker", "expire", "strike", "instrument", "option", "position", "quantity", "underlying"]
 
@@ -48,7 +48,7 @@ class HoldingFile(File, variable=Variables.Datasets.HOLDINGS, header=holdings_he
 class HoldingFiles(object): Holding = HoldingFile
 
 
-class HoldingWriter(Consumer, ABC):
+class HoldingWriter(Consumer, formatter=holdings_formatter):
     def __init__(self, *args, destination, liquidity, priority, valuation, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
         self.__identity = count(1, step=1)
@@ -57,7 +57,7 @@ class HoldingWriter(Consumer, ABC):
         self.__liquidity = liquidity
         self.__priority = priority
 
-    def execute(self, contents, *args, **kwargs):
+    def consumer(self, contents, *args, **kwargs):
         contract, valuations = contents[Variables.Querys.CONTRACT], contents[self.valuation]
         assert isinstance(valuations, pd.DataFrame)
         if bool(valuations.empty):
@@ -130,13 +130,13 @@ class HoldingWriter(Consumer, ABC):
     def identity(self): return self.__identity
 
 
-class HoldingReader(Producer, ABC):
+class HoldingReader(Producer, formatter=holdings_formatter):
     def __init__(self, *args, source, valuation, **kwargs):
         super().__init__(*args, **kwargs)
         self.__source = source
         self.__valuation = valuation
 
-    def execute(self, *args, **kwargs):
+    def producer(self, *args, **kwargs):
         valuations = self.read(*args, **kwargs)
         assert isinstance(valuations, pd.DataFrame)
         if bool(valuations.empty):

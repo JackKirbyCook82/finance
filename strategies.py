@@ -24,6 +24,10 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
+strategy_formatter = lambda self, *, query, elapsed, **kw: f"{str(self.title)}: {repr(self)}|{str(query[Variables.Querys.CONTRACT])}[{elapsed:.02f}s]"
+strategy_index = ["ticker", "expire", "strike", "instrument", "option", "position"]
+
+
 class StrategyEquation(Equation):
     t = Variable("t", "current", np.datetime64, function=lambda tα, tβ: np.minimum(np.datetime64(tα, "ns"), np.datetime64(tβ, "ns")))
     q = Variable("q", "size", np.float32, function=lambda qα, qβ: np.minimum(qα, qβ))
@@ -85,13 +89,13 @@ class CollarLongCalculation(StrategyCalculation, strategy=Variables.Strategies.C
 class CollarShortCalculation(StrategyCalculation, strategy=Variables.Strategies.Collar.Short, equation=CollarShortEquation): pass
 
 
-class StrategyCalculator(Processor):
+class StrategyCalculator(Processor, formatter=strategy_formatter):
     def __init__(self, *args, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
         calculations = {variables["strategy"]: calculation for variables, calculation in ODict(list(StrategyCalculation)).items()}
         self.__calculations = {strategy: calculation(*args, **kwargs) for strategy, calculation in calculations.items()}
 
-    def execute(self, contents, *args, **kwargs):
+    def processor(self, contents, *args, **kwargs):
         options = contents[Variables.Instruments.OPTION]
         assert isinstance(options, pd.DataFrame)
         options = ODict(list(self.options(options, *args, **kwargs)))
@@ -118,7 +122,7 @@ class StrategyCalculator(Processor):
     def options(self, options, *args, **kwargs):
         if bool(options.empty):
             return
-        dataframe = options.set_index(["ticker", "expire", "strike", "instrument", "option", "position"], drop=True, inplace=False)
+        dataframe = options.set_index(strategy_index, drop=True, inplace=False)
         datasets = xr.Dataset.from_dataframe(dataframe)
         datasets = datasets.squeeze("ticker").squeeze("expire")
         for instrument, option, position in product(datasets["instrument"].values, datasets["option"].values, datasets["position"].values):

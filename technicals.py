@@ -26,6 +26,7 @@ __license__ = "MIT License"
 technical_dates = {"date": "%Y%m%d"}
 technical_types = {"ticker": str, "high": np.float32, "low": np.float32, "open": np.float32, "close": np.float32, "price": np.float32, "volume": np.float32, "trend": np.float32, "volatility": np.float32, "oscillator": np.float32}
 technical_filename = lambda query: str(query.ticker).upper()
+technical_formatter = lambda self, *, query, elapsed, **kw: f"{str(self.title)}: {repr(self)}|{str(query[Variables.Querys.SYMBOL])}[{elapsed:.02f}s]"
 technical_parameters = dict(datatype=pd.DataFrame, filename=technical_filename, dates=technical_dates, types=technical_types)
 bars_header = ["date", "ticker", "high", "low", "open", "close", "price", "volume"]
 statistic_header = ["date", "ticker", "price", "trend", "volatility"]
@@ -66,13 +67,13 @@ class StochasticCalculation(TechnicalCalculation, technical=Variables.Technicals
         yield equation.xk(bars)
 
 
-class TechnicalCalculator(Processor):
+class TechnicalCalculator(Processor, formatter=technical_formatter):
     def __init__(self, *args, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
         calculations = {variables["technical"]: calculation for variables, calculation in ODict(list(TechnicalCalculation)).items()}
         self.__calculations = {technical: calculation(*args, **kwargs) for technical, calculation in calculations.items()}
 
-    def execute(self, contents, *args, **kwargs):
+    def processor(self, contents, *args, **kwargs):
         bars = contents[Variables.Technicals.BARS]
         assert isinstance(bars, pd.DataFrame)
         technicals = ODict(list(self.calculate(bars, *args, **kwargs)))

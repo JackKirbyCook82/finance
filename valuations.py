@@ -33,6 +33,7 @@ valuation_parsers = {"strategy": Variables.Strategies, "valuation": Variables.Va
 valuation_formatters = {"strategy": int, "valuation": int, "scenario": int}
 valuation_types = {"ticker": str, "apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.float32, "tau": np.int32} | {security: np.float32 for security in list(map(str, Variables.Securities))}
 valuation_filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
+valuation_formatter = lambda self, *, query, elapsed, **kw: f"{str(self.title)}: {repr(self)}|{str(query[Variables.Querys.CONTRACT])}[{elapsed:.02f}s]"
 valuation_parameters = dict(datatype=pd.DataFrame, filename=valuation_filename, dates=valuation_dates, parsers=valuation_parsers, formatters=valuation_formatters, types=valuation_types)
 valuation_index = ["ticker", "expire", "strategy", "valuation", "scenario"] + list(map(str, Variables.Securities.Options))
 valuation_columns = ["current", "apy", "npv", "cost", "size", "tau", "underlying"]
@@ -42,7 +43,7 @@ class ArbitrageFile(File, variable=Variables.Valuations.ARBITRAGE, header=valuat
 class ValuationFiles(object): Arbitrage = ArbitrageFile
 
 
-class ValuationFilter(Filter, variables=[Variables.Valuations.ARBITRAGE]):
+class ValuationFilter(Filter, variables=[Variables.Valuations.ARBITRAGE], formatter=valuation_formatter):
     @kwargsdispatcher("variable")
     def filter(self, dataframe, *args, variable, **kwargs): raise ValueError(variable)
     @filter.register.value(Variables.Valuations.ARBITRAGE)
@@ -96,14 +97,14 @@ class MinimumArbitrageCalculation(ArbitrageCalculation, scenario=Variables.Scena
 class MaximumArbitrageCalculation(ArbitrageCalculation, scenario=Variables.Scenarios.MAXIMUM, equation=MaximumArbitrageEquation): pass
 
 
-class ValuationCalculator(Processor):
+class ValuationCalculator(Processor, formatter=valuation_formatter):
     def __init__(self, *args, valuation, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
         calculations = {variables["scenario"]: calculation for variables, calculation in ODict(list(ValuationCalculation)).items() if variables["valuation"] is kwargs.get(calculation, Variables.Valuations.ARBITRAGE)}
         self.__calculations = {scenario: calculation(*args, **kwargs) for scenario, calculation in calculations.items()}
         self.__valuation = valuation
 
-    def execute(self, contents, *args, **kwargs):
+    def processor(self, contents, *args, **kwargs):
         strategies = contents[Variables.Datasets.STRATEGY]
         assert isinstance(strategies, list) and all([isinstance(dataset, xr.Dataset) for dataset in strategies])
         valuations = ODict(list(self.calculate(strategies, *args, **kwargs)))
