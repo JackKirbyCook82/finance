@@ -29,7 +29,7 @@ holdings_parsers = {"instrument": Variables.Instruments, "option": Variables.Opt
 holdings_formatters = {"instrument": int, "option": int, "position": int}
 holdings_types = {"ticker": str, "strike": np.float32, "quantity": np.int32}
 holdings_filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
-holdings_formatter = lambda self, *, query, elapsed, **kw: f"{str(self.title)}: {repr(self)}|{str(query[Variables.Querys.CONTRACT])}[{elapsed:.02f}s]"
+holdings_formatter = lambda self, *, contents, elapsed, **kw: f"{str(self.title)}: {repr(self)}|{str(contents[Variables.Querys.CONTRACT])}[{elapsed:.02f}s]"
 holdings_parameters = dict(datatype=pd.DataFrame, filename=holdings_filename, dates=holdings_dates, parsers=holdings_parsers, formatters=holdings_formatters, types=holdings_types)
 holdings_header = ["ticker", "expire", "strike", "instrument", "option", "position", "quantity", "underlying"]
 

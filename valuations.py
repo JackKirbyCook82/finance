@@ -33,7 +33,7 @@ valuation_parsers = {"strategy": Variables.Strategies, "valuation": Variables.Va
 valuation_formatters = {"strategy": int, "valuation": int, "scenario": int}
 valuation_types = {"ticker": str, "apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.float32, "tau": np.int32} | {security: np.float32 for security in list(map(str, Variables.Securities))}
 valuation_filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
-valuation_formatter = lambda self, *, query, elapsed, **kw: f"{str(self.title)}: {repr(self)}|{str(query[Variables.Querys.CONTRACT])}[{elapsed:.02f}s]"
+valuation_formatter = lambda self, *, contents, elapsed, **kw: f"{str(self.title)}: {repr(self)}|{str(contents[Variables.Querys.CONTRACT])}[{elapsed:.02f}s]"
 valuation_parameters = dict(datatype=pd.DataFrame, filename=valuation_filename, dates=valuation_dates, parsers=valuation_parsers, formatters=valuation_formatters, types=valuation_types)
 valuation_index = ["ticker", "expire", "strategy", "valuation", "scenario"] + list(map(str, Variables.Securities.Options))
 valuation_columns = ["current", "apy", "npv", "cost", "size", "tau", "underlying"]

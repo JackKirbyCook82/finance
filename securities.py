@@ -32,7 +32,7 @@ security_parsers = {"instrument": Variables.Instruments, "option": Variables.Opt
 security_formatters = {"instrument": int, "option": int, "position": int}
 security_types = {"ticker": str, "strike": np.float32, "price": np.float32, "underlying": np.float32, "size": np.float32, "volume": np.float32, "interest": np.float32}
 security_filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
-security_formatter = lambda self, *, query, elapsed, **kw: f"{str(self.title)}: {repr(self)}|{str(query[Variables.Querys.CONTRACT])}[{elapsed:.02f}s]"
+security_formatter = lambda self, *, contents, elapsed, **kw: f"{str(self.title)}: {repr(self)}|{str(contents[Variables.Querys.CONTRACT])}[{elapsed:.02f}s]"
 security_parameters = dict(datatype=pd.DataFrame, filename=security_filename, dates=security_dates, parsers=security_parsers, formatters=security_formatters, types=security_types)
 stock_header = ["current", "ticker", "instrument", "position", "price", "volume", "size"]
 option_header = ["current", "ticker", "expire", "instrument", "option", "position", "strike", "volume", "size", "interest"]
