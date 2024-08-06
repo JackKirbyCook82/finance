@@ -24,7 +24,7 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-feasibility_formatter = lambda self, *, contents, elapsed, **kw: f"{str(self.title)}: {repr(self)}|{str(contents[Variables.Querys.CONTRACT])}[{elapsed:.02f}s]"
+feasibility_formatter = lambda self, *, results, elapsed, **kw: f"{str(self.title)}: {repr(self)}|{str(results[Variables.Querys.CONTRACT])}[{elapsed:.02f}s]"
 feasibility_index = ["ticker", "expire", "strike", "instrument", "option", "position"]
 feasibility_columns = ["current", "apy", "npv", "cost", "size", "underlying"]
 feasibility_options = list(map(str, Variables.Securities.Options))

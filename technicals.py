@@ -26,7 +26,7 @@ __license__ = "MIT License"
 technical_dates = {"date": "%Y%m%d"}
 technical_types = {"ticker": str, "high": np.float32, "low": np.float32, "open": np.float32, "close": np.float32, "price": np.float32, "volume": np.float32, "trend": np.float32, "volatility": np.float32, "oscillator": np.float32}
 technical_filename = lambda query: str(query.ticker).upper()
-technical_formatter = lambda self, *, contents, elapsed, **kw: f"{str(self.title)}: {repr(self)}|{str(contents[Variables.Querys.SYMBOL])}[{elapsed:.02f}s]"
+technical_formatter = lambda self, *, results, elapsed, **kw: f"{str(self.title)}: {repr(self)}|{str(results[Variables.Querys.SYMBOL])}[{elapsed:.02f}s]"
 technical_parameters = dict(datatype=pd.DataFrame, filename=technical_filename, dates=technical_dates, types=technical_types)
 bars_header = ["date", "ticker", "high", "low", "open", "close", "price", "volume"]
 statistic_header = ["date", "ticker", "price", "trend", "volatility"]
