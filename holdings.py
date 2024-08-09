@@ -154,6 +154,7 @@ class HoldingReader(Producer, formatter=reading_formatter):
         if not bool(self.source):
             return pd.DataFrame()
         function = lambda status: lambda dataframe: dataframe["status"] == status
+        self.source.remove(function(Variables.Status.ABANDONED))
         self.source.remove(function(Variables.Status.REJECTED))
         accepted = self.source.remove(function(Variables.Status.ACCEPTED))
         return accepted

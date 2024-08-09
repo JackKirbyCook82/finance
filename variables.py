@@ -169,7 +169,7 @@ class Scenarios(members=["MINIMUM", "MAXIMUM"], metaclass=Variables): pass
 class Valuations(members=["ARBITRAGE"], metaclass=Variables): pass
 class Datasets(members=["STRATEGY", "HOLDINGS", "EXPOSURE"], metaclass=Variables): pass
 class Querys(members=["SYMBOL", "CONTRACT"], metaclass=Variables): pass
-class Status(members=["PROSPECT", "PENDING", "REJECTED", "ACCEPTED"], metaclass=Variables): pass
+class Status(members=["PROSPECT", "PENDING", "ABANDONED", "REJECTED", "ACCEPTED"], metaclass=Variables): pass
 
 class Markets(members=["EMPTY", "BEAR", "BULL"], start=0, metaclass=Variables): pass
 class Instruments(members=["EMPTY", "STOCK", "OPTION"], start=0, metaclass=Variables): pass
