@@ -52,7 +52,7 @@ class BlackScholesEquation(Equation):
     so = Variable("so", "ratio", np.float32, function=lambda xo, k: np.log(xo / k))
     yo = Variable("yo", "price", np.float32, function=lambda nzr, nzl, F: (nzr - nzl) * F)
     Θ = Variable("Θ", "theta", np.int32, function=lambda i: + int(Variables.Theta(str(i))))
-    Φ = Variable("Φ", "phi", np.int32, function=lambda j: - int(Variables.Phi(str(j))))
+    Φ = Variable("Φ", "phi", np.int32, function=lambda j: + int(Variables.Phi(str(j))))
     nzr = Variable("nzr", "right", np.float32, function=lambda xo, zr, Θ: xo * Θ * norm.cdf(Θ * zr))
     nzl = Variable("nzl", "left", np.float32, function=lambda k, zl, Θ, D: k * Θ * D * norm.cdf(Θ * zl))
     zr = Variable("zr", "right", np.float32, function=lambda α, β: α + β)
@@ -62,7 +62,7 @@ class BlackScholesEquation(Equation):
     A = Variable("A", "alpha", np.float32, function=lambda τ, ρ: np.multiply(τ, ρ))
     B = Variable("B", "beta", np.float32, function=lambda τ, δ: np.multiply(np.sqrt(τ), δ))
     D = Variable("D", "discount", np.float32, function=lambda τ, ρ: np.power(np.exp(τ * ρ), -1))
-    F = Variable("F", "factor", np.float32, function=lambda Φ, ε: 1 - (Φ * ε))
+    F = Variable("F", "factor", np.float32, function=lambda Φ, ε: 1 + (Φ * ε))
 
     tτ = Variable("tτ", "expire", np.datetime64, position=0, locator="expire")
     to = Variable("to", "current", np.datetime64, position=0, locator="date")
@@ -76,25 +76,26 @@ class BlackScholesEquation(Equation):
 
 
 class BlackScholesCalculation(Calculation, equation=BlackScholesEquation):
-    def __init__(self, *args, factor=lambda count: 0 * count, **kwargs):
+    def __init__(self, *args, factor=lambda count: (0 * count).astype(np.float32), **kwargs):
         assert callable(factor)
         super().__init__(*args, **kwargs)
-        self.__factor = factor
+        self.__function = factor
         self.__count = 0
 
     def execute(self, exposures, *args, discount, factor, **kwargs):
         invert = lambda position: Variables.Positions(int(Variables.Positions.LONG) + int(Variables.Positions.SHORT) - int(position))
         equation = self.equation(*args, **kwargs)
-        factor = self.factor(count=self.count)
         yield from iter([exposures["ticker"], exposures["expire"]])
         yield from iter([exposures["instrument"], exposures["option"], exposures["position"].apply(invert), exposures["strike"]])
-        yield equation.yo(exposures, discount=discount, factor=factor)
+        yield equation.yo(exposures, discount=discount, factor=self.factor)
         yield equation.xo(exposures)
         yield equation.to(exposures)
         self.count += 1
 
     @property
-    def factor(self): return self.__factor
+    def factor(self): self.function(self.count)
+    @property
+    def function(self): return self.__function
     @property
     def count(self): return self.__count
     @count.setter

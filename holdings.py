@@ -34,28 +34,29 @@ writing_formatter = lambda self, *, elapsed, **kw: f"{str(self.title)}: {repr(se
 holdings_parameters = dict(datatype=pd.DataFrame, filename=holdings_filename, dates=holdings_dates, parsers=holdings_parsers, formatters=holdings_formatters, types=holdings_types)
 holdings_header = ["ticker", "expire", "strike", "instrument", "option", "position", "quantity", "underlying"]
 
-valuation_index = ["ticker", "expire", "strategy", "valuation"] + list(map(str, Variables.Securities.Options))
+valuation_index = ["ticker", "expire", "strategy"] + list(map(str, Variables.Securities.Options))
 valuation_stacking = {Variables.Valuations.ARBITRAGE: {"apy", "npv", "cost"}}
+valuation_order = ["ticker", "expire", "valuation", "strategy"] + list(map(str, Variables.Securities.Options))
+valuation_order = valuation_order + [(lead, lag) for lead, lag in product(["apy", "npv", "cost"], Variables.Scenarios)] + ["size", "status"]
+valuation_formats = {(lead, lag): lambda column: f"{column:.02f}" for lead, lag in product(["npv", "cost"], Variables.Scenarios)}
+valuation_formats.update({(lead, lag): lambda column: f"{column * 100:.02f}%" if np.isfinite(column) else "InF" for lead, lag in product(["apy"], Variables.Scenarios)})
+valuation_formats.update({"priority": lambda priority: f"{priority * 100:.02f}%" if np.isfinite(priority) else "InF"})
+valuation_formats.update({"status": lambda status: str(status), "size": lambda size: f"{size:.02f}"})
+valuation_numbers = lambda column: f"{column:.02f}"
 
-holdings_formats = {(lead, lag): lambda column: f"{column:.02f}" for lead, lag in product(["npv", "cost"], Variables.Scenarios)}
-holdings_formats.update({(lead, lag): lambda column: f"{column * 100:.02f}%" for lead, lag in product(["apy"], Variables.Scenarios)})
-holdings_formats.update({("priority", ""): lambda priority: f"{priority * 100:.02f}%", ("status", ""): lambda status: str(status)})
-holdings_numbers = lambda column: f"{column:.02f}"
 
-
-class HoldingView(Views.Dataframe, rows=20, columns=30, width=250, formats=holdings_formats, numbers=holdings_numbers): pass
+class HoldingView(Views.Dataframe, rows=20, columns=30, width=250, formats=valuation_formats, numbers=valuation_numbers, order=valuation_order): pass
 class HoldingTable(Tables.Dataframe, datatype=pd.DataFrame, tableview=HoldingView): pass
 class HoldingFile(File, variable=Variables.Datasets.HOLDINGS, header=holdings_header, **holdings_parameters): pass
 class HoldingFiles(object): Holding = HoldingFile
 
 
 class HoldingWriter(Consumer, formatter=writing_formatter):
-    def __init__(self, *args, destination, liquidity, priority, valuation, name=None, **kwargs):
+    def __init__(self, *args, destination, priority, valuation, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
         self.__identity = count(1, step=1)
         self.__destination = destination
         self.__valuation = valuation
-        self.__liquidity = liquidity
         self.__priority = priority
 
     def consumer(self, contents, *args, **kwargs):
@@ -91,7 +92,6 @@ class HoldingWriter(Consumer, formatter=writing_formatter):
         if tenure is not None:
             current = (pd.to_datetime("now") - valuations["current"]) <= self.tenure
             valuations = valuations.where(current).dropna(how="all", inplace=False)
-        valuations["liquidity"] = valuations.apply(self.liquidity, axis=1)
         return valuations
 
     def prioritize(self, valuations, *args, **kwargs):
@@ -123,8 +123,6 @@ class HoldingWriter(Consumer, formatter=writing_formatter):
     def destination(self): return self.__destination
     @property
     def valuation(self): return self.__valuation
-    @property
-    def liquidity(self): return self.__liquidity
     @property
     def priority(self): return self.__priority
     @property
@@ -185,13 +183,13 @@ class HoldingReader(Producer, formatter=reading_formatter):
         dataframe["instrument"] = dataframe["security"].apply(lambda security: security.instrument)
         dataframe["option"] = dataframe["security"].apply(lambda security: security.option)
         dataframe["position"] = dataframe["security"].apply(lambda security: security.position)
-        return dataframe
+        dataframe["quantity"] = 1
+        return dataframe[holdings_header]
 
     @staticmethod
     def groupings(holdings, *args, **kwargs):
-        index = list(holdings.columns.values)
-        holdings["quantity"] = 1
-        holdings = holdings.groupby(index, as_index=False, dropna=False, sort=False)["quantity"].sum()
+        index = set(holdings.columns) - {"quantity"}
+        holdings = holdings.groupby(list(index), as_index=False, dropna=False, sort=False)["quantity"].sum()
         for (ticker, expire), dataframe in iter(holdings.groupby(["ticker", "expire"])):
             yield (ticker, expire), dataframe
 
