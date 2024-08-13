@@ -32,7 +32,7 @@ holdings_filename = lambda query: "_".join([str(query.ticker).upper(), str(query
 reading_formatter = lambda self, *, results, elapsed, **kw: f"{str(self.title)}: {repr(self)}|{str(results[Variables.Querys.CONTRACT])}[{elapsed:.02f}s]"
 writing_formatter = lambda self, *, elapsed, **kw: f"{str(self.title)}: {repr(self)}[{elapsed:.02f}s]"
 holdings_parameters = dict(datatype=pd.DataFrame, filename=holdings_filename, dates=holdings_dates, parsers=holdings_parsers, formatters=holdings_formatters, types=holdings_types)
-holdings_header = ["ticker", "expire", "strike", "instrument", "option", "position", "quantity", "underlying"]
+holdings_header = ["ticker", "expire", "strike", "instrument", "option", "position", "quantity"]
 
 valuation_index = ["ticker", "expire", "strategy"] + list(map(str, Variables.Securities.Options))
 valuation_stacking = {Variables.Valuations.ARBITRAGE: {"apy", "npv", "cost"}}
@@ -183,13 +183,12 @@ class HoldingReader(Producer, formatter=reading_formatter):
         dataframe["instrument"] = dataframe["security"].apply(lambda security: security.instrument)
         dataframe["option"] = dataframe["security"].apply(lambda security: security.option)
         dataframe["position"] = dataframe["security"].apply(lambda security: security.position)
-        dataframe["quantity"] = 1
         return dataframe[holdings_header]
 
     @staticmethod
     def groupings(holdings, *args, **kwargs):
-        index = set(holdings.columns) - {"quantity"}
-        holdings = holdings.groupby(list(index), as_index=False, dropna=False, sort=False)["quantity"].sum()
+        holdings["quantity"] = 1
+        holdings = holdings.groupby(holdings_header, as_index=False, dropna=False, sort=False).sum()
         for (ticker, expire), dataframe in iter(holdings.groupby(["ticker", "expire"])):
             yield (ticker, expire), dataframe
 

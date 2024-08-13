@@ -49,24 +49,27 @@ class SecurityFilter(Filter, variables=[Variables.Instruments.STOCK, Variables.I
 
 class BlackScholesEquation(Equation):
     τ = Variable("τ", "tau", np.int32, function=lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
-    so = Variable("so", "ratio", np.float32, function=lambda xo, k: np.log(xo / k))
-    yo = Variable("yo", "price", np.float32, function=lambda nzr, nzl, F: (nzr - nzl) * F)
+    so = Variable("so", "so", np.float32, function=lambda xo, k: np.log(xo / k))
+    yo = Variable("yo", "price", np.float32, function=lambda zx, zk, F: (zx - zk) * F)
+
+    zx = Variable("zx", "zx", np.float32, function=lambda xo, Θ, N1: xo * Θ * N1)
+    zk = Variable("zk", "zk", np.float32, function=lambda k, Θ, N2, D: k * Θ * D * N2)
+    d1 = Variable("d1", "d1", np.float32, function=lambda so, α, β: (so + α) / β)
+    d2 = Variable("d2", "d2", np.float32, function=lambda d1, β: d1 - β)
+    N1 = Variable("N1", "N1", np.float32, function=lambda d1, Θ: norm.cdf(Θ * d1))
+    N2 = Variable("N2", "N2", np.float32, function=lambda d2, Θ: norm.cdf(Θ * d2))
+
+    α = Variable("α", "α", np.float32, function=lambda τ, δ, ρ: (ρ + np.divide(np.power(δ * np.sqrt(252), 2), 2)) * τ / 252)
+    β = Variable("β", "β", np.float32, function=lambda τ, δ: δ * np.sqrt(252) * np.sqrt(τ / 252))
+    D = Variable("D", "discount", np.float32, function=lambda τ, ρ: np.exp(-ρ * τ / 252))
+    F = Variable("F", "factor", np.float32, function=lambda Φ, ε: 1 + (Φ * ε))
     Θ = Variable("Θ", "theta", np.int32, function=lambda i: + int(Variables.Theta(str(i))))
     Φ = Variable("Φ", "phi", np.int32, function=lambda j: + int(Variables.Phi(str(j))))
-    nzr = Variable("nzr", "right", np.float32, function=lambda xo, zr, Θ: xo * Θ * norm.cdf(Θ * zr))
-    nzl = Variable("nzl", "left", np.float32, function=lambda k, zl, Θ, D: k * Θ * D * norm.cdf(Θ * zl))
-    zr = Variable("zr", "right", np.float32, function=lambda α, β: α + β)
-    zl = Variable("zl", "left", np.float32, function=lambda α, β: α - β)
-    α = Variable("α", "alpha", np.float32, function=lambda so, A, B: (so / B) + (A / B))
-    β = Variable("β", "beta", np.float32, function=lambda B: (B ** 2) / (B * 2))
-    A = Variable("A", "alpha", np.float32, function=lambda τ, ρ: np.multiply(τ, ρ))
-    B = Variable("B", "beta", np.float32, function=lambda τ, δ: np.multiply(np.sqrt(τ), δ))
-    D = Variable("D", "discount", np.float32, function=lambda τ, ρ: np.power(np.exp(τ * ρ), -1))
-    F = Variable("F", "factor", np.float32, function=lambda Φ, ε: 1 + (Φ * ε))
 
     tτ = Variable("tτ", "expire", np.datetime64, position=0, locator="expire")
     to = Variable("to", "current", np.datetime64, position=0, locator="date")
     xo = Variable("xo", "underlying", np.float32, position=0, locator="price")
+
     δ = Variable("δ", "volatility", np.float32, position=0, locator="volatility")
     i = Variable("i", "option", Variables.Options, position=0, locator="option")
     j = Variable("j", "position", Variables.Positions, position=0, locator="position")
@@ -76,13 +79,14 @@ class BlackScholesEquation(Equation):
 
 
 class BlackScholesCalculation(Calculation, equation=BlackScholesEquation):
-    def __init__(self, *args, factor=lambda count: (0 * count).astype(np.float32), **kwargs):
-        assert callable(factor)
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.__function = factor
+        function = kwargs.get("factor", lambda count: 0 * count)
+        callable(function)
+        self.__function = function
         self.__count = 0
 
-    def execute(self, exposures, *args, discount, factor, **kwargs):
+    def execute(self, exposures, *args, discount, **kwargs):
         invert = lambda position: Variables.Positions(int(Variables.Positions.LONG) + int(Variables.Positions.SHORT) - int(position))
         equation = self.equation(*args, **kwargs)
         yield from iter([exposures["ticker"], exposures["expire"]])
@@ -93,7 +97,7 @@ class BlackScholesCalculation(Calculation, equation=BlackScholesEquation):
         self.count += 1
 
     @property
-    def factor(self): self.function(self.count)
+    def factor(self): return self.function(self.count)
     @property
     def function(self): return self.__function
     @property
@@ -103,11 +107,10 @@ class BlackScholesCalculation(Calculation, equation=BlackScholesEquation):
 
 
 class SecurityCalculator(Processor, formatter=security_formatter):
-    def __init__(self, *args, factor, size, volume=lambda cols: np.NaN, interest=lambda cols: np.NaN, name=None, **kwargs):
+    def __init__(self, *args, size, volume=lambda cols: np.NaN, interest=lambda cols: np.NaN, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
         self.__calculation = BlackScholesCalculation(*args, **kwargs)
         self.__functions = dict(size=size, volume=volume, interest=interest)
-        self.__factor = factor
 
     def processor(self, contents, *args, current, **kwargs):
         exposures, statistics = contents[Variables.Datasets.EXPOSURE], contents[Variables.Technicals.STATISTIC]
@@ -121,7 +124,7 @@ class SecurityCalculator(Processor, formatter=security_formatter):
         yield contents | options
 
     def calculate(self, exposures, *args, **kwargs):
-        dataframe = self.calculation(exposures, *args, factor=self.factor, **kwargs)
+        dataframe = self.calculation(exposures, *args, **kwargs)
         for column, function in self.functions.items():
             dataframe[column] = dataframe.apply(function, axis=1)
         return dataframe
@@ -130,8 +133,6 @@ class SecurityCalculator(Processor, formatter=security_formatter):
     def calculation(self): return self.__calculation
     @property
     def functions(self): return self.__functions
-    @property
-    def factor(self): return self.__factor
 
 
 
