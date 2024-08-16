@@ -130,7 +130,7 @@ class ValuationCalculator(Operations.Processor):
             dataframes = [dataframe.reset_index(drop=False, inplace=False) for dataframe in dataframes]
             if not bool(dataframes) or all([bool(dataframe.empty) for dataframe in dataframes]):
                 continue
-            dataframe = pd.concat(dataframes, axis=0)
+            dataframe = pd.concat(dataframes, axis=0).reset_index(drop=True, inplace=False)
             yield scenario, dataframe
 
     @property

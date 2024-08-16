@@ -14,15 +14,12 @@ from functools import total_ordering
 from datetime import date as Date
 from datetime import datetime as Datetime
 from collections import namedtuple as ntuple
-from collections import OrderedDict as ODict
 
-import support.pipelines as pipelines
-import support.filtering as filtering
 from support.dispatchers import typedispatcher
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["DateRange", "Variables", "Pipelines", "Securities", "Strategies", "Symbol", "Contract"]
+__all__ = ["DateRange", "Variables", "Securities", "Strategies", "Symbol", "Contract"]
 __copyright__ = "Copyright 2023,SE Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
@@ -172,7 +169,7 @@ class Omega(members=["BEAR", "NEUTRAL", "BULL"], start=-1, metaclass=Variables):
 class Technicals(members=["BARS", "STATISTIC", "STOCHASTIC"], metaclass=Variables): pass
 class Scenarios(members=["MINIMUM", "MAXIMUM"], metaclass=Variables): pass
 class Valuations(members=["ARBITRAGE"], metaclass=Variables): pass
-class Datasets(members=["STRATEGY", "HOLDINGS", "EXPOSURE"], metaclass=Variables): pass
+class Datasets(members=["STRATEGY", "HOLDINGS", "EXPOSURE", "ALLOCATION"], metaclass=Variables): pass
 class Querys(members=["SYMBOL", "CONTRACT"], metaclass=Variables): pass
 class Status(members=["PROSPECT", "PENDING", "ABANDONED", "REJECTED", "ACCEPTED"], metaclass=Variables): pass
 

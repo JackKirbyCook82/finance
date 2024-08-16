@@ -24,6 +24,7 @@ __logger__ = logging.getLogger(__name__)
 class ExposureCalculator(Operations.Processor):
     def processor(self, contents, *args, **kwargs):
         holdings = contents[Variables.Datasets.HOLDINGS]
+        assert isinstance(holdings, pd.DataFrame)
         stocks = self.stocks(holdings, *args, **kwargs)
         options = self.options(holdings, *args, **kwargs)
         virtuals = self.virtuals(stocks, *args, **kwargs)
@@ -78,6 +79,7 @@ class ExposureCalculator(Operations.Processor):
         dataframe = dataframe.where(dataframe["quantity"] != 0).dropna(how="all", inplace=False)
         dataframe["position"] = dataframe["quantity"].apply(enumerical)
         dataframe["quantity"] = dataframe["quantity"].apply(np.abs)
+        dataframe["portfolio"] = 0
         return dataframe
 
 
