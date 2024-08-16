@@ -6,6 +6,7 @@ Created on Weds Jul 19 2023
 
 """
 
+import logging
 import numpy as np
 import pandas as pd
 import xarray as xr
@@ -14,18 +15,15 @@ from itertools import product
 from collections import OrderedDict as ODict
 
 from finance.variables import Variables
+from finance.operations import Operations
 from support.calculations import Variable, Equation, Calculation
-from support.pipelines import Processor
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
 __all__ = ["StrategyCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
-
-
-strategy_formatter = lambda self, *, results, elapsed, **kw: f"{str(self.title)}: {repr(self)}|{str(results[Variables.Querys.CONTRACT])}[{elapsed:.02f}s]"
-strategy_index = ["ticker", "expire", "strike", "instrument", "option", "position"]
+__logger__ = logging.getLogger(__name__)
 
 
 class StrategyEquation(Equation):
@@ -89,11 +87,12 @@ class CollarLongCalculation(StrategyCalculation, strategy=Variables.Strategies.C
 class CollarShortCalculation(StrategyCalculation, strategy=Variables.Strategies.Collar.Short, equation=CollarShortEquation): pass
 
 
-class StrategyCalculator(Processor, formatter=strategy_formatter):
+class StrategyCalculator(Operations.Processor):
     def __init__(self, *args, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
         calculations = {variables["strategy"]: calculation for variables, calculation in ODict(list(StrategyCalculation)).items()}
         self.__calculations = {strategy: calculation(*args, **kwargs) for strategy, calculation in calculations.items()}
+        self.__index = ["ticker", "expire", "strike", "instrument", "option", "position"]
 
     def processor(self, contents, *args, **kwargs):
         options = contents[Variables.Instruments.OPTION]
@@ -104,7 +103,7 @@ class StrategyCalculator(Processor, formatter=strategy_formatter):
         if not bool(strategies):
             return
         strategies = {Variables.Datasets.STRATEGY: strategies}
-        yield contents | strategies
+        yield contents | dict(strategies)
 
     def calculate(self, options, *args, **kwargs):
         function = lambda **mapping: {key: xr.Variable(key, [value]).squeeze(key) for key, value in mapping.items()}
@@ -122,7 +121,7 @@ class StrategyCalculator(Processor, formatter=strategy_formatter):
     def options(self, options, *args, **kwargs):
         if bool(options.empty):
             return
-        dataframe = options.set_index(strategy_index, drop=True, inplace=False)
+        dataframe = options.set_index(self.index, drop=True, inplace=False)
         datasets = xr.Dataset.from_dataframe(dataframe)
         datasets = datasets.squeeze("ticker").squeeze("expire")
         for instrument, option, position in product(datasets["instrument"].values, datasets["option"].values, datasets["position"].values):
@@ -139,6 +138,8 @@ class StrategyCalculator(Processor, formatter=strategy_formatter):
     def empty(dataarray): return not bool(np.count_nonzero(~np.isnan(dataarray.values)))
     @property
     def calculations(self): return self.__calculations
+    @property
+    def index(self): return self.__index
 
 
 

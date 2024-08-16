@@ -12,7 +12,7 @@ import pandas as pd
 from itertools import product, count
 
 from finance.variables import Variables, Contract
-from support.pipelines import Producer, Consumer
+from finance.operations import Operations
 from support.tables import Tables, Views
 from support.files import File
 
@@ -29,8 +29,6 @@ holdings_parsers = {"instrument": Variables.Instruments, "option": Variables.Opt
 holdings_formatters = {"instrument": int, "option": int, "position": int}
 holdings_types = {"ticker": str, "strike": np.float32, "quantity": np.int32}
 holdings_filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
-reading_formatter = lambda self, *, results, elapsed, **kw: f"{str(self.title)}: {repr(self)}|{str(results[Variables.Querys.CONTRACT])}[{elapsed:.02f}s]"
-writing_formatter = lambda self, *, elapsed, **kw: f"{str(self.title)}: {repr(self)}[{elapsed:.02f}s]"
 holdings_parameters = dict(datatype=pd.DataFrame, filename=holdings_filename, dates=holdings_dates, parsers=holdings_parsers, formatters=holdings_formatters, types=holdings_types)
 holdings_header = ["ticker", "expire", "strike", "instrument", "option", "position", "quantity"]
 
@@ -51,7 +49,7 @@ class HoldingFile(File, variable=Variables.Datasets.HOLDINGS, header=holdings_he
 class HoldingFiles(object): Holding = HoldingFile
 
 
-class HoldingWriter(Consumer, formatter=writing_formatter):
+class HoldingWriter(Operations.Consumer):
     def __init__(self, *args, destination, priority, valuation, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
         self.__identity = count(1, step=1)
@@ -129,7 +127,7 @@ class HoldingWriter(Consumer, formatter=writing_formatter):
     def identity(self): return self.__identity
 
 
-class HoldingReader(Producer, formatter=reading_formatter):
+class HoldingReader(Operations.Producer):
     def __init__(self, *args, source, valuation, **kwargs):
         super().__init__(*args, **kwargs)
         self.__source = source
@@ -146,7 +144,7 @@ class HoldingReader(Producer, formatter=reading_formatter):
         for (ticker, expire), dataframe in self.groupings(holdings, *args, **kwargs):
             contract = Contract(ticker, expire)
             holdings = {Variables.Querys.CONTRACT: contract, Variables.Datasets.HOLDINGS: dataframe}
-            yield holdings
+            yield dict(holdings)
 
     def read(self, *args, **kwargs):
         if not bool(self.source):
@@ -183,11 +181,11 @@ class HoldingReader(Producer, formatter=reading_formatter):
         dataframe["instrument"] = dataframe["security"].apply(lambda security: security.instrument)
         dataframe["option"] = dataframe["security"].apply(lambda security: security.option)
         dataframe["position"] = dataframe["security"].apply(lambda security: security.position)
+        dataframe["quantity"] = 1
         return dataframe[holdings_header]
 
     @staticmethod
     def groupings(holdings, *args, **kwargs):
-        holdings["quantity"] = 1
         holdings = holdings.groupby(holdings_header, as_index=False, dropna=False, sort=False).sum()
         for (ticker, expire), dataframe in iter(holdings.groupby(["ticker", "expire"])):
             yield (ticker, expire), dataframe

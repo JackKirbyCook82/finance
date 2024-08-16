@@ -6,14 +6,15 @@ Created on Fri Apr 19 2024
 
 """
 
+import logging
 import numpy as np
 import pandas as pd
 from abc import ABC
 from collections import OrderedDict as ODict
 
 from finance.variables import Variables
+from finance.operations import Operations
 from support.calculations import Variable, Equation, Calculation
-from support.pipelines import Processor
 from support.files import File
 
 __version__ = "1.0.0"
@@ -21,12 +22,12 @@ __author__ = "Jack Kirby Cook"
 __all__ = ["TechnicalFiles", "TechnicalCalculator"]
 __copyright__ = "Copyright 2024, Jack Kirby Cook"
 __license__ = "MIT License"
+__logger__ = logging.getLogger(__name__)
 
 
 technical_dates = {"date": "%Y%m%d"}
 technical_types = {"ticker": str, "high": np.float32, "low": np.float32, "open": np.float32, "close": np.float32, "price": np.float32, "volume": np.float32, "trend": np.float32, "volatility": np.float32, "oscillator": np.float32}
 technical_filename = lambda query: str(query.ticker).upper()
-technical_formatter = lambda self, *, results, elapsed, **kw: f"{str(self.title)}: {repr(self)}|{str(results[Variables.Querys.SYMBOL])}[{elapsed:.02f}s]"
 technical_parameters = dict(datatype=pd.DataFrame, filename=technical_filename, dates=technical_dates, types=technical_types)
 bars_header = ["date", "ticker", "high", "low", "open", "close", "price", "volume"]
 statistic_header = ["date", "ticker", "price", "trend", "volatility"]
@@ -67,7 +68,7 @@ class StochasticCalculation(TechnicalCalculation, technical=Variables.Technicals
         yield equation.xk(bars)
 
 
-class TechnicalCalculator(Processor, formatter=technical_formatter):
+class TechnicalCalculator(Operations.Processor):
     def __init__(self, *args, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
         calculations = {variables["technical"]: calculation for variables, calculation in ODict(list(TechnicalCalculation)).items()}
@@ -77,7 +78,7 @@ class TechnicalCalculator(Processor, formatter=technical_formatter):
         bars = contents[Variables.Technicals.BARS]
         assert isinstance(bars, pd.DataFrame)
         technicals = ODict(list(self.calculate(bars, *args, **kwargs)))
-        yield contents | technicals
+        yield contents | dict(technicals)
 
     def calculate(self, bars, *args, **kwargs):
         for technical, calculation in self.calculations.items():

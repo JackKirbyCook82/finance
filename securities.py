@@ -6,7 +6,6 @@ Created on Weds Jul 19 2023
 
 """
 
-
 import logging
 import numpy as np
 import pandas as pd
@@ -14,9 +13,8 @@ from scipy.stats import norm
 from datetime import datetime as Datetime
 
 from finance.variables import Variables
+from finance.operations import Operations
 from support.calculations import Variable, Equation, Calculation
-from support.pipelines import Processor
-from support.filtering import Filter
 from support.files import File
 
 __version__ = "1.0.0"
@@ -32,7 +30,6 @@ security_parsers = {"instrument": Variables.Instruments, "option": Variables.Opt
 security_formatters = {"instrument": int, "option": int, "position": int}
 security_types = {"ticker": str, "strike": np.float32, "price": np.float32, "underlying": np.float32, "size": np.float32, "volume": np.float32, "interest": np.float32}
 security_filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
-security_formatter = lambda self, *, results, elapsed, **kw: f"{str(self.title)}: {repr(self)}|{str(results[Variables.Querys.CONTRACT])}[{elapsed:.02f}s]"
 security_parameters = dict(datatype=pd.DataFrame, filename=security_filename, dates=security_dates, parsers=security_parsers, formatters=security_formatters, types=security_types)
 stock_header = ["current", "ticker", "instrument", "position", "price", "volume", "size"]
 option_header = ["current", "ticker", "expire", "instrument", "option", "position", "strike", "volume", "size", "interest"]
@@ -43,14 +40,14 @@ class OptionFile(File, variable=Variables.Instruments.OPTION, header=option_head
 class SecurityFiles(object): Stock = StockFile; Option = OptionFile
 
 
-class SecurityFilter(Filter, variables=[Variables.Instruments.STOCK, Variables.Instruments.OPTION], formatter=security_formatter):
+class SecurityFilter(Operations.Filter, variables=[Variables.Instruments.STOCK, Variables.Instruments.OPTION]):
     pass
 
 
 class BlackScholesEquation(Equation):
     τ = Variable("τ", "tau", np.int32, function=lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
     so = Variable("so", "so", np.float32, function=lambda xo, k: np.log(xo / k))
-    yo = Variable("yo", "price", np.float32, function=lambda zx, zk, F: (zx - zk) * F)
+    yo = Variable("yo", "price", np.float32, function=lambda zx, zk, Φ, ε: (zx - zk) * (1 + (Φ * ε)))
 
     zx = Variable("zx", "zx", np.float32, function=lambda xo, Θ, N1: xo * Θ * N1)
     zk = Variable("zk", "zk", np.float32, function=lambda k, Θ, N2, D: k * Θ * D * N2)
@@ -59,10 +56,10 @@ class BlackScholesEquation(Equation):
     N1 = Variable("N1", "N1", np.float32, function=lambda d1, Θ: norm.cdf(Θ * d1))
     N2 = Variable("N2", "N2", np.float32, function=lambda d2, Θ: norm.cdf(Θ * d2))
 
-    α = Variable("α", "α", np.float32, function=lambda τ, δ, ρ: (ρ + np.divide(np.power(δ * np.sqrt(252), 2), 2)) * τ / 252)
-    β = Variable("β", "β", np.float32, function=lambda τ, δ: δ * np.sqrt(252) * np.sqrt(τ / 252))
+    α = Variable("α", "alpha", np.float32, function=lambda τ, δ, ρ: (ρ + np.divide(np.power(δ * np.sqrt(252), 2), 2)) * τ / 252)
+    β = Variable("β", "beta", np.float32, function=lambda τ, δ: δ * np.sqrt(252) * np.sqrt(τ / 252))
+    ε = Variable("ε", "epsilon", np.float32, function=lambda ω: 0.5 * np.sin(ω * 2 * np.pi / 5) + 0.05 * ω)
     D = Variable("D", "discount", np.float32, function=lambda τ, ρ: np.exp(-ρ * τ / 252))
-    F = Variable("F", "factor", np.float32, function=lambda Φ, ε: 1 + (Φ * ε))
     Θ = Variable("Θ", "theta", np.int32, function=lambda i: + int(Variables.Theta(str(i))))
     Φ = Variable("Φ", "phi", np.int32, function=lambda j: + int(Variables.Phi(str(j))))
 
@@ -75,38 +72,21 @@ class BlackScholesEquation(Equation):
     j = Variable("j", "position", Variables.Positions, position=0, locator="position")
     k = Variable("k", "strike", np.float32, position=0, locator="strike")
     ρ = Variable("ρ", "discount", np.float32, position="discount")
-    ε = Variable("ε", "factor", np.float32, position="factor")
+    ω = Variable("ω", "offset", np.float32, position="offset")
 
 
 class BlackScholesCalculation(Calculation, equation=BlackScholesEquation):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        function = kwargs.get("factor", lambda count: 0 * count)
-        callable(function)
-        self.__function = function
-        self.__count = 0
-
-    def execute(self, exposures, *args, discount, **kwargs):
+    def execute(self, exposures, *args, discount, offset=0, **kwargs):
         invert = lambda position: Variables.Positions(int(Variables.Positions.LONG) + int(Variables.Positions.SHORT) - int(position))
         equation = self.equation(*args, **kwargs)
         yield from iter([exposures["ticker"], exposures["expire"]])
         yield from iter([exposures["instrument"], exposures["option"], exposures["position"].apply(invert), exposures["strike"]])
-        yield equation.yo(exposures, discount=discount, factor=self.factor)
+        yield equation.yo(exposures, discount=discount, offset=offset)
         yield equation.xo(exposures)
         yield equation.to(exposures)
-        self.count += 1
-
-    @property
-    def factor(self): return self.function(self.count)
-    @property
-    def function(self): return self.__function
-    @property
-    def count(self): return self.__count
-    @count.setter
-    def count(self, count): self.__count = count
 
 
-class SecurityCalculator(Processor, formatter=security_formatter):
+class SecurityCalculator(Operations.Processor):
     def __init__(self, *args, size, volume=lambda cols: np.NaN, interest=lambda cols: np.NaN, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
         self.__calculation = BlackScholesCalculation(*args, **kwargs)
@@ -133,7 +113,6 @@ class SecurityCalculator(Processor, formatter=security_formatter):
     def calculation(self): return self.__calculation
     @property
     def functions(self): return self.__functions
-
 
 
 

@@ -6,6 +6,7 @@ Created on Sun Jan 28 2024
 
 """
 
+import logging
 import pandas as pd
 from abc import ABC, ABCMeta
 from enum import Enum, EnumMeta
@@ -13,14 +14,18 @@ from functools import total_ordering
 from datetime import date as Date
 from datetime import datetime as Datetime
 from collections import namedtuple as ntuple
+from collections import OrderedDict as ODict
 
+import support.pipelines as pipelines
+import support.filtering as filtering
 from support.dispatchers import typedispatcher
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["DateRange", "Variables", "Securities", "Strategies", "Symbol", "Contract"]
+__all__ = ["DateRange", "Variables", "Pipelines", "Securities", "Strategies", "Symbol", "Contract"]
 __copyright__ = "Copyright 2023,SE Jack Kirby Cook"
 __license__ = "MIT License"
+__logger__ = logging.getLogger(__name__)
 
 
 class DateRange(ntuple("DateRange", "minimum maximum")):
@@ -230,6 +235,5 @@ class Variables:
     Omega = Omega
     Theta = Theta
     Phi = Phi
-
 
 

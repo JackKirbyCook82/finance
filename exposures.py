@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 
 from finance.variables import Variables
-from support.pipelines import Processor
+from finance.operations import Operations
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -21,8 +21,7 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-exposure_formatter = lambda self, *, results, elapsed, **kw: f"{str(self.title)}: {repr(self)}|{str(results[Variables.Querys.CONTRACT])}[{elapsed:.02f}s]"
-class ExposureCalculator(Processor, formatter=exposure_formatter):
+class ExposureCalculator(Operations.Processor):
     def processor(self, contents, *args, **kwargs):
         holdings = contents[Variables.Datasets.HOLDINGS]
         stocks = self.stocks(holdings, *args, **kwargs)
@@ -30,10 +29,10 @@ class ExposureCalculator(Processor, formatter=exposure_formatter):
         virtuals = self.virtuals(stocks, *args, **kwargs)
         securities = pd.concat([options, virtuals], axis=0)
         securities = securities.reset_index(drop=True, inplace=False)
-        exposures = self.holdings(securities, *args, *kwargs)
+        exposures = self.exposures(securities, *args, *kwargs)
         exposures = exposures.reset_index(drop=True, inplace=False)
         exposures = {Variables.Datasets.EXPOSURE: exposures}
-        yield contents | exposures
+        yield contents | dict(exposures)
 
     @staticmethod
     def stocks(holdings, *args, **kwargs):
@@ -69,7 +68,7 @@ class ExposureCalculator(Processor, formatter=exposure_formatter):
         return virtuals
 
     @staticmethod
-    def holdings(securities, *args, **kwargs):
+    def exposures(securities, *args, **kwargs):
         index = [value for value in securities.columns if value not in ("position", "quantity")]
         numerical = lambda position: 2 * int(bool(position is Variables.Positions.LONG)) - 1
         enumerical = lambda value: Variables.Positions.LONG if value > 0 else Variables.Positions.SHORT
