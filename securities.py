@@ -12,7 +12,7 @@ import pandas as pd
 from scipy.stats import norm
 from collections import OrderedDict as ODict
 
-from finance.variables import Pipelines, Variables
+from finance.variables import Pipelines, Variables, Querys
 from support.calculations import Variable, Equation, Calculation
 from support.files import File
 
@@ -24,51 +24,41 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-class Variables:
-    contract = ["ticker", "expire"]
-    dates  = {"current": "%Y%m%d-%H%M", "expire": "%Y%m%d"}
+class Parameters:
+    types = {"ticker": str, "strike": np.float32, "price": np.float32, "underlying": np.float32, "size": np.float32, "volume": np.float32, "interest": np.float32}
     parsers = {"instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}
     formatters = {"instrument": int, "option": int, "position": int}
-    types = {"ticker": str, "strike": np.float32, "price": np.float32, "underlying": np.float32, "size": np.float32, "volume": np.float32, "interest": np.float32}
+    dates = {"current": "%Y%m%d-%H%M", "expire": "%Y%m%d"}
     filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
-    parameters = dict(datatype=pd.DataFrame, filename=filename, dates=dates, parsers=parsers, formatters=formatters, types=types)
+    datatype = pd.DataFrame
 
 class Headers:
     options = ["ticker", "expire", "instrument", "option", "position", "strike", "volume", "size", "interest", "current"]
     stocks = ["ticker", "instrument", "position", "price", "volume", "size", "current"]
 
 
-contract_variables =
-dimensions_variables = {"instrument": False, "option": False, "position": True, "strike": False}
-date_variables =
-security_parsers =
-security_formatters =
-security_types =
-security_filename =
-security_parameters =
-option_header =
-stock_header =
-
-
-class StockFile(File, variable=Variables.Instruments.STOCK, header=stock_header, **security_parameters): pass
-class OptionFile(File, variable=Variables.Instruments.OPTION, header=option_header, **security_parameters): pass
+class StockFile(File, variable=Variables.Instruments.STOCK, header=Headers.stocks, **dict(Parameters)): pass
+class OptionFile(File, variable=Variables.Instruments.OPTION, header=Headers.options, **dict(Parameters)): pass
 class SecurityFiles(object): Stock = StockFile; Option = OptionFile
 
 
-class SecurityFilter(Operations.Filter):
+class SecurityFilter(Pipelines.Filter):
     def processor(self, contents, *args, **kwargs):
-        securities = ODict(list(self.securities(contents, *args, **kwargs)))
+        contract = contents[Variables.Querys.CONTRACT]
+        assert isinstance(contract, Querys.Contract)
+        parameters = dict(contract=contract)
+        securities = ODict(list(self.calculate(contents, *args, **parameters, **kwargs)))
         if not bool(securities): return
         yield contents | securities
 
-    def securities(self, contents, *args, **kwargs):
-        contract = contents[Variables.Querys.CONTRACT]
-        for security in list(Variables.Instruments):
-            if not bool(security): continue
-            securities = self.calculate(contents, *args, contract=contract, **kwargs)
+    def calculate(self, contents, *args, **kwargs):
+        for variable in list(Variables.Instruments):
+            if not bool(variable): continue
+            securities = contents[variable]
+            securities = self.filter(securities, *args, **kwargs)
             securities = securities.reset_index(drop=True, inplace=False)
             if bool(securities.empty): continue
-            yield security, securities
+            yield variable, securities
 
 
 class BlackScholesEquation(Equation):
@@ -106,8 +96,8 @@ class BlackScholesCalculation(Calculation, equation=BlackScholesEquation):
     def execute(self, exposures, *args, discount, offset=0, **kwargs):
         invert = lambda position: Variables.Positions(int(Variables.Positions.LONG) + int(Variables.Positions.SHORT) - int(position))
         equation = self.equation(*args, **kwargs)
-        yield from iter([exposures[scope] for scope in security_scope])
-        yield from iter([exposures[dimension].apply(invert) if inverted else exposures[dimension] for dimension, inverted in security_dimensions.items()])
+        yield from iter([exposures["ticker"], exposures["expire"]])
+        yield from iter([exposures["instrument"], exposures["option"], exposures["position"].apply(invert), exposures["strike"]])
         yield equation.yo(exposures, discount=discount, offset=offset)
         yield equation.xo(exposures)
         yield equation.to(exposures)
@@ -120,26 +110,28 @@ class SecurityCalculator(Pipelines.Processor, title="Calculated"):
         self.__calculation = {variable: calculations(*args, **kwargs) for variable, calculation in calculations.items()}
         self.__functions = dict(size=size, volume=volume, interest=interest)
 
-#    def processor(self, contents, *args, **kwargs):
-#        exposures, statistics = contents[Variables.Datasets.EXPOSURE], contents[Variables.Technicals.STATISTIC]
-#        assert isinstance(exposures, pd.DataFrame) and isinstance(statistics, pd.DataFrame)
-#        exposures = self.exposures(exposures, statistics, *args, **kwargs)
-#        options = self.calculate(exposures, *args, **kwargs)
-#        if bool(options.empty): return
-#        yield contents | {Variables.Instruments.OPTION: options}
+    def processor(self, contents, *args, **kwargs):
+        exposures, statistics = contents[Variables.Datasets.EXPOSURE], contents[Variables.Technicals.STATISTIC]
+        assert isinstance(exposures, pd.DataFrame) and isinstance(statistics, pd.DataFrame)
+        exposures = self.exposures(exposures, statistics, *args, **kwargs)
+        securities = ODict(list(self.calculate(exposures, *args, **kwargs)))
+        if bool(securities.empty): return
+        yield contents | securities
 
-#    def calculate(self, exposures, *args, **kwargs):
-#        function = lambda cols: {key: value(cols[key]) for key, value in self.functions.items()}
-#        options = self.calculation(exposures, *args, **kwargs)
-#        dataframe = options.apply(function, axis=1, result_type="expand")
-#        options = pd.concat([options, dataframe], axis=1)
-#        return options
+    def calculate(self, exposures, *args, **kwargs):
+        for variable, calculation in self.calculation.items():
+            pricing = calculation(exposures, *args, **kwargs)
+            if bool(pricing.empty): continue
+            function = lambda cols: {key: value(cols[key]) for key, value in self.functions.items()}
+            sizing = pricing.apply(function, axis=1, result_type="expand")
+            securities = pd.concat([pricing, sizing], axis=1)
+            yield variable, securities
 
-#    @staticmethod
-#    def exposures(exposures, statistics, *args, current, **kwargs):
-#        statistics = statistics.where(statistics["date"] == pd.to_datetime(current))
-#        exposures = pd.merge(exposures, statistics, how="inner", on="ticker")
-#        return exposures
+    @staticmethod
+    def exposures(exposures, statistics, *args, current, **kwargs):
+        statistics = statistics.where(statistics["date"] == pd.to_datetime(current))
+        exposures = pd.merge(exposures, statistics, how="inner", on="ticker")
+        return exposures
 
     @property
     def calculation(self): return self.__calculation

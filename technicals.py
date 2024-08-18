@@ -24,20 +24,24 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-class Namespace:
-    Types = {"ticker": str, "high": np.float32, "low": np.float32, "open": np.float32, "close": np.float32, "price": np.float32, "volume": np.float32, "trend": np.float32, "volatility": np.float32, "oscillator": np.float32}
-    Dates = {"date": "%Y%m%d"}
-    Filename = lambda query: str(query.ticker).upper()
-    Parameters = dict(datatype=pd.DataFrame, filename=Filename, dates=Dates, types=Types)
-    class Headers:
-        Stochastic = ["date", "ticker", "price", "oscillator"]
-        Statistic = ["date", "ticker", "price", "trend", "volatility"]
-        Bars = ["date", "ticker", "high", "low", "open", "close", "price", "volume"]
+class Parameters:
+    bars = {"ticker": str, "volume": np.int64} | {column: np.float32 for column in ("price", "open", "close", "high", "low")}
+    stochastic = {"trend": np.float32, "volatility": np.float32}
+    statistic = {"oscillator": np.float32}
+    types = bars | statistic | stochastic
+    dates = {"date": "%Y%m%d"}
+    filename = lambda query: str(query.ticker).upper()
+    datatype = pd.DataFrame
+
+class Headers:
+    stochastic = ["date", "ticker", "price", "oscillator"]
+    statistic = ["date", "ticker", "price", "trend", "volatility"]
+    bars = ["date", "ticker", "high", "low", "open", "close", "price", "volume"]
 
 
-class BarsFile(File, variable=Namespace.Technicals.BARS, header=Namespace.Headers.Bars, **Namespace.Parameters): pass
-class StatisticFile(File, variable=Namespace.Technicals.STATISTIC, header=Namespace.Headers.Statistic, **Namespace.Parameters): pass
-class StochasticFile(File, variable=Namespace.Technicals.STOCHASTIC, header=Namespace.Headers.Stochastic, **Namespace.Parameters): pass
+class BarsFile(File, variable=Variables.Technicals.BARS, header=Headers.bars, **dict(Parameters)): pass
+class StatisticFile(File, variable=Variables.Technicals.STATISTIC, header=Headers.statistic, **dict(Parameters)): pass
+class StochasticFile(File, variable=Variables.Technicals.STOCHASTIC, header=Headers.stochastic, **dict(Parameters)): pass
 class TechnicalFiles(object): Bars = BarsFile; Statistic = StatisticFile; Stochastic = StochasticFile
 
 
@@ -78,13 +82,15 @@ class TechnicalCalculator(Pipelines.Processor, title="Calculated"):
     def processor(self, contents, *args, **kwargs):
         bars = contents[Variables.Technicals.BARS]
         assert isinstance(bars, pd.DataFrame)
-        update = ODict(list(self.calculate(bars, *args, **kwargs)))
-        yield contents | update
+        technicals = ODict(list(self.calculate(bars, *args, **kwargs)))
+        if not bool(technicals): return
+        yield contents | technicals
 
     def calculate(self, bars, *args, **kwargs):
         for variable, calculation in self.calculations.items():
-            dataframe = calculation(bars, *args, **kwargs)
-            yield variable, dataframe
+            technical = calculation(bars, *args, **kwargs)
+            if bool(technical.empty): continue
+            yield variable, technical
 
     @property
     def calculations(self): return self.__calculations

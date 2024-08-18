@@ -15,8 +15,7 @@ from functools import reduce
 from itertools import product
 from collections import OrderedDict as ODict
 
-from finance.variables import Variables
-from finance.operations import Operations
+from finance.variables import Variables, Pipelines
 from support.calculations import Variable, Equation, Calculation
 
 __version__ = "1.0.0"
@@ -27,9 +26,9 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-strategy_scope = ["ticker", "expire"]
-strategy_dimensions = ["instrument", "option", "position"]
-strategy_index = ["ticker", "expire", "strike", "instrument", "option", "position"]
+class Axes:
+    security = ["instrument", "option", "position"]
+    contract = ["ticker", "expire"]
 
 
 class StrategyEquation(Equation):
@@ -93,25 +92,31 @@ class CollarLongCalculation(StrategyCalculation, strategy=Variables.Strategies.C
 class CollarShortCalculation(StrategyCalculation, strategy=Variables.Strategies.Collar.Short, equation=CollarShortEquation): pass
 
 
-class StrategyCalculator(Operations.Processor):
+class StrategyCalculator(Pipelines.Processor):
     def __init__(self, *args, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
         calculations = {variables["strategy"]: calculation for variables, calculation in ODict(list(StrategyCalculation)).items()}
         self.__calculations = {strategy: calculation(*args, **kwargs) for strategy, calculation in calculations.items()}
+        self.__variables = lambda **mapping: {key: xr.Variable(key, [value]).squeeze(key) for key, value in mapping.items()}
 
     def processor(self, contents, *args, **kwargs):
         options = contents[Variables.Instruments.OPTION]
         assert isinstance(options, pd.DataFrame)
         options = ODict(list(self.options(options, *args, **kwargs)))
-        strategies = list(self.calculate(options, *args, **kwargs))
+        strategies = ODict(list(self.calculate(options, *args, **kwargs)))
         if not bool(strategies): return
-        yield contents | {Variables.Datasets.STRATEGY: strategies}
+        yield contents | strategies
 
     def calculate(self, options, *args, **kwargs):
-        function = lambda **mapping: {key: xr.Variable(key, [value]).squeeze(key) for key, value in mapping.items()}
+        variable = Variables.Datasets.STRATEGY
+        strategies = self.strategies(options, *args, **kwargs)
+        if not bool(strategies): return
+        yield variable, strategies
+
+    def strategies(self, options, *args, **kwargs):
         for strategy, calculation in self.calculations.items():
             if not all([option in options.keys() for option in list(strategy.options)]): continue
-            variables = function(strategy=strategy)
+            variables = self.variables(strategy=strategy)
             datasets = {option: options[option] for option in list(strategy.options)}
             strategies = calculation(datasets, *args, **kwargs)
             if self.empty(strategies["size"]): continue
@@ -120,24 +125,23 @@ class StrategyCalculator(Operations.Processor):
 
     def options(self, options, *args, **kwargs):
         if bool(options.empty): return
-        options = options.set_index(strategy_index, drop=True, inplace=False)
+        options = options.set_index(Axes.contract + Axes.security + ["strike"], drop=True, inplace=False)
         options = xr.Dataset.from_dataframe(options)
-        options = reduce(lambda content, scope: content.squeeze(scope), strategy_scope, options)
-        generator = product(*[options[dimension].values for dimension in strategy_dimensions])
-        for dimensions in generator:
-            dataset = options.sel(indexers={key: value for key, value in zip(strategy_dimensions, dimensions)})
-            dataset = dataset.drop_vars(strategy_dimensions, errors="ignore")
+        options = reduce(lambda content, axis: content.squeeze(axis), Axes.contract, options)
+        for values in product(*[options[axis].values for axis in Axes.security]):
+            dataset = options.sel(indexers={key: value for key, value in zip(Axes.security, values)})
+            dataset = dataset.drop_vars(Axes.security, errors="ignore")
             if self.empty(dataset["size"]): continue
-            security = Variables.Securities[dimensions]
-            dataset = dataset.rename({"strike": str(security)})
-            dataset["strike"] = dataset[str(security)]
-            yield security, dataset
+            variable = Variables.Securities[values]
+            dataset = dataset.rename({"strike": str(variable)})
+            dataset["strike"] = dataset[str(variable)]
+            yield variable, dataset
 
     @staticmethod
     def empty(dataarray): return not bool(np.count_nonzero(~np.isnan(dataarray.values)))
     @property
     def calculations(self): return self.__calculations
-
-
+    @property
+    def variables(self): return self.__variables
 
 

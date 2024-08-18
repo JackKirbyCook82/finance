@@ -13,8 +13,7 @@ import xarray as xr
 from abc import ABC
 from collections import OrderedDict as ODict
 
-from finance.variables import Variables
-from finance.operations import Operations
+from finance.variables import Variables, Pipelines
 from support.calculations import Variable, Equation, Calculation
 from support.files import File
 
@@ -53,12 +52,11 @@ class ArbitrageFile(File, variable=Variables.Valuations.ARBITRAGE, header=valuat
         dataframe = dataframe.reset_index(drop=False, inplace=False)
         return dataframe
 
-
 class ValuationFiles(object):
     Arbitrage = ArbitrageFile
 
 
-class ValuationFilter(Operations.Filter):
+class ValuationFilter(Pipelines.Filter):
     def __init__(self, *args, valuation, **kwargs):
         super().__init__(*args, **kwargs)
         self.__valuation = valuation
@@ -115,7 +113,7 @@ class MinimumArbitrageCalculation(ArbitrageCalculation, scenario=Variables.Scena
 class MaximumArbitrageCalculation(ArbitrageCalculation, scenario=Variables.Scenarios.MAXIMUM, equation=MaximumArbitrageEquation): pass
 
 
-class ValuationCalculator(Operations.Processor):
+class ValuationCalculator(Pipelines.Processor):
     def __init__(self, *args, valuation, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
         calculations = {variables["scenario"]: calculation for variables, calculation in ODict(list(ValuationCalculation)).items() if variables["valuation"] is valuation}
