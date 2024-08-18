@@ -9,6 +9,8 @@ Created on Fri May 17 2024
 import logging
 import numpy as np
 import pandas as pd
+import xarray as xr
+from collections import OrderedDict as ODict
 
 from finance.variables import Variables
 from finance.operations import Operations
@@ -45,21 +47,81 @@ class StabilityCalculation(Calculation, equation=StabilityEquation):
 
 
 class StabilityCalculator(Operations.Processor):
-    def __init__(self, *args, name=None, **kwargs):
+    def __init__(self, *args, valuation, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
         self.__calculation = StabilityCalculation(*args, **kwargs)
+        self.__valuation = valuation
 
     def processor(self, contents, *args, **kwargs):
-        exposures = contents[Variables.Datasets.EXPOSURE]
-        allocations = contents[Variables.Datasets.ALLOCATION]
-        assert isinstance(exposures, pd.DataFrame) and isinstance(allocations, pd.DataFrame)
+        valuations, exposures, allocations = contents[self.valuation], contents[Variables.Datasets.EXPOSURE], contents[Variables.Datasets.ALLOCATION]
+        assert all([isinstance(dataframe, pd.DataFrame) for dataframe in (valuations, exposures, allocations)])
+        exposures = self.exposures(exposures, *args, **kwargs)
+        allocations = ODict(list(self.allocations(allocations, *args, **kwargs)))
+        portfolios = list(self.portfolios(exposures, allocations, *args, **kwargs))
+        portfolios = xr.concat(portfolios, join="outer", fill_value=0, dim="portfolio")
+        portfolios = portfolios.stack({"holdings": ["strike", "option", "position"]}).to_dataset()
+        portfolios = self.underlying(portfolios, *args, **kwargs)
+        stability = ODict(list(self.calculate(portfolios, *args, **kwargs)))
+        stability = xr.Dataset(stability).to_dataframe()
+        stability["stable"] = (stability["bear"] == 0) & (stability["bull"] == 0)
+        valuations = self.valuations(valuations, stability, *args, **kwargs)
+        valuations = {self.valuation: valuations}
+        yield contents | dict(valuations)
 
-        print(exposures)
-        print(allocations)
+    def calculate(self, portfolios, *args, **kwargs):
+        stability = self.calculation(portfolios, *args, **kwargs)
+        stability = stability.sum(dim="holdings")
+        yield "maximum", stability["value"].max(dim="underlying").drop_vars("instrument")
+        yield "minimum", stability["value"].min(dim="underlying").drop_vars("instrument")
+        yield "bull", stability["trend"].isel(underlying=0).drop_vars(["underlying", "instrument"])
+        yield "bear", stability["trend"].isel(underlying=-1).drop_vars(["underlying", "instrument"])
+
+    @staticmethod
+    def exposures(exposures, *args, **kwargs):
+        index = [column for column in exposures.columns if column != "quantity"]
+        exposures = exposures.set_index(index, drop=True, inplace=False).squeeze()
+        exposures = xr.DataArray.from_series(exposures).fillna(0)
+        exposures = exposures.squeeze("ticker").squeeze("expire").squeeze("instrument")
+        return exposures
+
+    @staticmethod
+    def allocations(allocations, *args, **kwargs):
+        for portfolio, dataframe in allocations.groupby("portfolio"):
+            dataframe = dataframe.drop(columns="portfolio", inplace=False)
+            index = [column for column in dataframe.columns if column != "quantity"]
+            dataframe = dataframe.set_index(index, drop=True, inplace=False).squeeze()
+            dataframe = xr.DataArray.from_series(dataframe).fillna(0)
+            dataframe = dataframe.squeeze("ticker").squeeze("expire").squeeze("instrument")
+            yield portfolio, dataframe
+
+    @staticmethod
+    def portfolios(exposures, allocations, *args, **kwargs):
+        function = lambda dataarray: xr.align(dataarray, exposures, fill_value=0, join="outer")[0]
+        yield exposures.assign_coords(portfolio=0)
+        for portfolio, allocation in allocations.items():
+            allocation = function(allocation)
+            allocation = allocation.assign_coords(portfolio=portfolio)
+            yield allocation
+
+    @staticmethod
+    def underlying(portfolios, *args, **kwargs):
+        underlying = np.unique(portfolios["strike"].values)
+        underlying = np.sort(np.concatenate([underlying - 0.001, underlying + 0.001]))
+        portfolios["underlying"] = underlying
+        return portfolios
+
+    @staticmethod
+    def valuations(valuations, stability, *args, **kwargs):
+
+
+        print(valuations)
+        print(stability)
         raise Exception()
 
     @property
     def calculation(self): return self.__calculation
+    @property
+    def valuation(self): return self.__valuation
 
 
 

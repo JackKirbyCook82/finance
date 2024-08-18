@@ -79,7 +79,6 @@ class ExposureCalculator(Operations.Processor):
         dataframe = dataframe.where(dataframe["quantity"] != 0).dropna(how="all", inplace=False)
         dataframe["position"] = dataframe["quantity"].apply(enumerical)
         dataframe["quantity"] = dataframe["quantity"].apply(np.abs)
-        dataframe["portfolio"] = 0
         return dataframe
 
 

@@ -24,7 +24,9 @@ __logger__ = logging.getLogger(__name__)
 allocation_stacking = {Variables.Valuations.ARBITRAGE: {"apy", "npv", "cost"}}
 allocation_options = list(map(str, Variables.Securities.Options))
 allocation_stocks = list(map(str, Variables.Securities.Stocks))
-allocation_contract = ["ticker", "expire"]
+allocation_contract = ["portfolio", "ticker", "expire"]
+allocation_columns = ["strike", "instrument", "option", "position", "quantity"]
+allocation_header = allocation_contract + allocation_columns
 
 
 class AllocationCalculator(Operations.Processor):
@@ -35,19 +37,17 @@ class AllocationCalculator(Operations.Processor):
     def processor(self, contents, *args, **kwargs):
         valuations = contents[self.valuation]
         assert isinstance(valuations, pd.DataFrame)
-        valuations = self.parser(valuations, *args, **kwargs)
-
-        print(valuations)
-        raise Exception()
-
+        valuations = self.valuations(valuations, *args, **kwargs)
+        valuations.insert(0, "portfolio", range(1, 1 + len(valuations)))
         securities = self.securities(valuations, *args, **kwargs)
         allocations = list(self.allocations(securities, *args, **kwargs))
         allocations = pd.concat(allocations, axis=0)
         allocations = allocations.reset_index(drop=True, inplace=False)
-        allocations = {Variables.Datasets.ALLOCATION: allocations}
-        yield contents | dict(allocations)
+        allocations = {Variables.Datasets.ALLOCATION: allocations[allocation_header]}
+        valuations = {self.valuation: valuations}
+        yield contents | dict(allocations) | dict(valuations)
 
-    def parser(self, valuations, *args, **kwargs):
+    def valuations(self, valuations, *args, **kwargs):
         columns = {column: np.NaN for column in allocation_options if column not in valuations.columns}
         for column, value in columns.items():
             valuations[column] = value
@@ -63,7 +63,6 @@ class AllocationCalculator(Operations.Processor):
             virtuals = self.virtuals(stocks, *args, **kwargs)
             dataframe = pd.concat([options, virtuals], axis=0).dropna(how="any", inplace=False)
             dataframe = dataframe.reset_index(drop=True, inplace=False)
-            dataframe["portfolio"] = portfolio + 1
             yield dataframe
 
     @staticmethod
@@ -116,8 +115,6 @@ class AllocationCalculator(Operations.Processor):
         virtuals["strike"] = virtuals["strike"].apply(lambda strike: np.round(strike, decimals=2))
         return virtuals
 
-    @property
-    def calculation(self): return self.__calculation
     @property
     def valuation(self): return self.__valuation
 

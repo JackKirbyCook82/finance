@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 from abc import ABC
+from functools import reduce
 from itertools import product
 from collections import OrderedDict as ODict
 
@@ -24,6 +25,11 @@ __all__ = ["StrategyCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
+
+
+strategy_scope = ["ticker", "expire"]
+strategy_dimensions = ["instrument", "option", "position"]
+strategy_index = ["ticker", "expire", "strike", "instrument", "option", "position"]
 
 
 class StrategyEquation(Equation):
@@ -92,44 +98,37 @@ class StrategyCalculator(Operations.Processor):
         super().__init__(*args, name=name, **kwargs)
         calculations = {variables["strategy"]: calculation for variables, calculation in ODict(list(StrategyCalculation)).items()}
         self.__calculations = {strategy: calculation(*args, **kwargs) for strategy, calculation in calculations.items()}
-        self.__index = ["ticker", "expire", "strike", "instrument", "option", "position"]
 
     def processor(self, contents, *args, **kwargs):
         options = contents[Variables.Instruments.OPTION]
         assert isinstance(options, pd.DataFrame)
         options = ODict(list(self.options(options, *args, **kwargs)))
-        strategies = ODict(list(self.calculate(options, *args, **kwargs)))
-        strategies = list(strategies.values())
-        if not bool(strategies):
-            return
-        strategies = {Variables.Datasets.STRATEGY: strategies}
-        yield contents | dict(strategies)
+        strategies = list(self.calculate(options, *args, **kwargs))
+        if not bool(strategies): return
+        yield contents | {Variables.Datasets.STRATEGY: strategies}
 
     def calculate(self, options, *args, **kwargs):
         function = lambda **mapping: {key: xr.Variable(key, [value]).squeeze(key) for key, value in mapping.items()}
         for strategy, calculation in self.calculations.items():
-            if not all([option in options.keys() for option in list(strategy.options)]):
-                continue
+            if not all([option in options.keys() for option in list(strategy.options)]): continue
             variables = function(strategy=strategy)
-            dataset = {option: options[option] for option in list(strategy.options)}
-            dataset = calculation(dataset, *args, **kwargs)
-            if self.empty(dataset["size"]):
-                continue
-            dataset = dataset.assign_coords(variables)
-            yield strategy, dataset
+            datasets = {option: options[option] for option in list(strategy.options)}
+            strategies = calculation(datasets, *args, **kwargs)
+            if self.empty(strategies["size"]): continue
+            strategies = strategies.assign_coords(variables)
+            yield strategies
 
     def options(self, options, *args, **kwargs):
-        if bool(options.empty):
-            return
-        dataframe = options.set_index(self.index, drop=True, inplace=False)
-        datasets = xr.Dataset.from_dataframe(dataframe)
-        datasets = datasets.squeeze("ticker").squeeze("expire")
-        for instrument, option, position in product(datasets["instrument"].values, datasets["option"].values, datasets["position"].values):
-            dataset = datasets.sel(indexers={"instrument": instrument, "option": option, "position": position})
-            dataset = dataset.drop_vars(["instrument", "option", "position"], errors="ignore")
-            if self.empty(dataset["size"]):
-                continue
-            security = Variables.Securities[instrument, option, position]
+        if bool(options.empty): return
+        options = options.set_index(strategy_index, drop=True, inplace=False)
+        options = xr.Dataset.from_dataframe(options)
+        options = reduce(lambda content, scope: content.squeeze(scope), strategy_scope, options)
+        generator = product(*[options[dimension].values for dimension in strategy_dimensions])
+        for dimensions in generator:
+            dataset = options.sel(indexers={key: value for key, value in zip(strategy_dimensions, dimensions)})
+            dataset = dataset.drop_vars(strategy_dimensions, errors="ignore")
+            if self.empty(dataset["size"]): continue
+            security = Variables.Securities[dimensions]
             dataset = dataset.rename({"strike": str(security)})
             dataset["strike"] = dataset[str(security)]
             yield security, dataset
@@ -138,8 +137,7 @@ class StrategyCalculator(Operations.Processor):
     def empty(dataarray): return not bool(np.count_nonzero(~np.isnan(dataarray.values)))
     @property
     def calculations(self): return self.__calculations
-    @property
-    def index(self): return self.__index
+
 
 
 

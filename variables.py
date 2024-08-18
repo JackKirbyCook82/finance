@@ -15,12 +15,14 @@ from datetime import date as Date
 from datetime import datetime as Datetime
 from collections import namedtuple as ntuple
 
+import support.filtering as filtering
+import support.pipelines as pipelines
 from support.dispatchers import typedispatcher
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["DateRange", "Variables", "Securities", "Strategies", "Symbol", "Contract"]
-__copyright__ = "Copyright 2023,SE Jack Kirby Cook"
+__all__ = ["DateRange", "Pipelines", "Querys", "Variables"]
+__copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
@@ -82,13 +84,13 @@ class Variable(object):
     def name(self): return self.__name
 
 
-class Variables(EnumMeta):
+class VariableMeta(EnumMeta):
     def __new__(mcs, name, bases, attrs, *args, **kwargs):
         assert not any([issubclass(base, Enum) for base in bases])
         bases = (mcs.variable(name), Enum)
         for key, member in mcs.members(*args, **kwargs):
             attrs[key] = member
-        return super(Variables, mcs).__new__(mcs, name, bases, attrs)
+        return super(VariableMeta, mcs).__new__(mcs, name, bases, attrs)
 
     def __call__(cls, variable, *args, **kwargs):
         if isinstance(variable, (int, str)):
@@ -97,7 +99,7 @@ class Variables(EnumMeta):
             return mapping[variable]
         if isinstance(variable, Enum):
             return variable
-        return super(Variables, cls).__call__(variable, *args, **kwargs)
+        return super(VariableMeta, cls).__call__(variable, *args, **kwargs)
 
     @staticmethod
     def variable(name):
@@ -140,9 +142,9 @@ class MultiVariable(ABC):
     def keys(self): return tuple(self.fields)
 
 
-class MultiVariables(ABCMeta):
+class MultiVariableMeta(ABCMeta):
     def __new__(mcs, name, base, attrs, *args, **kwargs):
-        return super(MultiVariables, mcs).__new__(mcs, name, base, attrs)
+        return super(MultiVariableMeta, mcs).__new__(mcs, name, base, attrs)
 
     def __init__(cls, *args, variables=[], **kwargs): cls.variables = list(variables)
     def __iter__(cls): return iter(cls.variables)
@@ -163,21 +165,21 @@ class MultiVariables(ABCMeta):
     def fromstr(cls, string): return {str(variable): variable for variable in iter(cls)}[string]
 
 
-class Theta(members=["PUT", "NEUTRAL", "CALL"], start=-1, metaclass=Variables): pass
-class Phi(members=["SHORT", "NEUTRAL", "LONG"], start=-1, metaclass=Variables): pass
-class Omega(members=["BEAR", "NEUTRAL", "BULL"], start=-1, metaclass=Variables): pass
-class Technicals(members=["BARS", "STATISTIC", "STOCHASTIC"], metaclass=Variables): pass
-class Scenarios(members=["MINIMUM", "MAXIMUM"], metaclass=Variables): pass
-class Valuations(members=["ARBITRAGE"], metaclass=Variables): pass
-class Datasets(members=["STRATEGY", "HOLDINGS", "EXPOSURE", "ALLOCATION"], metaclass=Variables): pass
-class Querys(members=["SYMBOL", "CONTRACT"], metaclass=Variables): pass
-class Status(members=["PROSPECT", "PENDING", "ABANDONED", "REJECTED", "ACCEPTED"], metaclass=Variables): pass
+class Theta(members=["PUT", "NEUTRAL", "CALL"], start=-1, metaclass=VariableMeta): pass
+class Phi(members=["SHORT", "NEUTRAL", "LONG"], start=-1, metaclass=VariableMeta): pass
+class Omega(members=["BEAR", "NEUTRAL", "BULL"], start=-1, metaclass=VariableMeta): pass
+class Technicals(members=["BARS", "STATISTIC", "STOCHASTIC"], metaclass=VariableMeta): pass
+class Scenarios(members=["MINIMUM", "MAXIMUM"], metaclass=VariableMeta): pass
+class Valuations(members=["ARBITRAGE"], metaclass=VariableMeta): pass
+class Datasets(members=["STRATEGY", "HOLDINGS", "EXPOSURE", "ALLOCATION"], metaclass=VariableMeta): pass
+class Querys(members=["SYMBOL", "CONTRACT"], metaclass=VariableMeta): pass
+class Status(members=["PROSPECT", "PENDING", "ABANDONED", "REJECTED", "ACCEPTED"], metaclass=VariableMeta): pass
 
-class Markets(members=["EMPTY", "BEAR", "BULL"], start=0, metaclass=Variables): pass
-class Instruments(members=["EMPTY", "STOCK", "OPTION"], start=0, metaclass=Variables): pass
-class Options(members=["EMPTY", "PUT", "CALL"], start=0, metaclass=Variables): pass
-class Positions(members=["EMPTY", "LONG", "SHORT"], start=0, metaclass=Variables): pass
-class Spreads(members=["STRANGLE", "COLLAR", "VERTICAL"], start=1, metaclass=Variables): pass
+class Markets(members=["EMPTY", "BEAR", "BULL"], start=0, metaclass=VariableMeta): pass
+class Instruments(members=["EMPTY", "STOCK", "OPTION"], start=0, metaclass=VariableMeta): pass
+class Options(members=["EMPTY", "PUT", "CALL"], start=0, metaclass=VariableMeta): pass
+class Positions(members=["EMPTY", "LONG", "SHORT"], start=0, metaclass=VariableMeta): pass
+class Spreads(members=["STRANGLE", "COLLAR", "VERTICAL"], start=1, metaclass=VariableMeta): pass
 
 class Security(MultiVariable, fields=["instrument", "option", "position"]): pass
 class Strategy(MultiVariable, fields=["spread", "option", "position"], parameters=["stocks", "options"]): pass
@@ -195,7 +197,7 @@ CollarLong = Strategy(Spreads.COLLAR, Options.EMPTY, Positions.LONG, options=[Op
 CollarShort = Strategy(Spreads.COLLAR, Options.EMPTY, Positions.SHORT, options=[OptionCallLong, OptionPutShort], stocks=[StockShort])
 
 
-class Securities(variables=[StockLong, StockShort, OptionPutLong, OptionPutShort, OptionCallLong, OptionCallShort], metaclass=MultiVariables):
+class Securities(variables=[StockLong, StockShort, OptionPutLong, OptionPutShort, OptionCallLong, OptionCallShort], metaclass=MultiVariableMeta):
     Options = [OptionPutLong, OptionCallLong, OptionPutShort, OptionCallShort]
     Puts = [OptionPutLong, OptionPutShort]
     Calls = [OptionCallLong, OptionCallShort]
@@ -207,7 +209,7 @@ class Securities(variables=[StockLong, StockShort, OptionPutLong, OptionPutShort
         class Call: Long = OptionCallLong; Short = OptionCallShort
 
 
-class Strategies(variables=[VerticalPut, VerticalCall, CollarLong, CollarShort], metaclass=MultiVariables):
+class Strategies(variables=[VerticalPut, VerticalCall, CollarLong, CollarShort], metaclass=MultiVariableMeta):
     Verticals = [VerticalPut, VerticalCall]
     Collars = [CollarLong, CollarShort]
 
@@ -215,6 +217,42 @@ class Strategies(variables=[VerticalPut, VerticalCall, CollarLong, CollarShort],
     class Collar: Long = CollarLong; Short = CollarShort
 
 
+class Producer(pipelines.Producer, ABC):
+    def report(self, *args, produced, elapsed, **kwargs):
+        contract = produced[Querys.CONTRACT]
+        string = f"{str(self.title)}: {repr(self)}|{str(contract)}[{elapsed:.02f}s]"
+        __logger__.info(string)
+
+
+class Processor(pipelines.Processor, ABC):
+    def report(self, *args, produced, consumed, elapsed, **kwargs):
+        assert produced[Querys.CONTRACT] == consumed[Querys.CONTRACT]
+        contract = produced[Querys.CONTRACT]
+        string = f"{str(self.title)}: {repr(self)}|{str(contract)}[{elapsed:.02f}s]"
+        __logger__.info(string)
+
+
+class Consumer(pipelines.Consumer, ABC):
+    def report(self, *args, consumed, elapsed, **kwargs):
+        contract = consumed[Querys.CONTRACT]
+        string = f"{str(self.title)}: {repr(self)}|{str(contract)}[{elapsed:.02f}s]"
+        __logger__.info(string)
+
+
+class Filter(filtering.Filter, pipelines.Processor, ABC, title="Filtered"):
+    def inform(self, *args, contract, prior, post, **kwargs):
+        string = f"{str(self.title)}: {repr(self)}|{str(contract)}[{prior:.0f}|{post:.0f}]"
+        __logger__.info(string)
+
+    def report(self, *args, produced, consumed, elapsed, **kwargs):
+        assert produced[Querys.CONTRACT] == consumed[Querys.CONTRACT]
+        contract = produced[Querys.CONTRACT]
+        string = f"{str(self.title)}: {repr(self)}|{str(contract)}[{elapsed:.02f}s]"
+        __logger__.info(string)
+
+
+class Pipelines: Producer = Producer; Processor = Processor; Consumer = Consumer; Filter = Filter
+class Querys: Symbol = Symbol; Contract = Contract
 class Variables:
     Securities = Securities
     Strategies = Strategies
@@ -232,5 +270,6 @@ class Variables:
     Omega = Omega
     Theta = Theta
     Phi = Phi
+
 
 
