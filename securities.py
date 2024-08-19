@@ -12,8 +12,9 @@ import pandas as pd
 from scipy.stats import norm
 from collections import OrderedDict as ODict
 
-from finance.variables import Pipelines, Variables, Querys
+from finance.variables import Pipelines, Variables, Contract
 from support.calculations import Variable, Equation, Calculation
+from support.meta import ParametersMeta
 from support.files import File
 
 __version__ = "1.0.0"
@@ -24,7 +25,7 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-class Parameters:
+class Parameters(metaclass=ParametersMeta):
     types = {"ticker": str, "strike": np.float32, "price": np.float32, "underlying": np.float32, "size": np.float32, "volume": np.float32, "interest": np.float32}
     parsers = {"instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}
     formatters = {"instrument": int, "option": int, "position": int}
@@ -45,16 +46,17 @@ class SecurityFiles(object): Stock = StockFile; Option = OptionFile
 class SecurityFilter(Pipelines.Filter):
     def processor(self, contents, *args, **kwargs):
         contract = contents[Variables.Querys.CONTRACT]
-        assert isinstance(contract, Querys.Contract)
+        assert isinstance(contract, Contract)
         parameters = dict(contract=contract)
-        securities = ODict(list(self.calculate(contents, *args, **parameters, **kwargs)))
+        securities = list(self.calculate(contents, *args, **parameters, **kwargs))
         if not bool(securities): return
-        yield contents | securities
+        yield contents | ODict(securities)
 
     def calculate(self, contents, *args, **kwargs):
         for variable in list(Variables.Instruments):
             if not bool(variable): continue
-            securities = contents[variable]
+            securities = contents.get(variable, None)
+            if securities is None: continue
             securities = self.filter(securities, *args, **kwargs)
             securities = securities.reset_index(drop=True, inplace=False)
             if bool(securities.empty): continue
@@ -107,22 +109,22 @@ class SecurityCalculator(Pipelines.Processor, title="Calculated"):
     def __init__(self, *args, size, volume=lambda cols: np.NaN, interest=lambda cols: np.NaN, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
         calculations = {Variables.Instruments.OPTION: BlackScholesCalculation}
-        self.__calculation = {variable: calculations(*args, **kwargs) for variable, calculation in calculations.items()}
+        self.__calculations = {variable: calculation(*args, **kwargs) for variable, calculation in calculations.items()}
         self.__functions = dict(size=size, volume=volume, interest=interest)
 
     def processor(self, contents, *args, **kwargs):
         exposures, statistics = contents[Variables.Datasets.EXPOSURE], contents[Variables.Technicals.STATISTIC]
         assert isinstance(exposures, pd.DataFrame) and isinstance(statistics, pd.DataFrame)
         exposures = self.exposures(exposures, statistics, *args, **kwargs)
-        securities = ODict(list(self.calculate(exposures, *args, **kwargs)))
-        if bool(securities.empty): return
-        yield contents | securities
+        securities = list(self.calculate(exposures, *args, **kwargs))
+        if not bool(securities): return
+        yield contents | ODict(securities)
 
     def calculate(self, exposures, *args, **kwargs):
-        for variable, calculation in self.calculation.items():
+        for variable, calculation in self.calculations.items():
             pricing = calculation(exposures, *args, **kwargs)
             if bool(pricing.empty): continue
-            function = lambda cols: {key: value(cols[key]) for key, value in self.functions.items()}
+            function = lambda cols: {key: value(cols) for key, value in self.functions.items()}
             sizing = pricing.apply(function, axis=1, result_type="expand")
             securities = pd.concat([pricing, sizing], axis=1)
             yield variable, securities
@@ -134,7 +136,7 @@ class SecurityCalculator(Pipelines.Processor, title="Calculated"):
         return exposures
 
     @property
-    def calculation(self): return self.__calculation
+    def calculations(self): return self.__calculations
     @property
     def functions(self): return self.__functions
 

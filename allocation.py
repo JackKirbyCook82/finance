@@ -10,8 +10,7 @@ import logging
 import numpy as np
 import pandas as pd
 
-from finance.variables import Variables
-from finance.operations import Operations
+from finance.variables import Variables, Pipelines
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -21,15 +20,14 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-allocation_stacking = {Variables.Valuations.ARBITRAGE: {"apy", "npv", "cost"}}
-allocation_options = list(map(str, Variables.Securities.Options))
-allocation_stocks = list(map(str, Variables.Securities.Stocks))
-allocation_contract = ["portfolio", "ticker", "expire"]
-allocation_columns = ["strike", "instrument", "option", "position", "quantity"]
-allocation_header = allocation_contract + allocation_columns
+class Axes:
+    options = list(map(str, Variables.Securities.Options))
+    stocks = list(map(str, Variables.Securities.Stocks))
+    security = ["instrument", "option", "position"]
+    contract = ["ticker", "expire"]
 
 
-class AllocationCalculator(Operations.Processor):
+class AllocationCalculator(Pipelines.Processor):
     def __init__(self, *args, valuation, **kwargs):
         super().__init__(*args, **kwargs)
         self.__valuation = valuation
@@ -37,67 +35,56 @@ class AllocationCalculator(Operations.Processor):
     def processor(self, contents, *args, **kwargs):
         valuations = contents[self.valuation]
         assert isinstance(valuations, pd.DataFrame)
-        valuations = self.valuations(valuations, *args, **kwargs)
         valuations.insert(0, "portfolio", range(1, 1 + len(valuations)))
         securities = self.securities(valuations, *args, **kwargs)
         allocations = list(self.allocations(securities, *args, **kwargs))
         allocations = pd.concat(allocations, axis=0)
         allocations = allocations.reset_index(drop=True, inplace=False)
-        allocations = {Variables.Datasets.ALLOCATION: allocations[allocation_header]}
+        allocations = {Variables.Datasets.ALLOCATION: allocations}
         valuations = {self.valuation: valuations}
         yield contents | dict(allocations) | dict(valuations)
-
-    def valuations(self, valuations, *args, **kwargs):
-        columns = {column: np.NaN for column in allocation_options if column not in valuations.columns}
-        for column, value in columns.items():
-            valuations[column] = value
-        index = set(valuations.columns) - ({"scenario"} | allocation_stacking[self.valuation])
-        valuations = valuations.pivot(index=list(index), columns="scenario")
-        valuations = valuations.reset_index(drop=False, inplace=False)
-        return valuations
 
     def allocations(self, securities, *args, **kwargs):
         for portfolio, dataframe in securities.iterrows():
             stocks = self.stocks(dataframe, *args, **kwargs)
             options = self.options(dataframe, *args, **kwargs)
             virtuals = self.virtuals(stocks, *args, **kwargs)
-            dataframe = pd.concat([options, virtuals], axis=0).dropna(how="any", inplace=False)
-            dataframe = dataframe.reset_index(drop=True, inplace=False)
-            yield dataframe
+            allocations = pd.concat([options, virtuals], axis=0).dropna(how="any", inplace=False)
+            allocations = allocations.reset_index(drop=True, inplace=False)
+            yield allocations
 
     @staticmethod
     def securities(valuations, *args, **kwargs):
-        stocks = list(map(str, Variables.Securities.Stocks))
         strategy = lambda cols: list(map(str, cols["strategy"].stocks))
-        function = lambda cols: {stock: cols["underlying"] if stock in strategy(cols) else np.NaN for stock in stocks}
-        options = valuations[allocation_contract + allocation_options + ["valuation", "strategy", "underlying"]]
+        function = lambda cols: {stock: cols["underlying"] if stock in strategy(cols) else np.NaN for stock in Axes.stocks}
+        options = valuations[Axes.contract + Axes.options + ["portfolio", "valuation", "strategy", "underlying"]]
         options = options.droplevel("scenario", axis=1)
         stocks = options.apply(function, axis=1, result_type="expand")
         securities = pd.concat([options, stocks], axis=1)
-        securities = securities[allocation_contract + allocation_options + allocation_stocks]
+        securities = securities[["portfolio"] + Axes.contract + Axes.options + Axes.stocks]
         return securities
 
     @staticmethod
     def stocks(securities, *args, **kwargs):
         security = lambda cols: list(Variables.Securities(cols["security"])) + [1]
-        dataframe = securities[allocation_stocks].to_frame("strike")
-        dataframe = dataframe.reset_index(names="security", drop=False, inplace=False)
-        dataframe[["instrument", "option", "position", "quantity"]] = dataframe.apply(security, axis=1, result_type="expand")
-        dataframe = dataframe[[column for column in dataframe.columns if column != "security"]]
-        for key, value in securities[allocation_contract].to_dict().items():
-            dataframe[key] = value
-        return dataframe
+        stocks = securities[Axes.stocks].to_frame("strike")
+        stocks = stocks.reset_index(names="security", drop=False, inplace=False)
+        stocks[Axes.security + ["quantity"]] = stocks.apply(security, axis=1, result_type="expand")
+        stocks = stocks[[column for column in stocks.columns if column != "security"]]
+        contract = {key: value for key, value in securities[["portfolio"] + Axes.contract].to_dict().items()}
+        stocks = stocks.assign(**contract)
+        return stocks
 
     @staticmethod
     def options(securities, *args, **kwargs):
         security = lambda cols: list(Variables.Securities(cols["security"])) + [1]
-        dataframe = securities[allocation_options].to_frame("strike")
-        dataframe = dataframe.reset_index(names="security", drop=False, inplace=False)
-        dataframe[["instrument", "option", "position", "quantity"]] = dataframe.apply(security, axis=1, result_type="expand")
-        dataframe = dataframe[[column for column in dataframe.columns if column != "security"]]
-        for key, value in securities[allocation_contract].to_dict().items():
-            dataframe[key] = value
-        return dataframe
+        options = securities[Axes.options].to_frame("strike")
+        options = options.reset_index(names="security", drop=False, inplace=False)
+        options[Axes.security + ["quantity"]] = options.apply(security, axis=1, result_type="expand")
+        options = options[[column for column in options.columns if column != "security"]]
+        contract = {key: value for key, value in securities[["portfolio"] + Axes.contract].to_dict().items()}
+        options = options.assign(**contract)
+        return options
 
     @staticmethod
     def virtuals(stocks, *args, **kwargs):

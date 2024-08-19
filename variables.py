@@ -21,7 +21,7 @@ from support.dispatchers import typedispatcher
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["DateRange", "Pipelines", "Querys", "Variables"]
+__all__ = ["DateRange", "Pipelines", "Variables", "Symbol", "Contract"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
@@ -219,23 +219,22 @@ class Strategies(variables=[VerticalPut, VerticalCall, CollarLong, CollarShort],
 
 class Producer(pipelines.Producer, ABC):
     def report(self, *args, produced, elapsed, **kwargs):
-        contract = produced[Querys.CONTRACT]
-        string = f"{str(self.title)}: {repr(self)}|{str(contract)}[{elapsed:.02f}s]"
+        variable = produced.get(Variables.Querys.CONTRACT, produced.get(Variables.Querys.SYMBOL))
+        string = f"{str(self.title)}: {repr(self)}|{str(variable)}[{elapsed:.02f}s]"
         __logger__.info(string)
 
 
 class Processor(pipelines.Processor, ABC):
     def report(self, *args, produced, consumed, elapsed, **kwargs):
-        assert produced[Querys.CONTRACT] == consumed[Querys.CONTRACT]
-        contract = produced[Querys.CONTRACT]
-        string = f"{str(self.title)}: {repr(self)}|{str(contract)}[{elapsed:.02f}s]"
+        variable = produced.get(Variables.Querys.CONTRACT, produced.get(Variables.Querys.SYMBOL))
+        string = f"{str(self.title)}: {repr(self)}|{str(variable)}[{elapsed:.02f}s]"
         __logger__.info(string)
 
 
 class Consumer(pipelines.Consumer, ABC):
     def report(self, *args, consumed, elapsed, **kwargs):
-        contract = consumed[Querys.CONTRACT]
-        string = f"{str(self.title)}: {repr(self)}|{str(contract)}[{elapsed:.02f}s]"
+        variable = consumed.get(Variables.Querys.CONTRACT, consumed.get(Variables.Querys.SYMBOL))
+        string = f"{str(self.title)}: {repr(self)}|{str(variable)}[{elapsed:.02f}s]"
         __logger__.info(string)
 
 
@@ -245,14 +244,12 @@ class Filter(filtering.Filter, pipelines.Processor, ABC, title="Filtered"):
         __logger__.info(string)
 
     def report(self, *args, produced, consumed, elapsed, **kwargs):
-        assert produced[Querys.CONTRACT] == consumed[Querys.CONTRACT]
-        contract = produced[Querys.CONTRACT]
-        string = f"{str(self.title)}: {repr(self)}|{str(contract)}[{elapsed:.02f}s]"
+        variable = produced.get(Variables.Querys.CONTRACT, produced.get(Variables.Querys.SYMBOL))
+        string = f"{str(self.title)}: {repr(self)}|{str(variable)}[{elapsed:.02f}s]"
         __logger__.info(string)
 
 
 class Pipelines: Producer = Producer; Processor = Processor; Consumer = Consumer; Filter = Filter
-class Querys: Symbol = Symbol; Contract = Contract
 class Variables:
     Securities = Securities
     Strategies = Strategies

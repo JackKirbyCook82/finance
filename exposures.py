@@ -10,8 +10,7 @@ import logging
 import numpy as np
 import pandas as pd
 
-from finance.variables import Variables
-from finance.operations import Operations
+from finance.variables import Variables, Pipelines
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -21,7 +20,7 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-class ExposureCalculator(Operations.Processor):
+class ExposureCalculator(Pipelines.Processor):
     def processor(self, contents, *args, **kwargs):
         holdings = contents[Variables.Datasets.HOLDINGS]
         assert isinstance(holdings, pd.DataFrame)
@@ -38,24 +37,23 @@ class ExposureCalculator(Operations.Processor):
     @staticmethod
     def stocks(holdings, *args, **kwargs):
         stocks = holdings["instrument"] == Variables.Instruments.STOCK
-        dataframe = holdings.where(stocks).dropna(how="all", inplace=False)
-        return dataframe
+        stocks = holdings.where(stocks).dropna(how="all", inplace=False)
+        return stocks
 
     @staticmethod
     def options(holdings, *args, **kwargs):
         options = holdings["instrument"] == Variables.Instruments.OPTION
-        dataframe = holdings.where(options).dropna(how="all", inplace=False)
-        puts = dataframe["option"] == Variables.Options.PUT
-        calls = dataframe["option"] == Variables.Options.CALL
-        dataframe = dataframe.where(puts | calls).dropna(how="all", inplace=False)
-        return dataframe
+        options = holdings.where(options).dropna(how="all", inplace=False)
+        puts = options["option"] == Variables.Options.PUT
+        calls = options["option"] == Variables.Options.CALL
+        options = options.where(puts | calls).dropna(how="all", inplace=False)
+        return options
 
     @staticmethod
     def virtuals(stocks, *args, **kwargs):
         security = lambda instrument, option, position: dict(instrument=instrument, option=option, position=position)
         function = lambda records, instrument, option, position: pd.DataFrame.from_records([record | security(instrument, option, position) for record in records])
-        if bool(stocks.empty):
-            return pd.DataFrame()
+        if bool(stocks.empty): return pd.DataFrame()
         stocklong = stocks["position"] == Variables.Positions.LONG
         stocklong = stocks.where(stocklong).dropna(how="all", inplace=False)
         stockshort = stocks["position"] == Variables.Positions.SHORT
@@ -75,10 +73,10 @@ class ExposureCalculator(Operations.Processor):
         enumerical = lambda value: Variables.Positions.LONG if value > 0 else Variables.Positions.SHORT
         holdings = lambda cols: cols["quantity"] * numerical(cols["position"])
         securities["quantity"] = securities.apply(holdings, axis=1)
-        dataframe = securities.groupby(index, as_index=False, sort=False).agg({"quantity": np.sum})
-        dataframe = dataframe.where(dataframe["quantity"] != 0).dropna(how="all", inplace=False)
-        dataframe["position"] = dataframe["quantity"].apply(enumerical)
-        dataframe["quantity"] = dataframe["quantity"].apply(np.abs)
-        return dataframe
+        exposures = securities.groupby(index, as_index=False, sort=False).agg({"quantity": np.sum})
+        exposures = exposures.where(exposures["quantity"] != 0).dropna(how="all", inplace=False)
+        exposures["position"] = exposures["quantity"].apply(enumerical)
+        exposures["quantity"] = exposures["quantity"].apply(np.abs)
+        return exposures
 
 

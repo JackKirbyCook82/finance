@@ -10,10 +10,10 @@ import logging
 import numpy as np
 import pandas as pd
 import xarray as xr
+from functools import reduce
 from collections import OrderedDict as ODict
 
-from finance.variables import Variables
-from finance.operations import Operations
+from finance.variables import Variables, Pipelines
 from support.calculations import Variable, Equation, Calculation
 
 __version__ = "1.0.0"
@@ -22,6 +22,11 @@ __all__ = ["StabilityCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
+
+
+class Axes:
+    security = ["instrument", "option", "position"]
+    contract = ["ticker", "expire"]
 
 
 class StabilityEquation(Equation):
@@ -46,7 +51,7 @@ class StabilityCalculation(Calculation, equation=StabilityEquation):
         yield equation.m(portfolios)
 
 
-class StabilityCalculator(Operations.Processor):
+class StabilityCalculator(Pipelines.Processor):
     def __init__(self, *args, valuation, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
         self.__calculation = StabilityCalculation(*args, **kwargs)
@@ -55,6 +60,12 @@ class StabilityCalculator(Operations.Processor):
     def processor(self, contents, *args, **kwargs):
         valuations, exposures, allocations = contents[self.valuation], contents[Variables.Datasets.EXPOSURE], contents[Variables.Datasets.ALLOCATION]
         assert all([isinstance(dataframe, pd.DataFrame) for dataframe in (valuations, exposures, allocations)])
+
+        print(valuations)
+        print(exposures)
+        print(allocations)
+        raise Exception()
+
         exposures = self.exposures(exposures, *args, **kwargs)
         allocations = ODict(list(self.allocations(allocations, *args, **kwargs)))
         portfolios = list(self.portfolios(exposures, allocations, *args, **kwargs))
@@ -81,18 +92,22 @@ class StabilityCalculator(Operations.Processor):
         index = [column for column in exposures.columns if column != "quantity"]
         exposures = exposures.set_index(index, drop=True, inplace=False).squeeze()
         exposures = xr.DataArray.from_series(exposures).fillna(0)
-        exposures = exposures.squeeze("ticker").squeeze("expire").squeeze("instrument")
+        function = lambda content, axis: content.squeeze(axis)
+        exposures = reduce(function, Axes.contract, exposures)
         return exposures
 
     @staticmethod
     def allocations(allocations, *args, **kwargs):
-        for portfolio, dataframe in allocations.groupby("portfolio"):
-            dataframe = dataframe.drop(columns="portfolio", inplace=False)
-            index = [column for column in dataframe.columns if column != "quantity"]
-            dataframe = dataframe.set_index(index, drop=True, inplace=False).squeeze()
-            dataframe = xr.DataArray.from_series(dataframe).fillna(0)
-            dataframe = dataframe.squeeze("ticker").squeeze("expire").squeeze("instrument")
-            yield portfolio, dataframe
+        print(allocations)
+
+        for portfolio, allocation in allocations.groupby("portfolio"):
+            allocation = allocation.drop(columns="portfolio", inplace=False)
+            index = [column for column in allocation.columns if column != "quantity"]
+            allocation = allocation.set_index(index, drop=True, inplace=False).squeeze()
+            allocation = xr.DataArray.from_series(allocation).fillna(0)
+            function = lambda content, axis: content.squeeze(axis) if axis in content.coords.keys() else content
+            allocation = reduce(function, Axes.contract + Axes.security, allocation)
+            return allocation
 
     @staticmethod
     def portfolios(exposures, allocations, *args, **kwargs):
@@ -112,11 +127,9 @@ class StabilityCalculator(Operations.Processor):
 
     @staticmethod
     def valuations(valuations, stability, *args, **kwargs):
-
-
         print(valuations)
         print(stability)
-        raise Exception()
+        raise Exception
 
     @property
     def calculation(self): return self.__calculation

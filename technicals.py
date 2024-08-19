@@ -14,6 +14,7 @@ from collections import OrderedDict as ODict
 
 from finance.variables import Pipelines, Variables
 from support.calculations import Variable, Equation, Calculation
+from support.meta import ParametersMeta
 from support.files import File
 
 __version__ = "1.0.0"
@@ -24,7 +25,7 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-class Parameters:
+class Parameters(metaclass=ParametersMeta):
     bars = {"ticker": str, "volume": np.int64} | {column: np.float32 for column in ("price", "open", "close", "high", "low")}
     stochastic = {"trend": np.float32, "volatility": np.float32}
     statistic = {"oscillator": np.float32}
@@ -82,9 +83,9 @@ class TechnicalCalculator(Pipelines.Processor, title="Calculated"):
     def processor(self, contents, *args, **kwargs):
         bars = contents[Variables.Technicals.BARS]
         assert isinstance(bars, pd.DataFrame)
-        technicals = ODict(list(self.calculate(bars, *args, **kwargs)))
+        technicals = list(self.calculate(bars, *args, **kwargs))
         if not bool(technicals): return
-        yield contents | technicals
+        yield contents | ODict(technicals)
 
     def calculate(self, bars, *args, **kwargs):
         for variable, calculation in self.calculations.items():

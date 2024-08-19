@@ -109,7 +109,7 @@ class StrategyCalculator(Pipelines.Processor):
 
     def calculate(self, options, *args, **kwargs):
         variable = Variables.Datasets.STRATEGY
-        strategies = self.strategies(options, *args, **kwargs)
+        strategies = list(self.strategies(options, *args, **kwargs))
         if not bool(strategies): return
         yield variable, strategies
 
