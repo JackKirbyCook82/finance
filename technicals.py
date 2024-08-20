@@ -12,8 +12,9 @@ import pandas as pd
 from abc import ABC
 from collections import OrderedDict as ODict
 
-from finance.variables import Pipelines, Variables
+from finance.variables import Variables
 from support.calculations import Variable, Equation, Calculation
+from support.pipelines import Processor
 from support.meta import ParametersMeta
 from support.files import File
 
@@ -31,7 +32,7 @@ class Parameters(metaclass=ParametersMeta):
     statistic = {"oscillator": np.float32}
     types = bars | statistic | stochastic
     dates = {"date": "%Y%m%d"}
-    filename = lambda query: str(query.ticker).upper()
+    filename = lambda variable: str(variable.ticker).upper()
     datatype = pd.DataFrame
 
 class Headers:
@@ -74,7 +75,7 @@ class StochasticCalculation(TechnicalCalculation, technical=Variables.Technicals
         yield equation.xk(bars)
 
 
-class TechnicalCalculator(Pipelines.Processor, title="Calculated"):
+class TechnicalCalculator(Processor, title="Calculated", variable=Variables.Querys.SYMBOL):
     def __init__(self, *args, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
         calculations = {variables["technical"]: calculation for variables, calculation in ODict(list(TechnicalCalculation)).items()}

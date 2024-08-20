@@ -10,7 +10,8 @@ import logging
 import numpy as np
 import pandas as pd
 
-from finance.variables import Variables, Pipelines
+from finance.variables import Variables
+from support.pipelines import Processor
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -20,7 +21,7 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-class ExposureCalculator(Pipelines.Processor):
+class ExposureCalculator(Processor, title="Calculated", variable=Variables.Querys.CONTRACT):
     def processor(self, contents, *args, **kwargs):
         holdings = contents[Variables.Datasets.HOLDINGS]
         assert isinstance(holdings, pd.DataFrame)

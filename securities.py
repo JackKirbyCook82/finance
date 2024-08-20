@@ -6,15 +6,18 @@ Created on Weds Jul 19 2023
 
 """
 
+import types
 import logging
 import numpy as np
 import pandas as pd
 from scipy.stats import norm
 from collections import OrderedDict as ODict
 
-from finance.variables import Pipelines, Variables, Contract
+from finance.variables import Variables
 from support.calculations import Variable, Equation, Calculation
 from support.meta import ParametersMeta
+from support.pipelines import Processor
+from support.filtering import Filter
 from support.files import File
 
 __version__ = "1.0.0"
@@ -30,7 +33,7 @@ class Parameters(metaclass=ParametersMeta):
     parsers = {"instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}
     formatters = {"instrument": int, "option": int, "position": int}
     dates = {"current": "%Y%m%d-%H%M", "expire": "%Y%m%d"}
-    filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
+    filename = lambda variable: "_".join([str(variable.ticker).upper(), str(variable.expire.strftime("%Y%m%d"))])
     datatype = pd.DataFrame
 
 class Headers:
@@ -43,11 +46,9 @@ class OptionFile(File, variable=Variables.Instruments.OPTION, header=Headers.opt
 class SecurityFiles(object): Stock = StockFile; Option = OptionFile
 
 
-class SecurityFilter(Pipelines.Filter):
+class SecurityFilter(Filter, variable=Variables.Querys.CONTRACT):
     def processor(self, contents, *args, **kwargs):
-        contract = contents[Variables.Querys.CONTRACT]
-        assert isinstance(contract, Contract)
-        parameters = dict(contract=contract)
+        parameters = dict(variable=contents[self.variable])
         securities = list(self.calculate(contents, *args, **parameters, **kwargs))
         if not bool(securities): return
         yield contents | ODict(securities)
@@ -65,8 +66,8 @@ class SecurityFilter(Pipelines.Filter):
 
 class BlackScholesEquation(Equation):
     τ = Variable("τ", "tau", np.int32, function=lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
-    so = Variable("so", "so", np.float32, function=lambda xo, k: np.log(xo / k))
-    yo = Variable("yo", "price", np.float32, function=lambda zx, zk, Φ, ε: (zx - zk) * (1 + (Φ * ε)))
+    so = Variable("so", "ratio", np.float32, function=lambda xo, k: np.log(xo / k))
+    yo = Variable("yo", "price", np.float32, function=lambda zx, zk, F: (zx - zk) * F)
 
     zx = Variable("zx", "zx", np.float32, function=lambda xo, Θ, N1: xo * Θ * N1)
     zk = Variable("zk", "zk", np.float32, function=lambda k, Θ, N2, D: k * Θ * D * N2)
@@ -77,8 +78,8 @@ class BlackScholesEquation(Equation):
 
     α = Variable("α", "alpha", np.float32, function=lambda τ, δ, ρ: (ρ + np.divide(np.power(δ * np.sqrt(252), 2), 2)) * τ / 252)
     β = Variable("β", "beta", np.float32, function=lambda τ, δ: δ * np.sqrt(252) * np.sqrt(τ / 252))
-    ε = Variable("ε", "epsilon", np.float32, function=lambda ω: 0.5 * np.sin(ω * 2 * np.pi / 5) + 0.05 * ω)
     D = Variable("D", "discount", np.float32, function=lambda τ, ρ: np.exp(-ρ * τ / 252))
+    F = Variable("F", "factor", np.float32, function=lambda f, Θ, Φ, ε: 1 + f(Θ, Φ, ε))
     Θ = Variable("Θ", "theta", np.int32, function=lambda i: + int(Variables.Theta(str(i))))
     Φ = Variable("Φ", "phi", np.int32, function=lambda j: + int(Variables.Phi(str(j))))
 
@@ -90,22 +91,23 @@ class BlackScholesEquation(Equation):
     i = Variable("i", "option", Variables.Options, position=0, locator="option")
     j = Variable("j", "position", Variables.Positions, position=0, locator="position")
     k = Variable("k", "strike", np.float32, position=0, locator="strike")
+    ε = Variable("ε", "divergence", np.float32, position="divergence")
     ρ = Variable("ρ", "discount", np.float32, position="discount")
-    ω = Variable("ω", "offset", np.float32, position="offset")
+    f = Variable("f", "factor", types.FunctionType, position="factor")
 
 
 class BlackScholesCalculation(Calculation, equation=BlackScholesEquation):
-    def execute(self, exposures, *args, discount, offset=0, **kwargs):
+    def execute(self, exposures, *args, factor, discount, divergence, **kwargs):
         invert = lambda position: Variables.Positions(int(Variables.Positions.LONG) + int(Variables.Positions.SHORT) - int(position))
         equation = self.equation(*args, **kwargs)
         yield from iter([exposures["ticker"], exposures["expire"]])
         yield from iter([exposures["instrument"], exposures["option"], exposures["position"].apply(invert), exposures["strike"]])
-        yield equation.yo(exposures, discount=discount, offset=offset)
+        yield equation.yo(exposures, factor=factor, discount=discount, divergence=divergence)
         yield equation.xo(exposures)
         yield equation.to(exposures)
 
 
-class SecurityCalculator(Pipelines.Processor, title="Calculated"):
+class SecurityCalculator(Processor, title="Calculated", variable=Variables.Querys.CONTRACT):
     def __init__(self, *args, size, volume=lambda cols: np.NaN, interest=lambda cols: np.NaN, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
         calculations = {Variables.Instruments.OPTION: BlackScholesCalculation}

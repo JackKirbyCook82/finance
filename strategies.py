@@ -15,8 +15,9 @@ from functools import reduce
 from itertools import product
 from collections import OrderedDict as ODict
 
-from finance.variables import Variables, Pipelines
+from finance.variables import Variables
 from support.calculations import Variable, Equation, Calculation
+from support.pipelines import Processor
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -92,7 +93,7 @@ class CollarLongCalculation(StrategyCalculation, strategy=Variables.Strategies.C
 class CollarShortCalculation(StrategyCalculation, strategy=Variables.Strategies.Collar.Short, equation=CollarShortEquation): pass
 
 
-class StrategyCalculator(Pipelines.Processor):
+class StrategyCalculator(Processor, title="Calculated", variable=Variables.Querys.CONTRACT):
     def __init__(self, *args, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
         calculations = {variables["strategy"]: calculation for variables, calculation in ODict(list(StrategyCalculation)).items()}

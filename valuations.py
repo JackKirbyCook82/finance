@@ -13,9 +13,11 @@ import xarray as xr
 from abc import ABC
 from collections import OrderedDict as ODict
 
-from finance.variables import Variables, Pipelines, Contract
+from finance.variables import Variables, Contract
 from support.calculations import Variable, Equation, Calculation
 from support.meta import ParametersMeta
+from support.pipelines import Processor
+from support.filtering import Filter
 from support.files import File
 
 __version__ = "1.0.0"
@@ -40,7 +42,7 @@ class Parameters(metaclass=ParametersMeta):
     parsers = {"strategy": Variables.Strategies, "valuation": Variables.Valuations, "scenario": Variables.Scenarios}
     formatters = {"strategy": int, "valuation": int, "scenario": int}
     dates = {"current": "%Y%m%d-%H%M", "expire": "%Y%m%d"}
-    filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
+    filename = lambda variable: "_".join([str(variable.ticker).upper(), str(variable.expire.strftime("%Y%m%d"))])
     datatype = pd.DataFrame
 
 class Headers:
@@ -65,15 +67,13 @@ class ValuationFiles(object):
     Arbitrage = ArbitrageFile
 
 
-class ValuationFilter(Pipelines.Filter):
+class ValuationFilter(Filter, variable=Variables.Querys.CONTRACT):
     def __init__(self, *args, valuation, **kwargs):
         super().__init__(*args, **kwargs)
         self.__valuation = valuation
 
     def processor(self, contents, *args, **kwargs):
-        contract = contents[Variables.Querys.CONTRACT]
-        assert isinstance(contract, Contract)
-        parameters = dict(contract=contract)
+        parameters = dict(variable=contents[self.variable])
         valuations = list(self.calculate(contents, *args, **parameters, **kwargs))
         if not bool(valuations): return
         yield contents | ODict(valuations)
@@ -131,7 +131,7 @@ class MinimumArbitrageCalculation(ArbitrageCalculation, scenario=Variables.Scena
 class MaximumArbitrageCalculation(ArbitrageCalculation, scenario=Variables.Scenarios.MAXIMUM, equation=MaximumArbitrageEquation): pass
 
 
-class ValuationCalculator(Pipelines.Processor):
+class ValuationCalculator(Processor, title="Calculated", variable=Variables.Querys.CONTRACT):
     def __init__(self, *args, valuation, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
         calculations = {variables["scenario"]: calculation for variables, calculation in ODict(list(ValuationCalculation)).items() if variables["valuation"] is valuation}

@@ -11,9 +11,10 @@ import numpy as np
 import pandas as pd
 from itertools import product, count
 
-from finance.variables import Variables, Pipelines, Contract
+from finance.variables import Variables, Contract
 from support.tables import Tables, Views
 from support.meta import ParametersMeta
+from support.pipelines import Producer, Consumer
 from support.files import File
 
 __version__ = "1.0.0"
@@ -29,7 +30,7 @@ class Parameters(metaclass=ParametersMeta):
     formatters = {"instrument": int, "option": int, "position": int}
     types = {"ticker": str, "strike": np.float32, "quantity": np.int32}
     dates = {"expire": "%Y%m%d"}
-    filename = lambda query: "_".join([str(query.ticker).upper(), str(query.expire.strftime("%Y%m%d"))])
+    filename = lambda variable: "_".join([str(variable.ticker).upper(), str(variable.expire.strftime("%Y%m%d"))])
     datatype = pd.DataFrame
 
 class Axes:
@@ -58,7 +59,7 @@ class HoldingFile(File, variable=Variables.Datasets.HOLDINGS, header=Headers.hol
 class HoldingFiles(object): Holding = HoldingFile
 
 
-class HoldingWriter(Pipelines.Consumer):
+class HoldingWriter(Consumer, title="Consumed", variable=Variables.Querys.CONTRACT):
     def __init__(self, *args, destination, priority, valuation, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
         self.__identity = count(1, step=1)
@@ -124,7 +125,7 @@ class HoldingWriter(Pipelines.Consumer):
     def identity(self): return self.__identity
 
 
-class HoldingReader(Pipelines.Producer):
+class HoldingReader(Producer, title="Produced", variable=Variables.Querys.CONTRACT):
     def __init__(self, *args, source, valuation, **kwargs):
         super().__init__(*args, **kwargs)
         self.__source = source

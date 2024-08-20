@@ -13,8 +13,9 @@ import xarray as xr
 from functools import reduce
 from collections import OrderedDict as ODict
 
-from finance.variables import Variables, Pipelines
+from finance.variables import Variables
 from support.calculations import Variable, Equation, Calculation
+from support.pipelines import Processor
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -51,7 +52,7 @@ class StabilityCalculation(Calculation, equation=StabilityEquation):
         yield equation.m(portfolios)
 
 
-class StabilityCalculator(Pipelines.Processor):
+class StabilityCalculator(Processor, title="Calculated", variable=Variables.Querys.CONTRACT):
     def __init__(self, *args, valuation, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
         self.__calculation = StabilityCalculation(*args, **kwargs)
@@ -60,21 +61,13 @@ class StabilityCalculator(Pipelines.Processor):
     def processor(self, contents, *args, **kwargs):
         valuations, exposures, allocations = contents[self.valuation], contents[Variables.Datasets.EXPOSURE], contents[Variables.Datasets.ALLOCATION]
         assert all([isinstance(dataframe, pd.DataFrame) for dataframe in (valuations, exposures, allocations)])
-
-        print(valuations)
-        print(exposures)
-        print(allocations)
-        raise Exception()
-
         exposures = self.exposures(exposures, *args, **kwargs)
         allocations = ODict(list(self.allocations(allocations, *args, **kwargs)))
         portfolios = list(self.portfolios(exposures, allocations, *args, **kwargs))
         portfolios = xr.concat(portfolios, join="outer", fill_value=0, dim="portfolio")
-        portfolios = portfolios.stack({"holdings": ["strike", "option", "position"]}).to_dataset()
+        portfolios = portfolios.stack({"holdings": ["strike"] + Axes.security}).to_dataset()
         portfolios = self.underlying(portfolios, *args, **kwargs)
         stability = ODict(list(self.calculate(portfolios, *args, **kwargs)))
-        stability = xr.Dataset(stability).to_dataframe()
-        stability["stable"] = (stability["bear"] == 0) & (stability["bull"] == 0)
         valuations = self.valuations(valuations, stability, *args, **kwargs)
         valuations = {self.valuation: valuations}
         yield contents | dict(valuations)
@@ -82,10 +75,10 @@ class StabilityCalculator(Pipelines.Processor):
     def calculate(self, portfolios, *args, **kwargs):
         stability = self.calculation(portfolios, *args, **kwargs)
         stability = stability.sum(dim="holdings")
-        yield "maximum", stability["value"].max(dim="underlying").drop_vars("instrument")
-        yield "minimum", stability["value"].min(dim="underlying").drop_vars("instrument")
-        yield "bull", stability["trend"].isel(underlying=0).drop_vars(["underlying", "instrument"])
-        yield "bear", stability["trend"].isel(underlying=-1).drop_vars(["underlying", "instrument"])
+        yield "maximum", stability["value"].max(dim="underlying")
+        yield "minimum", stability["value"].min(dim="underlying")
+        yield "bull", stability["trend"].isel(underlying=0).drop_vars(["underlying"])
+        yield "bear", stability["trend"].isel(underlying=-1).drop_vars(["underlying"])
 
     @staticmethod
     def exposures(exposures, *args, **kwargs):
@@ -98,24 +91,21 @@ class StabilityCalculator(Pipelines.Processor):
 
     @staticmethod
     def allocations(allocations, *args, **kwargs):
-        print(allocations)
-
         for portfolio, allocation in allocations.groupby("portfolio"):
             allocation = allocation.drop(columns="portfolio", inplace=False)
             index = [column for column in allocation.columns if column != "quantity"]
             allocation = allocation.set_index(index, drop=True, inplace=False).squeeze()
             allocation = xr.DataArray.from_series(allocation).fillna(0)
-            function = lambda content, axis: content.squeeze(axis) if axis in content.coords.keys() else content
-            allocation = reduce(function, Axes.contract + Axes.security, allocation)
-            return allocation
+            function = lambda content, axis: content.squeeze(axis)
+            allocation = reduce(function, Axes.contract, allocation)
+            yield portfolio, allocation
 
     @staticmethod
     def portfolios(exposures, allocations, *args, **kwargs):
-        function = lambda dataarray: xr.align(dataarray, exposures, fill_value=0, join="outer")[0]
-        yield exposures.assign_coords(portfolio=0)
+        yield exposures.assign_coords(portfolio=0).expand_dims("portfolio")
         for portfolio, allocation in allocations.items():
-            allocation = function(allocation)
-            allocation = allocation.assign_coords(portfolio=portfolio)
+            allocation = xr.align(allocation, exposures, fill_value=0, join="outer")[0]
+            allocation = allocation.assign_coords(portfolio=portfolio).expand_dims("portfolio")
             yield allocation
 
     @staticmethod
@@ -127,9 +117,11 @@ class StabilityCalculator(Pipelines.Processor):
 
     @staticmethod
     def valuations(valuations, stability, *args, **kwargs):
-        print(valuations)
-        print(stability)
-        raise Exception
+        stability = xr.Dataset(stability).to_dataframe()
+        stable = (stability["bear"] == 0) & (stability["bull"] == 0)
+        valuations = valuations.where(stable).dropna(how="all", inplace=False)
+        valuations = valuations.drop(columns="portfolio", inplace=False)
+        return valuations
 
     @property
     def calculation(self): return self.__calculation
