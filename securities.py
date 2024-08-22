@@ -10,10 +10,11 @@ import types
 import logging
 import numpy as np
 import pandas as pd
+from itertools import count
 from scipy.stats import norm
 from collections import OrderedDict as ODict
 
-from finance.variables import Variables
+from finance.variables import Variables, Contract
 from support.calculations import Variable, Equation, Calculation
 from support.meta import ParametersMeta
 from support.pipelines import Processor
@@ -79,7 +80,7 @@ class BlackScholesEquation(Equation):
     α = Variable("α", "alpha", np.float32, function=lambda τ, δ, ρ: (ρ + np.divide(np.power(δ * np.sqrt(252), 2), 2)) * τ / 252)
     β = Variable("β", "beta", np.float32, function=lambda τ, δ: δ * np.sqrt(252) * np.sqrt(τ / 252))
     D = Variable("D", "discount", np.float32, function=lambda τ, ρ: np.exp(-ρ * τ / 252))
-    F = Variable("F", "factor", np.float32, function=lambda f, Θ, Φ, ε: 1 + f(Θ, Φ, ε))
+    F = Variable("F", "factor", np.float32, function=lambda f, Θ, Φ, ε, ω: 1 + f(Θ, Φ, ε, ω))
     Θ = Variable("Θ", "theta", np.int32, function=lambda i: + int(Variables.Theta(str(i))))
     Φ = Variable("Φ", "phi", np.int32, function=lambda j: + int(Variables.Phi(str(j))))
 
@@ -92,17 +93,18 @@ class BlackScholesEquation(Equation):
     j = Variable("j", "position", Variables.Positions, position=0, locator="position")
     k = Variable("k", "strike", np.float32, position=0, locator="strike")
     ε = Variable("ε", "divergence", np.float32, position="divergence")
+    ω = Variable("ω", "lifespan", np.float32, position="lifespan")
     ρ = Variable("ρ", "discount", np.float32, position="discount")
     f = Variable("f", "factor", types.FunctionType, position="factor")
 
 
 class BlackScholesCalculation(Calculation, equation=BlackScholesEquation):
-    def execute(self, exposures, *args, factor, discount, divergence, **kwargs):
+    def execute(self, exposures, *args, factor, discount, divergence, lifespan, **kwargs):
         invert = lambda position: Variables.Positions(int(Variables.Positions.LONG) + int(Variables.Positions.SHORT) - int(position))
         equation = self.equation(*args, **kwargs)
         yield from iter([exposures["ticker"], exposures["expire"]])
         yield from iter([exposures["instrument"], exposures["option"], exposures["position"].apply(invert), exposures["strike"]])
-        yield equation.yo(exposures, factor=factor, discount=discount, divergence=divergence)
+        yield equation.yo(exposures, factor=factor, discount=discount, divergence=divergence, lifespan=lifespan)
         yield equation.xo(exposures)
         yield equation.to(exposures)
 
@@ -113,12 +115,15 @@ class SecurityCalculator(Processor, title="Calculated", variable=Variables.Query
         calculations = {Variables.Instruments.OPTION: BlackScholesCalculation}
         self.__calculations = {variable: calculation(*args, **kwargs) for variable, calculation in calculations.items()}
         self.__functions = dict(size=size, volume=volume, interest=interest)
+        self.__lifespans = ODict()
 
     def processor(self, contents, *args, **kwargs):
-        exposures, statistics = contents[Variables.Datasets.EXPOSURE], contents[Variables.Technicals.STATISTIC]
-        assert isinstance(exposures, pd.DataFrame) and isinstance(statistics, pd.DataFrame)
+        contract, exposures, statistics = contents[Variables.Querys.CONTRACT], contents[Variables.Datasets.EXPOSURE], contents[Variables.Technicals.STATISTIC]
+        assert isinstance(contract, Contract) and isinstance(exposures, pd.DataFrame) and isinstance(statistics, pd.DataFrame)
+        if contract not in self.lifespans: self.lifespans[contract] = count(start=0, step=1)
         exposures = self.exposures(exposures, statistics, *args, **kwargs)
-        securities = list(self.calculate(exposures, *args, **kwargs))
+        lifespan = next(self.lifespans[contract])
+        securities = list(self.calculate(exposures, *args, lifespan=lifespan, **kwargs))
         if not bool(securities): return
         yield contents | ODict(securities)
 
@@ -141,6 +146,8 @@ class SecurityCalculator(Processor, title="Calculated", variable=Variables.Query
     def calculations(self): return self.__calculations
     @property
     def functions(self): return self.__functions
+    @property
+    def lifespans(self): return self.__lifespans
 
 
 

@@ -43,6 +43,7 @@ class DateRange(ntuple("DateRange", "minimum maximum")):
 @total_ordering
 class Symbol(ntuple("Symbol", "ticker")):
     def __str__(self): return str(self.ticker).upper()
+    def __hash__(self): return hash(self.ticker)
     def __eq__(self, other): return str(self.ticker) == str(self.ticker)
     def __lt__(self, other): return str(self.ticker) < str(self.ticker)
 
@@ -55,6 +56,7 @@ class Symbol(ntuple("Symbol", "ticker")):
 @total_ordering
 class Contract(ntuple("Contract", "ticker expire")):
     def __str__(self): return "|".join([str(self.ticker).upper(), str(self.expire.strftime("%Y-%m-%d"))])
+    def __hash__(self): return hash((self.ticker, int(self.expire.timestamp())))
     def __eq__(self, other): return str(self.ticker) == str(other.ticker) and self.expire == other.expire
     def __lt__(self, other): return str(self.ticker) < str(other.ticker) and self.expire < other.expire
 
