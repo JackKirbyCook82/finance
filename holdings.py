@@ -60,69 +60,10 @@ class HoldingFile(File, variable=Variables.Datasets.HOLDINGS, header=Headers.hol
 class HoldingFiles(object): Holding = HoldingFile
 
 
-class HoldingWriter(Consumer, title="Consumed", variable=Variables.Querys.CONTRACT):
-    def __init__(self, *args, destination, priority, valuation, name=None, **kwargs):
-        super().__init__(*args, name=name, **kwargs)
-        self.__identity = count(1, step=1)
-        self.__destination = destination
+class HoldingBase(object):
+    def __init__(self, *args, datatable, valuation, **kwargs):
+        self.__datatable = datatable
         self.__valuation = valuation
-        self.__priority = priority
-
-    def consumer(self, contents, *args, **kwargs):
-        contract, valuations = contents[Variables.Querys.CONTRACT], contents[self.valuation]
-        assert isinstance(valuations, pd.DataFrame)
-        if bool(valuations.empty): return
-        self.destination.mutex.acquire()
-        blocking = self.blocking(contract, *args, **kwargs)
-        if bool(blocking): return
-        valuations = self.market(valuations, *args, **kwargs)
-        valuations = self.prioritize(valuations, *args, **kwargs)
-        valuations = self.identify(valuations, *args, **kwargs)
-        if bool(valuations.empty): return
-        self.write(valuations, *args, contract=contract, **kwargs)
-        self.destination.mutex.release()
-
-    def blocking(self, contract, *args, **kwargs):
-        if not bool(self.destination): return False
-        Columns = ntuple("Columns", "ticker expire status")
-        dataframe = self.destination.table
-        columns = [self.column(column, self.destination.table) for column in Columns._fields]
-        columns = Columns(*columns)
-        ticker = dataframe[columns.ticker] == contract.ticker
-        expire = dataframe[columns.expire] == contract.expire
-        series = dataframe.where(ticker & expire)[columns.status]
-        return any(series == Variables.Status.PENDING)
-
-    def market(self, valuations, *args, tenure=None, **kwargs):
-        if tenure is None: return valuations
-        column = self.column("current", valuations)
-        current = (pd.to_datetime("now") - valuations[column]) <= self.tenure
-        valuations = valuations.where(current).dropna(how="all", inplace=False)
-        return valuations
-
-    def prioritize(self, valuations, *args, **kwargs):
-        column = self.column("priority", valuations)
-        valuations[column] = valuations.apply(self.priority, axis=1)
-        valuations = valuations.sort_values(column, axis=0, ascending=False, inplace=False, ignore_index=False)
-        return valuations
-
-    def identify(self, valuations, *args, **kwargs):
-        tags = lambda size: [next(self.identity) for _ in range(size)]
-        valuations = valuations.assign(status=Variables.Status.PROSPECT, tag=tags(len(valuations)))
-        return valuations
-
-    def write(self, valuations, *args, contract, tenure=None, **kwargs):
-        Columns = ntuple("Columns", "ticker expire current")
-        columns = [self.column(column, self.destination.table) for column in Columns._fields]
-        columns = Columns(*columns)
-        obsolete = lambda dataframe: (pd.to_datetime("now") - dataframe[columns.current]) >= tenure
-        function = lambda dataframe: (dataframe[columns.ticker] == contract.ticker) & (dataframe[columns.expire] == contract.expire)
-        valuations = valuations.set_index("tag", drop=False, inplace=False)
-        self.destination.remove(function)
-        self.destination.concat(valuations)
-        self.destination.unique(Axes.contract + ["strategy"] + Axes.options)
-        if tenure is not None: self.destination.remove(obsolete)
-        self.destination.sort("priority", reverse=True)
 
     @staticmethod
     def column(column, dataframe):
@@ -133,23 +74,74 @@ class HoldingWriter(Consumer, title="Consumed", variable=Variables.Querys.CONTRA
         return column
 
     @property
-    def destination(self): return self.__destination
+    def datatable(self): return self.__datatable
     @property
     def valuation(self): return self.__valuation
+
+
+class HoldingRoutine(HoldingBase, Routine, title="Performed", variable=Variables.Querys.CONTRACT):
+    def routine(self, *args, **kwargs):
+        with self.datatable.mutex:
+            self.obsolete(*args, **kwargs)
+            self.clean(*args, **kwargs)
+
+    def clean(self, *args, **kwargs):
+        if not bool(self.datatable): return
+        column = self.column("status", self.database.table)
+        rejected = lambda dataframe: dataframe[column] == Variables.Status.REJECTED
+        abandoned = lambda dataframe: dataframe[column] == Variables.Status.ABANDONED
+        self.database.remove(rejected)
+        self.database.remove(abandoned)
+
+    def obsolete(self, *args, tenure, **kwargs):
+        column = self.column("current", self.datatable.table)
+        obsolete = lambda dataframe: (pd.to_datetime("now") - dataframe[column]) >= tenure
+        self.datatable.remove(obsolete)
+
+
+class HoldingWriter(HoldingBase, Consumer, title="Consumed", variable=Variables.Querys.CONTRACT):
+    def __init__(self, *args, priority, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.__identity = count(1, step=1)
+        self.__priority = priority
+
+    def consumer(self, contents, *args, **kwargs):
+        valuations = contents[self.valuation]
+        assert isinstance(valuations, pd.DataFrame)
+        if bool(valuations.empty): return
+        valuations = self.prioritize(valuations, *args, **kwargs)
+        valuations = self.identify(valuations, *args, **kwargs)
+        with self.datatable.mutex:
+            self.write(valuations, *args, **kwargs)
+
+    def prioritize(self, valuations, *args, **kwargs):
+        column = self.column("priority", valuations)
+        valuations[column] = valuations.apply(self.priority, axis=1)
+        parameters = dict(ascending=False, inplace=False, ignore_index=False)
+        valuations = valuations.sort_values(column, axis=0, **parameters)
+        return valuations
+
+    def identify(self, valuations, *args, **kwargs):
+        tags = lambda size: [next(self.identity) for _ in range(size)]
+        valuations = valuations.assign(status=Variables.Status.PROSPECT, tag=tags(len(valuations)))
+        return valuations
+
+    def write(self, valuations, *args, contract, tenure=None, **kwargs):
+        valuations = valuations.set_index("tag", drop=False, inplace=False)
+        self.datatable.concat(valuations)
+        self.datatable.unique(Axes.contract + ["strategy"] + Axes.options)
+        self.datatable.sort("priority", reverse=True)
+
     @property
     def priority(self): return self.__priority
     @property
     def identity(self): return self.__identity
 
 
-class HoldingReader(Producer, title="Produced", variable=Variables.Querys.CONTRACT):
-    def __init__(self, *args, source, valuation, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.__source = source
-        self.__valuation = valuation
-
+class HoldingReader(HoldingBase, Producer, title="Produced", variable=Variables.Querys.CONTRACT):
     def producer(self, *args, **kwargs):
-        valuations = self.read(*args, **kwargs)
+        with self.datatable.mutex:
+            valuations = self.read(*args, **kwargs)
         if bool(valuations.empty): return
         valuations = self.parse(valuations, *args, **kwargs)
         valuations = self.stocks(valuations, *args, **kwargs)
@@ -160,16 +152,12 @@ class HoldingReader(Producer, title="Produced", variable=Variables.Querys.CONTRA
             yield dict(holdings)
 
     def read(self, *args, **kwargs):
-        if not bool(self.source): return pd.DataFrame()
-        self.source.mutex.acquire()
-        column = self.column("status", self.source.table)
-        accepted = self.source.table[column] == Variables.Status.ACCEPTED
-        accepted = self.source.table.where(accepted).dropna(how="all", inplace=False)
-        self.source.remove(lambda dataframe: dataframe[column] == Variables.Status.ACCEPTED)
-        self.source.remove(lambda dataframe: dataframe[column] == Variables.Status.REJECTED)
-        self.source.remove(lambda dataframe: dataframe[column] == Variables.Status.ABANDONED)
-        self.source.mutex.release()
-        return accepted
+        if not bool(self.datatable): return pd.DataFrame()
+        column = self.column("status", self.datatable.table)
+        accepted = lambda dataframe: dataframe[column] == Variables.Status.ACCEPTED
+        valuations = self.datatable.table.where(accepted).dropna(how="all", inplace=False)
+        self.datatable.remove(accepted)
+        return valuations
 
     def parse(self, valuations, *args, **kwargs):
         columns = set(valuations.columns) - ({"scenario"} | Axes.stacking[self.valuation])
@@ -203,18 +191,6 @@ class HoldingReader(Producer, title="Produced", variable=Variables.Querys.CONTRA
         for (ticker, expire), dataframe in iter(holdings.groupby(["ticker", "expire"])):
             yield (ticker, expire), dataframe
 
-    @staticmethod
-    def column(column, dataframe):
-        if isinstance(dataframe.columns, pd.MultiIndex):
-            column = tuple([column]) if not isinstance(column, tuple) else column
-            length = dataframe.columns.nlevels - len(column)
-            column = column + tuple([""]) * length
-        return column
-
-    @property
-    def source(self): return self.__source
-    @property
-    def valuation(self): return self.__valuation
 
 
 
