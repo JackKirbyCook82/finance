@@ -93,7 +93,7 @@ class CollarLongCalculation(StrategyCalculation, strategy=Variables.Strategies.C
 class CollarShortCalculation(StrategyCalculation, strategy=Variables.Strategies.Collar.Short, equation=CollarShortEquation): pass
 
 
-class StrategyCalculator(Processor, title="Calculated", variable=Variables.Querys.CONTRACT):
+class StrategyCalculator(Processor, title="Calculated", reporting=True, variable=Variables.Querys.CONTRACT):
     def __init__(self, *args, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
         calculations = {variables["strategy"]: calculation for variables, calculation in ODict(list(StrategyCalculation)).items()}

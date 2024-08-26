@@ -52,7 +52,7 @@ class StabilityCalculation(Calculation, equation=StabilityEquation):
         yield equation.m(portfolios)
 
 
-class StabilityCalculator(Processor, title="Calculated", variable=Variables.Querys.CONTRACT):
+class StabilityCalculator(Processor, title="Calculated", reporting=True, variable=Variables.Querys.CONTRACT):
     def __init__(self, *args, valuation, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
         self.__calculation = StabilityCalculation(*args, **kwargs)

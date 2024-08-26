@@ -45,7 +45,7 @@ class ExposureReporter(object):
     def name(self): return self.__name
 
 
-class ExposureCalculator(Processor, title="Calculated", variable=Variables.Querys.CONTRACT):
+class ExposureCalculator(Processor, title="Calculated", reporting=True, variable=Variables.Querys.CONTRACT):
     def __init__(self, *args, reporter, **kwargs):
         assert isinstance(reporter, ExposureReporter)
         super().__init__(*args, **kwargs)

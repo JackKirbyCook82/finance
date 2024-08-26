@@ -28,7 +28,7 @@ class Axes:
     contract = ["ticker", "expire"]
 
 
-class AllocationCalculator(Processor, title="Calculated", variable=Variables.Querys.CONTRACT):
+class AllocationCalculator(Processor, title="Calculated", reporting=True, variable=Variables.Querys.CONTRACT):
     def __init__(self, *args, valuation, **kwargs):
         super().__init__(*args, **kwargs)
         self.__valuation = valuation

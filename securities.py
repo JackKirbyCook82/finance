@@ -47,7 +47,7 @@ class OptionFile(File, variable=Variables.Instruments.OPTION, header=Headers.opt
 class SecurityFiles(object): Stock = StockFile; Option = OptionFile
 
 
-class SecurityFilter(Filter, variable=Variables.Querys.CONTRACT):
+class SecurityFilter(Filter, reporting=True, variable=Variables.Querys.CONTRACT):
     def processor(self, contents, *args, **kwargs):
         parameters = dict(variable=contents[self.variable])
         securities = list(self.calculate(contents, *args, **parameters, **kwargs))
@@ -109,7 +109,7 @@ class BlackScholesCalculation(Calculation, equation=BlackScholesEquation):
         yield equation.to(exposures)
 
 
-class SecurityCalculator(Processor, title="Calculated", variable=Variables.Querys.CONTRACT):
+class SecurityCalculator(Processor, title="Calculated", reporting=True, variable=Variables.Querys.CONTRACT):
     def __init__(self, *args, size, volume=lambda cols: np.NaN, interest=lambda cols: np.NaN, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
         calculations = {Variables.Instruments.OPTION: BlackScholesCalculation}

@@ -14,8 +14,9 @@ from collections import namedtuple as ntuple
 
 from finance.variables import Variables, Contract
 from support.tables import Tables, Views
-from support.meta import ParametersMeta
 from support.pipelines import Producer, Consumer
+from support.meta import ParametersMeta
+from support.mixins import Mixin
 from support.files import File
 
 __version__ = "1.0.0"
@@ -60,16 +61,16 @@ class HoldingFile(File, variable=Variables.Datasets.HOLDINGS, header=Headers.hol
 class HoldingFiles(object): Holding = HoldingFile
 
 
-class HoldingBase(object):
+class HoldingMixin(Mixin):
     def __init__(self, *args, datatable, valuation, **kwargs):
+        super().__init__(*args, **kwargs)
         self.__datatable = datatable
         self.__valuation = valuation
 
-    @staticmethod
-    def column(column, dataframe):
-        if isinstance(dataframe.columns, pd.MultiIndex):
+    def stack(self, column):
+        if isinstance(self.datatable.columns, pd.MultiIndex):
             column = tuple([column]) if not isinstance(column, tuple) else column
-            length = dataframe.columns.nlevels - len(column)
+            length = self.datatable.columns.nlevels - len(column)
             column = column + tuple([""]) * length
         return column
 
@@ -79,55 +80,70 @@ class HoldingBase(object):
     def valuation(self): return self.__valuation
 
 
-class HoldingRoutine(HoldingBase, Routine, title="Performed", variable=Variables.Querys.CONTRACT):
-    def routine(self, *args, **kwargs):
-        with self.datatable.mutex:
-            self.obsolete(*args, **kwargs)
-            self.clean(*args, **kwargs)
-
-    def clean(self, *args, **kwargs):
-        if not bool(self.datatable): return
-        column = self.column("status", self.database.table)
-        rejected = lambda dataframe: dataframe[column] == Variables.Status.REJECTED
-        abandoned = lambda dataframe: dataframe[column] == Variables.Status.ABANDONED
-        self.database.remove(rejected)
-        self.database.remove(abandoned)
-
-    def obsolete(self, *args, tenure, **kwargs):
-        column = self.column("current", self.datatable.table)
-        obsolete = lambda dataframe: (pd.to_datetime("now") - dataframe[column]) >= tenure
-        self.datatable.remove(obsolete)
-
-
-class HoldingWriter(HoldingBase, Consumer, title="Consumed", variable=Variables.Querys.CONTRACT):
+class HoldingWriter(HoldingMixin, Consumer, variable=Variables.Querys.CONTRACT):
     def __init__(self, *args, priority, **kwargs):
         super().__init__(*args, **kwargs)
         self.__identity = count(1, step=1)
         self.__priority = priority
 
     def consumer(self, contents, *args, **kwargs):
-        valuations = contents[self.valuation]
+        contract, valuations = contents[Variables.Querys.CONTRACT], contents[self.valuation]
         assert isinstance(valuations, pd.DataFrame)
         if bool(valuations.empty): return
-        valuations = self.prioritize(valuations, *args, **kwargs)
-        valuations = self.identify(valuations, *args, **kwargs)
         with self.datatable.mutex:
+            self.obsolete(contract, *args, **kwargs)
+            self.setup(valuations, *args, **kwargs)
+            valuations = self.valuations(valuations, *args, **kwargs)
+            valuations = self.prioritize(valuations, *args, **kwargs)
+            valuations = self.identify(valuations, *args, **kwargs)
+            valuations = self.prospect(valuations, *args, **kwargs)
             self.write(valuations, *args, **kwargs)
 
+    def setup(self, valuations, *args, **kwargs):
+        if bool(self.datatable): return
+        self.datatable.columns = valuations.columns
+
+    def obsolete(self, contract, *args, **kwargs):
+        if not bool(self.datatable): return
+        columns = Axes.contract + ["status"]
+        Columns = ntuple("Columns", columns)
+        columns = Columns(*list(map(self.stack, columns)))
+        ticker = lambda dataframe: dataframe[columns.ticker] == contract.ticker
+        expire = lambda dataframe: dataframe[columns.expire] == contract.expire
+        status = lambda dataframe: dataframe[columns.status] == Variables.Status.PROSPECT
+        function = lambda dataframe: ticker(dataframe) & expire(dataframe) & status(dataframe)
+        self.datatable.remove(function)
+
+    def valuations(self, valuations, *args, **kwargs):
+        if not bool(self.datatable): return valuations
+        overlap = pd.merge(valuations, self.datatable.table, how="inner", on=Axes.contract + ["strategy"] + Axes.options, suffixes=("", "|existing"))
+        overlap = overlap[self.datatable.columns]
+        columns = [self.stack(column) for column in Axes.contract + ["strategy"] + Axes.options]
+        valuations = pd.concat([valuations, overlap], axis=0).drop_duplicates(subset=columns, inplace=False, keep="last")
+        return valuations
+
     def prioritize(self, valuations, *args, **kwargs):
-        column = self.column("priority", valuations)
-        valuations[column] = valuations.apply(self.priority, axis=1)
+        priority = self.stack("priority")
+        valuations[priority] = valuations.apply(self.priority, axis=1)
         parameters = dict(ascending=False, inplace=False, ignore_index=False)
-        valuations = valuations.sort_values(column, axis=0, **parameters)
+        valuations = valuations.sort_values(priority, axis=0, **parameters)
         return valuations
 
     def identify(self, valuations, *args, **kwargs):
-        tags = lambda size: [next(self.identity) for _ in range(size)]
-        valuations = valuations.assign(status=Variables.Status.PROSPECT, tag=tags(len(valuations)))
+        identity = self.stack("identity")
+        valuations = valuations.assign(identity=np.NaN) if not bool(self.datatable) else valuations
+        function = lambda tag: next(self.identity) if np.isnan(tag) else tag
+        valuations[identity] = valuations[identity].apply(function)
         return valuations
 
-    def write(self, valuations, *args, contract, tenure=None, **kwargs):
-        valuations = valuations.set_index("tag", drop=False, inplace=False)
+    def prospect(self, valuations, *args, **kwargs):
+        status = self.stack("status")
+        valuations = valuations.assign(status=np.NaN) if not bool(self.datatable) else valuations
+        valuations[status] = valuations[status].fillna(Variables.Status.PROSPECT)
+        return valuations
+
+    def write(self, valuations, *args, **kwargs):
+        valuations = valuations.set_index("identity", drop=False, inplace=False)
         self.datatable.concat(valuations)
         self.datatable.unique(Axes.contract + ["strategy"] + Axes.options)
         self.datatable.sort("priority", reverse=True)
@@ -138,9 +154,11 @@ class HoldingWriter(HoldingBase, Consumer, title="Consumed", variable=Variables.
     def identity(self): return self.__identity
 
 
-class HoldingReader(HoldingBase, Producer, title="Produced", variable=Variables.Querys.CONTRACT):
+class HoldingReader(HoldingMixin, Producer, variable=Variables.Querys.CONTRACT):
     def producer(self, *args, **kwargs):
         with self.datatable.mutex:
+            self.obsolete(*args, **kwargs)
+            self.cleaner(*args, **kwargs)
             valuations = self.read(*args, **kwargs)
         if bool(valuations.empty): return
         valuations = self.parse(valuations, *args, **kwargs)
@@ -151,10 +169,25 @@ class HoldingReader(HoldingBase, Producer, title="Produced", variable=Variables.
             holdings = {Variables.Querys.CONTRACT: contract, Variables.Datasets.HOLDINGS: dataframe}
             yield dict(holdings)
 
+    def obsolete(self, *args, tenure=None, **kwargs):
+        if not bool(self.datatable): return
+        if tenure is None: return
+        current = self.stack("current")
+        obsolete = lambda dataframe: (pd.to_datetime("now") - dataframe[current]) >= tenure
+        self.datatable.remove(obsolete)
+
+    def cleaner(self, *args, **kwargs):
+        if not bool(self.datatable): return
+        status = self.stack("status")
+        rejected = lambda dataframe: dataframe[status] == Variables.Status.REJECTED
+        abandoned = lambda dataframe: dataframe[status] == Variables.Status.ABANDONED
+        self.datatable.remove(rejected)
+        self.datatable.remove(abandoned)
+
     def read(self, *args, **kwargs):
         if not bool(self.datatable): return pd.DataFrame()
-        column = self.column("status", self.datatable.table)
-        accepted = lambda dataframe: dataframe[column] == Variables.Status.ACCEPTED
+        status = self.stack("status")
+        accepted = lambda dataframe: dataframe[status] == Variables.Status.ACCEPTED
         valuations = self.datatable.table.where(accepted).dropna(how="all", inplace=False)
         self.datatable.remove(accepted)
         return valuations

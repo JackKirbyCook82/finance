@@ -75,7 +75,7 @@ class StochasticCalculation(TechnicalCalculation, technical=Variables.Technicals
         yield equation.xk(bars)
 
 
-class TechnicalCalculator(Processor, title="Calculated", variable=Variables.Querys.SYMBOL):
+class TechnicalCalculator(Processor, title="Calculated", reporting=True, variable=Variables.Querys.SYMBOL):
     def __init__(self, *args, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
         calculations = {variables["technical"]: calculation for variables, calculation in ODict(list(TechnicalCalculation)).items()}

@@ -67,7 +67,7 @@ class ValuationFiles(object):
     Arbitrage = ArbitrageFile
 
 
-class ValuationFilter(Filter, variable=Variables.Querys.CONTRACT):
+class ValuationFilter(Filter, reporting=True, variable=Variables.Querys.CONTRACT):
     def __init__(self, *args, valuation, **kwargs):
         super().__init__(*args, **kwargs)
         self.__valuation = valuation
@@ -131,7 +131,7 @@ class MinimumArbitrageCalculation(ArbitrageCalculation, scenario=Variables.Scena
 class MaximumArbitrageCalculation(ArbitrageCalculation, scenario=Variables.Scenarios.MAXIMUM, equation=MaximumArbitrageEquation): pass
 
 
-class ValuationCalculator(Processor, title="Calculated", variable=Variables.Querys.CONTRACT):
+class ValuationCalculator(Processor, title="Calculated", reporting=True, variable=Variables.Querys.CONTRACT):
     def __init__(self, *args, valuation, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
         calculations = {variables["scenario"]: calculation for variables, calculation in ODict(list(ValuationCalculation)).items() if variables["valuation"] is valuation}
