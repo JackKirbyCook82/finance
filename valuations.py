@@ -34,7 +34,6 @@ class Axes:
     stocks = list(map(str, Variables.Securities.Stocks))
     stacking = {Variables.Valuations.ARBITRAGE: {"apy", "npv", "cost"}}
     arbitrage = ["apy", "npv", "cost", "size", "tau", "underlying", "current"]
-    security = ["instrument", "option", "position"]
     contract = ["ticker", "expire"]
 
 class Parameters(metaclass=ParametersMeta):
