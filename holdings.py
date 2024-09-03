@@ -32,7 +32,7 @@ class Parameters(metaclass=ParametersMeta):
     formatters = {"instrument": int, "option": int, "position": int}
     types = {"ticker": str, "strike": np.float32, "quantity": np.int32}
     dates = {"expire": "%Y%m%d"}
-    filename = lambda variable: "_".join([str(variable.ticker).upper(), str(variable.expire.strftime("%Y%m%d"))])
+    filename = lambda contract: "_".join([str(contract.ticker).upper(), str(contract.expire.strftime("%Y%m%d"))])
     datatype = pd.DataFrame
 
 class Axes:

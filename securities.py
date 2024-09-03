@@ -34,7 +34,7 @@ class Parameters(metaclass=ParametersMeta):
     parsers = {"instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}
     formatters = {"instrument": int, "option": int, "position": int}
     dates = {"current": "%Y%m%d-%H%M", "expire": "%Y%m%d"}
-    filename = lambda variable: "_".join([str(variable.ticker).upper(), str(variable.expire.strftime("%Y%m%d"))])
+    filename = lambda contract: "_".join([str(contract.ticker).upper(), str(contract.expire.strftime("%Y%m%d"))])
     datatype = pd.DataFrame
 
 class Headers:

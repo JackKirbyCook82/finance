@@ -32,7 +32,7 @@ class Parameters(metaclass=ParametersMeta):
     statistic = {"oscillator": np.float32}
     types = bars | statistic | stochastic
     dates = {"date": "%Y%m%d"}
-    filename = lambda variable: str(variable.ticker).upper()
+    filename = lambda symbol: str(symbol.ticker).upper()
     datatype = pd.DataFrame
 
 class Headers:

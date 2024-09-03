@@ -13,7 +13,7 @@ import xarray as xr
 from abc import ABC
 from collections import OrderedDict as ODict
 
-from finance.variables import Variables, Contract
+from finance.variables import Variables
 from support.calculations import Variable, Equation, Calculation
 from support.meta import ParametersMeta
 from support.pipelines import Processor
@@ -32,8 +32,9 @@ class Axes:
     securities = list(map(str, Variables.Securities))
     options = list(map(str, Variables.Securities.Options))
     stocks = list(map(str, Variables.Securities.Stocks))
-    stacking = {Variables.Valuations.ARBITRAGE: {"apy", "npv", "cost"}}
-    arbitrage = ["apy", "npv", "cost", "size", "tau", "underlying", "current"]
+    valuation = ["current", "size", "tau", "underlying"]
+    scenarios = list(map(Variables.Scenarios))
+    arbitrage = ["apy", "npv", "cost"]
     contract = ["ticker", "expire"]
 
 class Parameters(metaclass=ParametersMeta):
@@ -41,26 +42,37 @@ class Parameters(metaclass=ParametersMeta):
     parsers = {"strategy": Variables.Strategies, "valuation": Variables.Valuations, "scenario": Variables.Scenarios}
     formatters = {"strategy": int, "valuation": int, "scenario": int}
     dates = {"current": "%Y%m%d-%H%M", "expire": "%Y%m%d"}
-    filename = lambda variable: "_".join([str(variable.ticker).upper(), str(variable.expire.strftime("%Y%m%d"))])
+    filename = lambda contract: "_".join([str(contract.ticker).upper(), str(contract.expire.strftime("%Y%m%d"))])
     datatype = pd.DataFrame
 
 class Headers:
-    arbitrage = Axes.contract + ["valuation", "scenario", "strategy"] + Axes.options + Axes.arbitrage
+    arbitrage = Axes.contract + ["valuation", "scenario", "strategy"] + Axes.options + Axes.arbitrage + Axes.valuation
 
 
 class ArbitrageFile(File, variable=Variables.Valuations.ARBITRAGE, header=Headers.arbitrage, **dict(Parameters)):
+    def __init__(self, *args, valuation, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.__stacking = getattr(Axes, str(valuation).lower())
+        self.__valuation = valuation
+
     def format(self, dataframe, *args, **kwargs):
-        index = [column for column in dataframe.columns if column[0] not in Axes.stacking[Variables.Valuations.ARBITRAGE]]
+        index = [column for column in dataframe.columns if column[0] not in self.stacking]
         dataframe = dataframe.set_index(list(index), drop=True, inplace=False)
         dataframe = dataframe.stack("scenario").reset_index(drop=False, inplace=False)
         dataframe = dataframe.rename(columns={column: column[0] for column in index})
         return dataframe
 
     def parse(self, dataframe, *args, **kwargs):
-        index = set(dataframe.columns) - ({"scenario"} | Axes.stacking[Variables.Valuations.ARBITRAGE])
+        index = set(dataframe.columns) - ({"scenario"} | self.stacking)
         dataframe = dataframe.pivot(index=list(index), columns="scenario")
         dataframe = dataframe.reset_index(drop=False, inplace=False)
         return dataframe
+
+    @property
+    def valuation(self): return self.__valuation
+    @property
+    def stacking(self): return self.__stacking
+
 
 class ValuationFiles(object):
     Arbitrage = ArbitrageFile
@@ -69,6 +81,7 @@ class ValuationFiles(object):
 class ValuationFilter(Filter, reporting=True, variable=Variables.Querys.CONTRACT):
     def __init__(self, *args, valuation, **kwargs):
         super().__init__(*args, **kwargs)
+        self.__stacking = getattr(Axes, str(valuation).lower())
         self.__valuation = valuation
 
     def processor(self, contents, *args, **kwargs):
@@ -88,6 +101,8 @@ class ValuationFilter(Filter, reporting=True, variable=Variables.Querys.CONTRACT
 
     @property
     def valuation(self): return self.__valuation
+    @property
+    def stacking(self): return self.__stacking
 
 
 class ValuationEquation(Equation): pass
@@ -136,6 +151,7 @@ class ValuationCalculator(Processor, title="Calculated", reporting=True, variabl
         calculations = {variables["scenario"]: calculation for variables, calculation in ODict(list(ValuationCalculation)).items() if variables["valuation"] is valuation}
         self.__calculations = {scenario: calculation(*args, **kwargs) for scenario, calculation in calculations.items()}
         self.__variables = lambda **mapping: {key: xr.Variable(key, [value]).squeeze(key) for key, value in mapping.items()}
+        self.__stacking = getattr(Axes, str(valuation).lower())
         self.__valuation = valuation
 
     def processor(self, contents, *args, **kwargs):
@@ -158,7 +174,7 @@ class ValuationCalculator(Processor, title="Calculated", reporting=True, variabl
     def valuations(self, valuations, *args, **kwargs):
         if not bool(valuations): return
         valuations = pd.concat(valuations, axis=0)
-        index = set(valuations.columns) - ({"scenario"} | Axes.stacking[self.valuation])
+        index = set(valuations.columns) - ({"scenario"} | self.stacking)
         valuations = valuations.pivot(index=list(index), columns="scenario")
         valuations = valuations.reset_index(drop=False, inplace=False)
         yield self.valuation, valuations
@@ -181,6 +197,8 @@ class ValuationCalculator(Processor, title="Calculated", reporting=True, variabl
     def variables(self): return self.__variables
     @property
     def valuation(self): return self.__valuation
+    @property
+    def stacking(self): return self.__stacking
 
 
 
