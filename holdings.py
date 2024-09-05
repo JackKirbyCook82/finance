@@ -109,9 +109,8 @@ class HoldingWriter(HoldingMixin, Consumer, variable=Variables.Querys.CONTRACT):
     def valuations(self, valuations, *args, **kwargs):
         if not bool(self.datatable): return valuations
         columns = Axes.contract + ["strategy"] + Axes.options
-
-#        overlap = self.datatable.inner(valuations, on=columns).right
-
+        existing = self.datatable.dataframe
+        overlap = existing.merge(valuations, on=columns, how="inner", suffixes=("_", ""))[columns]
         valuations = pd.concat([valuations, overlap], axis=0)
         valuations = valuations.drop_duplicates(columns, keep="last", inplace=False)
         return valuations
