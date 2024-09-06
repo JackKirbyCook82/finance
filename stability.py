@@ -25,7 +25,7 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-class Axes:
+class Axes(object):
     security = ["instrument", "option", "position"]
     contract = ["ticker", "expire"]
 

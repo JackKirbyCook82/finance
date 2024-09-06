@@ -21,7 +21,7 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-class Axes:
+class Axes(object):
     options = list(map(str, Variables.Securities.Options))
     stocks = list(map(str, Variables.Securities.Stocks))
     security = ["instrument", "option", "position"]

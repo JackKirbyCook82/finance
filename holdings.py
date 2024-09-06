@@ -10,6 +10,7 @@ import logging
 import numpy as np
 import pandas as pd
 from itertools import product, count
+from collections import namedtuple as ntuple
 
 from finance.variables import Variables, Contract
 from support.tables import Tables, Views
@@ -26,57 +27,70 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-class Parameters(metaclass=ParametersMeta):
-    parsers = {"instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}
-    formatters = {"instrument": int, "option": int, "position": int}
-    types = {"ticker": str, "strike": np.float32, "quantity": np.int32}
-    dates = {"expire": "%Y%m%d"}
-    filename = lambda contract: "_".join([str(contract.ticker).upper(), str(contract.expire.strftime("%Y%m%d"))])
-    datatype = pd.DataFrame
-
-class Axes:
+class HoldingHeader(ntuple("Header", "valuation holdings")): pass
+class HoldingAxes(object, metaclass=ParametersMeta):
     options = list(map(str, Variables.Securities.Options))
     stocks = list(map(str, Variables.Securities.Stocks))
     securities = list(map(str, Variables.Securities))
-    scenarios = list(map(str, Variables.Scenarios))
+    scenarios = list(Variables.Scenarios)
     valuation = ["current", "size", "tau", "underlying"]
     arbitrage = ["apy", "npv", "cost"]
     security = ["instrument", "option", "position"]
     contract = ["ticker", "expire"]
 
-class Headers:
-    holdings = Axes.contract + Axes.security + ["strike", "quantity"]
-    arbitrage = Axes.contract + ["valuation", "strategy"] + Axes.options + list(product(Axes.arbitrage, Axes.scenarios)) + Axes.valuation + ["status", "priority"]
+    def __call__(self, *args, ):
 
+#class HoldingHeaders(object, metaclass=ParametersMeta):
+#    arbitrage = HoldingAxes.contract + ["valuation", "strategy"] + HoldingAxes.options + list(product(HoldingAxes.arbitrage, HoldingAxes.scenarios)) + HoldingAxes.valuation + ["status", "priority"]
+#    holdings = HoldingAxes.contract + HoldingAxes.security + ["strike", "quantity"]
 
-class Formatting(metaclass=ParametersMeta):
-    order = ["ticker", "expire", "valuation", "strategy"] + Axes.options + [(lead, lag) for lead, lag in product(Axes.arbitrage, Axes.scenarios)] + ["size", "status"]
-    formats = {(lead, lag): lambda column: f"{column:.02f}" for lead, lag in product(Axes.arbitrage[1:], Axes.scenarios)}
-    formats.update({(lead, lag): lambda column: f"{column * 100:.02f}%" if np.isfinite(column) else "InF" for lead, lag in product(Axes.arbitrage[0], Axes.scenarios)})
+class HoldingParameters(object, metaclass=ParametersMeta):
+    filename = lambda contract: "_".join([str(contract.ticker).upper(), str(contract.expire.strftime("%Y%m%d"))])
+    parsers = {"instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}
+    formatters = {"instrument": int, "option": int, "position": int}
+    types = {"ticker": str, "strike": np.float32, "quantity": np.int32}
+    dates = {"expire": "%Y%m%d"}
+    datatype = pd.DataFrame
+
+class HoldingFormatting(object, metaclass=ParametersMeta):
+    order = ["ticker", "expire", "valuation", "strategy"] + HoldingAxes.options + [(lead, lag) for lead, lag in product(HoldingAxes.arbitrage, HoldingAxes.scenarios)] + ["size", "status"]
+    formats = {(lead, lag): lambda column: f"{column:.02f}" for lead, lag in product(HoldingAxes.arbitrage[1:], HoldingAxes.scenarios)}
+    formats.update({(lead, lag): lambda column: f"{column * 100:.02f}%" if np.isfinite(column) else "InF" for lead, lag in product(HoldingAxes.arbitrage[0], HoldingAxes.scenarios)})
     formats.update({"priority": lambda priority: f"{priority * 100:.02f}%" if np.isfinite(priority) else "InF"})
     formats.update({"status": lambda status: str(status), "size": lambda size: f"{size:.02f}"})
     numbers = lambda column: f"{column:.02f}"
 
 
-class HoldingView(Views.Dataframe, rows=20, columns=30, width=250, **dict(Formatting)): pass
-class HoldingTable(Tables.Dataframe, tableview=HoldingView, tableaxes=Headers.arbitrage): pass
-class HoldingFile(File, variable=Variables.Datasets.HOLDINGS, header=Headers.holdings, **dict(Parameters)): pass
+class HoldingView(Views.Dataframe, rows=20, columns=30, width=250, **dict(HoldingFormatting)): pass
+class HoldingTable(Tables.Dataframe): pass
+
+class HoldingFile(File, variable=Variables.Datasets.HOLDINGS, **dict(HoldingParameters)): pass
 class HoldingFiles(object): Holding = HoldingFile
 
 
 class HoldingMixin(Mixin):
     def __init__(self, *args, datatable, valuation, **kwargs):
         super().__init__(*args, **kwargs)
-        self.__stacking = getattr(Axes, str(valuation).lower())
+
+        self.__axes = dict(HoldingAxes)
         self.__datatable = datatable
         self.__valuation = valuation
+
+    @property
+    def index(self): return list(product(self.axes["contract"] + ["valuation", "strategy"] + self.axes["options"], [""]))
+    @property
+    def columns(self):
+        valuation = str(self.valuation).lower()
+        stacked = list(product(self.axes[valuation], self.axes["scenarios"]))
+        unstacked = list(product(self.axes["valuation"] + ["status", "priority"], [""]))
+        return stacked + unstacked
 
     @property
     def datatable(self): return self.__datatable
     @property
     def valuation(self): return self.__valuation
     @property
-    def stacking(self): return self.__stacking
+    def axes(self): return self.__axes
 
 
 class HoldingWriter(HoldingMixin, Consumer, variable=Variables.Querys.CONTRACT):
@@ -108,11 +122,10 @@ class HoldingWriter(HoldingMixin, Consumer, variable=Variables.Querys.CONTRACT):
 
     def valuations(self, valuations, *args, **kwargs):
         if not bool(self.datatable): return valuations
-        columns = Axes.contract + ["strategy"] + Axes.options
         existing = self.datatable.dataframe
-        overlap = existing.merge(valuations, on=columns, how="inner", suffixes=("_", ""))[columns]
+        overlap = existing.merge(valuations, on=self.index, how="inner", suffixes=("_", ""))[existing.columns]
         valuations = pd.concat([valuations, overlap], axis=0)
-        valuations = valuations.drop_duplicates(columns, keep="last", inplace=False)
+        valuations = valuations.drop_duplicates(self.index, keep="last", inplace=False)
         return valuations
 
     def prioritize(self, valuations, *args, **kwargs):
@@ -124,20 +137,18 @@ class HoldingWriter(HoldingMixin, Consumer, variable=Variables.Querys.CONTRACT):
     def identify(self, valuations, *args, **kwargs):
         if "identity" not in valuations.columns.levels[0]: valuations["identity"] = np.NaN
         function = lambda tag: next(self.identity) if np.isnan(tag) else tag
-        valuations["identity"] = valuations.xs("identity", level=0, axis=1).apply(function)
+        valuations["identity"] = valuations["identity"].apply(function)
         return valuations
 
     def prospect(self, valuations, *args, **kwargs):
         if "status" not in valuations.columns.levels[0]: valuations["status"] = np.NaN
-        function = lambda status: Variables.Status.PROSPECT if np.isnan(self.status) else status
-        valuations["status"] = valuations.xs("status", level=0, axis=1).apply(function)
+        function = lambda status: self.status if np.isnan(status) else status
+        valuations["status"] = valuations["status"].apply(function)
         return valuations
 
     def write(self, valuations, *args, **kwargs):
-        valuations = valuations.set_index("identity", drop=False, inplace=False)
-        columns = Axes.contract + ["strategy"] + Axes.options
-        self.datatable.concat(valuations)
-        self.datatable.unique(columns)
+        self.datatable.combine(valuations)
+        self.datatable.unique(self.index)
         self.datatable.sort("priority", reverse=True)
 
     @property
@@ -150,12 +161,12 @@ class HoldingWriter(HoldingMixin, Consumer, variable=Variables.Querys.CONTRACT):
 
 class HoldingReader(HoldingMixin, Producer, variable=Variables.Querys.CONTRACT):
     def producer(self, *args, **kwargs):
+        if not bool(self.datatable): return
         with self.datatable.mutex:
             self.obsolete(*args, **kwargs)
             valuations = self.read(*args, **kwargs)
-            valuations = self.valuation(valuations, *args, **kwargs)
         if bool(valuations.empty): return
-        valuations = self.parse(valuations, *args, **kwargs)
+        valuations = self.valuations(valuations, *args, **kwargs)
         valuations = self.stocks(valuations, *args, **kwargs)
         holdings = self.holdings(valuations, *args, **kwargs)
         for (ticker, expire), dataframe in self.groupings(holdings, *args, **kwargs):

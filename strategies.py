@@ -18,6 +18,7 @@ from collections import OrderedDict as ODict
 from finance.variables import Variables
 from support.calculations import Variable, Equation, Calculation
 from support.pipelines import Processor
+from support.meta import ParametersMeta
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -27,10 +28,9 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-class Axes:
+class StrategyAxes(object, metaclass=ParametersMeta):
     security = ["instrument", "option", "position"]
     contract = ["ticker", "expire"]
-
 
 class StrategyEquation(Equation):
     t = Variable("t", "current", np.datetime64, function=lambda tα, tβ: np.minimum(np.datetime64(tα, "ns"), np.datetime64(tβ, "ns")))
@@ -99,6 +99,7 @@ class StrategyCalculator(Processor, title="Calculated", reporting=True, variable
         calculations = {variables["strategy"]: calculation for variables, calculation in ODict(list(StrategyCalculation)).items()}
         self.__calculations = {strategy: calculation(*args, **kwargs) for strategy, calculation in calculations.items()}
         self.__variables = lambda **mapping: {key: xr.Variable(key, [value]).squeeze(key) for key, value in mapping.items()}
+        self.__axes = dict(StrategyAxes)
 
     def processor(self, contents, *args, **kwargs):
         options = contents[Variables.Instruments.OPTION]
@@ -126,12 +127,12 @@ class StrategyCalculator(Processor, title="Calculated", reporting=True, variable
 
     def options(self, options, *args, **kwargs):
         if bool(options.empty): return
-        options = options.set_index(Axes.contract + Axes.security + ["strike"], drop=True, inplace=False)
+        options = options.set_index(self.axes["contract"] + self.axes["security"] + ["strike"], drop=True, inplace=False)
         options = xr.Dataset.from_dataframe(options)
-        options = reduce(lambda content, axis: content.squeeze(axis), Axes.contract, options)
-        for values in product(*[options[axis].values for axis in Axes.security]):
-            dataset = options.sel(indexers={key: value for key, value in zip(Axes.security, values)})
-            dataset = dataset.drop_vars(Axes.security, errors="ignore")
+        options = reduce(lambda content, axis: content.squeeze(axis), self.axes["contract"], options)
+        for values in product(*[options[axis].values for axis in self.axes["security"]]):
+            dataset = options.sel(indexers={key: value for key, value in zip(self.axes["security"], values)})
+            dataset = dataset.drop_vars(self.axes["security"], errors="ignore")
             if self.empty(dataset["size"]): continue
             variable = Variables.Securities[values]
             dataset = dataset.rename({"strike": str(variable)})
@@ -144,5 +145,7 @@ class StrategyCalculator(Processor, title="Calculated", reporting=True, variable
     def calculations(self): return self.__calculations
     @property
     def variables(self): return self.__variables
+    @property
+    def axes(self): return self.__axes
 
 

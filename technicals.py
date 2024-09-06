@@ -26,7 +26,7 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-class Parameters(metaclass=ParametersMeta):
+class TechnicalParameters(object, metaclass=ParametersMeta):
     bars = {"ticker": str, "volume": np.int64} | {column: np.float32 for column in ("price", "open", "close", "high", "low")}
     stochastic = {"trend": np.float32, "volatility": np.float32}
     statistic = {"oscillator": np.float32}
@@ -35,15 +35,10 @@ class Parameters(metaclass=ParametersMeta):
     filename = lambda symbol: str(symbol.ticker).upper()
     datatype = pd.DataFrame
 
-class Headers:
-    stochastic = ["date", "ticker", "price", "oscillator"]
-    statistic = ["date", "ticker", "price", "trend", "volatility"]
-    bars = ["date", "ticker", "high", "low", "open", "close", "price", "volume"]
 
-
-class BarsFile(File, variable=Variables.Technicals.BARS, header=Headers.bars, **dict(Parameters)): pass
-class StatisticFile(File, variable=Variables.Technicals.STATISTIC, header=Headers.statistic, **dict(Parameters)): pass
-class StochasticFile(File, variable=Variables.Technicals.STOCHASTIC, header=Headers.stochastic, **dict(Parameters)): pass
+class BarsFile(File, variable=Variables.Technicals.BARS, **dict(TechnicalParameters)): pass
+class StatisticFile(File, variable=Variables.Technicals.STATISTIC, **dict(TechnicalParameters)): pass
+class StochasticFile(File, variable=Variables.Technicals.STOCHASTIC, **dict(TechnicalParameters)): pass
 class TechnicalFiles(object): Bars = BarsFile; Statistic = StatisticFile; Stochastic = StochasticFile
 
 

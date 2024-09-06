@@ -29,7 +29,7 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-class Parameters(metaclass=ParametersMeta):
+class SecurityParameters(object, metaclass=ParametersMeta):
     types = {"ticker": str, "strike": np.float32, "price": np.float32, "underlying": np.float32, "size": np.float32, "volume": np.float32, "interest": np.float32}
     parsers = {"instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}
     formatters = {"instrument": int, "option": int, "position": int}
@@ -37,13 +37,9 @@ class Parameters(metaclass=ParametersMeta):
     filename = lambda contract: "_".join([str(contract.ticker).upper(), str(contract.expire.strftime("%Y%m%d"))])
     datatype = pd.DataFrame
 
-class Headers:
-    options = ["ticker", "expire", "instrument", "option", "position", "strike", "volume", "size", "interest", "current"]
-    stocks = ["ticker", "instrument", "position", "price", "volume", "size", "current"]
 
-
-class StockFile(File, variable=Variables.Instruments.STOCK, header=Headers.stocks, **dict(Parameters)): pass
-class OptionFile(File, variable=Variables.Instruments.OPTION, header=Headers.options, **dict(Parameters)): pass
+class StockFile(File, variable=Variables.Instruments.STOCK, **dict(SecurityParameters)): pass
+class OptionFile(File, variable=Variables.Instruments.OPTION, **dict(SecurityParameters)): pass
 class SecurityFiles(object): Stock = StockFile; Option = OptionFile
 
 
