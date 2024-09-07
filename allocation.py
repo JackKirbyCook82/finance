@@ -21,16 +21,20 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-class Axes(object):
+class AllocationAxes(object):
     options = list(map(str, Variables.Securities.Options))
     stocks = list(map(str, Variables.Securities.Stocks))
     security = ["instrument", "option", "position"]
     contract = ["ticker", "expire"]
 
+    def __new__(cls, *args, **kwargs): return super().__new__(cls)
+    def __init__(self, *args, **kwargs): super().__init__()
+
 
 class AllocationCalculator(Processor, title="Calculated", reporting=True, variable=Variables.Querys.CONTRACT):
     def __init__(self, *args, valuation, **kwargs):
         super().__init__(*args, **kwargs)
+        self.__axes = AllocationAxes(*args, **kwargs)
         self.__valuation = valuation
 
     def processor(self, contents, *args, **kwargs):
@@ -54,36 +58,33 @@ class AllocationCalculator(Processor, title="Calculated", reporting=True, variab
             allocations = allocations.reset_index(drop=True, inplace=False)
             yield allocations
 
-    @staticmethod
-    def securities(valuations, *args, **kwargs):
+    def securities(self, valuations, *args, **kwargs):
         strategy = lambda cols: list(map(str, cols["strategy"].stocks))
-        function = lambda cols: {stock: cols["underlying"] if stock in strategy(cols) else np.NaN for stock in Axes.stocks}
-        options = valuations[Axes.contract + Axes.options + ["portfolio", "valuation", "strategy", "underlying"]]
+        function = lambda cols: {stock: cols["underlying"] if stock in strategy(cols) else np.NaN for stock in self.axes.stocks}
+        options = valuations[self.axes.contract + self.axes.options + ["portfolio", "valuation", "strategy", "underlying"]]
         options = options.droplevel("scenario", axis=1)
         stocks = options.apply(function, axis=1, result_type="expand")
         securities = pd.concat([options, stocks], axis=1)
-        securities = securities[["portfolio"] + Axes.contract + Axes.options + Axes.stocks]
+        securities = securities[["portfolio"] + self.axes.contract + self.axes.options + self.axes.stocks]
         return securities
 
-    @staticmethod
-    def stocks(securities, *args, **kwargs):
+    def stocks(self, securities, *args, **kwargs):
         security = lambda cols: list(Variables.Securities(cols["security"])) + [1]
-        stocks = securities[Axes.stocks].to_frame("strike")
+        stocks = securities[self.axes.stocks].to_frame("strike")
         stocks = stocks.reset_index(names="security", drop=False, inplace=False)
-        stocks[Axes.security + ["quantity"]] = stocks.apply(security, axis=1, result_type="expand")
+        stocks[self.axes.security + ["quantity"]] = stocks.apply(security, axis=1, result_type="expand")
         stocks = stocks[[column for column in stocks.columns if column != "security"]]
-        contract = {key: value for key, value in securities[["portfolio"] + Axes.contract].to_dict().items()}
+        contract = {key: value for key, value in securities[["portfolio"] + self.axes.contract].to_dict().items()}
         stocks = stocks.assign(**contract)
         return stocks
 
-    @staticmethod
-    def options(securities, *args, **kwargs):
+    def options(self, securities, *args, **kwargs):
         security = lambda cols: list(Variables.Securities(cols["security"])) + [1]
-        options = securities[Axes.options].to_frame("strike")
+        options = securities[self.axes.options].to_frame("strike")
         options = options.reset_index(names="security", drop=False, inplace=False)
-        options[Axes.security + ["quantity"]] = options.apply(security, axis=1, result_type="expand")
+        options[self.axes.security + ["quantity"]] = options.apply(security, axis=1, result_type="expand")
         options = options[[column for column in options.columns if column != "security"]]
-        contract = {key: value for key, value in securities[["portfolio"] + Axes.contract].to_dict().items()}
+        contract = {key: value for key, value in securities[["portfolio"] + self.axes.contract].to_dict().items()}
         options = options.assign(**contract)
         return options
 
@@ -105,6 +106,8 @@ class AllocationCalculator(Processor, title="Calculated", reporting=True, variab
 
     @property
     def valuation(self): return self.__valuation
+    @property
+    def axes(self): return self.__axes
 
 
 

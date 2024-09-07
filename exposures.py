@@ -29,7 +29,6 @@ class ExposureReporter(object):
     def __init__(self, *args, **kwargs):
         self.__name = kwargs.get("name", self.__class__.__name__)
         self.__contents = ODict()
-        super().__init__()
 
     def __bool__(self): return bool(reduce(operator.mul, list(map(len, self.contents.values())), True))
     def __len__(self): return int(reduce(operator.add, list(map(len, self.contents.values())), 0))

@@ -34,10 +34,37 @@ class ValuationAxes(object, metaclass=ParametersMeta):
     options = list(map(str, Variables.Securities.Options))
     stocks = list(map(str, Variables.Securities.Stocks))
     scenarios = list(Variables.Scenarios)
-    valuation = ["current", "size", "tau", "underlying"]
     security = ["instrument", "option", "position"]
     arbitrage = ["apy", "npv", "cost"]
     contract = ["ticker", "expire"]
+
+    def __init__(self, *args, valuation, **kwargs):
+        valuation = str(valuation).lower()
+        index = self.contract + ["valuation", "strategy"] + self.options
+        unstacked = ["current", "size", "tau", "underlying"] + ["status", "priority"]
+        stacked = list(product(getattr(self, valuation), self.scenarios))
+        unstacked = list(product(unstacked, [""]))
+        index = list(product(index, [""]))
+        self.valuation = str(self.valuation).lower()
+        self.columns = list(stacked) + list(unstacked)
+        self.index = list(index)
+
+    def parse(self, dataframe):
+        columns = getattr(self, self.valuation)
+        index = set(dataframe.columns) - ({"scenario"} | set(columns))
+        dataframe = dataframe.pivot(index=list(index), columns="scenario")
+        dataframe = dataframe.reset_index(drop=False, inplace=False)
+        return dataframe
+
+    def format(self, dataframe, *args, **kwargs):
+        columns = getattr(self, self.valuation)
+        scenarios = list(map(str, self.scenarios))
+        columns = list(product(columns, scenarios))
+        index = set(dataframe.columns) - set(columns)
+        dataframe = dataframe.set_index(list(index), drop=True, inplace=False)
+        dataframe = dataframe.stack("scenario").reset_index(drop=False, inplace=False)
+        return dataframe
+
 
 class ValuationParameters(object, metaclass=ParametersMeta):
     filename = lambda contract: "_".join([str(contract.ticker).upper(), str(contract.expire.strftime("%Y%m%d"))])
@@ -48,50 +75,15 @@ class ValuationParameters(object, metaclass=ParametersMeta):
     datatype = pd.DataFrame
 
 
-class ValuationMixin(object):
-    def __init__(self, *args, valuation, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.__axes = dict(ValuationAxes)
-        self.__valuation = valuation
-
-    def parse(self, dataframe, *args, **kwargs):
-        valuation = str(self.valuation).lower()
-        columns = self.axes[valuation]
-        index = set(dataframe.columns) - ({"scenario"} | set(columns))
-        dataframe = dataframe.pivot(index=list(index), columns="scenario")
-        dataframe = dataframe.reset_index(drop=False, inplace=False)
-        return dataframe
-
-    def format(self, dataframe, *args, **kwargs):
-        valuation = str(self.valuation).lower()
-        columns = self.axes[valuation]
-        scenarios = list(map(str, self.scenarios))
-        columns = list(product(columns, scenarios))
-        index = set(dataframe.columns) - set(columns)
-        dataframe = dataframe.set_index(list(index), drop=True, inplace=False)
-        dataframe = dataframe.stack("scenario").reset_index(drop=False, inplace=False)
-        return dataframe
-
-    @property
-    def index(self): return list(product(self.axes["contract"] + ["valuation", "strategy"] + self.axes["options"], [""]))
-    @property
-    def columns(self):
-        valuation = str(self.valuation).lower()
-        stacked = list(product(self.axes[valuation], self.axes["scenarios"]))
-        unstacked = list(product(self.axes["valuation"] + ["status", "priority"], [""]))
-        return stacked + unstacked
-
-    @property
-    def valuation(self): return self.__valuation
-    @property
-    def axes(self): return self.__axes
-
-
-class ArbitrageFile(ValuationMixin, File, variable=Variables.Valuations.ARBITRAGE, **dict(ValuationParameters)): pass
+class ArbitrageFile(File, variable=Variables.Valuations.ARBITRAGE, **dict(ValuationParameters)): pass
 class ValuationFiles(object): Arbitrage = ArbitrageFile
 
 
-class ValuationFilter(ValuationMixin, Filter, reporting=True, variable=Variables.Querys.CONTRACT):
+class ValuationFilter(Filter, reporting=True, variable=Variables.Querys.CONTRACT):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.__axes = ValuationAxes(*args, **kwargs)
+
     def processor(self, contents, *args, **kwargs):
         parameters = dict(variable=contents[self.variable])
         valuations = list(self.calculate(contents, *args, **parameters, **kwargs))
@@ -99,13 +91,16 @@ class ValuationFilter(ValuationMixin, Filter, reporting=True, variable=Variables
         yield contents | ODict(valuations)
 
     def calculate(self, contents, *args, **kwargs):
-        valuations = contents.get(self.valuation, None)
+        valuations = contents.get(self.axes.valuation, None)
         if valuations is None: return
         if bool(valuations.empty): return
         valuations = self.filter(valuations, *args, **kwargs)
         valuations = valuations.reset_index(drop=True, inplace=False)
         if bool(valuations.empty): return
         yield self.valuation, valuations
+
+    @property
+    def axes(self): return self.__axes
 
 
 class ValuationEquation(Equation): pass
@@ -148,12 +143,13 @@ class MinimumArbitrageCalculation(ArbitrageCalculation, scenario=Variables.Scena
 class MaximumArbitrageCalculation(ArbitrageCalculation, scenario=Variables.Scenarios.MAXIMUM, equation=MaximumArbitrageEquation): pass
 
 
-class ValuationCalculator(ValuationMixin, Processor, title="Calculated", reporting=True, variable=Variables.Querys.CONTRACT):
+class ValuationCalculator(Processor, title="Calculated", reporting=True, variable=Variables.Querys.CONTRACT):
     def __init__(self, *args, valuation, name=None, **kwargs):
         super().__init__(*args, name=name, valuation=valuation, **kwargs)
         calculations = {variables["scenario"]: calculation for variables, calculation in ODict(list(ValuationCalculation)).items() if variables["valuation"] is valuation}
         self.__calculations = {scenario: calculation(*args, **kwargs) for scenario, calculation in calculations.items()}
         self.__variables = lambda **mapping: {key: xr.Variable(key, [value]).squeeze(key) for key, value in mapping.items()}
+        self.__axes = ValuationAxes(*args, valuation=valuation, **kwargs)
 
     def processor(self, contents, *args, **kwargs):
         strategies = contents[Variables.Datasets.STRATEGY]
@@ -168,20 +164,20 @@ class ValuationCalculator(ValuationMixin, Processor, title="Calculated", reporti
         for scenario, calculation in self.calculations.items():
             valuations = [calculation(dataset, *args, **kwargs) for dataset in strategies]
             if not bool(valuations): continue
-            variables = self.variables(valuation=self.valuation, scenario=scenario)
+            variables = self.variables(valuation=self.axes.valuation, scenario=scenario)
             valuations = [dataset.assign_coords(variables).expand_dims("scenario") for dataset in valuations]
             yield valuations
 
     def combine(self, valuations, *args, **kwargs):
         if not bool(valuations): return
         valuations = pd.concat(valuations, axis=0)
-        valuations = self.parse(valuations, *args, **kwargs)
+        valuations = self.axes.parse(valuations, *args, **kwargs)
         yield self.valuation, valuations
 
     def flatten(self, valuations, *args, **kwargs):
         if not bool(valuations): return
         for datasets in valuations:
-            datasets = [dataset.drop_vars(self.axes["security"], errors="ignore") for dataset in datasets]
+            datasets = [dataset.drop_vars(self.axes.security, errors="ignore") for dataset in datasets]
             datasets = [dataset.expand_dims(list(set(iter(dataset.coords)) - set(iter(dataset.dims)))) for dataset in datasets]
             dataframes = [dataset.to_dataframe().dropna(how="all", inplace=False) for dataset in datasets]
             dataframes = [dataframe.reset_index(drop=False, inplace=False) for dataframe in dataframes]
@@ -193,6 +189,8 @@ class ValuationCalculator(ValuationMixin, Processor, title="Calculated", reporti
     def calculations(self): return self.__calculations
     @property
     def variables(self): return self.__variables
+    @property
+    def axes(self): return self.__axes
 
 
 

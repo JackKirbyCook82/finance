@@ -25,9 +25,12 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-class Axes(object):
+class StabilityAxes(object):
     security = ["instrument", "option", "position"]
     contract = ["ticker", "expire"]
+
+    def __new__(cls, *args, **kwargs): return super().__new__(cls)
+    def __init__(self, *args, **kwargs): super().__init__()
 
 
 class StabilityEquation(Equation):
@@ -56,6 +59,7 @@ class StabilityCalculator(Processor, title="Calculated", reporting=True, variabl
     def __init__(self, *args, valuation, name=None, **kwargs):
         super().__init__(*args, name=name, **kwargs)
         self.__calculation = StabilityCalculation(*args, **kwargs)
+        self.__axes = StabilityAxes(*args, **kwargs)
         self.__valuation = valuation
 
     def processor(self, contents, *args, **kwargs):
@@ -65,7 +69,7 @@ class StabilityCalculator(Processor, title="Calculated", reporting=True, variabl
         allocations = ODict(list(self.allocations(allocations, *args, **kwargs)))
         portfolios = list(self.portfolios(exposures, allocations, *args, **kwargs))
         portfolios = xr.concat(portfolios, join="outer", fill_value=0, dim="portfolio")
-        portfolios = portfolios.stack({"holdings": ["strike"] + Axes.security}).to_dataset()
+        portfolios = portfolios.stack({"holdings": ["strike"] + self.axes.security}).to_dataset()
         portfolios = self.underlying(portfolios, *args, **kwargs)
         stability = ODict(list(self.calculate(portfolios, *args, **kwargs)))
         valuations = self.valuations(valuations, stability, *args, **kwargs)
@@ -80,24 +84,22 @@ class StabilityCalculator(Processor, title="Calculated", reporting=True, variabl
         yield "bull", stability["trend"].isel(underlying=0).drop_vars(["underlying"])
         yield "bear", stability["trend"].isel(underlying=-1).drop_vars(["underlying"])
 
-    @staticmethod
-    def exposures(exposures, *args, **kwargs):
+    def exposures(self, exposures, *args, **kwargs):
         index = [column for column in exposures.columns if column != "quantity"]
         exposures = exposures.set_index(index, drop=True, inplace=False).squeeze()
         exposures = xr.DataArray.from_series(exposures).fillna(0)
         function = lambda content, axis: content.squeeze(axis)
-        exposures = reduce(function, Axes.contract, exposures)
+        exposures = reduce(function, self.axes.contract, exposures)
         return exposures
 
-    @staticmethod
-    def allocations(allocations, *args, **kwargs):
+    def allocations(self, allocations, *args, **kwargs):
         for portfolio, allocation in allocations.groupby("portfolio"):
             allocation = allocation.drop(columns="portfolio", inplace=False)
             index = [column for column in allocation.columns if column != "quantity"]
             allocation = allocation.set_index(index, drop=True, inplace=False).squeeze()
             allocation = xr.DataArray.from_series(allocation).fillna(0)
             function = lambda content, axis: content.squeeze(axis)
-            allocation = reduce(function, Axes.contract, allocation)
+            allocation = reduce(function, self.axes.contract, allocation)
             yield portfolio, allocation
 
     @staticmethod
@@ -127,6 +129,8 @@ class StabilityCalculator(Processor, title="Calculated", reporting=True, variabl
     def calculation(self): return self.__calculation
     @property
     def valuation(self): return self.__valuation
+    @property
+    def axes(self): return self.__axes
 
 
 
