@@ -41,7 +41,7 @@ class ValuationAxes(object, metaclass=ParametersMeta):
         stacked = list(product(getattr(self, valuation), self.scenarios))
         unstacked = list(product(unstacked, [""]))
         index = list(product(index, [""]))
-        self.valuation = str(self.valuation).lower()
+        self.valuation = str(valuation).lower()
         self.header = list(index) + list(stacked) + list(unstacked)
         self.columns = list(stacked) + list(unstacked)
         self.unstacked = list(unstacked)
@@ -67,11 +67,11 @@ class HoldingParameters(object, metaclass=ParametersMeta):
     datatype = pd.DataFrame
 
 class ValuationFormatting(object, metaclass=ParametersMeta):
-    order = ["ticker", "expire", "valuation", "strategy"] + HoldingAxes.options + [(lead, lag) for lead, lag in product(HoldingAxes.arbitrage, HoldingAxes.scenarios)] + ["size", "status"]
-    formats = {(lead, lag): lambda column: f"{column:.02f}" for lead, lag in product(HoldingAxes.arbitrage[1:], HoldingAxes.scenarios)}
-    formats.update({(lead, lag): lambda column: f"{column * 100:.02f}%" if np.isfinite(column) else "InF" for lead, lag in product(HoldingAxes.arbitrage[0], HoldingAxes.scenarios)})
+    order = ["ticker", "expire", "valuation", "strategy"] + ValuationAxes.options + [(lead, lag) for lead, lag in product(ValuationAxes.arbitrage, ValuationAxes.scenarios)] + ["size", "status"]
+    formats = {(lead, lag): lambda column: f"{column:.02f}" for lead, lag in product(ValuationAxes.arbitrage[1:], ValuationAxes.scenarios)}
+    formats.update({(lead, lag): lambda column: f"{column * 100:.02f}%" if np.isfinite(column) else "InF" for lead, lag in product(ValuationAxes.arbitrage[0], ValuationAxes.scenarios)})
     formats.update({"priority": lambda priority: f"{priority * 100:.02f}%" if np.isfinite(priority) else "InF"})
-    formats.update({"status": lambda status: str(status), "size": lambda size: f"{size:.02f}"})
+    formats.update({"identity": lambda identity: f"{identity:.0f}", "status": lambda status: str(status), "size": lambda size: f"{size:.02f}"})
     numbers = lambda column: f"{column:.02f}"
 
 
@@ -106,10 +106,10 @@ class ValuationWriter(Consumer, variable=Variables.Querys.CONTRACT):
 
     def obsolete(self, contract, *args, **kwargs):
         if not bool(self.table): return
-        ticker = lambda dataframe: dataframe["ticker"] == contract.ticker
-        expire = lambda dataframe: dataframe["expire"] == contract.expire
-        status = lambda dataframe: dataframe["status"] == Variables.Status.PROSPECT
-        obsolete = lambda dataframe: ticker(dataframe) & expire(dataframe) & status(dataframe)
+        ticker = lambda table: table["ticker"] == contract.ticker
+        expire = lambda table: table["expire"] == contract.expire
+        status = lambda table: table["status"] == Variables.Status.PROSPECT
+        obsolete = lambda table: ticker(table) & expire(table) & status(table)
         self.table.remove(obsolete)
 
     def valuations(self, valuations, *args, **kwargs):
@@ -131,6 +131,7 @@ class ValuationWriter(Consumer, variable=Variables.Querys.CONTRACT):
         if "identity" not in valuations.columns.levels[0]: valuations["identity"] = np.NaN
         function = lambda tag: next(self.identity) if np.isnan(tag) else tag
         valuations["identity"] = valuations["identity"].apply(function)
+        valuations = valuations.set_index("identity", drop=False, inplace=False)
         return valuations
 
     def prospect(self, valuations, *args, **kwargs):
@@ -153,6 +154,8 @@ class ValuationWriter(Consumer, variable=Variables.Querys.CONTRACT):
     def identity(self): return self.__identity
     @property
     def status(self): return self.__status
+    @property
+    def axes(self): return self.__axes
 
 
 class ValuationReader(Producer, variable=Variables.Querys.CONTRACT):
@@ -180,20 +183,20 @@ class ValuationReader(Producer, variable=Variables.Querys.CONTRACT):
 
     def read(self, *args, **kwargs):
         if not bool(self.table): return pd.DataFrame(columns=self.table.columns)
-        accepted = lambda dataframe: dataframe["status"] == Variables.Status.ACCEPTED
+        accepted = lambda table: table["status"] == Variables.Status.ACCEPTED
         valuations = self.table.extract(accepted)
         return valuations
 
     def obsolete(self, *args, tenure=None, **kwargs):
         if not bool(self.table): return
-        rejected = lambda dataframe: dataframe["status"] == Variables.Status.REJECTED
-        abandoned = lambda dataframe: dataframe["status"] == Variables.Status.ABANDONED
-        timeout = lambda dataframe: (pd.to_datetime("now") - dataframe["current"]) >= tenure if (tenure is not None) else False
-        obsolete = lambda dataframe: rejected(dataframe) | abandoned(dataframe) | timeout(dataframe)
+        rejected = lambda table: table["status"] == Variables.Status.REJECTED
+        abandoned = lambda table: table["status"] == Variables.Status.ABANDONED
+        timeout = lambda table: (pd.to_datetime("now") - table["current"]) >= tenure if (tenure is not None) else False
+        obsolete = lambda table: rejected(table) | abandoned(table) | timeout(table)
         self.table.remove(obsolete)
 
     def valuations(self, valuations, *args, **kwargs):
-        stacked = [column[0] for column in self.stacked]
+        stacked = [column[0] for column in self.axes.valuation.stacked]
         index = set(valuations.columns) - ({"scenario"} | set(stacked))
         valuations = valuations[list(index)].droplevel("scenario", axis=1)
         return valuations

@@ -45,7 +45,7 @@ class ValuationAxes(object, metaclass=ParametersMeta):
         stacked = list(product(getattr(self, valuation), self.scenarios))
         unstacked = list(product(unstacked, [""]))
         index = list(product(index, [""]))
-        self.valuation = str(self.valuation).lower()
+        self.valuation = str(valuation).lower()
         self.columns = list(stacked) + list(unstacked)
         self.index = list(index)
 
@@ -97,7 +97,7 @@ class ValuationFilter(Filter, reporting=True, variable=Variables.Querys.CONTRACT
         valuations = self.filter(valuations, *args, **kwargs)
         valuations = valuations.reset_index(drop=True, inplace=False)
         if bool(valuations.empty): return
-        yield self.valuation, valuations
+        yield self.axes.valuation, valuations
 
     @property
     def axes(self): return self.__axes
@@ -171,8 +171,8 @@ class ValuationCalculator(Processor, title="Calculated", reporting=True, variabl
     def combine(self, valuations, *args, **kwargs):
         if not bool(valuations): return
         valuations = pd.concat(valuations, axis=0)
-        valuations = self.axes.parse(valuations, *args, **kwargs)
-        yield self.valuation, valuations
+        valuations = self.axes.parse(valuations)
+        yield self.axes.valuation, valuations
 
     def flatten(self, valuations, *args, **kwargs):
         if not bool(valuations): return
