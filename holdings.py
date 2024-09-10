@@ -20,7 +20,7 @@ from support.files import File
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["HoldingFiles", "ValuationTable", "ValuationReader", "ValuationWriter"]
+__all__ = ["HoldingFiles", "ValuationTables", "ValuationReader", "ValuationWriter"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
@@ -48,6 +48,18 @@ class ValuationAxes(object, metaclass=ParametersMeta):
         self.stacked = list(stacked)
         self.index = list(index)
 
+class ValuationFormatting(object, metaclass=ParametersMeta):
+    order = ["ticker", "expire", "valuation", "strategy"] + ValuationAxes.options + [(lead, lag) for lead, lag in product(ValuationAxes.arbitrage, ValuationAxes.scenarios)] + ["size", "status"]
+    formats = {(lead, lag): lambda column: f"{column:.02f}" for lead, lag in product(ValuationAxes.arbitrage[1:], ValuationAxes.scenarios)}
+    formats.update({(lead, lag): lambda column: f"{column * 100:.02f}%" if np.isfinite(column) else "InF" for lead, lag in product(ValuationAxes.arbitrage[0], ValuationAxes.scenarios)})
+    formats.update({"priority": lambda priority: f"{priority * 100:.02f}%" if np.isfinite(priority) else "InF"})
+    formats.update({"identity": lambda identity: f"{identity:.0f}", "status": lambda status: str(status), "size": lambda size: f"{size:.02f}"})
+    numbers = lambda column: f"{column:.02f}"
+
+class ValuationView(Views.Dataframe, rows=20, columns=30, width=250, **dict(ValuationFormatting)): pass
+class ValuationTable(Tables.Dataframe, view=ValuationView, axes=ValuationAxes): pass
+class ValuationTables(object): Valuation = ValuationTable
+
 class HoldingAxes(object, metaclass=ParametersMeta):
     security = ["instrument", "option", "position"]
     contract = ["ticker", "expire"]
@@ -57,7 +69,6 @@ class HoldingAxes(object, metaclass=ParametersMeta):
         self.index = self.contract + self.security + ["strike"]
         self.columns = ["quantity"]
 
-
 class HoldingParameters(object, metaclass=ParametersMeta):
     filename = lambda contract: "_".join([str(contract.ticker).upper(), str(contract.expire.strftime("%Y%m%d"))])
     parsers = {"instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}
@@ -65,19 +76,6 @@ class HoldingParameters(object, metaclass=ParametersMeta):
     types = {"ticker": str, "strike": np.float32, "quantity": np.int32}
     dates = {"expire": "%Y%m%d"}
     datatype = pd.DataFrame
-
-class ValuationFormatting(object, metaclass=ParametersMeta):
-    order = ["ticker", "expire", "valuation", "strategy"] + ValuationAxes.options + [(lead, lag) for lead, lag in product(ValuationAxes.arbitrage, ValuationAxes.scenarios)] + ["size", "status"]
-    formats = {(lead, lag): lambda column: f"{column:.02f}" for lead, lag in product(ValuationAxes.arbitrage[1:], ValuationAxes.scenarios)}
-    formats.update({(lead, lag): lambda column: f"{column * 100:.02f}%" if np.isfinite(column) else "InF" for lead, lag in product(ValuationAxes.arbitrage[0], ValuationAxes.scenarios)})
-    formats.update({"priority": lambda priority: f"{priority * 100:.02f}%" if np.isfinite(priority) else "InF"})
-    formats.update({"identity": lambda identity: f"{identity:.0f}", "status": lambda status: str(status), "size": lambda size: f"{size:.02f}"})
-    numbers = lambda column: f"{column:.02f}"
-
-
-class ValuationView(Views.Dataframe, rows=20, columns=30, width=250, **dict(ValuationFormatting)): pass
-class ValuationTable(Tables.Dataframe, view=ValuationView, axes=ValuationAxes): pass
-
 
 class HoldingFile(File, variable=Variables.Datasets.HOLDINGS, **dict(HoldingParameters)): pass
 class HoldingFiles(object): Holding = HoldingFile
