@@ -12,34 +12,17 @@ import pandas as pd
 from abc import ABC
 from collections import OrderedDict as ODict
 
-from finance.variables import Variables
+from finance.variables import Variables, Symbol
 from support.calculations import Variable, Equation, Calculation
-from support.pipelines import Processor
 from support.meta import ParametersMeta
-from support.files import File
+from support.mixins import Sizing
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["TechnicalFiles", "TechnicalCalculator"]
+__all__ = ["TechnicalCalculator"]
 __copyright__ = "Copyright 2024, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
-
-
-class TechnicalParameters(object, metaclass=ParametersMeta):
-    bars = {"ticker": str, "volume": np.int64} | {column: np.float32 for column in ("price", "open", "close", "high", "low")}
-    stochastic = {"trend": np.float32, "volatility": np.float32}
-    statistic = {"oscillator": np.float32}
-    types = bars | statistic | stochastic
-    dates = {"date": "%Y%m%d"}
-    filename = lambda symbol: str(symbol.ticker).upper()
-    datatype = pd.DataFrame
-
-
-class BarsFile(File, variable=Variables.Technicals.BARS, **dict(TechnicalParameters)): pass
-class StatisticFile(File, variable=Variables.Technicals.STATISTIC, **dict(TechnicalParameters)): pass
-class StochasticFile(File, variable=Variables.Technicals.STOCHASTIC, **dict(TechnicalParameters)): pass
-class TechnicalFiles(object): Bars = BarsFile; Statistic = StatisticFile; Stochastic = StochasticFile
 
 
 class TechnicalEquation(Equation): pass
@@ -70,27 +53,44 @@ class StochasticCalculation(TechnicalCalculation, technical=Variables.Technicals
         yield equation.xk(bars)
 
 
-class TechnicalCalculator(Processor, title="Calculated", reporting=True, variable=Variables.Querys.SYMBOL):
-    def __init__(self, *args, name=None, **kwargs):
-        super().__init__(*args, name=name, **kwargs)
+class TechnicalAxes(object, metaclass=ParametersMeta):
+    bars = ["price", "open", "close", "high", "low", "volume"]
+    statistic = ["price", "trend", "volatility"]
+    stochastic = ["price", "oscillator"]
+    index = ["ticker", "date"]
+
+    def __init__(self, *args, technical, **kwargs):
+        technical = str(technical).lower()
+        self.header = self.index + list(getattr(self, technical))
+        self.technical = str(technical).lower()
+
+
+class TechnicalCalculator(Sizing):
+    def __init__(self, *args, technical, **kwargs):
+        super().__init__(*args, **kwargs)
         calculations = {variables["technical"]: calculation for variables, calculation in ODict(list(TechnicalCalculation)).items()}
-        self.__calculations = {variable: calculation(*args, **kwargs) for variable, calculation in calculations.items()}
+        self.__axes = TechnicalAxes(*args, technical=technical, **kwargs)
+        self.__calculation = calculations[technical](*args, **kwargs)
+        self.__logger = __logger__
 
-    def processor(self, contents, *args, **kwargs):
-        bars = contents[Variables.Technicals.BARS]
-        assert isinstance(bars, pd.DataFrame)
-        technicals = list(self.calculate(bars, *args, **kwargs))
-        if not bool(technicals): return
-        yield contents | ODict(technicals)
+    def calculate(self, symbol, bars, *args, **kwargs):
+        assert isinstance(symbol, Symbol) and isinstance(bars, pd.DataFrame)
+        technicals = self.technicals(bars, *args, **kwargs)
+        technicals = technicals if bool(technicals) else pd.DataFrame(columns=self.axes.header)
+        size = self.size(technicals)
+        string = f"Calculated: {repr(self)}|{str(symbol)}[{size:.0f}]"
+        self.logger.info(string)
+        return technicals
 
-    def calculate(self, bars, *args, **kwargs):
-        for variable, calculation in self.calculations.items():
-            technical = calculation(bars, *args, **kwargs)
-            if bool(technical.empty): continue
-            yield variable, technical
+    def technicals(self, bars, *args, **kwargs):
+        if bool(bars.empty): return
+        technicals = self.calculation(bars, *args, **kwargs)
+        return technicals
 
     @property
-    def calculations(self): return self.__calculations
+    def calculation(self): return self.__calculation
+    @property
+    def logger(self): return self.__logger
 
 
 

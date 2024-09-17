@@ -11,13 +11,12 @@ import numpy as np
 import pandas as pd
 
 from finance.variables import Variables, Contract
-from support.pipelines import Processor, Consumer
-from support.tables import Tables, Views
 from support.meta import ParametersMeta
+from support.mixins import Sizing
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["ExposureCalculator", "ExposureTables"]
+__all__ = ["ExposureCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
@@ -32,48 +31,13 @@ class ExposureAxes(object, metaclass=ParametersMeta):
         self.index = self.contract + self.security + ["strike"]
         self.columns = ["quantity"]
 
-class ExposureFormatting(object, metaclass=ParametersMeta):
-    order = ExposureAxes.contract + ExposureAxes.security + ["strike", "quantity"]
-    formats = {"quantity": lambda column: f"{column:.0f}"}
-    numbers = lambda column: f"{column:.02f}"
 
-class ExposureView(Views.Dataframe, rows=20, columns=30, width=250, **dict(ExposureFormatting)): pass
-class ExposureTable(Tables.Dataframe, view=ExposureView, axes=ExposureAxes): pass
-class ExposureTables(object): Exposure = ExposureTable
-
-
-class ExposureWriter(Consumer):
-    def __init__(self, *args, table, **kwargs):
-        super().__init__(*args, **kwargs)
+class ExposureCalculator(Sizing):
+    def __init__(self, *args, **kwargs):
         self.__axes = ExposureAxes(*args, **kwargs)
-        self.__table = table
+        self.__logger = __logger__
 
-    def consumer(self, contents, *args, **kwargs):
-        contract, exposures = contents[Variables.Querys.CONTRACT], contents[Variables.Querys.EXPOSURE]
-        assert isinstance(exposures, pd.DataFrame)
-        with self.table.mutex:
-            self.obsolete(contract, *args, **kwargs)
-            self.write(exposures, *args, **kwargs)
-
-    def obsolete(self, contract, *args, **kwargs):
-        if not bool(self.table): return
-        ticker = lambda table: table["ticker"] == contract.ticker
-        expire = lambda table: table["expire"] == contract.expire
-        contract = lambda table: ticker(table) & expire(table)
-        self.table.remove(contract)
-
-    def write(self, exposures, *args, **kwargs):
-        self.table.combine(exposures)
-
-    @property
-    def table(self): return self.__table
-    @property
-    def axes(self): return self.__axes
-
-
-class ExposureCalculator(Processor, title="Calculated", reporting=True, variable=Variables.Querys.CONTRACT):
-    def processor(self, contents, *args, **kwargs):
-        contract, holdings = contents[Variables.Querys.CONTRACT], contents[Variables.Datasets.HOLDINGS]
+    def calculate(self, contract, holdings, *args, **kwargs):
         assert isinstance(contract, Contract) and isinstance(holdings, pd.DataFrame)
         stocks = self.stocks(holdings, *args, **kwargs)
         options = self.options(holdings, *args, **kwargs)
@@ -82,8 +46,10 @@ class ExposureCalculator(Processor, title="Calculated", reporting=True, variable
         securities = securities.reset_index(drop=True, inplace=False)
         exposures = self.exposures(securities, *args, *kwargs)
         exposures = exposures.reset_index(drop=True, inplace=False)
-        exposures = {Variables.Datasets.EXPOSURE: exposures}
-        yield contents | dict(exposures)
+        size = self.size(exposures)
+        string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
+        self.logger.info(string)
+        return exposures
 
     @staticmethod
     def stocks(holdings, *args, **kwargs):
@@ -129,6 +95,11 @@ class ExposureCalculator(Processor, title="Calculated", reporting=True, variable
         exposures["position"] = exposures["quantity"].apply(enumerical)
         exposures["quantity"] = exposures["quantity"].apply(np.abs)
         return exposures
+
+    @property
+    def logger(self): return self.__logger
+    @property
+    def axes(self): return self.__axes
 
 
 

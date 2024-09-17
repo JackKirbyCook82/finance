@@ -10,8 +10,9 @@ import logging
 import numpy as np
 import pandas as pd
 
-from finance.variables import Variables
-from support.pipelines import Processor
+from finance.variables import Variables, Contract
+from support.meta import ParametersMeta
+from support.mixins import Sizing
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -21,42 +22,30 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-class AllocationAxes(object):
+class AllocationAxes(object, metaclass=ParametersMeta):
     options = list(map(str, Variables.Securities.Options))
     stocks = list(map(str, Variables.Securities.Stocks))
     security = ["instrument", "option", "position"]
     contract = ["ticker", "expire"]
 
-    def __new__(cls, *args, **kwargs): return super().__new__(cls)
-    def __init__(self, *args, **kwargs): super().__init__()
 
-
-class AllocationCalculator(Processor, title="Calculated", reporting=True, variable=Variables.Querys.CONTRACT):
-    def __init__(self, *args, valuation, **kwargs):
+class AllocationCalculator(Sizing):
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.__axes = AllocationAxes(*args, **kwargs)
-        self.__valuation = valuation
+        self.__axes = AllocationAxes()
+        self.__logger = __logger__
 
-    def processor(self, contents, *args, **kwargs):
-        valuations = contents[self.valuation]
-        assert isinstance(valuations, pd.DataFrame)
+    def calculate(self, contract, valuations, *args, **kwargs):
+        assert isinstance(contract, Contract) and isinstance(valuations, pd.DataFrame)
         valuations.insert(0, "portfolio", range(1, 1 + len(valuations)))
         securities = self.securities(valuations, *args, **kwargs)
         allocations = list(self.allocations(securities, *args, **kwargs))
         allocations = pd.concat(allocations, axis=0)
         allocations = allocations.reset_index(drop=True, inplace=False)
-        allocations = {Variables.Datasets.ALLOCATION: allocations}
-        valuations = {self.valuation: valuations}
-        yield contents | dict(allocations) | dict(valuations)
-
-    def allocations(self, securities, *args, **kwargs):
-        for portfolio, dataframe in securities.iterrows():
-            stocks = self.stocks(dataframe, *args, **kwargs)
-            options = self.options(dataframe, *args, **kwargs)
-            virtuals = self.virtuals(stocks, *args, **kwargs)
-            allocations = pd.concat([options, virtuals], axis=0).dropna(how="any", inplace=False)
-            allocations = allocations.reset_index(drop=True, inplace=False)
-            yield allocations
+        size = self.size(allocations)
+        string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
+        self.logger.info(string)
+        return allocations
 
     def securities(self, valuations, *args, **kwargs):
         strategy = lambda cols: list(map(str, cols["strategy"].stocks))
@@ -67,6 +56,15 @@ class AllocationCalculator(Processor, title="Calculated", reporting=True, variab
         securities = pd.concat([options, stocks], axis=1)
         securities = securities[["portfolio"] + self.axes.contract + self.axes.options + self.axes.stocks]
         return securities
+
+    def allocations(self, securities, *args, **kwargs):
+        for portfolio, dataframe in securities.iterrows():
+            stocks = self.stocks(dataframe, *args, **kwargs)
+            options = self.options(dataframe, *args, **kwargs)
+            virtuals = self.virtuals(stocks, *args, **kwargs)
+            allocations = pd.concat([options, virtuals], axis=0).dropna(how="any", inplace=False)
+            allocations = allocations.reset_index(drop=True, inplace=False)
+            yield allocations
 
     def stocks(self, securities, *args, **kwargs):
         security = lambda cols: list(Variables.Securities(cols["security"])) + [1]
@@ -105,7 +103,7 @@ class AllocationCalculator(Processor, title="Calculated", reporting=True, variab
         return virtuals
 
     @property
-    def valuation(self): return self.__valuation
+    def logger(self): return self.__logger
     @property
     def axes(self): return self.__axes
 

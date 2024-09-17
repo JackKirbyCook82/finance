@@ -73,10 +73,10 @@ class Variable(object):
         self.__name = str(name).upper()
         self.__index = int(index)
 
-    def __repr__(self): return f"{self.__class__.__name__}({self.name}, {self.index})"
+    def __repr__(self): return f"{self.__class__.__name__}({str(self.name).lower()}, {int(self.index):.0f})"
+    def __str__(self): return str(self.name).lower()
     def __bool__(self): return bool(self.index)
     def __int__(self): return self.index
-    def __str__(self): return self.name
 
     @property
     def index(self): return self.__index

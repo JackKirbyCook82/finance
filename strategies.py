@@ -15,10 +15,10 @@ from functools import reduce
 from itertools import product
 from collections import OrderedDict as ODict
 
-from finance.variables import Variables
+from finance.variables import Variables, Contract
 from support.calculations import Variable, Equation, Calculation
-from support.pipelines import Processor
 from support.meta import ParametersMeta
+from support.mixins import Sizing
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -26,14 +26,6 @@ __all__ = ["StrategyCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
-
-
-class StrategyAxes(object, metaclass=ParametersMeta):
-    security = ["instrument", "option", "position"]
-    contract = ["ticker", "expire"]
-
-    def __new__(cls, *args, **kwargs): return super().__new__(cls)
-    def __init__(self, *args, **kwargs): super().__init__()
 
 
 class StrategyEquation(Equation):
@@ -97,37 +89,44 @@ class CollarLongCalculation(StrategyCalculation, strategy=Variables.Strategies.C
 class CollarShortCalculation(StrategyCalculation, strategy=Variables.Strategies.Collar.Short, equation=CollarShortEquation): pass
 
 
-class StrategyCalculator(Processor, title="Calculated", reporting=True, variable=Variables.Querys.CONTRACT):
-    def __init__(self, *args, name=None, **kwargs):
-        super().__init__(*args, name=name, **kwargs)
+class StrategyAxes(object, metaclass=ParametersMeta):
+    security = ["instrument", "option", "position"]
+    contract = ["ticker", "expire"]
+
+
+class StrategyCalculator(Sizing):
+    def __init__(self, *args, strategies=[], **kwargs):
+        super().__init__(*args, **kwargs)
         calculations = {variables["strategy"]: calculation for variables, calculation in ODict(list(StrategyCalculation)).items()}
+        strategies = calculations.keys() if not bool(strategies) else strategies
+        calculations = {strategy: calculation for strategy, calculation in calculations.items() if strategy in strategies}
         self.__calculations = {strategy: calculation(*args, **kwargs) for strategy, calculation in calculations.items()}
         self.__variables = lambda **mapping: {key: xr.Variable(key, [value]).squeeze(key) for key, value in mapping.items()}
-        self.__axes = StrategyAxes(*args, **kwargs)
+        self.__axes = StrategyAxes()
+        self.__logger = __logger__
 
-    def processor(self, contents, *args, **kwargs):
-        options = contents[Variables.Instruments.OPTION]
-        assert isinstance(options, pd.DataFrame)
+    def calculate(self, contract, options, *args, **kwargs):
+        assert isinstance(contract, Contract) and isinstance(options, pd.DataFrame)
         options = ODict(list(self.options(options, *args, **kwargs)))
-        strategies = ODict(list(self.calculate(options, *args, **kwargs)))
-        if not bool(strategies): return
-        yield contents | strategies
-
-    def calculate(self, options, *args, **kwargs):
-        variable = Variables.Datasets.STRATEGY
-        strategies = list(self.strategies(options, *args, **kwargs))
-        if not bool(strategies): return
-        yield variable, strategies
+        strategies = ODict(list(self.strategies(options, *args, **kwargs)))
+        strategies = list(strategies.values())
+        assert all([isinstance(dataset, xr.Dataset) for dataset in strategies])
+        size = self.size([dataset["size"] for dataset in strategies.values()])
+        string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
+        self.logger.info(string)
+        return strategies
 
     def strategies(self, options, *args, **kwargs):
+        if bool(options.empty): return
         for strategy, calculation in self.calculations.items():
             if not all([option in options.keys() for option in list(strategy.options)]): continue
             variables = self.variables(strategy=strategy)
             datasets = {option: options[option] for option in list(strategy.options)}
             strategies = calculation(datasets, *args, **kwargs)
+            assert isinstance(strategies, xr.Dataset)
             if self.empty(strategies["size"]): continue
             strategies = strategies.assign_coords(variables)
-            yield strategies
+            yield strategy, strategies
 
     def options(self, options, *args, **kwargs):
         if bool(options.empty): return
@@ -139,17 +138,17 @@ class StrategyCalculator(Processor, title="Calculated", reporting=True, variable
             dataset = options.sel(indexers={key: value for key, value in zip(self.axes.security, values)})
             dataset = dataset.drop_vars(self.axes.security, errors="ignore")
             if self.empty(dataset["size"]): continue
-            variable = Variables.Securities[values]
-            dataset = dataset.rename({"strike": str(variable)})
-            dataset["strike"] = dataset[str(variable)]
-            yield variable, dataset
+            option = Variables.Securities[values]
+            dataset = dataset.rename({"strike": str(option)})
+            dataset["strike"] = dataset[str(option)]
+            yield option, dataset
 
-    @staticmethod
-    def empty(dataarray): return not bool(np.count_nonzero(~np.isnan(dataarray.values)))
     @property
     def calculations(self): return self.__calculations
     @property
     def variables(self): return self.__variables
+    @property
+    def logger(self): return self.__logger
     @property
     def axes(self): return self.__axes
 

@@ -14,93 +14,18 @@ from abc import ABC
 from itertools import product
 from collections import OrderedDict as ODict
 
-from finance.variables import Variables
+from finance.variables import Variables, Contract
 from support.calculations import Variable, Equation, Calculation
 from support.meta import ParametersMeta
-from support.pipelines import Processor
 from support.filtering import Filter
-from support.files import File
+from support.mixins import Sizing
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["ValuationFiles", "ValuationFilter", "ValuationCalculator"]
+__all__ = ["ValuationFilter", "ValuationCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
-
-
-class ValuationAxes(object, metaclass=ParametersMeta):
-    securities = list(map(str, Variables.Securities))
-    options = list(map(str, Variables.Securities.Options))
-    stocks = list(map(str, Variables.Securities.Stocks))
-    scenarios = list(Variables.Scenarios)
-    security = ["instrument", "option", "position"]
-    arbitrage = ["apy", "npv", "cost"]
-    contract = ["ticker", "expire"]
-
-    def __init__(self, *args, valuation, **kwargs):
-        valuation = str(valuation).lower()
-        index = self.contract + ["valuation", "strategy"] + self.options
-        unstacked = ["current", "size", "tau", "underlying"] + ["status", "priority"]
-        stacked = list(product(getattr(self, valuation), self.scenarios))
-        unstacked = list(product(unstacked, [""]))
-        index = list(product(index, [""]))
-        self.valuation = str(valuation).lower()
-        self.columns = list(stacked) + list(unstacked)
-        self.index = list(index)
-
-    def parse(self, dataframe):
-        columns = getattr(self, self.valuation)
-        index = set(dataframe.columns) - ({"scenario"} | set(columns))
-        dataframe = dataframe.pivot(index=list(index), columns="scenario")
-        dataframe = dataframe.reset_index(drop=False, inplace=False)
-        return dataframe
-
-    def format(self, dataframe, *args, **kwargs):
-        columns = getattr(self, self.valuation)
-        scenarios = list(map(str, self.scenarios))
-        columns = list(product(columns, scenarios))
-        index = set(dataframe.columns) - set(columns)
-        dataframe = dataframe.set_index(list(index), drop=True, inplace=False)
-        dataframe = dataframe.stack("scenario").reset_index(drop=False, inplace=False)
-        return dataframe
-
-
-class ValuationParameters(object, metaclass=ParametersMeta):
-    filename = lambda contract: "_".join([str(contract.ticker).upper(), str(contract.expire.strftime("%Y%m%d"))])
-    types = {"ticker": str, "apy": np.float32, "npv": np.float32, "cost": np.float32, "size": np.float32, "tau": np.int32} | {security: np.float32 for security in ValuationAxes.securities}
-    parsers = {"strategy": Variables.Strategies, "valuation": Variables.Valuations, "scenario": Variables.Scenarios}
-    formatters = {"strategy": int, "valuation": int, "scenario": int}
-    dates = {"current": "%Y%m%d-%H%M", "expire": "%Y%m%d"}
-    datatype = pd.DataFrame
-
-
-class ArbitrageFile(File, variable=Variables.Valuations.ARBITRAGE, **dict(ValuationParameters)): pass
-class ValuationFiles(object): Arbitrage = ArbitrageFile
-
-
-class ValuationFilter(Filter, reporting=True, variable=Variables.Querys.CONTRACT):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.__axes = ValuationAxes(*args, **kwargs)
-
-    def processor(self, contents, *args, **kwargs):
-        parameters = dict(variable=contents[self.variable])
-        valuations = list(self.calculate(contents, *args, **parameters, **kwargs))
-        if not bool(valuations): return
-        yield contents | ODict(valuations)
-
-    def calculate(self, contents, *args, **kwargs):
-        valuations = contents.get(self.axes.valuation, None)
-        if valuations is None: return
-        if bool(valuations.empty): return
-        valuations = self.filter(valuations, *args, **kwargs)
-        valuations = valuations.reset_index(drop=True, inplace=False)
-        if bool(valuations.empty): return
-        yield self.axes.valuation, valuations
-
-    @property
-    def axes(self): return self.__axes
 
 
 class ValuationEquation(Equation): pass
@@ -143,52 +68,99 @@ class MinimumArbitrageCalculation(ArbitrageCalculation, scenario=Variables.Scena
 class MaximumArbitrageCalculation(ArbitrageCalculation, scenario=Variables.Scenarios.MAXIMUM, equation=MaximumArbitrageEquation): pass
 
 
-class ValuationCalculator(Processor, title="Calculated", reporting=True, variable=Variables.Querys.CONTRACT):
-    def __init__(self, *args, valuation, name=None, **kwargs):
-        super().__init__(*args, name=name, valuation=valuation, **kwargs)
-        calculations = {variables["scenario"]: calculation for variables, calculation in ODict(list(ValuationCalculation)).items() if variables["valuation"] is valuation}
+class ValuationFilter(Filter):
+    def calculate(self, valuations, *args, variable, **kwargs):
+        assert isinstance(variable, Contract) and isinstance(valuations, pd.DataFrame)
+        valuations = self.filter(valuations, *args, variable=variable, **kwargs)
+        valuations = valuations.reset_index(drop=True, inplace=False)
+        return valuations
+
+
+class ValuationAxes(object, metaclass=ParametersMeta):
+    securities = list(map(str, Variables.Securities))
+    options = list(map(str, Variables.Securities.Options))
+    stocks = list(map(str, Variables.Securities.Stocks))
+    scenarios = list(Variables.Scenarios)
+    security = ["instrument", "option", "position"]
+    arbitrage = ["apy", "npv", "cost"]
+    contract = ["ticker", "expire"]
+
+    def __init__(self, *args, valuation, **kwargs):
+        valuation = str(valuation).lower()
+        index = self.contract + ["valuation", "strategy"] + self.options
+        unstacked = ["current", "size", "tau", "underlying"] + ["status", "priority"]
+        stacked = list(product(getattr(self, valuation), self.scenarios))
+        unstacked = list(product(unstacked, [""]))
+        index = list(product(index, [""]))
+        self.header = list(index) + list(stacked) + list(unstacked)
+        self.valuation = str(valuation).lower()
+        self.columns = list(stacked) + list(unstacked)
+        self.index = list(index)
+
+    def parse(self, dataframe):
+        columns = getattr(self, self.valuation)
+        index = set(dataframe.columns) - ({"scenario"} | set(columns))
+        dataframe = dataframe.pivot(index=list(index), columns="scenario")
+        dataframe = dataframe.reset_index(drop=False, inplace=False)
+        return dataframe
+
+    def format(self, dataframe, *args, **kwargs):
+        columns = getattr(self, self.valuation)
+        scenarios = list(map(str, self.scenarios))
+        columns = list(product(columns, scenarios))
+        index = set(dataframe.columns) - set(columns)
+        dataframe = dataframe.set_index(list(index), drop=True, inplace=False)
+        dataframe = dataframe.stack("scenario").reset_index(drop=False, inplace=False)
+        return dataframe
+
+
+class ValuationCalculator(Sizing):
+    def __init__(self, *args, valuation, **kwargs):
+        super().__init__(*args, **kwargs)
+        calculations = {variables["scenario"]: calculation for variables, calculation in ODict(list(ValuationCalculation)).items() if variables["valuation"] is kwargs["valuation"]}
         self.__calculations = {scenario: calculation(*args, **kwargs) for scenario, calculation in calculations.items()}
         self.__variables = lambda **mapping: {key: xr.Variable(key, [value]).squeeze(key) for key, value in mapping.items()}
         self.__axes = ValuationAxes(*args, valuation=valuation, **kwargs)
+        self.__logger = __logger__
 
-    def processor(self, contents, *args, **kwargs):
-        strategies = contents[Variables.Datasets.STRATEGY]
-        assert isinstance(strategies, list) and all([isinstance(dataset, xr.Dataset) for dataset in strategies])
-        valuations = list(self.calculate(strategies, *args, **kwargs))
-        valuations = list(self.flatten(valuations, *args, **kwargs))
-        valuations = list(self.combine(valuations, *args, **kwargs))
-        if not bool(valuations): return
-        yield contents | ODict(valuations)
+    def calculate(self, contract, strategies, *args, **kwargs):
+        assert isinstance(contract, Contract) and all([isinstance(dataset, xr.Dataset) for dataset in strategies])
+        valuations = ODict(list(self.valuations(strategies, *args, **kwargs)))
+        valuations = ODict(list(self.flatten(valuations, *args, **kwargs)))
+        valuations = pd.concat(list(valuations.values()), axis=0) if bool(valuations) else pd.DataFrame()
+        valuations = self.axes.parse(valuations) if bool(valuations) else pd.DataFrame(columns=self.axes.header)
+        size = self.size(valuations)
+        string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
+        self.logger.info(string)
+        return valuations
 
-    def calculate(self, strategies, *args, **kwargs):
+    def valuations(self, strategies, *args, **kwargs):
+        if not bool(strategies): return
         for scenario, calculation in self.calculations.items():
             valuations = [calculation(dataset, *args, **kwargs) for dataset in strategies]
+            assert all([isinstance(dataset, xr.Dataset) for dataset in valuations])
             if not bool(valuations): continue
             variables = self.variables(valuation=self.axes.valuation, scenario=scenario)
             valuations = [dataset.assign_coords(variables).expand_dims("scenario") for dataset in valuations]
-            yield valuations
-
-    def combine(self, valuations, *args, **kwargs):
-        if not bool(valuations): return
-        valuations = pd.concat(valuations, axis=0)
-        valuations = self.axes.parse(valuations)
-        yield self.axes.valuation, valuations
+            yield scenario, valuations
 
     def flatten(self, valuations, *args, **kwargs):
         if not bool(valuations): return
-        for datasets in valuations:
+        for scenario, datasets in valuations.items():
             datasets = [dataset.drop_vars(self.axes.security, errors="ignore") for dataset in datasets]
             datasets = [dataset.expand_dims(list(set(iter(dataset.coords)) - set(iter(dataset.dims)))) for dataset in datasets]
             dataframes = [dataset.to_dataframe().dropna(how="all", inplace=False) for dataset in datasets]
             dataframes = [dataframe.reset_index(drop=False, inplace=False) for dataframe in dataframes]
             if not bool(dataframes) or all([bool(dataframe.empty) for dataframe in dataframes]): continue
             dataframe = pd.concat(dataframes, axis=0).reset_index(drop=True, inplace=False)
-            yield dataframe
+            yield scenario, dataframe
 
     @property
     def calculations(self): return self.__calculations
     @property
     def variables(self): return self.__variables
+    @property
+    def logger(self): return self.__logger
     @property
     def axes(self): return self.__axes
 

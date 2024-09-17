@@ -13,9 +13,10 @@ import xarray as xr
 from functools import reduce
 from collections import OrderedDict as ODict
 
-from finance.variables import Variables
+from finance.variables import Variables, Contract
 from support.calculations import Variable, Equation, Calculation
-from support.pipelines import Processor
+from support.meta import ParametersMeta
+from support.mixins import Sizing
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -23,14 +24,6 @@ __all__ = ["StabilityCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
-
-
-class StabilityAxes(object):
-    security = ["instrument", "option", "position"]
-    contract = ["ticker", "expire"]
-
-    def __new__(cls, *args, **kwargs): return super().__new__(cls)
-    def __init__(self, *args, **kwargs): super().__init__()
 
 
 class StabilityEquation(Equation):
@@ -55,34 +48,32 @@ class StabilityCalculation(Calculation, equation=StabilityEquation):
         yield equation.m(portfolios)
 
 
-class StabilityCalculator(Processor, title="Calculated", reporting=True, variable=Variables.Querys.CONTRACT):
-    def __init__(self, *args, valuation, name=None, **kwargs):
-        super().__init__(*args, name=name, **kwargs)
-        self.__calculation = StabilityCalculation(*args, **kwargs)
-        self.__axes = StabilityAxes(*args, **kwargs)
-        self.__valuation = valuation
+class StabilityAxes(object, metaclass=ParametersMeta):
+    security = ["instrument", "option", "position"]
+    contract = ["ticker", "expire"]
 
-    def processor(self, contents, *args, **kwargs):
-        valuations, exposures, allocations = contents[self.valuation], contents[Variables.Datasets.EXPOSURE], contents[Variables.Datasets.ALLOCATION]
-        assert all([isinstance(dataframe, pd.DataFrame) for dataframe in (valuations, exposures, allocations)])
+
+class StabilityCalculator(Sizing):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.__calculation = StabilityCalculation(*args, **kwargs)
+        self.__axes = StabilityAxes()
+        self.__logger = __logger__
+
+    def calculate(self, contract, valuations, exposures, allocations, *args, **kwargs):
+        assert isinstance(contract, Contract) and all([isinstance(dataframe, pd.DataFrame) for dataframe in (valuations, exposures, allocations)])
         exposures = self.exposures(exposures, *args, **kwargs)
         allocations = ODict(list(self.allocations(allocations, *args, **kwargs)))
         portfolios = list(self.portfolios(exposures, allocations, *args, **kwargs))
         portfolios = xr.concat(portfolios, join="outer", fill_value=0, dim="portfolio")
         portfolios = portfolios.stack({"holdings": ["strike"] + self.axes.security}).to_dataset()
         portfolios = self.underlying(portfolios, *args, **kwargs)
-        stability = ODict(list(self.calculate(portfolios, *args, **kwargs)))
+        stability = ODict(list(self.stability(portfolios, *args, **kwargs)))
         valuations = self.valuations(valuations, stability, *args, **kwargs)
-        valuations = {self.valuation: valuations}
-        yield contents | dict(valuations)
-
-    def calculate(self, portfolios, *args, **kwargs):
-        stability = self.calculation(portfolios, *args, **kwargs)
-        stability = stability.sum(dim="holdings")
-        yield "maximum", stability["value"].max(dim="underlying")
-        yield "minimum", stability["value"].min(dim="underlying")
-        yield "bull", stability["trend"].isel(underlying=0).drop_vars(["underlying"])
-        yield "bear", stability["trend"].isel(underlying=-1).drop_vars(["underlying"])
+        size = self.size(valuations)
+        string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
+        self.logger.info(string)
+        return valuations
 
     def exposures(self, exposures, *args, **kwargs):
         index = [column for column in exposures.columns if column != "quantity"]
@@ -101,6 +92,15 @@ class StabilityCalculator(Processor, title="Calculated", reporting=True, variabl
             function = lambda content, axis: content.squeeze(axis)
             allocation = reduce(function, self.axes.contract, allocation)
             yield portfolio, allocation
+
+    def stability(self, portfolios, *args, **kwargs):
+        stability = self.calculation(portfolios, *args, **kwargs)
+        assert isinstance(stability, xr.Dataset)
+        stability = stability.sum(dim="holdings")
+        yield "maximum", stability["value"].max(dim="underlying")
+        yield "minimum", stability["value"].min(dim="underlying")
+        yield "bull", stability["trend"].isel(underlying=0).drop_vars(["underlying"])
+        yield "bear", stability["trend"].isel(underlying=-1).drop_vars(["underlying"])
 
     @staticmethod
     def portfolios(exposures, allocations, *args, **kwargs):
@@ -128,7 +128,7 @@ class StabilityCalculator(Processor, title="Calculated", reporting=True, variabl
     @property
     def calculation(self): return self.__calculation
     @property
-    def valuation(self): return self.__valuation
+    def logger(self): return self.__logger
     @property
     def axes(self): return self.__axes
 

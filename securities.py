@@ -16,49 +16,15 @@ from collections import OrderedDict as ODict
 
 from finance.variables import Variables, Contract
 from support.calculations import Variable, Equation, Calculation
-from support.meta import ParametersMeta
-from support.pipelines import Processor
 from support.filtering import Filter
-from support.files import File
+from support.mixins import Sizing
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["SecurityFiles", "SecurityFilter", "SecurityCalculator"]
+__all__ = ["OptionFilter", "OptionCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
-
-
-class SecurityParameters(object, metaclass=ParametersMeta):
-    types = {"ticker": str, "strike": np.float32, "price": np.float32, "underlying": np.float32, "size": np.float32, "volume": np.float32, "interest": np.float32}
-    parsers = {"instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}
-    formatters = {"instrument": int, "option": int, "position": int}
-    dates = {"current": "%Y%m%d-%H%M", "expire": "%Y%m%d"}
-    filename = lambda contract: "_".join([str(contract.ticker).upper(), str(contract.expire.strftime("%Y%m%d"))])
-    datatype = pd.DataFrame
-
-
-class StockFile(File, variable=Variables.Instruments.STOCK, **dict(SecurityParameters)): pass
-class OptionFile(File, variable=Variables.Instruments.OPTION, **dict(SecurityParameters)): pass
-class SecurityFiles(object): Stock = StockFile; Option = OptionFile
-
-
-class SecurityFilter(Filter, reporting=True, variable=Variables.Querys.CONTRACT):
-    def processor(self, contents, *args, **kwargs):
-        parameters = dict(variable=contents[self.variable])
-        securities = list(self.calculate(contents, *args, **parameters, **kwargs))
-        if not bool(securities): return
-        yield contents | ODict(securities)
-
-    def calculate(self, contents, *args, **kwargs):
-        for variable in list(Variables.Instruments):
-            if not bool(variable): continue
-            securities = contents.get(variable, None)
-            if securities is None: continue
-            securities = self.filter(securities, *args, **kwargs)
-            securities = securities.reset_index(drop=True, inplace=False)
-            if bool(securities.empty): continue
-            yield variable, securities
 
 
 class BlackScholesEquation(Equation):
@@ -105,32 +71,37 @@ class BlackScholesCalculation(Calculation, equation=BlackScholesEquation):
         yield equation.to(exposures)
 
 
-class SecurityCalculator(Processor, title="Calculated", reporting=True, variable=Variables.Querys.CONTRACT):
-    def __init__(self, *args, size, volume=lambda cols: np.NaN, interest=lambda cols: np.NaN, name=None, **kwargs):
-        super().__init__(*args, name=name, **kwargs)
-        calculations = {Variables.Instruments.OPTION: BlackScholesCalculation}
-        self.__calculations = {variable: calculation(*args, **kwargs) for variable, calculation in calculations.items()}
-        self.__functions = dict(size=size, volume=volume, interest=interest)
-        self.__lifespans = ODict()
+class OptionFilter(Filter):
+    def calculate(self, contract, options, *args, **kwargs):
+        assert isinstance(contract, Contract) and isinstance(options, pd.DataFrame)
+        options = self.filter(options, *args, variable=contract, **kwargs)
+        assert isinstance(options, pd.DataFrame)
+        options = options.reset_index(drop=True, inplace=False)
+        return options
 
-    def processor(self, contents, *args, **kwargs):
-        contract, exposures, statistics = contents[Variables.Querys.CONTRACT], contents[Variables.Datasets.EXPOSURE], contents[Variables.Technicals.STATISTIC]
+
+class OptionCalculator(Sizing):
+    def __init__(self, *args, sizing={}, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.__sizing = {key: sizing.get(key, lambda cols: np.NaN) for key in ("volume", "size", "interest")}
+        self.__sizing = lambda cols: {key: value(cols) for key, value in sizing.items()}
+        self.__calculation = BlackScholesCalculation(*args, **kwargs)
+        self.__lifespans = ODict()
+        self.__logger = __logger__
+
+    def calculate(self, contract, exposures, statistics, *args, **kwargs):
         assert isinstance(contract, Contract) and isinstance(exposures, pd.DataFrame) and isinstance(statistics, pd.DataFrame)
         if contract not in self.lifespans: self.lifespans[contract] = count(start=0, step=1)
         exposures = self.exposures(exposures, statistics, *args, **kwargs)
         lifespan = next(self.lifespans[contract])
-        securities = list(self.calculate(exposures, *args, lifespan=lifespan, **kwargs))
-        if not bool(securities): return
-        yield contents | ODict(securities)
-
-    def calculate(self, exposures, *args, **kwargs):
-        for variable, calculation in self.calculations.items():
-            pricing = calculation(exposures, *args, **kwargs)
-            if bool(pricing.empty): continue
-            function = lambda cols: {key: value(cols) for key, value in self.functions.items()}
-            sizing = pricing.apply(function, axis=1, result_type="expand")
-            securities = pd.concat([pricing, sizing], axis=1)
-            yield variable, securities
+        pricing = self.calculation(exposures, *args, lifespan=lifespan, **kwargs)
+        assert isinstance(pricing, pd.DataFrame)
+        sizing = pricing.apply(self.sizing, axis=1, result_type="expand")
+        options = pd.concat([pricing, sizing], axis=1)
+        size = self.size(options)
+        string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
+        self.logger.info(string)
+        return options
 
     @staticmethod
     def exposures(exposures, statistics, *args, current, **kwargs):
@@ -139,11 +110,13 @@ class SecurityCalculator(Processor, title="Calculated", reporting=True, variable
         return exposures
 
     @property
-    def calculations(self): return self.__calculations
-    @property
-    def functions(self): return self.__functions
+    def calculation(self): return self.__calculation
     @property
     def lifespans(self): return self.__lifespans
+    @property
+    def sizing(self): return self.__sizing
+    @property
+    def logger(self): return self.__logger
 
 
 
