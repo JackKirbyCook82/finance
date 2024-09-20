@@ -11,8 +11,7 @@ import numpy as np
 import pandas as pd
 
 from finance.variables import Variables, Contract
-from support.meta import ParametersMeta
-from support.mixins import Sizing
+from support.processes import Calculator
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -22,22 +21,8 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-class ExposureAxes(object, metaclass=ParametersMeta):
-    security = ["instrument", "option", "position"]
-    contract = ["ticker", "expire"]
-
-    def __init__(self, *args, **kwargs):
-        self.header = self.contract + self.security + ["strike", "quantity"]
-        self.index = self.contract + self.security + ["strike"]
-        self.columns = ["quantity"]
-
-
-class ExposureCalculator(Sizing):
-    def __init__(self, *args, **kwargs):
-        self.__axes = ExposureAxes(*args, **kwargs)
-        self.__logger = __logger__
-
-    def calculate(self, contract, holdings, *args, **kwargs):
+class ExposureCalculator(Calculator):
+    def execute(self, contract, holdings, *args, **kwargs):
         assert isinstance(contract, Contract) and isinstance(holdings, pd.DataFrame)
         stocks = self.stocks(holdings, *args, **kwargs)
         options = self.options(holdings, *args, **kwargs)
@@ -47,7 +32,7 @@ class ExposureCalculator(Sizing):
         exposures = self.exposures(securities, *args, *kwargs)
         exposures = exposures.reset_index(drop=True, inplace=False)
         size = self.size(exposures)
-        string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
+        string = f"{str(self.title)}: {repr(self)}|{str(contract)}[{size:.0f}]"
         self.logger.info(string)
         return exposures
 
@@ -96,10 +81,6 @@ class ExposureCalculator(Sizing):
         exposures["quantity"] = exposures["quantity"].apply(np.abs)
         return exposures
 
-    @property
-    def logger(self): return self.__logger
-    @property
-    def axes(self): return self.__axes
 
 
 

@@ -10,24 +10,26 @@ import types
 import logging
 import numpy as np
 import pandas as pd
+from abc import ABC
 from itertools import count
 from scipy.stats import norm
 from collections import OrderedDict as ODict
 
 from finance.variables import Variables, Contract
 from support.calculations import Variable, Equation, Calculation
-from support.filtering import Filter
-from support.mixins import Sizing
+from support.processes import Calculator, Filter
+from support.meta import RegistryMeta
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["OptionFilter", "OptionCalculator"]
+__all__ = ["SecurityFilter", "SecurityCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-class BlackScholesEquation(Equation):
+class PricingEquation(Equation): pass
+class BlackScholesEquation(PricingEquation):
     τ = Variable("τ", "tau", np.int32, function=lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
     so = Variable("so", "ratio", np.float32, function=lambda xo, k: np.log(xo / k))
     yo = Variable("yo", "price", np.float32, function=lambda zx, zk, F: (zx - zk) * F)
@@ -60,7 +62,8 @@ class BlackScholesEquation(Equation):
     f = Variable("f", "factor", types.FunctionType, position="factor")
 
 
-class BlackScholesCalculation(Calculation, equation=BlackScholesEquation):
+class PricingCalculation(Calculation, ABC, metaclass=RegistryMeta): pass
+class BlackScholesCalculation(PricingCalculation, equation=BlackScholesEquation, register=Variables.Pricing.BLACKSCHOLES):
     def execute(self, exposures, *args, factor, discount, divergence, lifespan, **kwargs):
         invert = lambda position: Variables.Positions(int(Variables.Positions.LONG) + int(Variables.Positions.SHORT) - int(position))
         equation = self.equation(*args, **kwargs)
@@ -71,37 +74,51 @@ class BlackScholesCalculation(Calculation, equation=BlackScholesEquation):
         yield equation.to(exposures)
 
 
-class OptionFilter(Filter):
-    def calculate(self, contract, options, *args, **kwargs):
-        assert isinstance(contract, Contract) and isinstance(options, pd.DataFrame)
-        options = self.filter(options, *args, variable=contract, **kwargs)
+class SecurityFilter(Filter):
+    def execute(self, contract, securities, *args, **kwargs):
+        assert isinstance(contract, Contract) and isinstance(securities, pd.DataFrame)
+        options = self.filter(securities, *args, variable=contract, **kwargs)
         assert isinstance(options, pd.DataFrame)
         options = options.reset_index(drop=True, inplace=False)
         return options
 
 
-class OptionCalculator(Sizing):
-    def __init__(self, *args, sizing={}, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.__sizing = {key: sizing.get(key, lambda cols: np.NaN) for key in ("volume", "size", "interest")}
-        self.__sizing = lambda cols: {key: value(cols) for key, value in sizing.items()}
-        self.__calculation = BlackScholesCalculation(*args, **kwargs)
-        self.__lifespans = ODict()
-        self.__logger = __logger__
+class SecurityVariables(object):
+    data = {Variables.Datasets.PRICING: ["price", "underlying", "current"], Variables.Datasets.SIZING: ["volume", "size", "interest"]}
+    axes = {Variables.Querys.CONTRACT: ["ticker", "expire"], Variables.Datasets.SECURITY: ["instrument", "option", "position"]}
 
-    def calculate(self, contract, exposures, statistics, *args, **kwargs):
+    def __init__(self, *args, pricing, sizings={}, **kwargs):
+        assert pricing in list(Variables.Pricing)
+        self.sizings = {sizing: sizings.get(sizing, lambda cols: np.NaN) for sizing in self.data[Variables.Datasets.SIZING]}
+        self.pricing = pricing
+
+
+class SecurityCalculator(Calculator, calculations=dict(PricingCalculation), variables=SecurityVariables):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.lifespans = ODict()
+
+    def execute(self, contract, exposures, statistics, *args, **kwargs):
         assert isinstance(contract, Contract) and isinstance(exposures, pd.DataFrame) and isinstance(statistics, pd.DataFrame)
-        if contract not in self.lifespans: self.lifespans[contract] = count(start=0, step=1)
         exposures = self.exposures(exposures, statistics, *args, **kwargs)
-        lifespan = next(self.lifespans[contract])
-        pricing = self.calculation(exposures, *args, lifespan=lifespan, **kwargs)
-        assert isinstance(pricing, pd.DataFrame)
-        sizing = pricing.apply(self.sizing, axis=1, result_type="expand")
-        options = pd.concat([pricing, sizing], axis=1)
+        pricings = self.pricings(contract, exposures, *args, **kwargs)
+        sizings = self.sizings(pricings, *args, **kwargs)
+        options = pd.concat([pricings, sizings], axis=1)
         size = self.size(options)
-        string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
+        string = f"{str(self.title)}: {repr(self)}|{str(contract)}[{size:.0f}]"
         self.logger.info(string)
         return options
+
+    def pricings(self, contract, exposures, *args, **kwargs):
+        if contract not in self.lifespans: self.lifespans[contract] = count(start=0, step=1)
+        lifespan = next(self.lifespans[contract])
+        pricings = self.calculations[self.variables.pricing](exposures, *args, lifespan=lifespan, **kwargs)
+        assert isinstance(pricings, pd.DataFrame)
+        return pricings
+
+    def sizings(self, pricings, *args, **kwargs):
+        sizings = pricings.apply(self.variables.sizings, axis=1, result_type="expand")
+        return sizings
 
     @staticmethod
     def exposures(exposures, statistics, *args, current, **kwargs):
@@ -109,14 +126,7 @@ class OptionCalculator(Sizing):
         exposures = pd.merge(exposures, statistics, how="inner", on="ticker")
         return exposures
 
-    @property
-    def calculation(self): return self.__calculation
-    @property
-    def lifespans(self): return self.__lifespans
-    @property
-    def sizing(self): return self.__sizing
-    @property
-    def logger(self): return self.__logger
+
 
 
 

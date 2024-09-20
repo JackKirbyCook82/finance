@@ -11,8 +11,7 @@ import numpy as np
 import pandas as pd
 
 from finance.variables import Variables, Contract
-from support.meta import ParametersMeta
-from support.mixins import Sizing
+from support.processes import Calculator
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -22,20 +21,19 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-class AllocationAxes(object, metaclass=ParametersMeta):
-    options = list(map(str, Variables.Securities.Options))
-    stocks = list(map(str, Variables.Securities.Stocks))
-    security = ["instrument", "option", "position"]
-    contract = ["ticker", "expire"]
+class AllocationVariables(object):
+    axes = {Variables.Querys.CONTRACT: ["ticker", "expire"], Variables.Datasets.SECURITY: ["instrument", "option", "position"]}
+    axes.update({Variables.Instruments.STOCK: list(Variables.Securities.Stocks), Variables.Instruments.OPTION: list(Variables.Securities.Options)})
 
-
-class AllocationCalculator(Sizing):
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.__axes = AllocationAxes()
-        self.__logger = __logger__
+        self.contract = self.axes[Variables.Querys.CONTRACT]
+        self.security = self.axes[Variables.Datasets.SECURITY]
+        self.options = list(map(str, self.axes[Variables.Instruments.OPTIONS]))
+        self.stocks = list(map(str, self.axes[Variables.Instruments.STOCK]))
 
-    def calculate(self, contract, valuations, *args, **kwargs):
+
+class AllocationCalculator(Calculator, variables=AllocationVariables):
+    def execute(self, contract, valuations, *args, **kwargs):
         assert isinstance(contract, Contract) and isinstance(valuations, pd.DataFrame)
         valuations.insert(0, "portfolio", range(1, 1 + len(valuations)))
         securities = self.securities(valuations, *args, **kwargs)
@@ -43,18 +41,18 @@ class AllocationCalculator(Sizing):
         allocations = pd.concat(allocations, axis=0)
         allocations = allocations.reset_index(drop=True, inplace=False)
         size = self.size(allocations)
-        string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
+        string = f"{str(self.title)}: {repr(self)}|{str(contract)}[{size:.0f}]"
         self.logger.info(string)
         return allocations
 
     def securities(self, valuations, *args, **kwargs):
         strategy = lambda cols: list(map(str, cols["strategy"].stocks))
         function = lambda cols: {stock: cols["underlying"] if stock in strategy(cols) else np.NaN for stock in self.axes.stocks}
-        options = valuations[self.axes.contract + self.axes.options + ["portfolio", "valuation", "strategy", "underlying"]]
+        options = valuations[self.variables.contract + self.variables.options + ["portfolio", "valuation", "strategy", "underlying"]]
         options = options.droplevel("scenario", axis=1)
         stocks = options.apply(function, axis=1, result_type="expand")
         securities = pd.concat([options, stocks], axis=1)
-        securities = securities[["portfolio"] + self.axes.contract + self.axes.options + self.axes.stocks]
+        securities = securities[["portfolio"] + self.variables.contract + self.variables.options + self.variables.stocks]
         return securities
 
     def allocations(self, securities, *args, **kwargs):
@@ -68,21 +66,21 @@ class AllocationCalculator(Sizing):
 
     def stocks(self, securities, *args, **kwargs):
         security = lambda cols: list(Variables.Securities(cols["security"])) + [1]
-        stocks = securities[self.axes.stocks].to_frame("strike")
+        stocks = securities[self.variables.stocks].to_frame("strike")
         stocks = stocks.reset_index(names="security", drop=False, inplace=False)
-        stocks[self.axes.security + ["quantity"]] = stocks.apply(security, axis=1, result_type="expand")
+        stocks[self.variables.security + ["quantity"]] = stocks.apply(security, axis=1, result_type="expand")
         stocks = stocks[[column for column in stocks.columns if column != "security"]]
-        contract = {key: value for key, value in securities[["portfolio"] + self.axes.contract].to_dict().items()}
+        contract = {key: value for key, value in securities[["portfolio"] + self.variables.contract].to_dict().items()}
         stocks = stocks.assign(**contract)
         return stocks
 
     def options(self, securities, *args, **kwargs):
         security = lambda cols: list(Variables.Securities(cols["security"])) + [1]
-        options = securities[self.axes.options].to_frame("strike")
+        options = securities[self.variables.options].to_frame("strike")
         options = options.reset_index(names="security", drop=False, inplace=False)
-        options[self.axes.security + ["quantity"]] = options.apply(security, axis=1, result_type="expand")
+        options[self.variables.security + ["quantity"]] = options.apply(security, axis=1, result_type="expand")
         options = options[[column for column in options.columns if column != "security"]]
-        contract = {key: value for key, value in securities[["portfolio"] + self.axes.contract].to_dict().items()}
+        contract = {key: value for key, value in securities[["portfolio"] + self.variables.contract].to_dict().items()}
         options = options.assign(**contract)
         return options
 
@@ -102,10 +100,7 @@ class AllocationCalculator(Sizing):
         virtuals["strike"] = virtuals["strike"].apply(lambda strike: np.round(strike, decimals=2))
         return virtuals
 
-    @property
-    def logger(self): return self.__logger
-    @property
-    def axes(self): return self.__axes
+
 
 
 

@@ -54,6 +54,21 @@ class Symbol(ntuple("Symbol", "ticker")):
 
 
 @total_ordering
+class History(ntuple("History", "ticker date")):
+    def __str__(self): return "|".join([str(self.ticker).upper(), str(self.date.strftime("%Y-%m-%d"))])
+    def __hash__(self): return hash((self.ticker, int(self.date.timestamp())))
+    def __eq__(self, other): return str(self.ticker) == str(other.ticker) and self.date == other.date
+    def __lt__(self, other): return str(self.ticker) < str(other.ticker) and self.date < other.date
+
+    @classmethod
+    def fromstr(cls, string, delimiter="_"):
+        ticker, date = str(string).split(delimiter)
+        ticker = str(ticker).upper()
+        date = Datetime.strptime(date, "%Y%m%d")
+        return cls(ticker, date)
+
+
+@total_ordering
 class Contract(ntuple("Contract", "ticker expire")):
     def __str__(self): return "|".join([str(self.ticker).upper(), str(self.expire.strftime("%Y-%m-%d"))])
     def __hash__(self): return hash((self.ticker, int(self.expire.timestamp())))
@@ -171,8 +186,9 @@ class Omega(members=["BEAR", "NEUTRAL", "BULL"], start=-1, metaclass=VariableMet
 class Technicals(members=["BARS", "STATISTIC", "STOCHASTIC"], metaclass=VariableMeta): pass
 class Scenarios(members=["MINIMUM", "MAXIMUM"], metaclass=VariableMeta): pass
 class Valuations(members=["ARBITRAGE"], metaclass=VariableMeta): pass
-class Datasets(members=["STRATEGY", "HOLDINGS", "EXPOSURE", "ALLOCATION"], metaclass=VariableMeta): pass
-class Querys(members=["SYMBOL", "CONTRACT"], metaclass=VariableMeta): pass
+class Pricing(members=["BLACKSCHOLES"], metaclass=VariableMeta): pass
+class Querys(members=["HISTORY", "SYMBOL", "CONTRACT"], metaclass=VariableMeta): pass
+class Datasets(members=["EXPIRES", "PRICING", "SIZING", "SECURITY", "STRATEGY", "HOLDINGS", "EXPOSURE", "ALLOCATION"], metaclass=VariableMeta): pass
 class Status(members=["PROSPECT", "PENDING", "ABANDONED", "REJECTED", "ACCEPTED"], metaclass=VariableMeta): pass
 
 class Markets(members=["EMPTY", "BEAR", "BULL"], start=0, metaclass=VariableMeta): pass
@@ -221,6 +237,7 @@ class Variables:
     Securities = Securities
     Strategies = Strategies
     Markets = Markets
+    Pricing = Pricing
     Instruments = Instruments
     Options = Options
     Positions = Positions

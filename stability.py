@@ -15,8 +15,7 @@ from collections import OrderedDict as ODict
 
 from finance.variables import Variables, Contract
 from support.calculations import Variable, Equation, Calculation
-from support.meta import ParametersMeta
-from support.mixins import Sizing
+from support.processes import Calculator
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -48,30 +47,27 @@ class StabilityCalculation(Calculation, equation=StabilityEquation):
         yield equation.m(portfolios)
 
 
-class StabilityAxes(object, metaclass=ParametersMeta):
-    security = ["instrument", "option", "position"]
-    contract = ["ticker", "expire"]
+class StabilityVariables(object):
+    axes = {Variables.Querys.CONTRACT: ["ticker", "expire"], Variables.Datasets.SECURITY: ["instrument", "option", "position"]}
 
-
-class StabilityCalculator(Sizing):
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.__calculation = StabilityCalculation(*args, **kwargs)
-        self.__axes = StabilityAxes()
-        self.__logger = __logger__
+        self.security = self.axes[Variables.Datasets.SECURITY]
+        self.contract = self.axes[Variables.Querys.CONTRACT]
 
-    def calculate(self, contract, valuations, exposures, allocations, *args, **kwargs):
+
+class StabilityCalculator(Calculator, calculation=StabilityCalculation, variables=StabilityVariables):
+    def execute(self, contract, valuations, exposures, allocations, *args, **kwargs):
         assert isinstance(contract, Contract) and all([isinstance(dataframe, pd.DataFrame) for dataframe in (valuations, exposures, allocations)])
         exposures = self.exposures(exposures, *args, **kwargs)
         allocations = ODict(list(self.allocations(allocations, *args, **kwargs)))
         portfolios = list(self.portfolios(exposures, allocations, *args, **kwargs))
         portfolios = xr.concat(portfolios, join="outer", fill_value=0, dim="portfolio")
-        portfolios = portfolios.stack({"holdings": ["strike"] + self.axes.security}).to_dataset()
+        portfolios = portfolios.stack({"holdings": ["strike"] + self.variables.security}).to_dataset()
         portfolios = self.underlying(portfolios, *args, **kwargs)
         stability = ODict(list(self.stability(portfolios, *args, **kwargs)))
         valuations = self.valuations(valuations, stability, *args, **kwargs)
         size = self.size(valuations)
-        string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
+        string = f"{str(self.title)}: {repr(self)}|{str(contract)}[{size:.0f}]"
         self.logger.info(string)
         return valuations
 
@@ -80,7 +76,7 @@ class StabilityCalculator(Sizing):
         exposures = exposures.set_index(index, drop=True, inplace=False).squeeze()
         exposures = xr.DataArray.from_series(exposures).fillna(0)
         function = lambda content, axis: content.squeeze(axis)
-        exposures = reduce(function, self.axes.contract, exposures)
+        exposures = reduce(function, self.variables.contract, exposures)
         return exposures
 
     def allocations(self, allocations, *args, **kwargs):
@@ -90,7 +86,7 @@ class StabilityCalculator(Sizing):
             allocation = allocation.set_index(index, drop=True, inplace=False).squeeze()
             allocation = xr.DataArray.from_series(allocation).fillna(0)
             function = lambda content, axis: content.squeeze(axis)
-            allocation = reduce(function, self.axes.contract, allocation)
+            allocation = reduce(function, self.variables.contract, allocation)
             yield portfolio, allocation
 
     def stability(self, portfolios, *args, **kwargs):
@@ -124,13 +120,6 @@ class StabilityCalculator(Sizing):
         valuations = valuations.where(stable).dropna(how="all", inplace=False)
         valuations = valuations.drop(columns="portfolio", inplace=False)
         return valuations
-
-    @property
-    def calculation(self): return self.__calculation
-    @property
-    def logger(self): return self.__logger
-    @property
-    def axes(self): return self.__axes
 
 
 

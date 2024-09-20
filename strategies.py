@@ -17,8 +17,8 @@ from collections import OrderedDict as ODict
 
 from finance.variables import Variables, Contract
 from support.calculations import Variable, Equation, Calculation
-from support.meta import ParametersMeta
-from support.mixins import Sizing
+from support.processes import Calculator
+from support.meta import RegistryMeta
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -70,7 +70,7 @@ class CollarShortEquation(CollarEquation):
     yl = Variable("yl", "minimum", np.float32, function=lambda kα, kβ: np.minimum(-kα, -kβ))
 
 
-class StrategyCalculation(Calculation, ABC, fields=["strategy"]):
+class StrategyCalculation(Calculation, ABC, register=RegistryMeta):
     def execute(self, options, *args, fees, **kwargs):
         positions = [option.position for option in options.keys()]
         assert len(set(positions)) == len(list(positions))
@@ -83,73 +83,62 @@ class StrategyCalculation(Calculation, ABC, fields=["strategy"]):
         yield equation.q(options, fees=fees)
         yield equation.t(options, fees=fees)
 
-class VerticalPutCalculation(StrategyCalculation, strategy=Variables.Strategies.Vertical.Put, equation=VerticalPutEquation): pass
-class VerticalCallCalculation(StrategyCalculation, strategy=Variables.Strategies.Vertical.Call, equation=VerticalCallEquation): pass
-class CollarLongCalculation(StrategyCalculation, strategy=Variables.Strategies.Collar.Long, equation=CollarLongEquation): pass
-class CollarShortCalculation(StrategyCalculation, strategy=Variables.Strategies.Collar.Short, equation=CollarShortEquation): pass
+class VerticalPutCalculation(StrategyCalculation, equation=VerticalPutEquation, regsiter=Variables.Strategies.Vertical.Put): pass
+class VerticalCallCalculation(StrategyCalculation, equation=VerticalCallEquation, regsiter=Variables.Strategies.Vertical.Call): pass
+class CollarLongCalculation(StrategyCalculation, equation=CollarLongEquation, regsiter=Variables.Strategies.Collar.Long): pass
+class CollarShortCalculation(StrategyCalculation, equation=CollarShortEquation, regsiter=Variables.Strategies.Collar.Short): pass
 
 
-class StrategyAxes(object, metaclass=ParametersMeta):
-    security = ["instrument", "option", "position"]
-    contract = ["ticker", "expire"]
+class StrategyVariables(object):
+    axes = {Variables.Querys.CONTRACT: ["ticker", "expire"], Variables.Datasets.SECURITY: ["instrument", "option", "position"]}
 
-
-class StrategyCalculator(Sizing):
     def __init__(self, *args, strategies=[], **kwargs):
-        super().__init__(*args, **kwargs)
-        calculations = {variables["strategy"]: calculation for variables, calculation in ODict(list(StrategyCalculation)).items()}
-        strategies = calculations.keys() if not bool(strategies) else strategies
-        calculations = {strategy: calculation for strategy, calculation in calculations.items() if strategy in strategies}
-        self.__calculations = {strategy: calculation(*args, **kwargs) for strategy, calculation in calculations.items()}
-        self.__variables = lambda **mapping: {key: xr.Variable(key, [value]).squeeze(key) for key, value in mapping.items()}
-        self.__axes = StrategyAxes()
-        self.__logger = __logger__
+        assert isinstance(strategies, list) and all([strategy in list(Variables.Strategies) for strategy in strategies])
+        self.index = self.axes[Variables.Querys.CONTRACT] + self.axes[Variables.Datasets.SECURITY] + ["strike"]
+        self.strategies = list(strategies) if bool(strategies) else list(Variables.Strategies)
+        self.security = self.axes[Variables.Datasets.SECURITY]
+        self.contract = self.axes[Variables.Querys.CONTRACT]
 
-    def calculate(self, contract, options, *args, **kwargs):
+
+class StrategyCalculator(Calculator, calculations=dict(StrategyCalculation), variables=StrategyVariables):
+    def execute(self, contract, options, *args, **kwargs):
         assert isinstance(contract, Contract) and isinstance(options, pd.DataFrame)
         options = ODict(list(self.options(options, *args, **kwargs)))
         strategies = ODict(list(self.strategies(options, *args, **kwargs)))
         strategies = list(strategies.values())
         assert all([isinstance(dataset, xr.Dataset) for dataset in strategies])
         size = self.size([dataset["size"] for dataset in strategies.values()])
-        string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
+        string = f"{str(self.title)}: {repr(self)}|{str(contract)}[{size:.0f}]"
         self.logger.info(string)
         return strategies
 
     def strategies(self, options, *args, **kwargs):
         if bool(options.empty): return
+        function = lambda mapping: {key: xr.Variable(key, [value]).squeeze(key) for key, value in mapping.items()}
         for strategy, calculation in self.calculations.items():
+            if strategy not in self.variables.strategies: continue
             if not all([option in options.keys() for option in list(strategy.options)]): continue
-            variables = self.variables(strategy=strategy)
             datasets = {option: options[option] for option in list(strategy.options)}
             strategies = calculation(datasets, *args, **kwargs)
             assert isinstance(strategies, xr.Dataset)
             if self.empty(strategies["size"]): continue
-            strategies = strategies.assign_coords(variables)
+            coordinates = function(dict(strategy=strategy))
+            strategies = strategies.assign_coords(coordinates)
             yield strategy, strategies
 
     def options(self, options, *args, **kwargs):
         if bool(options.empty): return
-        index = self.axes.contract + self.axes.security + ["strike"]
-        options = options.set_index(index, drop=True, inplace=False)
+        options = options.set_index(self.variables.index, drop=True, inplace=False)
         options = xr.Dataset.from_dataframe(options)
-        options = reduce(lambda content, axis: content.squeeze(axis), self.axes.contract, options)
-        for values in product(*[options[axis].values for axis in self.axes.security]):
-            dataset = options.sel(indexers={key: value for key, value in zip(self.axes.security, values)})
-            dataset = dataset.drop_vars(self.axes.security, errors="ignore")
+        options = reduce(lambda content, axis: content.squeeze(axis), self.variables.contract, options)
+        for values in product(*[options[axis].values for axis in self.variables.security]):
+            dataset = options.sel(indexers={key: value for key, value in zip(self.variables.security, values)})
+            dataset = dataset.drop_vars(self.variables.security, errors="ignore")
             if self.empty(dataset["size"]): continue
             option = Variables.Securities[values]
             dataset = dataset.rename({"strike": str(option)})
             dataset["strike"] = dataset[str(option)]
             yield option, dataset
 
-    @property
-    def calculations(self): return self.__calculations
-    @property
-    def variables(self): return self.__variables
-    @property
-    def logger(self): return self.__logger
-    @property
-    def axes(self): return self.__axes
 
 
