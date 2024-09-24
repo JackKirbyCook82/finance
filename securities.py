@@ -17,8 +17,9 @@ from collections import OrderedDict as ODict
 
 from finance.variables import Variables, Contract
 from support.calculations import Variable, Equation, Calculation
+from support.meta import RegistryMeta, ParametersMeta
 from support.processes import Calculator, Filter
-from support.meta import RegistryMeta
+from support.files import File
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -26,6 +27,30 @@ __all__ = ["SecurityFilter", "SecurityCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
+
+
+class SecurityParameters(metaclass=ParametersMeta):
+    filename = lambda contract: "_".join([str(contract.ticker).upper(), str(contract.expire.strftime("%Y%m%d"))])
+    option = {"ticker": str, "strike": np.float32, "price": np.float32, "underlying": np.float32, "size": np.float32, "volume": np.float32, "interest": np.float32}
+    stock = {"ticker": str, "price": np.float32, "volume": np.float32}
+    parsers = {"instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}
+    formatters = {"instrument": int, "option": int, "position": int}
+    dates = {"current": "%Y%m%d-%H%M", "expire": "%Y%m%d"}
+
+
+class SecurityVariables(object):
+    data = {Variables.Datasets.PRICING: ["price", "underlying", "current"], Variables.Datasets.SIZING: ["volume", "size", "interest"]}
+    axes = {Variables.Querys.CONTRACT: ["ticker", "expire"], Variables.Datasets.SECURITY: ["instrument", "option", "position"]}
+
+    def __init__(self, *args, pricing, sizings={}, **kwargs):
+        assert pricing in list(Variables.Pricing)
+        self.sizings = {sizing: sizings.get(sizing, lambda cols: np.NaN) for sizing in self.data[Variables.Datasets.SIZING]}
+        self.pricing = pricing
+
+
+class SecurityFile(File, datatype=pd.DataFrame, dates=SecurityParameters.dates, filename=SecurityParameters.filename, parsers=SecurityParameters.parsers, formatters=SecurityParameters.formatters): pass
+class StockFile(File, variable=Variables.Instruments.STOCK, types=SecurityParameters.stock): pass
+class OptionFile(File, variable=Variables.Instruments.OPTION, types=SecurityParameters.option): pass
 
 
 class PricingEquation(Equation): pass
@@ -81,16 +106,6 @@ class SecurityFilter(Filter):
         assert isinstance(options, pd.DataFrame)
         options = options.reset_index(drop=True, inplace=False)
         return options
-
-
-class SecurityVariables(object):
-    data = {Variables.Datasets.PRICING: ["price", "underlying", "current"], Variables.Datasets.SIZING: ["volume", "size", "interest"]}
-    axes = {Variables.Querys.CONTRACT: ["ticker", "expire"], Variables.Datasets.SECURITY: ["instrument", "option", "position"]}
-
-    def __init__(self, *args, pricing, sizings={}, **kwargs):
-        assert pricing in list(Variables.Pricing)
-        self.sizings = {sizing: sizings.get(sizing, lambda cols: np.NaN) for sizing in self.data[Variables.Datasets.SIZING]}
-        self.pricing = pricing
 
 
 class SecurityCalculator(Calculator, calculations=dict(PricingCalculation), variables=SecurityVariables):

@@ -9,9 +9,12 @@ Created on Fri May 17 2024
 import logging
 import numpy as np
 import pandas as pd
+from abc import ABC
 
 from finance.variables import Variables, Contract
 from support.processes import Calculator
+from support.meta import ParametersMeta
+from support.tables import Table, View
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -19,6 +22,24 @@ __all__ = ["ExposureCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
+
+
+class ExposureFormatting(metaclass=ParametersMeta):
+    order = ["ticker", "expire", "instrument", "option", "position", "strike", "quantity"]
+    formats = {"strike": lambda column: f"{column:.02f}", "quantity": lambda column: f"{column:.0f}"}
+
+
+class ExposureVariables(object):
+    axes = {Variables.Querys.CONTRACT: ["ticker", "expire"], Variables.Datasets.SECURITY: ["instrument", "option", "position"]}
+
+    def __init__(self, *args, **kwargs):
+        contract = self.axes[Variables.Querys.CONTRACT]
+        security = self.axes[Variables.Datasets.SECURITY]
+        self.index = list(contract) + list(security) + ["strike"]
+
+
+class ExposureView(View, ABC, datatype=pd.DataFrame, **dict(ExposureFormatting)): pass
+class ExposureTable(Table, ABC, datatype=pd.DataFrame, view=ExposureView, variable=Variables.Datasets.EXPOSURE): pass
 
 
 class ExposureCalculator(Calculator):
@@ -81,6 +102,34 @@ class ExposureCalculator(Calculator):
         exposures["quantity"] = exposures["quantity"].apply(np.abs)
         return exposures
 
+
+# class ExposureWriter(object):
+#     def __init__(self, *args, table, **kwargs):
+#         self.__variables = ExposureVariables(*args, **kwargs)
+#         self.__table = table
+#
+#     def __call__(self, contract, exposures, *args, **kwargs):
+#         assert isinstance(contract, Contract) and isinstance(exposures, pd.DataFrame)
+#         with self.table.mutex:
+#             self.obsolete(contract, *args, **kwargs)
+#             self.write(exposures, *args, **kwargs)
+#
+#     def obsolete(self, contract, *args, **kwargs):
+#         ticker = lambda table: table["ticker"] == contract.ticker
+#         expire = lambda table: table["expire"] == contract.expire
+#         obsolete = lambda table: ticker(table) & expire(table)
+#         self.table.remove(obsolete)
+#
+#     def write(self, exposures, *args, **kwargs):
+#         sorting = dict(ticker=False, expire=False)
+#         self.table.combine(exposures)
+#         self.table.reset()
+#         self.table.sort(list(sorting.keys()), reverse=list(sorting.values()))
+#
+#     @property
+#     def variables(self): return self.__variables
+#     @property
+#     def table(self): return self.__table
 
 
 

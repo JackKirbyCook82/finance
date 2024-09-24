@@ -13,8 +13,9 @@ from abc import ABC
 
 from finance.variables import Variables, Symbol
 from support.calculations import Variable, Equation, Calculation
+from support.meta import RegistryMeta, ParametersMeta
 from support.processes import Calculator
-from support.meta import RegistryMeta
+from support.files import File
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -22,6 +23,32 @@ __all__ = ["TechnicalCalculator"]
 __copyright__ = "Copyright 2024, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
+
+
+class TechnicalParameters(metaclass=ParametersMeta):
+    filename = lambda symbol: str(symbol.ticker).upper()
+    bars = {"ticker": str, "volume": np.int64} | {column: np.float32 for column in ("price", "open", "close", "high", "low")}
+    stochastic = {"trend": np.float32, "volatility": np.float32}
+    statistic = {"oscillator": np.float32}
+    dates = {"date": "%Y%m%d"}
+
+
+class TechnicalVariables(object):
+    data = {Variables.Technicals.STATISTIC: ["price", "trend", "volatility"], Variables.Technicals.STOCHASTIC: ["price", "oscillator"]}
+    axes = {Variables.Querys.HISTORY: ["date", "ticker"]}
+
+    def __init__(self, *args, technical, **kwargs):
+        assert technical in list(Variables.Technicals)
+        index = self.axes[Variables.Querys.HISTORY]
+        columns = self.data[technical]
+        self.header = list(index) + list(columns)
+        self.technical = technical
+
+
+class TechnicalFile(File, datatype=pd.DataFrame, dates=TechnicalParameters.dates, filename=TechnicalParameters.filename): pass
+class BarsFile(TechnicalFile, variable=Variables.Technicals.BARS, types=TechnicalParameters.bars): pass
+class StatisticFile(TechnicalFile, variable=Variables.Technicals.STATISTIC, types=TechnicalParameters.statistic): pass
+class StochasticFile(TechnicalFile, variable=Variables.Technicals.STOCHASTIC, types=TechnicalParameters.stochastic): pass
 
 
 class TechnicalEquation(Equation): pass
@@ -51,18 +78,6 @@ class StochasticCalculation(TechnicalCalculation, equation=StochasticEquation, r
         yield from iter([bars["ticker"], bars["date"], bars["price"]])
         yield equation.xk(bars)
 
-
-class TechnicalVariables(object):
-    data = {Variables.Technicals.STATISTIC: ["price", "trend", "volatility"], Variables.Technicals.STOCHASTIC: ["price", "oscillator"]}
-    axes = {Variables.Querys.HISTORY: ["date", "ticker"]}
-
-    def __init__(self, *args, technical, **kwargs):
-        assert technical in list(Variables.Technicals)
-        index = self.axes[Variables.Querys.HISTORY]
-        columns = self.data[technical]
-        self.header = list(index) + list(columns)
-        self.technical = technical
-        
 
 class TechnicalCalculator(Calculator, calculations=dict(TechnicalCalculation), variables=TechnicalVariables):
     def execute(self, symbol, bars, *args, **kwargs):

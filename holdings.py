@@ -12,6 +12,8 @@ import pandas as pd
 
 from finance.variables import Variables, Contract
 from support.processes import Calculator
+from support.meta import ParametersMeta
+from support.files import File
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -19,6 +21,14 @@ __all__ = ["HoldingCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
+
+
+class HoldingParameters(metaclass=ParametersMeta):
+    filename = lambda contract: "_".join([str(contract.ticker).upper(), str(contract.expire.strftime("%Y%m%d"))])
+    parsers = {"instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}
+    formatters = {"instrument": int, "option": int, "position": int}
+    types = {"ticker": str, "strike": np.float32, "quantity": np.int32}
+    dates = {"expire": "%Y%m%d"}
 
 
 class HoldingVariables(object):
@@ -39,6 +49,10 @@ class HoldingVariables(object):
         self.valuation = valuation
 
 
+class HoldingFile(File, variable=Variables.Datasets.HOLDINGS, datatype=pd.DataFrame, **dict(HoldingParameters)):
+    pass
+
+
 class HoldingCalculator(Calculator, variables=HoldingVariables):
     def execute(self, contract, valuations, *args, **kwargs):
         assert isinstance(contract, Contract) and isinstance(valuations, pd.DataFrame)
@@ -49,7 +63,7 @@ class HoldingCalculator(Calculator, variables=HoldingVariables):
         size = self.size(holdings)
         string = f"{str(self.title)}: {repr(self)}|{str(contract)}[{size:.0f}]"
         self.logger.info(string)
-        return valuations
+        return holdings
 
     def unpivot(self, valuations, *args, **kwargs):
         index = set(valuations.columns) - ({"scenario"} | set(self.variables.stacking))
