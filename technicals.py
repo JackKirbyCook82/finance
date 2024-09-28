@@ -14,7 +14,6 @@ from abc import ABC
 from finance.variables import Variables, Symbol
 from support.calculations import Variable, Equation, Calculation
 from support.meta import RegistryMeta, ParametersMeta
-from support.processes import Calculator
 from support.files import File
 
 __version__ = "1.0.0"
@@ -35,14 +34,13 @@ class TechnicalParameters(metaclass=ParametersMeta):
 
 class TechnicalVariables(object):
     data = {Variables.Technicals.STATISTIC: ["price", "trend", "volatility"], Variables.Technicals.STOCHASTIC: ["price", "oscillator"]}
-    axes = {Variables.Querys.HISTORY: ["date", "ticker"]}
+    axes = {Variables.Querys.HISTORY: ["date", "ticker"], Variables.Querys.SYMBOL: ["ticker"]}
 
     def __init__(self, *args, technical, **kwargs):
-        assert technical in list(Variables.Technicals)
-        index = self.axes[Variables.Querys.HISTORY]
-        columns = self.data[technical]
-        self.header = list(index) + list(columns)
-        self.technical = technical
+        self.index = self.axes[Variables.Querys.HISTORY]
+        self.columns = self.data[technical]
+        self.symbol = self.axes[Variables.Querys.SYMBOL]
+        self.header = self.index + self.columns
 
 
 class TechnicalFile(File, datatype=pd.DataFrame, dates=TechnicalParameters.dates, filename=TechnicalParameters.filename): pass
@@ -79,21 +77,45 @@ class StochasticCalculation(TechnicalCalculation, equation=StochasticEquation, r
         yield equation.xk(bars)
 
 
-class TechnicalCalculator(Calculator, calculations=dict(TechnicalCalculation), variables=TechnicalVariables):
-    def execute(self, symbol, bars, *args, **kwargs):
-        assert isinstance(symbol, Symbol) and isinstance(bars, pd.DataFrame)
-        technicals = self.technicals(bars, *args, **kwargs)
+class TechnicalCalculator(object):
+    def __init__(self, *args, technical, **kwargs):
+        self.__calculation = TechnicalCalculation[technical](*args, **kwargs)
+        self.__variables = TechnicalVariables(*args, technical=technical, **kwargs)
+
+    def __call__(self, bars, *args, **kwargs):
+        assert isinstance(bars, pd.DataFrame)
+        for symbol, dataframe in self.symbols(bars):
+            technicals = self.execute(dataframe, *args, **kwargs)
+            size = len(bars.dropna(how="all", inplace=False).index)
+            string = f"Calculated: {repr(self)}|{str(symbol)}[{size:.0f}]"
+            self.logger.info(string)
+            if bool(technicals.empty): continue
+            yield technicals
+
+    def symbols(self, bars):
+        assert isinstance(bars, pd.DataFrame)
+        for (ticker,), dataframe in bars.groupby(self.variables.symbol):
+            if bool(dataframe.empty): continue
+            symbol = Symbol(ticker)
+            yield symbol, dataframe
+
+    def execute(self, bars, *args, **kwargs):
+        assert isinstance(bars, pd.DataFrame)
+        technicals = self.calculate(bars, *args, **kwargs)
+        return technicals
+
+    def calculate(self, bars, *args, **kwargs):
+        assert isinstance(bars, pd.DataFrame)
+        bars = bars.sort_values("date", ascending=False, inplace=False)
+        technicals = self.calculation(bars, *args, **kwargs)
+        assert isinstance(technicals, pd.DataFrame)
         technicals = technicals if bool(technicals) else pd.DataFrame(columns=self.variables.header)
-        size = self.size(technicals)
-        string = f"{str(self.title)}: {repr(self)}|{str(symbol)}[{size:.0f}]"
-        self.logger.info(string)
         return technicals
 
-    def technicals(self, bars, *args, **kwargs):
-        if bool(bars.empty): return
-        technicals = self.calculations[self.variables.technical](bars, *args, **kwargs)
-        return technicals
-
+    @property
+    def calculation(self): return self.__calculations
+    @property
+    def variables(self): return self.__variables
 
 
 

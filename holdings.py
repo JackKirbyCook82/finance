@@ -11,7 +11,6 @@ import numpy as np
 import pandas as pd
 
 from finance.variables import Variables, Contract
-from support.processes import Calculator
 from support.meta import ParametersMeta
 from support.files import File
 
@@ -37,46 +36,63 @@ class HoldingVariables(object):
     data = {Variables.Valuations.ARBITRAGE: ["apy", "npv", "cost"]}
 
     def __init__(self, *args, valuation, **kwargs):
-        options = list(map(str, self.axes[Variables.Instruments.OPTIONS]))
-        stocks = list(map(str, self.axes[Variables.Instruments.STOCK]))
-        contract = self.axes[Variables.Querys.CONTRACT]
-        security = self.axes[Variables.Datasets.SECURITY]
+        self.options = list(map(str, self.axes[Variables.Instruments.OPTIONS]))
+        self.stocks = list(map(str, self.axes[Variables.Instruments.STOCK]))
+        self.contract = self.axes[Variables.Querys.CONTRACT]
+        self.security = self.axes[Variables.Datasets.SECURITY]
         self.stacking = self.data[valuation]
-        self.header = list(contract) + list(security) + ["strike", "quantity"]
-        self.securities = list(options) + list(stocks)
-        self.options = list(options)
-        self.stocks = list(stocks)
-        self.valuation = valuation
+        self.header = self.contract + self.security + ["strike", "quantity"]
+        self.securities = self.options + self.stocks
 
 
 class HoldingFile(File, variable=Variables.Datasets.HOLDINGS, datatype=pd.DataFrame, **dict(HoldingParameters)):
     pass
 
 
-class HoldingCalculator(Calculator, variables=HoldingVariables):
-    def execute(self, contract, valuations, *args, **kwargs):
-        assert isinstance(contract, Contract) and isinstance(valuations, pd.DataFrame)
+class HoldingCalculator(object):
+    def __init__(self, *args, valuation, **kwargs):
+        self.__variables = HoldingVariables(*args, valuation=valuation, **kwargs)
+        self.__valuation = valuation
+
+    def __call__(self, valuations, *args, **kwargs):
+        assert isinstance(valuations, pd.DataFrame)
+        for contract, dataframe in self.contracts(valuations):
+            holdings = self.execute(dataframe, *args, **kwargs)
+            size = len(holdings.dropna(how="all", inplace=False).index)
+            string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
+            self.logger.info(string)
+            if bool(holdings.empty): continue
+            yield holdings
+
+    def contracts(self, valuations):
+        assert isinstance(valuations, pd.DataFrame)
+        for (ticker, expire), dataframe in valuations.groupby(self.variables.contract):
+            if bool(dataframe.empty): continue
+            contract = Contract(ticker, expire)
+            yield contract, dataframe
+
+    def execute(self, valuations, *args, **kwargs):
+        assert isinstance(valuations, pd.DataFrame)
         valuations = self.unpivot(valuations, *args, **kwargs)
+        holdings = self.calculate(valuations, *args, **kwargs)
+        return holdings
+
+    def calculate(self, valuations, *args, **kwargs):
+        assert isinstance(valuations, pd.DataFrame)
         stocks = self.stocks(valuations, *args, **kwargs)
         securities = pd.concat([valuations, stocks], axis=1)
         holdings = self.holdings(securities, *args, **kwargs)
-        size = self.size(holdings)
-        string = f"{str(self.title)}: {repr(self)}|{str(contract)}[{size:.0f}]"
-        self.logger.info(string)
         return holdings
 
-    def unpivot(self, valuations, *args, **kwargs):
-        index = set(valuations.columns) - ({"scenario"} | set(self.variables.stacking))
-        valuations = valuations[list(index)].droplevel("scenario", axis=1)
-        return valuations
-
     def stocks(self, valuations, *args, **kwargs):
+        assert isinstance(valuations, pd.DataFrame)
         strategy = lambda cols: list(map(str, cols["strategy"].stocks))
         function = lambda cols: {stock: cols["underlying"] if stock in strategy(cols) else np.NaN for stock in list(self.variables.stocks)}
         stocks = valuations.apply(function, axis=1, result_type="expand")
         return stocks
 
     def holdings(self, securities, *args, **kwargs):
+        assert isinstance(securities, pd.DataFrame)
         securities = securities[[column for column in list(self.variables.header) if column in securities.columns] + list(self.variables.securities)]
         contracts = [column for column in securities.columns if column not in list(self.variables.securities)]
         holdings = securities.melt(id_vars=contracts, value_vars=list(self.variables.securities), var_name="security", value_name="strike")
@@ -88,6 +104,15 @@ class HoldingCalculator(Calculator, variables=HoldingVariables):
         holdings = holdings.assign(quantity=1)
         return holdings[self.variables.header]
 
+    def unpivot(self, dataframe, *args, **kwargs):
+        assert isinstance(dataframe, pd.DataFrame)
+        index = set(dataframe.columns) - ({"scenario"} | set(self.variables.stacking))
+        valuations = dataframe[list(index)].droplevel("scenario", axis=1)
+        return valuations
 
+    @property
+    def variables(self): return self.__variables
+    @property
+    def valuation(self): return self.__valuation
 
 

@@ -15,7 +15,6 @@ from collections import OrderedDict as ODict
 
 from finance.variables import Variables, Contract
 from support.calculations import Variable, Equation, Calculation
-from support.processes import Calculator
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -55,9 +54,20 @@ class StabilityVariables(object):
         self.contract = self.axes[Variables.Querys.CONTRACT]
 
 
-class StabilityCalculator(Calculator, calculation=StabilityCalculation, variables=StabilityVariables):
-    def execute(self, contract, valuations, exposures, allocations, *args, **kwargs):
-        assert isinstance(contract, Contract) and all([isinstance(dataframe, pd.DataFrame) for dataframe in (valuations, exposures, allocations)])
+class StabilityCalculator(object):
+    def __init__(self, *args, **kwargs):
+        self.__calculation = StabilityCalculation(*args, **kwargs)
+        self.__variables = StabilityVariables(*args, **kwargs)
+
+    def contracts(self, valuations):
+        assert isinstance(valuations, pd.DataFrame)
+        for (ticker, expire), dataframe in valuations.groupby(self.variables.contract):
+            if bool(dataframe.empty): continue
+            contract = Contract(ticker, expire)
+            yield contract, dataframe
+
+    def execute(self, valuations, exposures, allocations, *args, **kwargs):
+        assert all([isinstance(dataframe, pd.DataFrame) for dataframe in (valuations, exposures, allocations)])
         exposures = self.exposures(exposures, *args, **kwargs)
         allocations = ODict(list(self.allocations(allocations, *args, **kwargs)))
         portfolios = list(self.portfolios(exposures, allocations, *args, **kwargs))
@@ -66,12 +76,13 @@ class StabilityCalculator(Calculator, calculation=StabilityCalculation, variable
         portfolios = self.underlying(portfolios, *args, **kwargs)
         stability = ODict(list(self.stability(portfolios, *args, **kwargs)))
         valuations = self.valuations(valuations, stability, *args, **kwargs)
-        size = self.size(valuations)
-        string = f"{str(self.title)}: {repr(self)}|{str(contract)}[{size:.0f}]"
-        self.logger.info(string)
         return valuations
 
+    def calculate(self, valuations, exposures, allocations, *args, **kwargs):
+
+
     def exposures(self, exposures, *args, **kwargs):
+        assert isinstance(exposures, pd.DataFrame)
         index = [column for column in exposures.columns if column != "quantity"]
         exposures = exposures.set_index(index, drop=True, inplace=False).squeeze()
         exposures = xr.DataArray.from_series(exposures).fillna(0)
@@ -80,6 +91,7 @@ class StabilityCalculator(Calculator, calculation=StabilityCalculation, variable
         return exposures
 
     def allocations(self, allocations, *args, **kwargs):
+        assert isinstance(allocations, pd.DataFrame)
         for portfolio, allocation in allocations.groupby("portfolio"):
             allocation = allocation.drop(columns="portfolio", inplace=False)
             index = [column for column in allocation.columns if column != "quantity"]
@@ -90,6 +102,7 @@ class StabilityCalculator(Calculator, calculation=StabilityCalculation, variable
             yield portfolio, allocation
 
     def stability(self, portfolios, *args, **kwargs):
+        assert isinstance(portfolios, xr.Dataset)
         stability = self.calculation(portfolios, *args, **kwargs)
         assert isinstance(stability, xr.Dataset)
         stability = stability.sum(dim="holdings")
@@ -100,6 +113,7 @@ class StabilityCalculator(Calculator, calculation=StabilityCalculation, variable
 
     @staticmethod
     def portfolios(exposures, allocations, *args, **kwargs):
+        assert isinstance(exposures, xr.Dataset) and isinstance(allocations, dict)
         yield exposures.assign_coords(portfolio=0).expand_dims("portfolio")
         for portfolio, allocation in allocations.items():
             allocation = xr.align(allocation, exposures, fill_value=0, join="outer")[0]
@@ -108,6 +122,7 @@ class StabilityCalculator(Calculator, calculation=StabilityCalculation, variable
 
     @staticmethod
     def underlying(portfolios, *args, **kwargs):
+        assert isinstance(portfolios, xr.Dataset)
         underlying = np.unique(portfolios["strike"].values)
         underlying = np.sort(np.concatenate([underlying - 0.001, underlying + 0.001]))
         portfolios["underlying"] = underlying
@@ -115,12 +130,16 @@ class StabilityCalculator(Calculator, calculation=StabilityCalculation, variable
 
     @staticmethod
     def valuations(valuations, stability, *args, **kwargs):
+        assert isinstance(valuations, pd.DataFrame) and isinstance(stability, xr.Dataset)
         stability = xr.Dataset(stability).to_dataframe()
         stable = (stability["bear"] == 0) & (stability["bull"] == 0)
         valuations = valuations.where(stable).dropna(how="all", inplace=False)
         valuations = valuations.drop(columns="portfolio", inplace=False)
         return valuations
 
-
+    @property
+    def calculation(self): return self.__calculations
+    @property
+    def variables(self): return self.__variables
 
 

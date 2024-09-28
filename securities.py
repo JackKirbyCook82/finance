@@ -11,14 +11,12 @@ import logging
 import numpy as np
 import pandas as pd
 from abc import ABC
-from itertools import count
 from scipy.stats import norm
-from collections import OrderedDict as ODict
 
 from finance.variables import Variables, Contract
 from support.calculations import Variable, Equation, Calculation
 from support.meta import RegistryMeta, ParametersMeta
-from support.processes import Calculator, Filter
+from support.filtering import Filter
 from support.files import File
 
 __version__ = "1.0.0"
@@ -42,10 +40,11 @@ class SecurityVariables(object):
     data = {Variables.Datasets.PRICING: ["price", "underlying", "current"], Variables.Datasets.SIZING: ["volume", "size", "interest"]}
     axes = {Variables.Querys.CONTRACT: ["ticker", "expire"], Variables.Datasets.SECURITY: ["instrument", "option", "position"]}
 
-    def __init__(self, *args, pricing, sizings={}, **kwargs):
-        assert pricing in list(Variables.Pricing)
-        self.sizings = {sizing: sizings.get(sizing, lambda cols: np.NaN) for sizing in self.data[Variables.Datasets.SIZING]}
-        self.pricing = pricing
+    def __init__(self, *args, **kwargs):
+        self.contract = self.axes[Variables.Querys.CONTRACT]
+        self.security = self.axes[Variables.Datasets.SECURITY]
+        self.pricing = self.data[Variables.Datasets.PRICING]
+        self.sizing = self.data[Variables.Datasets.SIZING]
 
 
 class SecurityFile(File, datatype=pd.DataFrame, dates=SecurityParameters.dates, filename=SecurityParameters.filename, parsers=SecurityParameters.parsers, formatters=SecurityParameters.formatters): pass
@@ -100,47 +99,87 @@ class BlackScholesCalculation(PricingCalculation, equation=BlackScholesEquation,
 
 
 class SecurityFilter(Filter):
-    def execute(self, contract, securities, *args, **kwargs):
-        assert isinstance(contract, Contract) and isinstance(securities, pd.DataFrame)
-        options = self.filter(securities, *args, variable=contract, **kwargs)
-        assert isinstance(options, pd.DataFrame)
-        options = options.reset_index(drop=True, inplace=False)
-        return options
-
-
-class SecurityCalculator(Calculator, calculations=dict(PricingCalculation), variables=SecurityVariables):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.lifespans = ODict()
+        self.__variables = SecurityVariables(*args, **kwargs)
 
-    def execute(self, contract, exposures, statistics, *args, **kwargs):
-        assert isinstance(contract, Contract) and isinstance(exposures, pd.DataFrame) and isinstance(statistics, pd.DataFrame)
+    def execute(self, securities, *args, **kwargs):
+        assert isinstance(securities, pd.DataFrame)
+        for contract, dataframe in self.contracts(securities, *args, **kwargs):
+            if bool(dataframe.empty): continue
+            prior = len(dataframe.dropna(how="all", inplace=False).index)
+            dataframe = self.filter(dataframe, *args, **kwargs)
+            assert isinstance(dataframe, pd.DataFrame)
+            dataframe = dataframe.reset_index(drop=True, inplace=False)
+            post = len(dataframe.dropna(how="all", inplace=False).index)
+            string = f"Filtered: {repr(self)}|{str(contract)}[{prior:.0f}|{post:.0f}]"
+            self.logger.info(string)
+            if bool(dataframe.empty): continue
+            yield dataframe
+
+    def contracts(self, securities, *args, **kwargs):
+        assert isinstance(securities, pd.DataFrame)
+        for (ticker, expire), dataframe in securities.groupby(self.variables.contract):
+            contract = Contract(ticker, expire)
+            yield contract, dataframe
+
+    @property
+    def variables(self): return self.__variables
+
+
+class SecurityCalculator(object):
+    def __init__(self, *args, pricing, sizings, **kwargs):
+        self.__calculation = PricingCalculation[pricing](*args, **kwargs)
+        self.__variables = SecurityVariables(*args, **kwargs)
+        self.__sizings = sizings
+        self.__pricing = pricing
+
+    def __call__(self, exposures, statistics, *args, **kwargs):
+        assert isinstance(exposures, pd.DataFrame) and isinstance(statistics, pd.DataFrame)
         exposures = self.exposures(exposures, statistics, *args, **kwargs)
-        pricings = self.pricings(contract, exposures, *args, **kwargs)
-        sizings = self.sizings(pricings, *args, **kwargs)
-        options = pd.concat([pricings, sizings], axis=1)
-        size = self.size(options)
-        string = f"{str(self.title)}: {repr(self)}|{str(contract)}[{size:.0f}]"
-        self.logger.info(string)
+        for contract, dataframe in self.contracts(exposures):
+            options = self.execute(dataframe, *args, **kwargs)
+            size = len(options.dropna(how="all", inplace=False).index)
+            string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
+            self.logger.info(string)
+            if bool(options.empty): continue
+            yield options
+
+    def contracts(self, exposures):
+        assert isinstance(exposures, pd.DataFrame)
+        for (ticker, expire), dataframe in exposures.groupby(self.variables.contract):
+            if bool(dataframe.empty): continue
+            contract = Contract(ticker, expire)
+            yield contract, dataframe
+
+    def execute(self, exposures, *args, **kwargs):
+        assert isinstance(exposures, pd.DataFrame)
+        options = self.calculate(exposures, *args, **kwargs)
         return options
 
-    def pricings(self, contract, exposures, *args, **kwargs):
-        if contract not in self.lifespans: self.lifespans[contract] = count(start=0, step=1)
-        lifespan = next(self.lifespans[contract])
-        pricings = self.calculations[self.variables.pricing](exposures, *args, lifespan=lifespan, **kwargs)
-        assert isinstance(pricings, pd.DataFrame)
-        return pricings
-
-    def sizings(self, pricings, *args, **kwargs):
-        sizings = pricings.apply(self.variables.sizings, axis=1, result_type="expand")
-        return sizings
+    def calculate(self, exposures, *args, **kwargs):
+        assert isinstance(exposures, pd.DataFrame)
+        pricings = self.calculation(exposures, *args, lifespan=0, **kwargs)
+        functions = {sizing: self.sizings.get(sizing, lambda cols: np.NaN) for sizing in self.variables.sizing}
+        sizings = pricings.apply(functions, axis=1, result_type="expand")
+        options = pd.concat([pricings, sizings], axis=1)
+        return options
 
     @staticmethod
     def exposures(exposures, statistics, *args, current, **kwargs):
+        assert isinstance(exposures, pd.DataFrame) and isinstance(statistics, pd.DataFrame)
         statistics = statistics.where(statistics["date"] == pd.to_datetime(current))
         exposures = pd.merge(exposures, statistics, how="inner", on="ticker")
         return exposures
 
+    @property
+    def calculation(self): return self.__calculations
+    @property
+    def variables(self): return self.__variables
+    @property
+    def sizings(self): return self.__sizings
+    @property
+    def pricing(self): return self.__pricing
 
 
 

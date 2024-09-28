@@ -13,11 +13,9 @@ import xarray as xr
 from abc import ABC
 from functools import reduce
 from itertools import product
-from collections import OrderedDict as ODict
 
 from finance.variables import Variables, Contract
 from support.calculations import Variable, Equation, Calculation
-from support.processes import Calculator
 from support.meta import RegistryMeta
 
 __version__ = "1.0.0"
@@ -26,6 +24,15 @@ __all__ = ["StrategyCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
+
+
+class StrategyVariables(object):
+    axes = {Variables.Querys.CONTRACT: ["ticker", "expire"], Variables.Datasets.SECURITY: ["instrument", "option", "position"]}
+
+    def __init__(self, *args, **kwargs):
+        self.security = self.axes[Variables.Datasets.SECURITY]
+        self.contract = self.axes[Variables.Querys.CONTRACT]
+        self.index = self.security + self.contract + ["strike"]
 
 
 class StrategyEquation(Equation):
@@ -89,56 +96,65 @@ class CollarLongCalculation(StrategyCalculation, equation=CollarLongEquation, re
 class CollarShortCalculation(StrategyCalculation, equation=CollarShortEquation, regsiter=Variables.Strategies.Collar.Short): pass
 
 
-class StrategyVariables(object):
-    axes = {Variables.Querys.CONTRACT: ["ticker", "expire"], Variables.Datasets.SECURITY: ["instrument", "option", "position"]}
-
+class StrategyCalculator(object):
     def __init__(self, *args, strategies=[], **kwargs):
-        assert isinstance(strategies, list) and all([strategy in list(Variables.Strategies) for strategy in strategies])
-        self.index = self.axes[Variables.Querys.CONTRACT] + self.axes[Variables.Datasets.SECURITY] + ["strike"]
-        self.strategies = list(strategies) if bool(strategies) else list(Variables.Strategies)
-        self.security = self.axes[Variables.Datasets.SECURITY]
-        self.contract = self.axes[Variables.Querys.CONTRACT]
+        strategies = list(dict(StrategyCalculation).keys()) if not bool(strategies) else list(strategies)
+        calculations = dict(StrategyCalculation).items()
+        self.__calculations = {strategy: calculation(*args, **kwargs) for strategy, calculation in calculations if strategy in strategies}
+        self.__variables = StrategyVariables(*args, **kwargs)
 
+    def __call__(self, options, *args, **kwargs):
+        assert isinstance(options, pd.DataFrame)
+        for contract, dataframe in self.contracts(options):
+            for strategy, strategies in self.execute(dataframe, *args, **kwargs):
+                size = np.count_nonzero(~np.isnan(strategies["size"].values))
+                string = f"Calculated: {repr(self)}|{str(contract)}|{str(strategy)}[{size:.0f}]"
+                self.logger.info(string)
+                if not bool(np.count_nonzero(~np.isnan(strategies["size"].values))): continue
+                yield strategies
 
-class StrategyCalculator(Calculator, calculations=dict(StrategyCalculation), variables=StrategyVariables):
-    def execute(self, contract, options, *args, **kwargs):
-        assert isinstance(contract, Contract) and isinstance(options, pd.DataFrame)
-        options = ODict(list(self.options(options, *args, **kwargs)))
-        strategies = ODict(list(self.strategies(options, *args, **kwargs)))
-        strategies = list(strategies.values())
-        assert all([isinstance(dataset, xr.Dataset) for dataset in strategies])
-        size = self.size([dataset["size"] for dataset in strategies.values()])
-        string = f"{str(self.title)}: {repr(self)}|{str(contract)}[{size:.0f}]"
-        self.logger.info(string)
-        return strategies
+    def contracts(self, options):
+        assert isinstance(options, pd.DataFrame)
+        for (ticker, expire), dataframe in options.groupby(self.variables.contract):
+            if bool(dataframe.empty): continue
+            contract = Contract(ticker, expire)
+            yield contract, dataframe
 
-    def strategies(self, options, *args, **kwargs):
-        if bool(options.empty): return
+    def options(self, options, *args, **kwargs):
+        assert isinstance(options, pd.DataFrame)
+        for (instrument, option, position), dataframe in options.groupby(self.variables.security):
+            if bool(dataframe.empty): continue
+            security = Variables.Securities[instrument, option, position]
+            dataframe = dataframe.set_index(self.variables.index, drop=True, inplace=False)
+            dataset = xr.Dataset.from_dataframe(dataframe)
+            dataset = reduce(lambda content, axis: content.squeeze(axis), self.variables.contract, dataset)
+            dataset = dataset.drop_vars(self.variables.security, errors="ignore")
+            dataset = dataset.rename({"strike": str(security)})
+            dataset["strike"] = dataset[str(security)]
+            yield security, dataset
+
+    def execute(self, options, *args, **kwargs):
+        assert isinstance(options, pd.DataFrame)
+        options = dict(self.options(options, *args, **kwargs))
+        for strategy, strategies in self.calculate(options, *args, **kwargs):
+            yield strategy, strategies
+
+    def calculate(self, options, *args, **kwargs):
+        assert isinstance(options, dict)
         function = lambda mapping: {key: xr.Variable(key, [value]).squeeze(key) for key, value in mapping.items()}
         for strategy, calculation in self.calculations.items():
-            if strategy not in self.variables.strategies: continue
-            if not all([option in options.keys() for option in list(strategy.options)]): continue
+            if not all([security in options.keys() for security in list(strategy.options)]): continue
             datasets = {option: options[option] for option in list(strategy.options)}
             strategies = calculation(datasets, *args, **kwargs)
             assert isinstance(strategies, xr.Dataset)
-            if self.empty(strategies["size"]): continue
             coordinates = function(dict(strategy=strategy))
             strategies = strategies.assign_coords(coordinates)
             yield strategy, strategies
 
-    def options(self, options, *args, **kwargs):
-        if bool(options.empty): return
-        options = options.set_index(self.variables.index, drop=True, inplace=False)
-        options = xr.Dataset.from_dataframe(options)
-        options = reduce(lambda content, axis: content.squeeze(axis), self.variables.contract, options)
-        for values in product(*[options[axis].values for axis in self.variables.security]):
-            dataset = options.sel(indexers={key: value for key, value in zip(self.variables.security, values)})
-            dataset = dataset.drop_vars(self.variables.security, errors="ignore")
-            if self.empty(dataset["size"]): continue
-            option = Variables.Securities[values]
-            dataset = dataset.rename({"strike": str(option)})
-            dataset["strike"] = dataset[str(option)]
-            yield option, dataset
+    @property
+    def calculations(self): return self.__calculations
+    @property
+    def variables(self): return self.__variables
 
 
 

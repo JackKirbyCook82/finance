@@ -11,7 +11,6 @@ import numpy as np
 import pandas as pd
 
 from finance.variables import Variables, Contract
-from support.processes import Calculator
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -32,17 +31,37 @@ class AllocationVariables(object):
         self.stocks = list(map(str, self.axes[Variables.Instruments.STOCK]))
 
 
-class AllocationCalculator(Calculator, variables=AllocationVariables):
-    def execute(self, contract, valuations, *args, **kwargs):
-        assert isinstance(contract, Contract) and isinstance(valuations, pd.DataFrame)
-        valuations.insert(0, "portfolio", range(1, 1 + len(valuations)))
-        securities = self.securities(valuations, *args, **kwargs)
-        allocations = list(self.allocations(securities, *args, **kwargs))
+class AllocationCalculator(object):
+    def __init__(self, *args, **kwargs):
+        self.__variables = AllocationVariables(*args, **kwargs)
+
+    def __call__(self, valuations, *args, **kwargs):
+        assert isinstance(valuations, pd.DataFrame)
+        for contract, dataframe in self.contracts(valuations):
+            allocations = self.calculate(dataframe, *args, **kwargs)
+            size = len(allocations.dropna(how="all", inplace=False).index)
+            string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
+            self.logger.info(string)
+            if bool(allocations.empty): continue
+            yield allocations
+
+    def contracts(self, valuations):
+        assert isinstance(valuations, pd.DataFrame)
+        for (ticker, expire), dataframe in valuations.groupby(self.variables.contract):
+            if bool(dataframe.empty): continue
+            contract = Contract(ticker, expire)
+            yield contract, dataframe
+
+    def execute(self, valuations, *args, **kwargs):
+        assert isinstance(valuations, pd.DataFrame)
+        allocations = self.calculate(valuations, *args, **kwargs)
         allocations = pd.concat(allocations, axis=0)
         allocations = allocations.reset_index(drop=True, inplace=False)
-        size = self.size(allocations)
-        string = f"{str(self.title)}: {repr(self)}|{str(contract)}[{size:.0f}]"
-        self.logger.info(string)
+        return allocations
+
+    def calculate(self, valuations, *args, **kwargs):
+        securities = self.securities(valuations, *args, **kwargs)
+        allocations = list(self.allocations(securities, *args, **kwargs))
         return allocations
 
     def securities(self, valuations, *args, **kwargs):
@@ -100,7 +119,8 @@ class AllocationCalculator(Calculator, variables=AllocationVariables):
         virtuals["strike"] = virtuals["strike"].apply(lambda strike: np.round(strike, decimals=2))
         return virtuals
 
-
+    @property
+    def variables(self): return self.__variables
 
 
 
