@@ -15,6 +15,7 @@ from collections import OrderedDict as ODict
 
 from finance.variables import Variables, Contract
 from support.calculations import Variable, Equation, Calculation
+from support.mixins import Empty, Sizing, Logging
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -54,12 +55,10 @@ class StabilityVariables(object):
         self.contract = self.axes[Variables.Querys.CONTRACT]
 
 
-class StabilityFilter(object):
-    def __repr__(self): return str(self.name)
+class StabilityFilter(Sizing, Empty, Logging):
     def __init__(self, *args, **kwargs):
-        self.__name = kwargs.pop("name", self.__class__.__name__)
+        super().__init__(*args, **kwargs)
         self.__variables = StabilityVariables(*args, **kwargs)
-        self.__logger__ = __logger__
 
     def __call__(self, valuations, stabilities, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame) and isinstance(stabilities, pd.DataFrame)
@@ -90,19 +89,13 @@ class StabilityFilter(object):
 
     @property
     def variables(self): return self.__variables
-    @property
-    def logger(self): return self.__logger
-    @property
-    def name(self): return self.__name
 
 
-class StabilityCalculator(object):
-    def __repr__(self): return str(self.name)
+class StabilityCalculator(Sizing, Empty, Logging):
     def __init__(self, *args, **kwargs):
-        self.__name = kwargs.pop("name", self.__class__.__name__)
+        super().__init__(*args, **kwargs)
         self.__calculation = StabilityCalculation(*args, **kwargs)
         self.__variables = StabilityVariables(*args, **kwargs)
-        self.__logger = __logger__
 
     def __call__(self, orders, exposures, *args, **kwargs):
         assert isinstance(orders, pd.DataFrame) and isinstance(exposures, pd.DataFrame)
@@ -188,9 +181,6 @@ class StabilityCalculator(object):
     def calculation(self): return self.__calculations
     @property
     def variables(self): return self.__variables
-    @property
-    def logger(self): return self.__logger
-    @property
-    def name(self): return self.__name
+
 
 

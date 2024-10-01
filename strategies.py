@@ -15,8 +15,8 @@ from functools import reduce
 
 from finance.variables import Variables, Contract
 from support.calculations import Variable, Equation, Calculation
+from support.mixins import Empty, Sizing, Logging
 from support.meta import RegistryMeta
-from support.mixins import Sizing
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -96,15 +96,13 @@ class CollarLongCalculation(StrategyCalculation, equation=CollarLongEquation, re
 class CollarShortCalculation(StrategyCalculation, equation=CollarShortEquation, regsiter=Variables.Strategies.Collar.Short): pass
 
 
-class StrategyCalculator(Sizing):
-    def __repr__(self): return str(self.name)
+class StrategyCalculator(Sizing, Empty, Logging):
     def __init__(self, *args, strategies=[], **kwargs):
         strategies = list(dict(StrategyCalculation).keys()) if not bool(strategies) else list(strategies)
         calculations = dict(StrategyCalculation).items()
-        self.__name = kwargs.pop("name", self.__class__.__name__)
+        super().__init__(*args, **kwargs)
         self.__calculations = {strategy: calculation(*args, **kwargs) for strategy, calculation in calculations if strategy in strategies}
         self.__variables = StrategyVariables(*args, **kwargs)
-        self.__logger = __logger__
 
     def __call__(self, options, *args, **kwargs):
         assert isinstance(options, pd.DataFrame)
@@ -158,10 +156,6 @@ class StrategyCalculator(Sizing):
     def calculations(self): return self.__calculations
     @property
     def variables(self): return self.__variables
-    @property
-    def logger(self): return self.__logger
-    @property
-    def name(self): return self.__name
 
 
 

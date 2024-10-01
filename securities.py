@@ -16,8 +16,8 @@ from scipy.stats import norm
 from finance.variables import Variables, Contract
 from support.calculations import Variable, Equation, Calculation
 from support.meta import RegistryMeta, ParametersMeta
+from support.mixins import Empty, Sizing, Logging
 from support.filtering import Filter
-from support.mixins import Sizing
 from support.files import File
 
 __version__ = "1.0.0"
@@ -99,7 +99,7 @@ class BlackScholesCalculation(PricingCalculation, equation=BlackScholesEquation,
         yield equation.to(exposures)
 
 
-class SecurityFilter(Filter):
+class SecurityFilter(Sizing, Empty, Logging, Filter):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.__variables = SecurityVariables(*args, **kwargs)
@@ -128,13 +128,11 @@ class SecurityFilter(Filter):
     def variables(self): return self.__variables
 
 
-class SecurityCalculator(Sizing):
-    def __repr__(self): return str(self.name)
+class SecurityCalculator(Sizing, Empty, Logging):
     def __init__(self, *args, pricing, sizings, **kwargs):
-        self.__name = kwargs.pop("name", self.__class__.__name__)
+        super().__init__(*args, **kwargs)
         self.__calculation = PricingCalculation[pricing](*args, **kwargs)
         self.__variables = SecurityVariables(*args, **kwargs)
-        self.__logger = __logger__
         self.__sizings = sizings
         self.__pricing = pricing
 
@@ -184,10 +182,7 @@ class SecurityCalculator(Sizing):
     def sizings(self): return self.__sizings
     @property
     def pricing(self): return self.__pricing
-    @property
-    def logger(self): return self.__logger
-    @property
-    def name(self): return self.__name
+
 
 
 

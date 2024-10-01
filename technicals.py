@@ -14,7 +14,7 @@ from abc import ABC
 from finance.variables import Variables, Symbol
 from support.calculations import Variable, Equation, Calculation
 from support.meta import RegistryMeta, ParametersMeta
-from support.mixins import Sizing
+from support.mixins import Empty, Sizing, Logging
 from support.files import File
 
 __version__ = "1.0.0"
@@ -78,13 +78,11 @@ class StochasticCalculation(TechnicalCalculation, equation=StochasticEquation, r
         yield equation.xk(bars)
 
 
-class TechnicalCalculator(Sizing):
-    def __repr__(self): return str(self.name)
+class TechnicalCalculator(Sizing, Empty, Logging):
     def __init__(self, *args, technical, **kwargs):
-        self.__name = kwargs.pop("name", self.__class__.__name__)
+        super().__init__(*args, **kwargs)
         self.__calculation = TechnicalCalculation[technical](*args, **kwargs)
         self.__variables = TechnicalVariables(*args, technical=technical, **kwargs)
-        self.__logger = __logger__
 
     def __call__(self, bars, *args, **kwargs):
         assert isinstance(bars, pd.DataFrame)
@@ -120,9 +118,6 @@ class TechnicalCalculator(Sizing):
     def calculation(self): return self.__calculations
     @property
     def variables(self): return self.__variables
-    @property
-    def logger(self): return self.__logger
-    @property
-    def name(self): return self.__name
+
 
 

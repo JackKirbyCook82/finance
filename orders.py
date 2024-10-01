@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 
 from finance.variables import Variables, Contract
-from support.mixins import Sizing
+from support.mixins import Empty, Sizing, Logging
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -35,12 +35,10 @@ class OrderVariables(object):
         self.header = self.index + self.columns
 
 
-class OrderCalculator(Sizing):
-    def __repr__(self): return str(self.name)
+class OrderCalculator(Sizing, Empty, Logging):
     def __init__(self, *args, **kwargs):
-        self.__name = kwargs.pop("name", self.__class__.__name__)
+        super().__init__(*args, **kwargs)
         self.__variables = OrderVariables(*args, **kwargs)
-        self.__logger = __logger__
 
     def __call__(self, valuations, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame)
@@ -128,10 +126,6 @@ class OrderCalculator(Sizing):
 
     @property
     def variables(self): return self.__variables
-    @property
-    def logger(self): return self.__logger
-    @property
-    def name(self): return self.__name
 
 
 

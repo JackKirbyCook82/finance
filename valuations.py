@@ -16,9 +16,9 @@ from itertools import product, count
 from finance.variables import Variables, Contract
 from support.calculations import Variable, Equation, Calculation
 from support.meta import RegistryMeta, ParametersMeta
+from support.mixins import Empty, Sizing, Logging
 from support.tables import Table, View
 from support.filtering import Filter
-from support.mixins import Sizing
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -95,7 +95,7 @@ class MinimumArbitrageCalculation(ArbitrageCalculation, equation=MinimumArbitrag
 class MaximumArbitrageCalculation(ArbitrageCalculation, equation=MaximumArbitrageEquation, register=(Variables.Valuations.ARBTIRAGE, Variables.Scenarios.MAXIMUM)): pass
 
 
-class ValuationFilter(Filter):
+class ValuationFilter(Sizing, Empty, Logging, Filter):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.__variables = ValuationVariables(*args, **kwargs)
@@ -123,12 +123,11 @@ class ValuationFilter(Filter):
     def variables(self): return self.__variables
 
 
-class ValuationCalculator(Sizing):
-    def __repr__(self): return str(self.name)
+class ValuationCalculator(Sizing, Empty, Logging):
     def __init__(self, *args, **kwargs):
         calculations = dict(ValuationCalculation).items()
         calculations = {scenario: calculation for (valuation, scenario), calculation in calculations if valuation == kwargs["valuation"]}
-        self.__name = kwargs.pop("name", self.__class__.__name__)
+        super().__init__(*args, **kwargs)
         self.__calculations = {scenario: calculation(*args, **kwargs) for scenario, calculation in calculations.items()}
         self.__variables = ValuationVariables(*args, **kwargs)
         self.__valuation = kwargs["valuation"]
@@ -198,19 +197,15 @@ class ValuationCalculator(Sizing):
     def valuation(self): return self.__valuation
     @property
     def identifier(self): return self.__identifier
-    @property
-    def name(self): return self.__name
 
 
-class ValuationWriter(object):
-    def __repr__(self): return str(self.name)
+class ValuationWriter(Sizing, Empty, Logging):
     def __init__(self, *args, table, priority, **kwargs):
-        self.__name = kwargs.pop("name", self.__class__.__name__)
+        super().__init__(*args, **kwargs)
         self.__variables = ValuationVariables(*args, **kwargs)
         self.__status = Variables.Status.PROSPECT
         self.__identity = count(1, step=1)
         self.__priority = priority
-        self.__logger = __logger__
         self.__table = table
 
     def __call__(self, valuations, *args, **kwargs):
@@ -281,19 +276,13 @@ class ValuationWriter(object):
     @property
     def variables(self): return self.__variables
     @property
-    def logger(self): return self.__logger
-    @property
     def table(self): return self.__table
-    @property
-    def name(self): return self.__name
 
 
-class ValuationReader(object):
-    def __repr__(self): return str(self.name)
+class ValuationReader(Sizing, Empty, Logging):
     def __init__(self, *args, table, **kwargs):
-        self.__name = kwargs.pop("name", self.__class__.__name__)
+        super().__init__(*args, **kwargs)
         self.__variables = ValuationVariables(*args, **kwargs)
-        self.__logger = __logger__
         self.__table = table
 
     def __call__(self, *args, **kwargs):
@@ -334,23 +323,7 @@ class ValuationReader(object):
     @property
     def variables(self): return self.__variables
     @property
-    def logger(self): return self.__logger
-    @property
     def table(self): return self.__table
-    @property
-    def name(self): return self.__name
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
