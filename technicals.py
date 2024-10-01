@@ -14,6 +14,7 @@ from abc import ABC
 from finance.variables import Variables, Symbol
 from support.calculations import Variable, Equation, Calculation
 from support.meta import RegistryMeta, ParametersMeta
+from support.mixins import Sizing
 from support.files import File
 
 __version__ = "1.0.0"
@@ -77,27 +78,23 @@ class StochasticCalculation(TechnicalCalculation, equation=StochasticEquation, r
         yield equation.xk(bars)
 
 
-class TechnicalCalculator(object):
+class TechnicalCalculator(Sizing):
+    def __repr__(self): return str(self.name)
     def __init__(self, *args, technical, **kwargs):
+        self.__name = kwargs.pop("name", self.__class__.__name__)
         self.__calculation = TechnicalCalculation[technical](*args, **kwargs)
         self.__variables = TechnicalVariables(*args, technical=technical, **kwargs)
+        self.__logger = __logger__
 
     def __call__(self, bars, *args, **kwargs):
         assert isinstance(bars, pd.DataFrame)
         for symbol, dataframe in self.symbols(bars):
             technicals = self.execute(dataframe, *args, **kwargs)
-            size = len(bars.dropna(how="all", inplace=False).index)
+            size = self.size(technicals)
             string = f"Calculated: {repr(self)}|{str(symbol)}[{size:.0f}]"
             self.logger.info(string)
             if bool(technicals.empty): continue
             yield technicals
-
-    def symbols(self, bars):
-        assert isinstance(bars, pd.DataFrame)
-        for (ticker,), dataframe in bars.groupby(self.variables.symbol):
-            if bool(dataframe.empty): continue
-            symbol = Symbol(ticker)
-            yield symbol, dataframe
 
     def execute(self, bars, *args, **kwargs):
         assert isinstance(bars, pd.DataFrame)
@@ -112,10 +109,20 @@ class TechnicalCalculator(object):
         technicals = technicals if bool(technicals) else pd.DataFrame(columns=self.variables.header)
         return technicals
 
+    def symbols(self, bars):
+        assert isinstance(bars, pd.DataFrame)
+        for (ticker,), dataframe in bars.groupby(self.variables.symbol):
+            if bool(dataframe.empty): continue
+            symbol = Symbol(ticker)
+            yield symbol, dataframe
+
     @property
     def calculation(self): return self.__calculations
     @property
     def variables(self): return self.__variables
-
+    @property
+    def logger(self): return self.__logger
+    @property
+    def name(self): return self.__name
 
 

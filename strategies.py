@@ -12,11 +12,11 @@ import pandas as pd
 import xarray as xr
 from abc import ABC
 from functools import reduce
-from itertools import product
 
 from finance.variables import Variables, Contract
 from support.calculations import Variable, Equation, Calculation
 from support.meta import RegistryMeta
+from support.mixins import Sizing
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -96,18 +96,21 @@ class CollarLongCalculation(StrategyCalculation, equation=CollarLongEquation, re
 class CollarShortCalculation(StrategyCalculation, equation=CollarShortEquation, regsiter=Variables.Strategies.Collar.Short): pass
 
 
-class StrategyCalculator(object):
+class StrategyCalculator(Sizing):
+    def __repr__(self): return str(self.name)
     def __init__(self, *args, strategies=[], **kwargs):
         strategies = list(dict(StrategyCalculation).keys()) if not bool(strategies) else list(strategies)
         calculations = dict(StrategyCalculation).items()
+        self.__name = kwargs.pop("name", self.__class__.__name__)
         self.__calculations = {strategy: calculation(*args, **kwargs) for strategy, calculation in calculations if strategy in strategies}
         self.__variables = StrategyVariables(*args, **kwargs)
+        self.__logger = __logger__
 
     def __call__(self, options, *args, **kwargs):
         assert isinstance(options, pd.DataFrame)
         for contract, dataframe in self.contracts(options):
             for strategy, strategies in self.execute(dataframe, *args, **kwargs):
-                size = np.count_nonzero(~np.isnan(strategies["size"].values))
+                size = self.size(strategies)
                 string = f"Calculated: {repr(self)}|{str(contract)}|{str(strategy)}[{size:.0f}]"
                 self.logger.info(string)
                 if not bool(np.count_nonzero(~np.isnan(strategies["size"].values))): continue
@@ -155,6 +158,10 @@ class StrategyCalculator(object):
     def calculations(self): return self.__calculations
     @property
     def variables(self): return self.__variables
+    @property
+    def logger(self): return self.__logger
+    @property
+    def name(self): return self.__name
 
 
 

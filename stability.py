@@ -55,31 +55,66 @@ class StabilityVariables(object):
 
 
 class StabilityCalculator(object):
+    def __repr__(self): return str(self.name)
     def __init__(self, *args, **kwargs):
+        self.__name = kwargs.pop("name", self.__class__.__name__)
         self.__calculation = StabilityCalculation(*args, **kwargs)
         self.__variables = StabilityVariables(*args, **kwargs)
+        self.__logger = __logger__
 
-    def contracts(self, valuations):
-        assert isinstance(valuations, pd.DataFrame)
-        for (ticker, expire), dataframe in valuations.groupby(self.variables.contract):
-            if bool(dataframe.empty): continue
+    def __call__(self, orders, exposures, *args, **kwargs):
+        assert isinstance(orders, pd.DataFrame) and isinstance(exposures, pd.DataFrame)
+        for contract, primary, secondary in self.contracts(orders, exposures):
+            stabilities = self.execute(primary, secondary, *args, **kwargs)
+            size = self.size(stabilities)
+            string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
+            self.logger.info(string)
+            if bool(stabilities.empty): continue
+            yield stabilities
+
+    def contracts(self, orders, exposures):
+        assert isinstance(orders, pd.DataFrame) and isinstance(exposures, pd.DataFrame)
+        for (ticker, expire), primary in orders.groupby(self.variables.contract):
+            if bool(primary.empty): continue
             contract = Contract(ticker, expire)
-            yield contract, dataframe
+            mask = exposures["ticker"] == ticker & expire["expire"] == expire
+            secondary = exposures.where(mask).dropna(how="all", inplace=False)
+            yield contract, primary, secondary
 
-    def execute(self, valuations, exposures, allocations, *args, **kwargs):
-        assert all([isinstance(dataframe, pd.DataFrame) for dataframe in (valuations, exposures, allocations)])
+    def execute(self, orders, exposures, *args, **kwargs):
+        assert isinstance(orders, pd.DataFrame) and isinstance(exposures, pd.DataFrame)
+        orders = ODict(list(self.orders(orders, *args, **kwargs)))
         exposures = self.exposures(exposures, *args, **kwargs)
-        allocations = ODict(list(self.allocations(allocations, *args, **kwargs)))
-        portfolios = list(self.portfolios(exposures, allocations, *args, **kwargs))
+        portfolios = list(self.portfolios(orders, exposures, *args, **kwargs))
         portfolios = xr.concat(portfolios, join="outer", fill_value=0, dim="portfolio")
         portfolios = portfolios.stack({"holdings": ["strike"] + self.variables.security}).to_dataset()
+        stabilities = self.calculate(portfolios, *args, **kwargs)
+        return stabilities
+
+    def calculate(self, portfolios, *args, **kwargs):
+        assert isinstance(portfolios, xr.Dataset)
         portfolios = self.underlying(portfolios, *args, **kwargs)
-        stability = ODict(list(self.stability(portfolios, *args, **kwargs)))
-        valuations = self.valuations(valuations, stability, *args, **kwargs)
-        return valuations
+        stabilities = self.calculation(portfolios, *args, **kwargs)
+        assert isinstance(stabilities, xr.Dataset)
+        stabilities = stabilities.sum(dim="holdings")
+        stabilities["maximum"] = stabilities["value"].max(dim="underlying")
+        stabilities["minimum"] = stabilities["value"].min(dim="underlying")
+        stabilities["bull"] = stabilities["trend"].isel(underlying=0).drop_vars(["underlying"])
+        stabilities["bear"] = stabilities["trend"].isel(underlying=-1).drop_vars(["underlying"])
+        stabilities = xr.Dataset(stabilities).to_dataframe()
+        stabilities["stable"] = (stabilities["bear"] == 0) & (stabilities["bull"] == 0)
+        return stabilities
 
-    def calculate(self, valuations, exposures, allocations, *args, **kwargs):
-
+    def orders(self, orders, *args, **kwargs):
+        assert isinstance(orders, pd.DataFrame)
+        for identity, dataframe in orders.groupby("identity"):
+            dataframe = dataframe.drop(columns="identity", inplace=False)
+            index = [column for column in dataframe.columns if column != "quantity"]
+            dataframe = dataframe.set_index(index, drop=True, inplace=False).squeeze()
+            dataarray = xr.DataArray.from_series(dataframe).fillna(0)
+            function = lambda content, axis: content.squeeze(axis)
+            dataarray = reduce(function, self.variables.contract, dataarray)
+            yield identity, dataarray
 
     def exposures(self, exposures, *args, **kwargs):
         assert isinstance(exposures, pd.DataFrame)
@@ -90,35 +125,14 @@ class StabilityCalculator(object):
         exposures = reduce(function, self.variables.contract, exposures)
         return exposures
 
-    def allocations(self, allocations, *args, **kwargs):
-        assert isinstance(allocations, pd.DataFrame)
-        for portfolio, allocation in allocations.groupby("portfolio"):
-            allocation = allocation.drop(columns="portfolio", inplace=False)
-            index = [column for column in allocation.columns if column != "quantity"]
-            allocation = allocation.set_index(index, drop=True, inplace=False).squeeze()
-            allocation = xr.DataArray.from_series(allocation).fillna(0)
-            function = lambda content, axis: content.squeeze(axis)
-            allocation = reduce(function, self.variables.contract, allocation)
-            yield portfolio, allocation
-
-    def stability(self, portfolios, *args, **kwargs):
-        assert isinstance(portfolios, xr.Dataset)
-        stability = self.calculation(portfolios, *args, **kwargs)
-        assert isinstance(stability, xr.Dataset)
-        stability = stability.sum(dim="holdings")
-        yield "maximum", stability["value"].max(dim="underlying")
-        yield "minimum", stability["value"].min(dim="underlying")
-        yield "bull", stability["trend"].isel(underlying=0).drop_vars(["underlying"])
-        yield "bear", stability["trend"].isel(underlying=-1).drop_vars(["underlying"])
-
     @staticmethod
-    def portfolios(exposures, allocations, *args, **kwargs):
-        assert isinstance(exposures, xr.Dataset) and isinstance(allocations, dict)
-        yield exposures.assign_coords(portfolio=0).expand_dims("portfolio")
-        for portfolio, allocation in allocations.items():
-            allocation = xr.align(allocation, exposures, fill_value=0, join="outer")[0]
-            allocation = allocation.assign_coords(portfolio=portfolio).expand_dims("portfolio")
-            yield allocation
+    def portfolios(orders, exposures, *args, **kwargs):
+        assert isinstance(orders, dict) and isinstance(exposures, xr.DataArray)
+        assert all([isinstance(dataframe, xr.DataArray) for dataframe in orders.values()])
+        for portfolio, dataframe in orders.items():
+            dataarray = xr.align(dataframe, exposures, fill_value=0, join="outer")[0]
+            dataarray = dataarray.assign_coords(portfolio=portfolio).expand_dims("portfolio")
+            yield dataarray
 
     @staticmethod
     def underlying(portfolios, *args, **kwargs):
@@ -128,18 +142,13 @@ class StabilityCalculator(object):
         portfolios["underlying"] = underlying
         return portfolios
 
-    @staticmethod
-    def valuations(valuations, stability, *args, **kwargs):
-        assert isinstance(valuations, pd.DataFrame) and isinstance(stability, xr.Dataset)
-        stability = xr.Dataset(stability).to_dataframe()
-        stable = (stability["bear"] == 0) & (stability["bull"] == 0)
-        valuations = valuations.where(stable).dropna(how="all", inplace=False)
-        valuations = valuations.drop(columns="portfolio", inplace=False)
-        return valuations
-
     @property
     def calculation(self): return self.__calculations
     @property
     def variables(self): return self.__variables
+    @property
+    def logger(self): return self.__logger
+    @property
+    def name(self): return self.__name
 
 

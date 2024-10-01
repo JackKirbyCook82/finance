@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Created on Fri May 17 2024
-@name:   Allocation Objects
+@name:   Orders Objects
 @author: Jack Kirby Cook
 
 """
@@ -11,16 +11,17 @@ import numpy as np
 import pandas as pd
 
 from finance.variables import Variables, Contract
+from support.mixins import Sizing
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["AllocationCalculator"]
+__all__ = ["OrderCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-class AllocationVariables(object):
+class OrderVariables(object):
     axes = {Variables.Querys.CONTRACT: ["ticker", "expire"], Variables.Datasets.SECURITY: ["instrument", "option", "position"]}
     axes.update({Variables.Instruments.STOCK: list(Variables.Securities.Stocks), Variables.Instruments.OPTION: list(Variables.Securities.Options)})
 
@@ -29,21 +30,26 @@ class AllocationVariables(object):
         self.security = self.axes[Variables.Datasets.SECURITY]
         self.options = list(map(str, self.axes[Variables.Instruments.OPTIONS]))
         self.stocks = list(map(str, self.axes[Variables.Instruments.STOCK]))
+        self.index = ["identity"] + self.contract + self.security + ["strike"]
+        self.columns = ["quantity"]
 
 
-class AllocationCalculator(object):
+class OrderCalculator(Sizing):
+    def __repr__(self): return str(self.name)
     def __init__(self, *args, **kwargs):
-        self.__variables = AllocationVariables(*args, **kwargs)
+        self.__name = kwargs.pop("name", self.__class__.__name__)
+        self.__variables = OrderVariables(*args, **kwargs)
+        self.__logger = __logger__
 
     def __call__(self, valuations, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame)
         for contract, dataframe in self.contracts(valuations):
-            allocations = self.calculate(dataframe, *args, **kwargs)
-            size = len(allocations.dropna(how="all", inplace=False).index)
+            orders = self.execute(dataframe, *args, **kwargs)
+            size = self.size(orders)
             string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
             self.logger.info(string)
-            if bool(allocations.empty): continue
-            yield allocations
+            if bool(orders.empty): continue
+            yield orders
 
     def contracts(self, valuations):
         assert isinstance(valuations, pd.DataFrame)
@@ -54,28 +60,28 @@ class AllocationCalculator(object):
 
     def execute(self, valuations, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame)
-        allocations = self.calculate(valuations, *args, **kwargs)
-        allocations = pd.concat(allocations, axis=0)
-        allocations = allocations.reset_index(drop=True, inplace=False)
-        return allocations
+        orders = self.calculate(valuations, *args, **kwargs)
+        orders = pd.concat(orders, axis=0)
+        orders = orders.reset_index(drop=True, inplace=False)
+        return orders
 
     def calculate(self, valuations, *args, **kwargs):
         securities = self.securities(valuations, *args, **kwargs)
-        allocations = list(self.allocations(securities, *args, **kwargs))
-        return allocations
+        orders = list(self.orders(securities, *args, **kwargs))
+        return orders
 
     def securities(self, valuations, *args, **kwargs):
         strategy = lambda cols: list(map(str, cols["strategy"].stocks))
         function = lambda cols: {stock: cols["underlying"] if stock in strategy(cols) else np.NaN for stock in self.axes.stocks}
-        options = valuations[self.variables.contract + self.variables.options + ["portfolio", "valuation", "strategy", "underlying"]]
+        options = valuations[["identity"] + self.variables.contract + self.variables.options + ["valuation", "strategy", "underlying"]]
         options = options.droplevel("scenario", axis=1)
         stocks = options.apply(function, axis=1, result_type="expand")
         securities = pd.concat([options, stocks], axis=1)
-        securities = securities[["portfolio"] + self.variables.contract + self.variables.options + self.variables.stocks]
+        securities = securities[["identity"] + self.variables.contract + self.variables.options + self.variables.stocks]
         return securities
 
-    def allocations(self, securities, *args, **kwargs):
-        for portfolio, dataframe in securities.iterrows():
+    def orders(self, securities, *args, **kwargs):
+        for index, dataframe in securities.iterrows():
             stocks = self.stocks(dataframe, *args, **kwargs)
             options = self.options(dataframe, *args, **kwargs)
             virtuals = self.virtuals(stocks, *args, **kwargs)
@@ -87,9 +93,9 @@ class AllocationCalculator(object):
         security = lambda cols: list(Variables.Securities(cols["security"])) + [1]
         stocks = securities[self.variables.stocks].to_frame("strike")
         stocks = stocks.reset_index(names="security", drop=False, inplace=False)
-        stocks[self.variables.security + ["quantity"]] = stocks.apply(security, axis=1, result_type="expand")
+        stocks[self.variables.security + self.variables.columns] = stocks.apply(security, axis=1, result_type="expand")
         stocks = stocks[[column for column in stocks.columns if column != "security"]]
-        contract = {key: value for key, value in securities[["portfolio"] + self.variables.contract].to_dict().items()}
+        contract = {key: value for key, value in securities[["identity"] + self.variables.contract].to_dict().items()}
         stocks = stocks.assign(**contract)
         return stocks
 
@@ -97,9 +103,9 @@ class AllocationCalculator(object):
         security = lambda cols: list(Variables.Securities(cols["security"])) + [1]
         options = securities[self.variables.options].to_frame("strike")
         options = options.reset_index(names="security", drop=False, inplace=False)
-        options[self.variables.security + ["quantity"]] = options.apply(security, axis=1, result_type="expand")
+        options[self.variables.security + self.variables.columns] = options.apply(security, axis=1, result_type="expand")
         options = options[[column for column in options.columns if column != "security"]]
-        contract = {key: value for key, value in securities[["portfolio"] + self.variables.contract].to_dict().items()}
+        contract = {key: value for key, value in securities[["identity"] + self.variables.contract].to_dict().items()}
         options = options.assign(**contract)
         return options
 
@@ -121,6 +127,10 @@ class AllocationCalculator(object):
 
     @property
     def variables(self): return self.__variables
+    @property
+    def logger(self): return self.__logger
+    @property
+    def name(self): return self.__name
 
 
 

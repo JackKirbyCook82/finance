@@ -19,7 +19,7 @@ from support.dispatchers import typedispatcher
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["DateRange", "Variables", "Symbol", "Contract"]
+__all__ = ["DateRange", "Variables", "Symbol", "Contract", "Product"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
@@ -55,7 +55,7 @@ class Symbol(ntuple("Symbol", "ticker")):
 
 @total_ordering
 class History(ntuple("History", "ticker date")):
-    def __str__(self): return "|".join([str(self.ticker).upper(), str(self.date.strftime("%Y-%m-%d"))])
+    def __str__(self): return f"{str(self.ticker).upper()}|{str(self.date.strftime('%Y-%m-%d'))}"
     def __hash__(self): return hash((self.ticker, int(self.date.timestamp())))
     def __eq__(self, other): return str(self.ticker) == str(other.ticker) and self.date == other.date
     def __lt__(self, other): return str(self.ticker) < str(other.ticker) and self.date < other.date
@@ -70,7 +70,7 @@ class History(ntuple("History", "ticker date")):
 
 @total_ordering
 class Contract(ntuple("Contract", "ticker expire")):
-    def __str__(self): return "|".join([str(self.ticker).upper(), str(self.expire.strftime("%Y-%m-%d"))])
+    def __str__(self): return f"{str(self.ticker).upper()}|{str(self.expire.strftime('%Y-%m-%d'))}"
     def __hash__(self): return hash((self.ticker, int(self.expire.timestamp())))
     def __eq__(self, other): return str(self.ticker) == str(other.ticker) and self.expire == other.expire
     def __lt__(self, other): return str(self.ticker) < str(other.ticker) and self.expire < other.expire
@@ -81,6 +81,22 @@ class Contract(ntuple("Contract", "ticker expire")):
         ticker = str(ticker).upper()
         expire = Datetime.strptime(expire, "%Y%m%d")
         return cls(ticker, expire)
+
+
+@total_ordering
+class Product(ntuple("Product", "ticker expire strike")):
+    def __str__(self): return f"{str(self.ticker).upper()}|{str(self.expire.strftime('%Y-%m-%d'))}|{float(self.strike):.02f}"
+    def __hash__(self): return hash((self.ticker, int(self.expire.timestamp()), round(self.strike, 2)))
+    def __eq__(self, other): return str(self.ticker) == str(other.ticker) and self.expire == other.expire and round(self.strike, 2) == round(other.strike, 2)
+    def __lt__(self, other): return str(self.ticker) < str(other.ticker) and self.expire < other.expire and round(self.strike, 2) < round(other.strike, 2)
+
+    @classmethod
+    def fromstr(cls, string, delimiter="_"):
+        ticker, expire, strike = str(string).split(delimiter)
+        ticker = str(ticker).upper()
+        expire = Datetime.strptime(expire, "%Y%m%d")
+        strike = round(float(strike), 2)
+        return cls(ticker, expire, strike)
 
 
 class Variable(object):
@@ -173,11 +189,11 @@ class MultiVariableMeta(ABCMeta):
     def create(cls, variable): raise TypeError(type(variable).__name__)
     def retrieve(cls, variable): return {tuple(variable): variable for variable in iter(cls)}[variable]
     @create.register(MultiVariable)
-    def fromval(cls, value): return {hash(variable): variable for variable in iter(cls)}[value]
+    def value(cls, value): return {hash(variable): variable for variable in iter(cls)}[value]
     @create.register(int)
-    def fromint(cls, number): return {int(variable): variable for variable in iter(cls)}[number]
+    def integer(cls, number): return {int(variable): variable for variable in iter(cls)}[number]
     @create.register(str)
-    def fromstr(cls, string): return {str(variable): variable for variable in iter(cls)}[string]
+    def string(cls, string): return {str(variable): variable for variable in iter(cls)}[string]
 
 
 class Theta(members=["PUT", "NEUTRAL", "CALL"], start=-1, metaclass=VariableMeta): pass
@@ -187,8 +203,7 @@ class Technicals(members=["BARS", "STATISTIC", "STOCHASTIC"], metaclass=Variable
 class Scenarios(members=["MINIMUM", "MAXIMUM"], metaclass=VariableMeta): pass
 class Valuations(members=["ARBITRAGE"], metaclass=VariableMeta): pass
 class Pricing(members=["BLACKSCHOLES"], metaclass=VariableMeta): pass
-class Querys(members=["HISTORY", "SYMBOL", "CONTRACT"], metaclass=VariableMeta): pass
-class Datasets(members=["EXPIRES", "PRICING", "SIZING", "SECURITY", "STRATEGY", "HOLDINGS", "EXPOSURE", "ALLOCATION"], metaclass=VariableMeta): pass
+class Querys(members=["HISTORY", "SYMBOL", "CONTRACT", "PRODUCT"], metaclass=VariableMeta): pass
 class Status(members=["PROSPECT", "PENDING", "ABANDONED", "REJECTED", "ACCEPTED"], metaclass=VariableMeta): pass
 
 class Markets(members=["EMPTY", "BEAR", "BULL"], start=0, metaclass=VariableMeta): pass
@@ -247,7 +262,6 @@ class Variables:
     Technicals = Technicals
     Status = Status
     Querys = Querys
-    Datasets = Datasets
     Omega = Omega
     Theta = Theta
     Phi = Phi

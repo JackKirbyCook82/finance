@@ -18,6 +18,7 @@ from support.calculations import Variable, Equation, Calculation
 from support.meta import RegistryMeta, ParametersMeta
 from support.tables import Table, View
 from support.filtering import Filter
+from support.mixins import Sizing
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -44,7 +45,7 @@ class ValuationVariables(object):
         self.contract = self.axes[Variables.Querys.CONTRACT]
         self.security = self.axes[Variables.Datasets.SECURITY]
         self.options = list(map(str, self.axes[Variables.Instruments.OPTIONS]))
-        self.index = list(product(self.contract + self.options + ["portfolio", "valuation", "strategy"], [""]))
+        self.index = list(product(["identity"] + self.contract + self.options + ["valuation", "strategy"], [""]))
         self.header = self.index + stacked + unstacked
         self.stacking = self.data[valuation]
 
@@ -122,21 +123,23 @@ class ValuationFilter(Filter):
     def variables(self): return self.__variables
 
 
-class ValuationCalculator(object):
+class ValuationCalculator(Sizing):
+    def __repr__(self): return str(self.name)
     def __init__(self, *args, **kwargs):
         calculations = dict(ValuationCalculation).items()
         calculations = {scenario: calculation for (valuation, scenario), calculation in calculations if valuation == kwargs["valuation"]}
+        self.__name = kwargs.pop("name", self.__class__.__name__)
         self.__calculations = {scenario: calculation(*args, **kwargs) for scenario, calculation in calculations.items()}
         self.__variables = ValuationVariables(*args, **kwargs)
         self.__valuation = kwargs["valuation"]
-        self.__counter = count(start=0, step=1)
+        self.__identifier = count(start=1, step=1)
 
     def __call__(self, strategies, *args, **kwargs):
         assert isinstance(strategies, xr.Dataset)
         for contract, dataset in self.contracts(strategies):
             valuations = self.execute(dataset, *args, **kwargs)
-            size = len(valuations.dropna(how="all", inplace=False).index)
-            string = f"Calculated: {repr(self)}|{str(contract)}|{str(self.valuation)}[{size:.0f}]"
+            size = self.size(valuations)
+            string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
             self.logger.info(string)
             if bool(valuations.empty): continue
             yield valuations
@@ -151,7 +154,7 @@ class ValuationCalculator(object):
     def execute(self, strategies, *args, **kwargs):
         assert isinstance(strategies, xr.Dataset)
         valuations = self.calculate(strategies, *args, **kwargs)
-        valuations["portfolio"] = [self.counter] * len(valuations)
+        valuations["identity"] = [next(self.identifier) for _ in range(len(valuations))]
         if not bool(valuations): return pd.DataFrame(columns=self.variables.header)
         return self.pivot(valuations, *args, **kwargs)
 
@@ -194,27 +197,40 @@ class ValuationCalculator(object):
     @property
     def valuation(self): return self.__valuation
     @property
-    def counter(self): return self.__counter
+    def identifier(self): return self.__identifier
+    @property
+    def name(self): return self.__name
 
 
 class ValuationWriter(object):
+    def __repr__(self): return str(self.name)
     def __init__(self, *args, table, priority, **kwargs):
+        self.__name = kwargs.pop("name", self.__class__.__name__)
         self.__variables = ValuationVariables(*args, **kwargs)
         self.__status = Variables.Status.PROSPECT
         self.__identity = count(1, step=1)
         self.__priority = priority
+        self.__logger = __logger__
         self.__table = table
 
-    def __call__(self, contract, valuations, *args, **kwargs):
-        assert isinstance(contract, Contract) and isinstance(valuations, pd.DataFrame)
+    def __call__(self, valuations, *args, **kwargs):
+        assert isinstance(valuations, pd.DataFrame)
         if bool(valuations.empty): return
-        with self.table.mutex:
-            self.obsolete(contract, *args, **kwargs)
-            valuations = self.valuations(valuations, *args, **kwargs)
-            valuations = self.prioritize(valuations, *args, **kwargs)
-            valuations = self.identify(valuations, *args, **kwargs)
-            valuations = self.prospect(valuations, *args, **kwargs)
-            self.write(valuations, *args, **kwargs)
+        for contract, dataframe in self.contracts(valuations):
+            with self.table.mutex:
+                self.obsolete(contract, *args, **kwargs)
+                dataframe = self.valuations(dataframe, *args, **kwargs)
+                dataframe = self.prioritize(dataframe, *args, **kwargs)
+                dataframe = self.identify(dataframe, *args, **kwargs)
+                dataframe = self.prospect(dataframe, *args, **kwargs)
+                self.execute(dataframe, *args, **kwargs)
+
+    def contracts(self, exposures):
+        assert isinstance(exposures, pd.DataFrame)
+        for (ticker, expire), dataframe in exposures.groupby(self.variables.contract):
+            if bool(dataframe.empty): continue
+            contract = Contract(ticker, expire)
+            yield contract, dataframe
 
     def obsolete(self, contract, *args, **kwargs):
         ticker = lambda table: table["ticker"] == contract.ticker
@@ -250,7 +266,7 @@ class ValuationWriter(object):
         valuations["status"] = valuations["status"].apply(function)
         return valuations
 
-    def write(self, valuations, *args, **kwargs):
+    def execute(self, valuations, *args, **kwargs):
         index = list(self.variables.index)
         self.table.combine(valuations)
         self.table.unique(index)
@@ -265,23 +281,32 @@ class ValuationWriter(object):
     @property
     def variables(self): return self.__variables
     @property
+    def logger(self): return self.__logger
+    @property
     def table(self): return self.__table
+    @property
+    def name(self): return self.__name
 
 
 class ValuationReader(object):
+    def __repr__(self): return str(self.name)
     def __init__(self, *args, table, **kwargs):
+        self.__name = kwargs.pop("name", self.__class__.__name__)
         self.__variables = ValuationVariables(*args, **kwargs)
+        self.__logger = __logger__
         self.__table = table
 
     def __call__(self, *args, **kwargs):
+        if not bool(self.table): return
         with self.table.mutex:
             self.obsolete(*args, **kwargs)
-            valuations = self.read(*args, **kwargs)
-        if bool(valuations.empty): return
-        valuations = self.valuations(valuations, *args, **kwargs)
-        for (ticker, expire), dataframe in iter(valuations.groupby(self.variables.contract)):
-            contract = Contract(ticker, expire)
-            yield contract, dataframe
+            valuations = self.execute(*args, **kwargs)
+            if bool(valuations.empty): return
+            for contract, dataframe in self.contracts(valuations):
+                string = f"Accepted: {repr(self)}|{str(contract)}|{len(dataframe):.0f}"
+                self.logger.info(string)
+                if bool(dataframe.empty): continue
+                yield dataframe
 
     def obsolete(self, *args, tenure=None, **kwargs):
         rejected = lambda table: table["status"] == Variables.Status.REJECTED
@@ -289,17 +314,31 @@ class ValuationReader(object):
         timeout = lambda table: (pd.to_datetime("now") - table["current"]) >= tenure if (tenure is not None) else False
         obsolete = lambda table: rejected(table) | abandoned(table) | timeout(table)
         self.table.remove(obsolete)
+        dataframe = obsolete.dropna(how="all", inplace=False)
+        string = f"Rejected: {repr(self)}|{len(dataframe):.0f}"
+        self.logger.info(string)
 
-    def read(self, *args, **kwargs):
+    def execute(self, *args, **kwargs):
         if not bool(self.table): return pd.DataFrame(columns=self.variables.header)
         accepted = lambda table: table["status"] == Variables.Status.ACCEPTED
         valuations = self.table.extract(accepted)
         return valuations
 
+    def contracts(self, valuations):
+        assert isinstance(valuations, pd.DataFrame)
+        for (ticker, expire), dataframe in valuations.groupby(self.variables.contract):
+            if bool(dataframe.empty): continue
+            contract = Contract(ticker, expire)
+            yield contract, dataframe
+
     @property
     def variables(self): return self.__variables
     @property
+    def logger(self): return self.__logger
+    @property
     def table(self): return self.__table
+    @property
+    def name(self): return self.__name
 
 
 

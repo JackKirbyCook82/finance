@@ -17,6 +17,7 @@ from finance.variables import Variables, Contract
 from support.calculations import Variable, Equation, Calculation
 from support.meta import RegistryMeta, ParametersMeta
 from support.filtering import Filter
+from support.mixins import Sizing
 from support.files import File
 
 __version__ = "1.0.0"
@@ -127,10 +128,13 @@ class SecurityFilter(Filter):
     def variables(self): return self.__variables
 
 
-class SecurityCalculator(object):
+class SecurityCalculator(Sizing):
+    def __repr__(self): return str(self.name)
     def __init__(self, *args, pricing, sizings, **kwargs):
+        self.__name = kwargs.pop("name", self.__class__.__name__)
         self.__calculation = PricingCalculation[pricing](*args, **kwargs)
         self.__variables = SecurityVariables(*args, **kwargs)
+        self.__logger = __logger__
         self.__sizings = sizings
         self.__pricing = pricing
 
@@ -139,7 +143,7 @@ class SecurityCalculator(object):
         exposures = self.exposures(exposures, statistics, *args, **kwargs)
         for contract, dataframe in self.contracts(exposures):
             options = self.execute(dataframe, *args, **kwargs)
-            size = len(options.dropna(how="all", inplace=False).index)
+            size = self.size(options)
             string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
             self.logger.info(string)
             if bool(options.empty): continue
@@ -160,7 +164,7 @@ class SecurityCalculator(object):
     def calculate(self, exposures, *args, **kwargs):
         assert isinstance(exposures, pd.DataFrame)
         pricings = self.calculation(exposures, *args, lifespan=0, **kwargs)
-        functions = {sizing: self.sizings.get(sizing, lambda cols: np.NaN) for sizing in self.variables.sizing}
+        functions = lambda cols: {sizing: self.sizings.get(sizing, np.NaN) for sizing in self.variables.sizing}
         sizings = pricings.apply(functions, axis=1, result_type="expand")
         options = pd.concat([pricings, sizings], axis=1)
         return options
@@ -180,6 +184,10 @@ class SecurityCalculator(object):
     def sizings(self): return self.__sizings
     @property
     def pricing(self): return self.__pricing
+    @property
+    def logger(self): return self.__logger
+    @property
+    def name(self): return self.__name
 
 
 

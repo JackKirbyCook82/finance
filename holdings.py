@@ -12,6 +12,7 @@ import pandas as pd
 
 from finance.variables import Variables, Contract
 from support.meta import ParametersMeta
+from support.mixins import Sizing
 from support.files import File
 
 __version__ = "1.0.0"
@@ -49,16 +50,19 @@ class HoldingFile(File, variable=Variables.Datasets.HOLDINGS, datatype=pd.DataFr
     pass
 
 
-class HoldingCalculator(object):
+class HoldingCalculator(Sizing):
+    def __repr__(self): return str(self.name)
     def __init__(self, *args, valuation, **kwargs):
+        self.__name = kwargs.pop("name", self.__class__.__name__)
         self.__variables = HoldingVariables(*args, valuation=valuation, **kwargs)
         self.__valuation = valuation
+        self.__logger = __logger__
 
     def __call__(self, valuations, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame)
         for contract, dataframe in self.contracts(valuations):
             holdings = self.execute(dataframe, *args, **kwargs)
-            size = len(holdings.dropna(how="all", inplace=False).index)
+            size = self.size(holdings)
             string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
             self.logger.info(string)
             if bool(holdings.empty): continue
@@ -114,5 +118,9 @@ class HoldingCalculator(object):
     def variables(self): return self.__variables
     @property
     def valuation(self): return self.__valuation
+    @property
+    def logger(self): return self.__logger
+    @property
+    def name(self): return self.__name
 
 

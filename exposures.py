@@ -12,8 +12,9 @@ import pandas as pd
 from abc import ABC
 
 from finance.variables import Variables, Contract
-from support.meta import ParametersMeta
 from support.tables import Table, View
+from support.meta import ParametersMeta
+from support.mixins import Sizing
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -41,15 +42,18 @@ class ExposureView(View, ABC, datatype=pd.DataFrame, **dict(ExposureFormatting))
 class ExposureTable(Table, ABC, datatype=pd.DataFrame, view=ExposureView, variable=Variables.Datasets.EXPOSURE): pass
 
 
-class ExposureCalculator(object):
+class ExposureCalculator(Sizing):
+    def __repr__(self): return str(self.name)
     def __init__(self, *args, **kwargs):
+        self.__name = kwargs.pop("name", self.__class__.__name__)
         self.__variables = ExposureVariables(*args, **kwargs)
+        self.__logger = __logger__
 
     def __call__(self, holdings, *args, **kwargs):
         assert isinstance(holdings, pd.DataFrame)
         for contract, dataframe in self.contracts(holdings):
             exposures = self.execute(holdings, *args, **kwargs)
-            size = len(holdings.dropna(how="all", inplace=False).index)
+            size = self.size(exposures)
             string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
             self.logger.info(string)
             if bool(exposures.empty): continue
@@ -135,18 +139,33 @@ class ExposureCalculator(object):
 
     @property
     def variables(self): return self.__variables
+    @property
+    def logger(self): return self.__logger
+    @property
+    def name(self): return self.__name
 
 
 class ExposureWriter(object):
+    def __repr__(self): return str(self.name)
     def __init__(self, *args, table, **kwargs):
+        self.__name = kwargs.pop("name", self.__class__.__name__)
         self.__variables = ExposureVariables(*args, **kwargs)
+        self.__logger = __logger__
         self.__table = table
 
-    def __call__(self, contract, exposures, *args, **kwargs):
-        assert isinstance(contract, Contract) and isinstance(exposures, pd.DataFrame)
-        with self.table.mutex:
-            self.obsolete(contract, *args, **kwargs)
-            self.write(exposures, *args, **kwargs)
+    def __call__(self, exposures, *args, **kwargs):
+        assert isinstance(exposures, pd.DataFrame)
+        for contract, dataframe in self.contracts(exposures):
+            with self.table.mutex:
+                self.obsolete(contract, *args, **kwargs)
+                self.execute(dataframe, *args, **kwargs)
+
+    def contracts(self, exposures):
+        assert isinstance(exposures, pd.DataFrame)
+        for (ticker, expire), dataframe in exposures.groupby(self.variables.contract):
+            if bool(dataframe.empty): continue
+            contract = Contract(ticker, expire)
+            yield contract, dataframe
 
     def obsolete(self, contract, *args, **kwargs):
         ticker = lambda table: table["ticker"] == contract.ticker
@@ -154,7 +173,7 @@ class ExposureWriter(object):
         obsolete = lambda table: ticker(table) & expire(table)
         self.table.remove(obsolete)
 
-    def write(self, exposures, *args, **kwargs):
+    def execute(self, exposures, *args, **kwargs):
         sorting = dict(ticker=False, expire=False)
         self.table.combine(exposures)
         self.table.reset()
@@ -163,7 +182,11 @@ class ExposureWriter(object):
     @property
     def variables(self): return self.__variables
     @property
+    def logger(self): return self.__logger
+    @property
     def table(self): return self.__table
+    @property
+    def name(self): return self.__name
 
 
 
