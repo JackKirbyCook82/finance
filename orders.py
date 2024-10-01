@@ -32,6 +32,7 @@ class OrderVariables(object):
         self.stocks = list(map(str, self.axes[Variables.Instruments.STOCK]))
         self.index = ["identity"] + self.contract + self.security + ["strike"]
         self.columns = ["quantity"]
+        self.header = self.index + self.columns
 
 
 class OrderCalculator(Sizing):

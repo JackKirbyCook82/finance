@@ -38,9 +38,9 @@ class TechnicalVariables(object):
     axes = {Variables.Querys.HISTORY: ["date", "ticker"], Variables.Querys.SYMBOL: ["ticker"]}
 
     def __init__(self, *args, technical, **kwargs):
+        self.symbol = self.axes[Variables.Querys.SYMBOL]
         self.index = self.axes[Variables.Querys.HISTORY]
         self.columns = self.data[technical]
-        self.symbol = self.axes[Variables.Querys.SYMBOL]
         self.header = self.index + self.columns
 
 

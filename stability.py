@@ -18,7 +18,7 @@ from support.calculations import Variable, Equation, Calculation
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["StabilityCalculator"]
+__all__ = ["StabilityCalculator", "StabilityFilter"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
@@ -52,6 +52,45 @@ class StabilityVariables(object):
     def __init__(self, *args, **kwargs):
         self.security = self.axes[Variables.Datasets.SECURITY]
         self.contract = self.axes[Variables.Querys.CONTRACT]
+
+
+class StabilityFilter(object):
+    def __repr__(self): return str(self.name)
+    def __init__(self, *args, **kwargs):
+        self.__name = kwargs.pop("name", self.__class__.__name__)
+        self.__logger__ = __logger__
+
+    def __call__(self, valuations, stabilities, *args, **kwargs):
+        assert isinstance(valuations, pd.DataFrame) and isinstance(stabilities, pd.DataFrame)
+        for contract, primary, secondary in self.contracts(valuations, stabilities):
+            dataframe = self.execute(primary, secondary, *args, **kwargs)
+            size = self.size(dataframe)
+            string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
+            self.logger.info(string)
+            if bool(dataframe.empty): continue
+            yield dataframe
+
+    def contracts(self, valuations, stabilities):
+        assert isinstance(valuations, pd.DataFrame) and isinstance(stabilities, pd.DataFrame)
+        for (ticker, expire), primary in valuations.groupby(self.variables.contract):
+            if bool(primary.empty): continue
+            contract = Contract(ticker, expire)
+            mask = stabilities["ticker"] == ticker & stabilities["expire"] == expire
+            secondary = stabilities.where(mask).dropna(how="all", inplace=False)
+            yield contract, primary, secondary
+
+    def execute(self, valuations, stabilities, *args, **kwargs):
+        assert isinstance(valuations, pd.DataFrame) and isinstance(stabilities, pd.DataFrame)
+        valuations = self.execute(valuations, stabilities, *args, **kwargs)
+        return valuations
+
+    def calculate(self, valuations, stabilities, *args, **kwargs):
+        pass
+
+    @property
+    def logger(self): return self.__logger
+    @property
+    def name(self): return self.__name
 
 
 class StabilityCalculator(object):

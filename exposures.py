@@ -36,6 +36,8 @@ class ExposureVariables(object):
         self.contract = self.axes[Variables.Querys.CONTRACT]
         self.security = self.axes[Variables.Datasets.SECURITY]
         self.index = self.contract + self.security + ["strike"]
+        self.columns = ["quantity"]
+        self.header = self.index + self.columns
 
 
 class ExposureView(View, ABC, datatype=pd.DataFrame, **dict(ExposureFormatting)): pass

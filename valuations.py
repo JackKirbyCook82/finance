@@ -241,8 +241,8 @@ class ValuationWriter(object):
 
     def valuations(self, valuations, *args, **kwargs):
         if not bool(self): return valuations
-        index = list(self.variables.index)
-        overlap = self.dataframe.merge(valuations, on=index, how="inner", suffixes=("_", ""))[self.columns]
+        index, columns = list(self.variables.index), list(self.variables.columns)
+        overlap = self.dataframe.merge(valuations, on=index, how="inner", suffixes=("_", ""))[columns]
         valuations = pd.concat([valuations, overlap], axis=0)
         valuations = valuations.drop_duplicates(index, keep="last", inplace=False)
         return valuations
