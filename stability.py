@@ -58,6 +58,7 @@ class StabilityFilter(object):
     def __repr__(self): return str(self.name)
     def __init__(self, *args, **kwargs):
         self.__name = kwargs.pop("name", self.__class__.__name__)
+        self.__variables = StabilityVariables(*args, **kwargs)
         self.__logger__ = __logger__
 
     def __call__(self, valuations, stabilities, *args, **kwargs):
@@ -87,6 +88,8 @@ class StabilityFilter(object):
     def calculate(self, valuations, stabilities, *args, **kwargs):
         pass
 
+    @property
+    def variables(self): return self.__variables
     @property
     def logger(self): return self.__logger
     @property
