@@ -38,14 +38,19 @@ class SecurityParameters(metaclass=ParametersMeta):
 
 
 class SecurityVariables(object):
-    data = {Variables.Datasets.PRICING: ["price", "underlying", "current"], Variables.Datasets.SIZING: ["volume", "size", "interest"]}
-    axes = {Variables.Querys.CONTRACT: ["ticker", "expire"], Variables.Datasets.SECURITY: ["instrument", "option", "position"]}
+    axes = {Variables.Querys.CONTRACT: ["ticker", "expire"], Variables.Querys.PRODUCT: ["ticker", "expire", "strike"], Variables.Querys.SECURITY: ["instrument", "option", "position"]}
+    data = {Variables.Datasets.PRICING: ["price", "underlying"], Variables.Datasets.SIZING: ["volume", "size", "interest"], Variables.Datasets.TIMING: ["current"]}
 
     def __init__(self, *args, **kwargs):
         self.contract = self.axes[Variables.Querys.CONTRACT]
-        self.security = self.axes[Variables.Datasets.SECURITY]
+        self.product = self.axes[Variables.Querys.PRODUCT]
+        self.security = self.axes[Variables.Querys.SECURITY]
         self.pricing = self.data[Variables.Datasets.PRICING]
         self.sizing = self.data[Variables.Datasets.SIZING]
+        self.timing = self.data[Variables.Datasets.TIMING]
+        self.index = self.product + self.security
+        self.columns = self.pricing + self.sizing + self.timing
+        self.header = self.index + self.columns
 
 
 class SecurityFile(File, datatype=pd.DataFrame, dates=SecurityParameters.dates, filename=SecurityParameters.filename, parsers=SecurityParameters.parsers, formatters=SecurityParameters.formatters): pass
@@ -81,20 +86,20 @@ class BlackScholesEquation(PricingEquation):
     i = Variable("i", "option", Variables.Options, position=0, locator="option")
     j = Variable("j", "position", Variables.Positions, position=0, locator="position")
     k = Variable("k", "strike", np.float32, position=0, locator="strike")
-    ε = Variable("ε", "divergence", np.float32, position="divergence")
-    ω = Variable("ω", "lifespan", np.float32, position="lifespan")
+    ε = Variable("ε", "epsilon", np.float32, position="epsilon")
+    ω = Variable("ω", "omega", np.float32, position="omega")
     ρ = Variable("ρ", "discount", np.float32, position="discount")
     f = Variable("f", "factor", types.FunctionType, position="factor")
 
 
 class PricingCalculation(Calculation, ABC, metaclass=RegistryMeta): pass
 class BlackScholesCalculation(PricingCalculation, equation=BlackScholesEquation, register=Variables.Pricing.BLACKSCHOLES):
-    def execute(self, exposures, *args, factor, discount, divergence, lifespan, **kwargs):
+    def execute(self, exposures, *args, discount, factor=lambda Θ, Φ, ε, ω: 0, epsilon=0, omega=0, **kwargs):
         invert = lambda position: Variables.Positions(int(Variables.Positions.LONG) + int(Variables.Positions.SHORT) - int(position))
         equation = self.equation(*args, **kwargs)
         yield from iter([exposures["ticker"], exposures["expire"]])
         yield from iter([exposures["instrument"], exposures["option"], exposures["position"].apply(invert), exposures["strike"]])
-        yield equation.yo(exposures, factor=factor, discount=discount, divergence=divergence, lifespan=lifespan)
+        yield equation.yo(exposures, factor=factor, discount=discount, epsilon=epsilon, omega=omega)
         yield equation.xo(exposures)
         yield equation.to(exposures)
 
@@ -107,33 +112,33 @@ class SecurityFilter(Sizing, Empty, Logging, Filter):
     def execute(self, securities, *args, **kwargs):
         assert isinstance(securities, pd.DataFrame)
         for contract, dataframe in self.contracts(securities, *args, **kwargs):
-            if bool(dataframe.empty): continue
-            prior = len(dataframe.dropna(how="all", inplace=False).index)
+            prior = self.size(dataframe)
             dataframe = self.filter(dataframe, *args, **kwargs)
             assert isinstance(dataframe, pd.DataFrame)
             dataframe = dataframe.reset_index(drop=True, inplace=False)
-            post = len(dataframe.dropna(how="all", inplace=False).index)
+            post = self.size(dataframe)
             string = f"Filtered: {repr(self)}|{str(contract)}[{prior:.0f}|{post:.0f}]"
             self.logger.info(string)
-            if bool(dataframe.empty): continue
+            if self.empty(dataframe): continue
             yield dataframe
 
     def contracts(self, securities, *args, **kwargs):
         assert isinstance(securities, pd.DataFrame)
-        for (ticker, expire), dataframe in securities.groupby(self.variables.contract):
-            contract = Contract(ticker, expire)
-            yield contract, dataframe
+        for contract, dataframe in securities.groupby(self.variables.contract):
+            if self.empty(dataframe): continue
+            yield Contract(*contract), dataframe
 
     @property
     def variables(self): return self.__variables
 
 
 class SecurityCalculator(Sizing, Empty, Logging):
-    def __init__(self, *args, pricing, sizings, **kwargs):
+    def __init__(self, *args, pricing, sizings, timings, **kwargs):
         super().__init__(*args, **kwargs)
         self.__calculation = PricingCalculation[pricing](*args, **kwargs)
         self.__variables = SecurityVariables(*args, **kwargs)
         self.__sizings = sizings
+        self.__timings = timings
         self.__pricing = pricing
 
     def __call__(self, exposures, statistics, *args, **kwargs):
@@ -144,15 +149,14 @@ class SecurityCalculator(Sizing, Empty, Logging):
             size = self.size(options)
             string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
             self.logger.info(string)
-            if bool(options.empty): continue
+            if self.empty(options): continue
             yield options
 
     def contracts(self, exposures):
         assert isinstance(exposures, pd.DataFrame)
-        for (ticker, expire), dataframe in exposures.groupby(self.variables.contract):
-            if bool(dataframe.empty): continue
-            contract = Contract(ticker, expire)
-            yield contract, dataframe
+        for contract, dataframe in exposures.groupby(self.variables.contract):
+            if self.empty(dataframe): continue
+            yield Contract(*contract), dataframe
 
     def execute(self, exposures, *args, **kwargs):
         assert isinstance(exposures, pd.DataFrame)
@@ -161,10 +165,13 @@ class SecurityCalculator(Sizing, Empty, Logging):
 
     def calculate(self, exposures, *args, **kwargs):
         assert isinstance(exposures, pd.DataFrame)
-        pricings = self.calculation(exposures, *args, lifespan=0, **kwargs)
-        functions = lambda cols: {sizing: self.sizings.get(sizing, np.NaN) for sizing in self.variables.sizing}
-        sizings = pricings.apply(functions, axis=1, result_type="expand")
-        options = pd.concat([pricings, sizings], axis=1)
+        pricings = self.calculation(exposures, *args, **kwargs)
+        dataframe = pricings[self.variables.index]
+        sizings = lambda cols: {sizing: self.sizings.get(sizing, np.NaN) for sizing in self.variables.sizing}
+        sizings = dataframe.apply(sizings, axis=1, result_type="expand")
+        timings = lambda cols: {timing: self.timings.get(timing, np.NaN) for timing in self.variables.timing}
+        timings = dataframe.apply(timings, axis=1, result_type="expand")
+        options = pd.concat([pricings, sizings, timings], axis=1)
         return options
 
     @staticmethod
@@ -179,9 +186,11 @@ class SecurityCalculator(Sizing, Empty, Logging):
     @property
     def variables(self): return self.__variables
     @property
+    def pricing(self): return self.__pricing
+    @property
     def sizings(self): return self.__sizings
     @property
-    def pricing(self): return self.__pricing
+    def timings(self): return self.__timings
 
 
 

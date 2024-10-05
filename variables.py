@@ -203,7 +203,8 @@ class Technicals(members=["BARS", "STATISTIC", "STOCHASTIC"], metaclass=Variable
 class Scenarios(members=["MINIMUM", "MAXIMUM"], metaclass=VariableMeta): pass
 class Valuations(members=["ARBITRAGE"], metaclass=VariableMeta): pass
 class Pricing(members=["BLACKSCHOLES"], metaclass=VariableMeta): pass
-class Querys(members=["HISTORY", "SYMBOL", "CONTRACT", "PRODUCT"], metaclass=VariableMeta): pass
+class Querys(members=["HISTORY", "SYMBOL", "CONTRACT", "PRODUCT", "SECURITY"], metaclass=VariableMeta): pass
+class Datasets(members=["PRICING", "SIZING", "TIMING", "EXPOSURE"], metaclass=VariableMeta): pass
 class Status(members=["PROSPECT", "PENDING", "ABANDONED", "REJECTED", "ACCEPTED"], metaclass=VariableMeta): pass
 
 class Markets(members=["EMPTY", "BEAR", "BULL"], start=0, metaclass=VariableMeta): pass
@@ -262,6 +263,7 @@ class Variables:
     Technicals = Technicals
     Status = Status
     Querys = Querys
+    Datasets = Datasets
     Omega = Omega
     Theta = Theta
     Phi = Phi

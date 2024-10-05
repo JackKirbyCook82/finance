@@ -22,16 +22,19 @@ __logger__ = logging.getLogger(__name__)
 
 
 class OrderVariables(object):
-    axes = {Variables.Querys.CONTRACT: ["ticker", "expire"], Variables.Datasets.SECURITY: ["instrument", "option", "position"]}
-    axes.update({Variables.Instruments.STOCK: list(Variables.Securities.Stocks), Variables.Instruments.OPTION: list(Variables.Securities.Options)})
+    axes = {Variables.Querys.CONTRACT: ["ticker", "expire"], Variables.Querys.PRODUCT: ["ticker", "expire", "strike"], Variables.Datasets.SECURITY: ["instrument", "option", "position"]}
+    axes.update({Variables.Instruments.STOCK: list(map(str, Variables.Securities.Stocks)), Variables.Instruments.OPTION: list(map(str, Variables.Securities.Options))})
+    data = {Variables.Datasets.EXPOSURE: ["quantity"]}
 
     def __init__(self, *args, **kwargs):
-        self.contract = self.axes[Variables.Querys.CONTRACT]
-        self.security = self.axes[Variables.Datasets.SECURITY]
         self.options = list(map(str, self.axes[Variables.Instruments.OPTIONS]))
         self.stocks = list(map(str, self.axes[Variables.Instruments.STOCK]))
-        self.index = ["identity"] + self.contract + self.security + ["strike"]
-        self.columns = ["quantity"]
+        self.contract = self.axes[Variables.Querys.CONTRACT]
+        self.product = self.axes[Variables.Querys.PRODUCT]
+        self.security = self.axes[Variables.Datasets.SECURITY]
+        self.identity = ["portfolio"]
+        self.index = self.identity + self.product + self.security
+        self.columns = self.data[Variables.Datasets.EXPOSURE]
         self.header = self.index + self.columns
 
 
@@ -47,15 +50,14 @@ class OrderCalculator(Sizing, Empty, Logging):
             size = self.size(orders)
             string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
             self.logger.info(string)
-            if bool(orders.empty): continue
+            if self.empty(orders): continue
             yield orders
 
     def contracts(self, valuations):
         assert isinstance(valuations, pd.DataFrame)
-        for (ticker, expire), dataframe in valuations.groupby(self.variables.contract):
-            if bool(dataframe.empty): continue
-            contract = Contract(ticker, expire)
-            yield contract, dataframe
+        for contract, dataframe in valuations.groupby(self.variables.contract):
+            if self.empty(dataframe): continue
+            yield Contract(*contract), dataframe
 
     def execute(self, valuations, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame)
@@ -71,12 +73,12 @@ class OrderCalculator(Sizing, Empty, Logging):
 
     def securities(self, valuations, *args, **kwargs):
         strategy = lambda cols: list(map(str, cols["strategy"].stocks))
-        function = lambda cols: {stock: cols["underlying"] if stock in strategy(cols) else np.NaN for stock in self.axes.stocks}
-        options = valuations[["identity"] + self.variables.contract + self.variables.options + ["valuation", "strategy", "underlying"]]
+        function = lambda cols: {stock: cols["underlying"] if stock in strategy(cols) else np.NaN for stock in self.variables.stocks}
+        options = valuations[self.variables.identity + self.variables.contract + self.variables.options + ["valuation", "strategy", "underlying"]]
         options = options.droplevel("scenario", axis=1)
         stocks = options.apply(function, axis=1, result_type="expand")
         securities = pd.concat([options, stocks], axis=1)
-        securities = securities[["identity"] + self.variables.contract + self.variables.options + self.variables.stocks]
+        securities = securities[self.variables.identity + self.variables.contract + self.variables.options + self.variables.stocks]
         return securities
 
     def orders(self, securities, *args, **kwargs):
@@ -94,7 +96,7 @@ class OrderCalculator(Sizing, Empty, Logging):
         stocks = stocks.reset_index(names="security", drop=False, inplace=False)
         stocks[self.variables.security + self.variables.columns] = stocks.apply(security, axis=1, result_type="expand")
         stocks = stocks[[column for column in stocks.columns if column != "security"]]
-        contract = {key: value for key, value in securities[["identity"] + self.variables.contract].to_dict().items()}
+        contract = {key: value for key, value in securities[self.variables.identity + self.variables.contract].to_dict().items()}
         stocks = stocks.assign(**contract)
         return stocks
 
@@ -104,7 +106,7 @@ class OrderCalculator(Sizing, Empty, Logging):
         options = options.reset_index(names="security", drop=False, inplace=False)
         options[self.variables.security + self.variables.columns] = options.apply(security, axis=1, result_type="expand")
         options = options[[column for column in options.columns if column != "security"]]
-        contract = {key: value for key, value in securities[["identity"] + self.variables.contract].to_dict().items()}
+        contract = {key: value for key, value in securities[self.variables.identity + self.variables.contract].to_dict().items()}
         options = options.assign(**contract)
         return options
 

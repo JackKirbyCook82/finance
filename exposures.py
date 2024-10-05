@@ -10,6 +10,7 @@ import logging
 import numpy as np
 import pandas as pd
 from abc import ABC
+from functools import reduce
 
 from finance.variables import Variables, Contract
 from support.mixins import Empty, Sizing, Logging
@@ -30,13 +31,15 @@ class ExposureFormatting(metaclass=ParametersMeta):
 
 
 class ExposureVariables(object):
-    axes = {Variables.Querys.CONTRACT: ["ticker", "expire"], Variables.Datasets.SECURITY: ["instrument", "option", "position"]}
+    axes = {Variables.Querys.CONTRACT: ["ticker", "expire"], Variables.Querys.PRODUCT: ["ticker", "expire", "strike"], Variables.Querys.SECURITY: ["instrument", "option", "position"]}
+    data = {Variables.Datasets.EXPOSURE: ["quantity"]}
 
     def __init__(self, *args, **kwargs):
         self.contract = self.axes[Variables.Querys.CONTRACT]
-        self.security = self.axes[Variables.Datasets.SECURITY]
-        self.index = self.contract + self.security + ["strike"]
-        self.columns = ["quantity"]
+        self.product = self.axes[Variables.Querys.PRODUCT]
+        self.security = self.axes[Variables.Querys.SECURITY]
+        self.index = self.product + self.security
+        self.columns = self.data[Variables.Datasets.EXPOSURE]
         self.header = self.index + self.columns
 
 
@@ -56,15 +59,14 @@ class ExposureCalculator(Sizing, Empty, Logging):
             size = self.size(exposures)
             string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
             self.logger.info(string)
-            if bool(exposures.empty): continue
+            if self.empty(exposures): continue
             yield exposures
 
     def contracts(self, holdings):
         assert isinstance(holdings, pd.DataFrame)
-        for (ticker, expire), dataframe in holdings.groupby(self.variables.contract):
-            if bool(dataframe.empty): continue
-            contract = Contract(ticker, expire)
-            yield contract, dataframe
+        for contract, dataframe in holdings.groupby(self.variables.contract):
+            if self.empty(dataframe): continue
+            yield Contract(*contract), dataframe
 
     def execute(self, holdings, *args, **kwargs):
         assert isinstance(holdings, pd.DataFrame)
@@ -156,15 +158,13 @@ class ExposureWriter(Sizing, Empty, Logging):
 
     def contracts(self, exposures):
         assert isinstance(exposures, pd.DataFrame)
-        for (ticker, expire), dataframe in exposures.groupby(self.variables.contract):
-            if bool(dataframe.empty): continue
-            contract = Contract(ticker, expire)
-            yield contract, dataframe
+        for contract, dataframe in exposures.groupby(self.variables.contract):
+            if self.empty(dataframe): continue
+            yield Contract(*contract), dataframe
 
     def obsolete(self, contract, *args, **kwargs):
-        ticker = lambda table: table["ticker"] == contract.ticker
-        expire = lambda table: table["expire"] == contract.expire
-        obsolete = lambda table: ticker(table) & expire(table)
+        contract = lambda table: [table[key] == value for key, value in zip(self.variables.contract, contract)]
+        obsolete = lambda table: reduce(lambda x, y: x & y, contract(table))
         self.table.remove(obsolete)
 
     def execute(self, exposures, *args, **kwargs):

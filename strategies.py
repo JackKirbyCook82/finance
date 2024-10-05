@@ -27,12 +27,13 @@ __logger__ = logging.getLogger(__name__)
 
 
 class StrategyVariables(object):
-    axes = {Variables.Querys.CONTRACT: ["ticker", "expire"], Variables.Datasets.SECURITY: ["instrument", "option", "position"]}
+    axes = {Variables.Querys.CONTRACT: ["ticker", "expire"], Variables.Querys.PRODUCT: ["ticker", "expire", "strike"], Variables.Querys.SECURITY: ["instrument", "option", "position"]}
 
     def __init__(self, *args, **kwargs):
-        self.security = self.axes[Variables.Datasets.SECURITY]
         self.contract = self.axes[Variables.Querys.CONTRACT]
-        self.index = self.security + self.contract + ["strike"]
+        self.product = self.axes[Variables.Querys.PRODUCT]
+        self.security = self.axes[Variables.Querys.SECURITY]
+        self.index = self.product + self.security
 
 
 class StrategyEquation(Equation):
@@ -111,21 +112,20 @@ class StrategyCalculator(Sizing, Empty, Logging):
                 size = self.size(strategies)
                 string = f"Calculated: {repr(self)}|{str(contract)}|{str(strategy)}[{size:.0f}]"
                 self.logger.info(string)
-                if not bool(np.count_nonzero(~np.isnan(strategies["size"].values))): continue
+                if self.empty(strategies): continue
                 yield strategies
 
     def contracts(self, options):
         assert isinstance(options, pd.DataFrame)
-        for (ticker, expire), dataframe in options.groupby(self.variables.contract):
+        for contract, dataframe in options.groupby(self.variables.contract):
             if bool(dataframe.empty): continue
-            contract = Contract(ticker, expire)
-            yield contract, dataframe
+            yield Contract(*contract), dataframe
 
     def options(self, options, *args, **kwargs):
         assert isinstance(options, pd.DataFrame)
-        for (instrument, option, position), dataframe in options.groupby(self.variables.security):
-            if bool(dataframe.empty): continue
-            security = Variables.Securities[instrument, option, position]
+        for security, dataframe in options.groupby(self.variables.security):
+            if self.empty(dataframe): continue
+            security = Variables.Securities[security]
             dataframe = dataframe.set_index(self.variables.index, drop=True, inplace=False)
             dataset = xr.Dataset.from_dataframe(dataframe)
             dataset = reduce(lambda content, axis: content.squeeze(axis), self.variables.contract, dataset)

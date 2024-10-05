@@ -34,12 +34,14 @@ class TechnicalParameters(metaclass=ParametersMeta):
 
 
 class TechnicalVariables(object):
-    data = {Variables.Technicals.STATISTIC: ["price", "trend", "volatility"], Variables.Technicals.STOCHASTIC: ["price", "oscillator"]}
     axes = {Variables.Querys.HISTORY: ["date", "ticker"], Variables.Querys.SYMBOL: ["ticker"]}
+    data = {Variables.Technicals.STATISTIC: ["price", "trend", "volatility"], Variables.Technicals.STOCHASTIC: ["price", "oscillator"]}
 
     def __init__(self, *args, technical, **kwargs):
+        assert technical in self.data.keys()
+        self.history = self.axes[Variables.Querys.HISTORY]
         self.symbol = self.axes[Variables.Querys.SYMBOL]
-        self.index = self.axes[Variables.Querys.HISTORY]
+        self.index = self.history
         self.columns = self.data[technical]
         self.header = self.index + self.columns
 
@@ -81,17 +83,19 @@ class StochasticCalculation(TechnicalCalculation, equation=StochasticEquation, r
 class TechnicalCalculator(Sizing, Empty, Logging):
     def __init__(self, *args, technical, **kwargs):
         super().__init__(*args, **kwargs)
-        self.__calculation = TechnicalCalculation[technical](*args, **kwargs)
         self.__variables = TechnicalVariables(*args, technical=technical, **kwargs)
+        self.__calculation = TechnicalCalculation[technical](*args, **kwargs)
+        self.__technical = technical
 
     def __call__(self, bars, *args, **kwargs):
         assert isinstance(bars, pd.DataFrame)
         for symbol, dataframe in self.symbols(bars):
-            technicals = self.execute(dataframe, *args, **kwargs)
+            parameters = dict(ticker=symbol.ticker)
+            technicals = self.execute(dataframe, *args, **parameters, **kwargs)
             size = self.size(technicals)
             string = f"Calculated: {repr(self)}|{str(symbol)}[{size:.0f}]"
             self.logger.info(string)
-            if bool(technicals.empty): continue
+            if self.empty(technicals): continue
             yield technicals
 
     def execute(self, bars, *args, **kwargs):
@@ -109,15 +113,16 @@ class TechnicalCalculator(Sizing, Empty, Logging):
 
     def symbols(self, bars):
         assert isinstance(bars, pd.DataFrame)
-        for (ticker,), dataframe in bars.groupby(self.variables.symbol):
-            if bool(dataframe.empty): continue
-            symbol = Symbol(ticker)
-            yield symbol, dataframe
+        for symbol, dataframe in bars.groupby(self.variables.symbol):
+            if self.empty(dataframe): continue
+            yield Symbol(*symbol), dataframe
 
     @property
     def calculation(self): return self.__calculations
     @property
     def variables(self): return self.__variables
+    @property
+    def technical(self): return self.__technical
 
 
 
