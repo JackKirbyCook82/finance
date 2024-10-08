@@ -15,7 +15,7 @@ from functools import reduce
 
 from finance.variables import Variables, Contract
 from support.calculations import Variable, Equation, Calculation
-from support.mixins import Empty, Sizing, Logging
+from support.mixins import Emptying, Sizing, Logging, Pipelining
 from support.meta import RegistryMeta
 
 __version__ = "1.0.0"
@@ -33,7 +33,6 @@ class StrategyVariables(object):
         self.contract = self.axes[Variables.Querys.CONTRACT]
         self.product = self.axes[Variables.Querys.PRODUCT]
         self.security = self.axes[Variables.Querys.SECURITY]
-        self.index = self.product + self.security
 
 
 class StrategyEquation(Equation):
@@ -78,7 +77,7 @@ class CollarShortEquation(CollarEquation):
     yl = Variable("yl", "minimum", np.float32, function=lambda kα, kβ: np.minimum(-kα, -kβ))
 
 
-class StrategyCalculation(Calculation, ABC, register=RegistryMeta):
+class StrategyCalculation(Calculation, ABC, metaclass=RegistryMeta):
     def execute(self, options, *args, fees, **kwargs):
         positions = [option.position for option in options.keys()]
         assert len(set(positions)) == len(list(positions))
@@ -91,54 +90,51 @@ class StrategyCalculation(Calculation, ABC, register=RegistryMeta):
         yield equation.q(options, fees=fees)
         yield equation.t(options, fees=fees)
 
-class VerticalPutCalculation(StrategyCalculation, equation=VerticalPutEquation, regsiter=Variables.Strategies.Vertical.Put): pass
-class VerticalCallCalculation(StrategyCalculation, equation=VerticalCallEquation, regsiter=Variables.Strategies.Vertical.Call): pass
-class CollarLongCalculation(StrategyCalculation, equation=CollarLongEquation, regsiter=Variables.Strategies.Collar.Long): pass
-class CollarShortCalculation(StrategyCalculation, equation=CollarShortEquation, regsiter=Variables.Strategies.Collar.Short): pass
+class VerticalPutCalculation(StrategyCalculation, equation=VerticalPutEquation, register=Variables.Strategies.Vertical.Put): pass
+class VerticalCallCalculation(StrategyCalculation, equation=VerticalCallEquation, register=Variables.Strategies.Vertical.Call): pass
+class CollarLongCalculation(StrategyCalculation, equation=CollarLongEquation, register=Variables.Strategies.Collar.Long): pass
+class CollarShortCalculation(StrategyCalculation, equation=CollarShortEquation, register=Variables.Strategies.Collar.Short): pass
 
 
-class StrategyCalculator(Sizing, Empty, Logging):
+class StrategyCalculator(Pipelining, Sizing, Emptying, Logging):
     def __init__(self, *args, strategies=[], **kwargs):
         strategies = list(dict(StrategyCalculation).keys()) if not bool(strategies) else list(strategies)
         calculations = dict(StrategyCalculation).items()
-        super().__init__(*args, **kwargs)
+        Pipelining.__init__(self, *args, **kwargs)
+        Logging.__init__(self, *args, **kwargs)
         self.__calculations = {strategy: calculation(*args, **kwargs) for strategy, calculation in calculations if strategy in strategies}
         self.__variables = StrategyVariables(*args, **kwargs)
 
-    def __call__(self, options, *args, **kwargs):
+    def execute(self, options, *args, **kwargs):
         assert isinstance(options, pd.DataFrame)
         for contract, dataframe in self.contracts(options):
-            for strategy, strategies in self.execute(dataframe, *args, **kwargs):
-                size = self.size(strategies)
+            datasets = dict(self.options(dataframe, *args, **kwargs))
+            for strategy, strategies in self.calculate(datasets, *args, **kwargs):
+                size = self.size(strategies["size"])
                 string = f"Calculated: {repr(self)}|{str(contract)}|{str(strategy)}[{size:.0f}]"
                 self.logger.info(string)
-                if self.empty(strategies): continue
+                if self.empty(strategies["size"]): continue
                 yield strategies
 
     def contracts(self, options):
         assert isinstance(options, pd.DataFrame)
-        for contract, dataframe in options.groupby(self.variables.contract):
+        for contract, dataframe in options.groupby(list(self.variables.contract)):
             if bool(dataframe.empty): continue
             yield Contract(*contract), dataframe
 
     def options(self, options, *args, **kwargs):
         assert isinstance(options, pd.DataFrame)
-        for security, dataframe in options.groupby(self.variables.security):
+        for security, dataframe in options.groupby(self.variables.security, sort=False):
             if self.empty(dataframe): continue
             security = Variables.Securities[security]
-            dataframe = dataframe.set_index(self.variables.index, drop=True, inplace=False)
+            dataframe = dataframe.set_index(self.variables.product, drop=True, inplace=False)
+            dataframe = dataframe.drop([variable for variable in self.variables.security if variable in dataframe.columns], axis=1)
             dataset = xr.Dataset.from_dataframe(dataframe)
             dataset = reduce(lambda content, axis: content.squeeze(axis), self.variables.contract, dataset)
             dataset = dataset.drop_vars(self.variables.security, errors="ignore")
             dataset = dataset.rename({"strike": str(security)})
             dataset["strike"] = dataset[str(security)]
             yield security, dataset
-
-    def execute(self, options, *args, **kwargs):
-        assert isinstance(options, pd.DataFrame)
-        options = dict(self.options(options, *args, **kwargs))
-        for strategy, strategies in self.calculate(options, *args, **kwargs):
-            yield strategy, strategies
 
     def calculate(self, options, *args, **kwargs):
         assert isinstance(options, dict)

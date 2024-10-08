@@ -15,7 +15,7 @@ from collections import OrderedDict as ODict
 
 from finance.variables import Variables, Contract
 from support.calculations import Variable, Equation, Calculation
-from support.mixins import Empty, Sizing, Logging
+from support.mixins import Emptying, Sizing, Logging, Pipelining
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -62,15 +62,16 @@ class StabilityCalculation(Calculation, equation=StabilityEquation):
         yield equation.m(portfolios)
 
 
-class StabilityFilter(Sizing, Empty, Logging):
+class StabilityFilter(Pipelining, Sizing, Emptying, Logging):
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        Pipelining.__init__(self, *args, **kwargs)
+        Logging.__init__(self, *args, **kwargs)
         self.__variables = StabilityVariables(*args, **kwargs)
 
-    def __call__(self, valuations, stabilities, *args, **kwargs):
+    def execute(self, valuations, stabilities, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame) and isinstance(stabilities, pd.DataFrame)
         for contract, primary, secondary in self.contracts(valuations, stabilities):
-            dataframe = self.execute(primary, secondary, *args, **kwargs)
+            dataframe = self.calculate(primary, secondary, *args, **kwargs)
             size = self.size(dataframe)
             string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
             self.logger.info(string)
@@ -86,11 +87,6 @@ class StabilityFilter(Sizing, Empty, Logging):
             secondary = stabilities.where(mask).dropna(how="all", inplace=False)
             yield Contract(*contract), primary, secondary
 
-    def execute(self, valuations, stabilities, *args, **kwargs):
-        assert isinstance(valuations, pd.DataFrame) and isinstance(stabilities, pd.DataFrame)
-        valuations = self.execute(valuations, stabilities, *args, **kwargs)
-        return valuations
-
     def calculate(self, valuations, stabilities, *args, **kwargs):
         pass
 
@@ -98,16 +94,17 @@ class StabilityFilter(Sizing, Empty, Logging):
     def variables(self): return self.__variables
 
 
-class StabilityCalculator(Sizing, Empty, Logging):
+class StabilityCalculator(Pipelining, Sizing, Emptying, Logging):
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        Pipelining.__init__(self, *args, **kwargs)
+        Logging.__init__(self, *args, **kwargs)
         self.__calculation = StabilityCalculation(*args, **kwargs)
         self.__variables = StabilityVariables(*args, **kwargs)
 
-    def __call__(self, orders, exposures, *args, **kwargs):
+    def execute(self, orders, exposures, *args, **kwargs):
         assert isinstance(orders, pd.DataFrame) and isinstance(exposures, pd.DataFrame)
         for contract, primary, secondary in self.contracts(orders, exposures):
-            stabilities = self.execute(primary, secondary, *args, **kwargs)
+            stabilities = self.calculate(primary, secondary, *args, **kwargs)
             size = self.size(stabilities)
             string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
             self.logger.info(string)
@@ -123,18 +120,17 @@ class StabilityCalculator(Sizing, Empty, Logging):
             secondary = exposures.where(mask).dropna(how="all", inplace=False)
             yield Contract(*contract), primary, secondary
 
-    def execute(self, orders, exposures, *args, **kwargs):
+    def calculate(self, orders, exposures, *args, **kwargs):
         assert isinstance(orders, pd.DataFrame) and isinstance(exposures, pd.DataFrame)
         orders = ODict(list(self.orders(orders, *args, **kwargs)))
         exposures = self.exposures(exposures, *args, **kwargs)
         portfolios = list(self.portfolios(orders, exposures, *args, **kwargs))
         portfolios = xr.concat(portfolios, join="outer", fill_value=0, dim="portfolio")
-        portfolios = portfolios.stack({"holdings": self.variables.holdings}).to_dataset()
-        stabilities = self.calculate(portfolios, *args, **kwargs)
+        portfolios = portfolios.stack(holdings=self.variables.holdings).to_dataset()
+        stabilities = self.stabilities(portfolios, *args, **kwargs)
         return stabilities
 
-    def calculate(self, portfolios, *args, **kwargs):
-        assert isinstance(portfolios, xr.Dataset)
+    def stabilities(self, portfolios, *args, **kwargs):
         portfolios = self.underlying(portfolios, *args, **kwargs)
         stabilities = self.calculation(portfolios, *args, **kwargs)
         assert isinstance(stabilities, xr.Dataset)

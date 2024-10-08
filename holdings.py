@@ -11,24 +11,25 @@ import numpy as np
 import pandas as pd
 
 from finance.variables import Variables, Contract
+from support.mixins import Sizing, Logging, Pipelining
 from support.meta import ParametersMeta
-from support.mixins import Sizing
 from support.files import File
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["HoldingCalculator"]
+__all__ = ["HoldingCalculator", "HoldingFile"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
 class HoldingParameters(metaclass=ParametersMeta):
-    filename = lambda contract: "_".join([str(contract.ticker).upper(), str(contract.expire.strftime("%Y%m%d"))])
     parsers = {"instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}
     formatters = {"instrument": int, "option": int, "position": int}
     types = {"ticker": str, "strike": np.float32, "quantity": np.int32}
     dates = {"expire": "%Y%m%d"}
+    queryname = lambda filename: Contract.fromstring(filename)
+    filename = lambda queryname: Contract.tostring(queryname)
 
 
 class HoldingVariables(object):
@@ -50,22 +51,24 @@ class HoldingFile(File, variable=Variables.Datasets.HOLDINGS, datatype=pd.DataFr
     pass
 
 
-class HoldingCalculator(Sizing):
+class HoldingCalculator(Pipelining, Sizing, Logging):
     def __repr__(self): return str(self.name)
     def __init__(self, *args, valuation, **kwargs):
+        Pipelining.__init__(self, *args, **kwargs)
+        Logging.__init__(self, *args, **kwargs)
         self.__name = kwargs.pop("name", self.__class__.__name__)
         self.__variables = HoldingVariables(*args, valuation=valuation, **kwargs)
         self.__valuation = valuation
         self.__logger = __logger__
 
-    def __call__(self, valuations, *args, **kwargs):
+    def execute(self, valuations, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame)
         for contract, dataframe in self.contracts(valuations):
-            holdings = self.execute(dataframe, *args, **kwargs)
+            holdings = self.calculate(dataframe, *args, **kwargs)
             size = self.size(holdings)
             string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
             self.logger.info(string)
-            if bool(holdings.empty): continue
+            if self.empty(holdings): continue
             yield holdings
 
     def contracts(self, valuations):
@@ -75,14 +78,9 @@ class HoldingCalculator(Sizing):
             contract = Contract(ticker, expire)
             yield contract, dataframe
 
-    def execute(self, valuations, *args, **kwargs):
-        assert isinstance(valuations, pd.DataFrame)
-        valuations = self.unpivot(valuations, *args, **kwargs)
-        holdings = self.calculate(valuations, *args, **kwargs)
-        return holdings
-
     def calculate(self, valuations, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame)
+        valuations = self.unpivot(valuations, *args, **kwargs)
         stocks = self.stocks(valuations, *args, **kwargs)
         securities = pd.concat([valuations, stocks], axis=1)
         holdings = self.holdings(securities, *args, **kwargs)

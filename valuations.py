@@ -17,14 +17,14 @@ from collections import namedtuple as ntuple
 
 from finance.variables import Variables, Contract
 from support.calculations import Variable, Equation, Calculation
+from support.mixins import Emptying, Sizing, Logging, Pipelining
 from support.meta import RegistryMeta, ParametersMeta
-from support.mixins import Empty, Sizing, Logging
 from support.tables import Table, View
 from support.filtering import Filter
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["ValuationFilter", "ValuationCalculator"]
+__all__ = ["ValuationFilter", "ValuationCalculator", "ValuationWriter", "ArbitrageTable"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
@@ -47,7 +47,7 @@ class ValuationVariables(object):
         self.stocks = self.axes[Variables.Instruments.OPTION]
         self.contract = self.axes[Variables.Querys.CONTRACT]
         self.product = self.axes[Variables.Querys.PRODUCT]
-        self.security = self.axes[Variables.Datasets.SECURITY]
+        self.security = self.axes[Variables.Querys.SECURITY]
         self.unstacked = self.data[Variables.Datasets.PRICING] + self.data[Variables.Datasets.TIMING] + self.data[Variables.Datasets.SIZING]
         self.stacked = self.data[valuation]
         self.columns = list(product(self.stacked, list(Variables.Scenarios))) + list(product(self.unstacked + list(columns), [""]))
@@ -57,7 +57,7 @@ class ValuationVariables(object):
 
 class ValuationView(View, ABC, datatype=pd.DataFrame, **dict(ValuationFormatting)): pass
 class ValuationTable(Table, ABC, datatype=pd.DataFrame, view=ValuationView): pass
-class ArbitrageTable(ValuationTable, ABC, variable=Variable.Valuations.ARBITRAGE): pass
+class ArbitrageTable(ValuationTable, ABC, variable=Variables.Valuations.ARBITRAGE): pass
 
 
 class ValuationEquation(Equation): pass
@@ -96,13 +96,15 @@ class ArbitrageCalculation(ValuationCalculation, ABC):
         yield strategies["size"]
 
 class MinimumArbitrageCalculation(ArbitrageCalculation, equation=MinimumArbitrageEquation, register=(Variables.Valuations.ARBITRAGE, Variables.Scenarios.MINIMUM)): pass
-class MaximumArbitrageCalculation(ArbitrageCalculation, equation=MaximumArbitrageEquation, register=(Variables.Valuations.ARBTIRAGE, Variables.Scenarios.MAXIMUM)): pass
+class MaximumArbitrageCalculation(ArbitrageCalculation, equation=MaximumArbitrageEquation, register=(Variables.Valuations.ARBITRAGE, Variables.Scenarios.MAXIMUM)): pass
 
 
-class ValuationFilter(Sizing, Empty, Logging, Filter):
+class ValuationFilter(Pipelining, Sizing, Emptying, Logging, Filter):
     def __init__(self, *args, valuation, **kwargs):
-        super().__init__(*args, **kwargs)
-        parameters = dict(valuation=valuation, index=["portfolio"])
+        Pipelining.__init__(self, *args, **kwargs)
+        Logging.__init__(self, *args, **kwargs)
+        Filter.__init__(self, *args, **kwargs)
+        parameters = dict(valuation=valuation)
         self.__variables = ValuationVariables(*args, **parameters, **kwargs)
 
     def execute(self, valuations, *args, **kwargs):
@@ -128,22 +130,23 @@ class ValuationFilter(Sizing, Empty, Logging, Filter):
     def variables(self): return self.__variables
 
 
-class ValuationCalculator(Sizing, Empty, Logging):
+class ValuationCalculator(Pipelining, Sizing, Emptying, Logging):
     def __init__(self, *args, valuation, **kwargs):
-        super().__init__(*args, **kwargs)
+        Pipelining.__init__(self, *args, **kwargs)
+        Logging.__init__(self, *args, **kwargs)
         Identity = ntuple("Identity", "valuation scenario")
-        parameters = dict(valuation=valuation, index=["portfolio"])
+        parameters = dict(valuation=valuation)
         calculations = {Identity(*identity): calculation for identity, calculation in dict(ValuationCalculation).items()}
-        calculations = {identity.scenario: calculation for identity, calculation in calculations if identity.valuation == valuation}
+        calculations = {identity.scenario: calculation for identity, calculation in calculations.items() if identity.valuation == valuation}
         self.__calculations = {scenario: calculation(*args, **kwargs) for scenario, calculation in calculations.items()}
         self.__variables = ValuationVariables(*args, **parameters, **kwargs)
         self.__portfolios = count(start=1, step=1)
         self.__valuation = valuation
 
-    def __call__(self, strategies, *args, **kwargs):
+    def execute(self, strategies, *args, **kwargs):
         assert isinstance(strategies, xr.Dataset)
         for contract, dataset in self.contracts(strategies):
-            valuations = self.execute(dataset, *args, **kwargs)
+            valuations = self.calculate(dataset, *args, **kwargs)
             size = self.size(valuations)
             string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
             self.logger.info(string)
@@ -152,21 +155,20 @@ class ValuationCalculator(Sizing, Empty, Logging):
 
     def contracts(self, strategies):
         assert isinstance(strategies, xr.Dataset)
-        for contract, dataset in strategies.groupby(self.variables.contract):
-            if self.empty(dataset): continue
-            yield Contract(*contract), dataset
-
-    def execute(self, strategies, *args, **kwargs):
-        assert isinstance(strategies, xr.Dataset)
-        valuations = self.calculate(strategies, *args, **kwargs)
-        valuations["portfolio"] = [next(self.portfolios) for _ in self.portfolios]
-        if not bool(valuations): return pd.DataFrame(columns=self.variables.header)
-        return self.pivot(valuations, *args, **kwargs)
+        for variable in self.variables.contract:
+            strategies = strategies.expand_dims(variable)
+        strategies = strategies.stack(contract=self.variables.contract)
+        for contract, dataset in strategies.groupby("contract"):
+            if self.empty(dataset["size"]): continue
+            yield Contract(*contract), dataset.unstack().drop_vars("contract")
 
     def calculate(self, strategies, *args, **kwargs):
         assert isinstance(strategies, xr.Dataset)
         scenarios = dict(self.scenarios(strategies, *args, **kwargs))
         valuations = dict(self.valuations(scenarios, *args, **kwargs))
+        valuations = pd.concat(list(valuations.values()), axis=0)
+        if self.empty(valuations): return pd.DataFrame(columns=self.variables.header)
+        valuations = self.pivot(valuations, *args, **kwargs)
         return valuations
 
     def scenarios(self, strategies, *args, **kwargs):
@@ -175,7 +177,8 @@ class ValuationCalculator(Sizing, Empty, Logging):
         for scenario, calculation in self.calculations.items():
             valuations = calculation(strategies, *args, **kwargs)
             assert isinstance(valuations, xr.Dataset)
-            coordinates = function(valuation=self.valuation, scenario=scenario)
+            coordinates = dict(valuation=self.valuation, scenario=scenario)
+            coordinates = function(coordinates)
             valuations = valuations.assign_coords(coordinates).expand_dims("scenario")
             yield scenario, valuations
 
@@ -190,7 +193,7 @@ class ValuationCalculator(Sizing, Empty, Logging):
 
     def pivot(self, dataframe, *args, **kwargs):
         assert isinstance(dataframe, pd.DataFrame)
-        index = set(dataframe.columns) - ({"scenario"} | set(self.variables.stacking))
+        index = set(dataframe.columns) - ({"scenario"} | set(self.variables.stacked))
         dataframe = dataframe.pivot(index=list(index), columns="scenario")
         dataframe = dataframe.reset_index(drop=False, inplace=False)
         return dataframe
@@ -205,17 +208,18 @@ class ValuationCalculator(Sizing, Empty, Logging):
     def valuation(self): return self.__valuation
 
 
-class ValuationWriter(Sizing, Empty, Logging):
+class ValuationWriter(Pipelining, Sizing, Emptying, Logging):
     def __init__(self, *args, table, valuation, priority, **kwargs):
         assert callable(priority)
-        super().__init__(*args, **kwargs)
+        Pipelining.__init__(self, *args, **kwargs)
+        Logging.__init__(self, *args, **kwargs)
         parameters = dict(valuation=valuation, index=["portfolio"], columns=["priority", "status"])
         self.__variables = ValuationVariables(*args, **parameters, **kwargs)
         self.__status = Variables.Status.PROSPECT
         self.__priority = priority
         self.__table = table
 
-    def __call__(self, valuations, *args, **kwargs):
+    def execute(self, valuations, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame)
         if self.empty(valuations): return
         with self.table.mutex:
@@ -224,7 +228,7 @@ class ValuationWriter(Sizing, Empty, Logging):
                 dataframe = self.valuations(dataframe, *args, **kwargs)
                 dataframe = self.portfolio(dataframe, *args, **kwargs)
                 dataframe = self.prospect(dataframe, *args, **kwargs)
-                self.execute(dataframe, *args, **kwargs)
+                self.write(dataframe, *args, **kwargs)
 
     def contracts(self, exposures):
         assert isinstance(exposures, pd.DataFrame)
@@ -258,7 +262,7 @@ class ValuationWriter(Sizing, Empty, Logging):
         valuations["status"] = valuations["status"].apply(function)
         return valuations
 
-    def execute(self, valuations, *args, **kwargs):
+    def write(self, valuations, *args, **kwargs):
         index = list(self.variables.index)
         self.table.combine(valuations)
         self.table.unique(index)
@@ -274,18 +278,18 @@ class ValuationWriter(Sizing, Empty, Logging):
     def table(self): return self.__table
 
 
-class ValuationReader(Sizing, Empty, Logging):
+class ValuationReader(Pipelining, Sizing, Emptying, Logging):
     def __init__(self, *args, table, valuation, **kwargs):
-        super().__init__(*args, **kwargs)
+        Logging.__init__(self, *args, **kwargs)
         parameters = dict(valuation=valuation, index=["portfolio"], columns=["priority", "status"])
         self.__variables = ValuationVariables(*args, **parameters, **kwargs)
         self.__table = table
 
-    def __call__(self, *args, **kwargs):
+    def execute(self, *args, **kwargs):
         if not bool(self.table): return
         with self.table.mutex:
             self.obsolete(*args, **kwargs)
-            valuations = self.execute(*args, **kwargs)
+            valuations = self.read(*args, **kwargs)
             if self.empty(valuations): return
             for contract, dataframe in self.contracts(valuations):
                 string = f"Accepted: {repr(self)}|{str(contract)}|{len(dataframe):.0f}"
@@ -303,7 +307,7 @@ class ValuationReader(Sizing, Empty, Logging):
         string = f"Rejected: {repr(self)}|{len(dataframe):.0f}"
         self.logger.info(string)
 
-    def execute(self, *args, **kwargs):
+    def read(self, *args, **kwargs):
         accepted = lambda table: table["status"] == Variables.Status.ACCEPTED
         valuations = self.table.extract(accepted)
         return valuations

@@ -13,24 +13,24 @@ from abc import ABC
 
 from finance.variables import Variables, Symbol
 from support.calculations import Variable, Equation, Calculation
+from support.mixins import Emptying, Sizing, Logging, Pipelining
 from support.meta import RegistryMeta, ParametersMeta
-from support.mixins import Empty, Sizing, Logging
 from support.files import File
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["TechnicalCalculator"]
+__all__ = ["TechnicalCalculator", "BarsFile", "StatisticFile", "StochasticFile"]
 __copyright__ = "Copyright 2024, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
 class TechnicalParameters(metaclass=ParametersMeta):
-    filename = lambda symbol: str(symbol.ticker).upper()
-    bars = {"ticker": str, "volume": np.int64} | {column: np.float32 for column in ("price", "open", "close", "high", "low")}
-    stochastic = {"trend": np.float32, "volatility": np.float32}
-    statistic = {"oscillator": np.float32}
+    types = {"ticker": str, "volume": np.int64} | {column: np.float32 for column in ("price", "open", "close", "high", "low")}
+    types.update({"trend": np.float32, "volatility": np.float32, "oscillator": np.float32})
     dates = {"date": "%Y%m%d"}
+    queryname = lambda filename: Symbol.fromstring(filename)
+    filename = lambda queryname: Symbol.tostring(queryname)
 
 
 class TechnicalVariables(object):
@@ -46,10 +46,10 @@ class TechnicalVariables(object):
         self.header = self.index + self.columns
 
 
-class TechnicalFile(File, datatype=pd.DataFrame, dates=TechnicalParameters.dates, filename=TechnicalParameters.filename): pass
-class BarsFile(TechnicalFile, variable=Variables.Technicals.BARS, types=TechnicalParameters.bars): pass
-class StatisticFile(TechnicalFile, variable=Variables.Technicals.STATISTIC, types=TechnicalParameters.statistic): pass
-class StochasticFile(TechnicalFile, variable=Variables.Technicals.STOCHASTIC, types=TechnicalParameters.stochastic): pass
+class TechnicalFile(File, datatype=pd.DataFrame, **dict(TechnicalParameters)): pass
+class BarsFile(TechnicalFile, variable=Variables.Technicals.BARS): pass
+class StatisticFile(TechnicalFile, variable=Variables.Technicals.STATISTIC): pass
+class StochasticFile(TechnicalFile, variable=Variables.Technicals.STOCHASTIC): pass
 
 
 class TechnicalEquation(Equation): pass
@@ -80,28 +80,24 @@ class StochasticCalculation(TechnicalCalculation, equation=StochasticEquation, r
         yield equation.xk(bars)
 
 
-class TechnicalCalculator(Sizing, Empty, Logging):
+class TechnicalCalculator(Pipelining, Sizing, Emptying, Logging):
     def __init__(self, *args, technical, **kwargs):
-        super().__init__(*args, **kwargs)
+        Pipelining.__init__(self, *args, **kwargs)
+        Logging.__init__(self, *args, **kwargs)
         self.__variables = TechnicalVariables(*args, technical=technical, **kwargs)
         self.__calculation = TechnicalCalculation[technical](*args, **kwargs)
         self.__technical = technical
 
-    def __call__(self, bars, *args, **kwargs):
+    def execute(self, bars, *args, **kwargs):
         assert isinstance(bars, pd.DataFrame)
         for symbol, dataframe in self.symbols(bars):
             parameters = dict(ticker=symbol.ticker)
-            technicals = self.execute(dataframe, *args, **parameters, **kwargs)
+            technicals = self.calculate(dataframe, *args, **parameters, **kwargs)
             size = self.size(technicals)
             string = f"Calculated: {repr(self)}|{str(symbol)}[{size:.0f}]"
             self.logger.info(string)
             if self.empty(technicals): continue
             yield technicals
-
-    def execute(self, bars, *args, **kwargs):
-        assert isinstance(bars, pd.DataFrame)
-        technicals = self.calculate(bars, *args, **kwargs)
-        return technicals
 
     def calculate(self, bars, *args, **kwargs):
         assert isinstance(bars, pd.DataFrame)

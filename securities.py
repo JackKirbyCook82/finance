@@ -15,26 +15,26 @@ from scipy.stats import norm
 
 from finance.variables import Variables, Contract
 from support.calculations import Variable, Equation, Calculation
+from support.mixins import Emptying, Sizing, Logging, Pipelining
 from support.meta import RegistryMeta, ParametersMeta
-from support.mixins import Empty, Sizing, Logging
 from support.filtering import Filter
 from support.files import File
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["SecurityFilter", "SecurityCalculator"]
+__all__ = ["SecurityFilter", "SecurityCalculator", "StockFile", "OptionFile"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
 class SecurityParameters(metaclass=ParametersMeta):
-    filename = lambda contract: "_".join([str(contract.ticker).upper(), str(contract.expire.strftime("%Y%m%d"))])
-    option = {"ticker": str, "strike": np.float32, "price": np.float32, "underlying": np.float32, "size": np.float32, "volume": np.float32, "interest": np.float32}
-    stock = {"ticker": str, "price": np.float32, "volume": np.float32}
+    types = {"ticker": str, "strike": np.float32, "price": np.float32, "underlying": np.float32, "size": np.float32, "volume": np.float32, "interest": np.float32}
     parsers = {"instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}
     formatters = {"instrument": int, "option": int, "position": int}
     dates = {"current": "%Y%m%d-%H%M", "expire": "%Y%m%d"}
+    queryname = lambda filename: Contract.fromstring(filename)
+    filename = lambda queryname: Contract.tostring(queryname)
 
 
 class SecurityVariables(object):
@@ -53,9 +53,9 @@ class SecurityVariables(object):
         self.header = self.index + self.columns
 
 
-class SecurityFile(File, datatype=pd.DataFrame, dates=SecurityParameters.dates, filename=SecurityParameters.filename, parsers=SecurityParameters.parsers, formatters=SecurityParameters.formatters): pass
-class StockFile(File, variable=Variables.Instruments.STOCK, types=SecurityParameters.stock): pass
-class OptionFile(File, variable=Variables.Instruments.OPTION, types=SecurityParameters.option): pass
+class SecurityFile(File, datatype=pd.DataFrame, **dict(SecurityParameters)): pass
+class StockFile(SecurityFile, variable=Variables.Instruments.STOCK): pass
+class OptionFile(SecurityFile, variable=Variables.Instruments.OPTION): pass
 
 
 class PricingEquation(Equation): pass
@@ -104,9 +104,11 @@ class BlackScholesCalculation(PricingCalculation, equation=BlackScholesEquation,
         yield equation.to(exposures)
 
 
-class SecurityFilter(Sizing, Empty, Logging, Filter):
+class SecurityFilter(Pipelining, Sizing, Emptying, Logging, Filter):
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        Pipelining.__init__(self, *args, **kwargs)
+        Logging.__init__(self, *args, **kwargs)
+        Filter.__init__(self, *args, **kwargs)
         self.__variables = SecurityVariables(*args, **kwargs)
 
     def execute(self, securities, *args, **kwargs):
@@ -132,20 +134,21 @@ class SecurityFilter(Sizing, Empty, Logging, Filter):
     def variables(self): return self.__variables
 
 
-class SecurityCalculator(Sizing, Empty, Logging):
+class SecurityCalculator(Pipelining, Sizing, Emptying, Logging):
     def __init__(self, *args, pricing, sizings, timings, **kwargs):
-        super().__init__(*args, **kwargs)
+        Pipelining.__init__(self, *args, **kwargs)
+        Logging.__init__(self, *args, **kwargs)
         self.__calculation = PricingCalculation[pricing](*args, **kwargs)
         self.__variables = SecurityVariables(*args, **kwargs)
         self.__sizings = sizings
         self.__timings = timings
         self.__pricing = pricing
 
-    def __call__(self, exposures, statistics, *args, **kwargs):
+    def execute(self, exposures, statistics, *args, **kwargs):
         assert isinstance(exposures, pd.DataFrame) and isinstance(statistics, pd.DataFrame)
         exposures = self.exposures(exposures, statistics, *args, **kwargs)
         for contract, dataframe in self.contracts(exposures):
-            options = self.execute(dataframe, *args, **kwargs)
+            options = self.calculate(dataframe, *args, **kwargs)
             size = self.size(options)
             string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
             self.logger.info(string)
@@ -157,11 +160,6 @@ class SecurityCalculator(Sizing, Empty, Logging):
         for contract, dataframe in exposures.groupby(self.variables.contract):
             if self.empty(dataframe): continue
             yield Contract(*contract), dataframe
-
-    def execute(self, exposures, *args, **kwargs):
-        assert isinstance(exposures, pd.DataFrame)
-        options = self.calculate(exposures, *args, **kwargs)
-        return options
 
     def calculate(self, exposures, *args, **kwargs):
         assert isinstance(exposures, pd.DataFrame)

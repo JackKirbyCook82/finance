@@ -13,13 +13,13 @@ from abc import ABC
 from functools import reduce
 
 from finance.variables import Variables, Contract
-from support.mixins import Empty, Sizing, Logging
+from support.mixins import Emptying, Sizing, Logging, Pipelining
 from support.tables import Table, View
 from support.meta import ParametersMeta
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["ExposureCalculator"]
+__all__ = ["ExposureCalculator", "ExposureTable"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
@@ -47,15 +47,16 @@ class ExposureView(View, ABC, datatype=pd.DataFrame, **dict(ExposureFormatting))
 class ExposureTable(Table, ABC, datatype=pd.DataFrame, view=ExposureView, variable=Variables.Datasets.EXPOSURE): pass
 
 
-class ExposureCalculator(Sizing, Empty, Logging):
+class ExposureCalculator(Pipelining, Sizing, Emptying, Logging):
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        Logging.__init__(self, *args, **kwargs)
+        Pipelining.__init__(self, *args, **kwargs)
         self.__variables = ExposureVariables(*args, **kwargs)
 
-    def __call__(self, holdings, *args, **kwargs):
+    def execute(self, holdings, *args, **kwargs):
         assert isinstance(holdings, pd.DataFrame)
         for contract, dataframe in self.contracts(holdings):
-            exposures = self.execute(holdings, *args, **kwargs)
+            exposures = self.calculate(holdings, *args, **kwargs)
             size = self.size(exposures)
             string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
             self.logger.info(string)
@@ -67,11 +68,6 @@ class ExposureCalculator(Sizing, Empty, Logging):
         for contract, dataframe in holdings.groupby(self.variables.contract):
             if self.empty(dataframe): continue
             yield Contract(*contract), dataframe
-
-    def execute(self, holdings, *args, **kwargs):
-        assert isinstance(holdings, pd.DataFrame)
-        exposures = self.calculate(holdings, *args, **kwargs)
-        return exposures
 
     def calculate(self, holdings, *args, **kwargs):
         assert isinstance(holdings, pd.DataFrame)
@@ -143,18 +139,19 @@ class ExposureCalculator(Sizing, Empty, Logging):
     def variables(self): return self.__variables
 
 
-class ExposureWriter(Sizing, Empty, Logging):
+class ExposureWriter(Pipelining, Sizing, Emptying, Logging):
     def __init__(self, *args, table, **kwargs):
-        super().__init__(*args, **kwargs)
+        Pipelining.__init__(self, *args, **kwargs)
+        Logging.__init__(self, *args, **kwargs)
         self.__variables = ExposureVariables(*args, **kwargs)
         self.__table = table
 
-    def __call__(self, exposures, *args, **kwargs):
+    def execute(self, exposures, *args, **kwargs):
         assert isinstance(exposures, pd.DataFrame)
         for contract, dataframe in self.contracts(exposures):
             with self.table.mutex:
                 self.obsolete(contract, *args, **kwargs)
-                self.execute(dataframe, *args, **kwargs)
+                self.write(dataframe, *args, **kwargs)
 
     def contracts(self, exposures):
         assert isinstance(exposures, pd.DataFrame)
@@ -167,7 +164,7 @@ class ExposureWriter(Sizing, Empty, Logging):
         obsolete = lambda table: reduce(lambda x, y: x & y, contract(table))
         self.table.remove(obsolete)
 
-    def execute(self, exposures, *args, **kwargs):
+    def write(self, exposures, *args, **kwargs):
         sorting = dict(ticker=False, expire=False)
         self.table.combine(exposures)
         self.table.reset()

@@ -47,10 +47,12 @@ class Symbol(ntuple("Symbol", "ticker")):
     def __eq__(self, other): return str(self.ticker) == str(self.ticker)
     def __lt__(self, other): return str(self.ticker) < str(self.ticker)
 
+    def tostring(self, *args, **kwargs):
+        return str(self.ticker).upper()
+
     @classmethod
-    def fromstr(cls, string):
-        ticker = str(string).upper()
-        return cls(ticker)
+    def fromstring(cls, string, *args, **kwargs):
+        return cls(str(string).upper())
 
 
 @total_ordering
@@ -60,8 +62,13 @@ class History(ntuple("History", "ticker date")):
     def __eq__(self, other): return str(self.ticker) == str(other.ticker) and self.date == other.date
     def __lt__(self, other): return str(self.ticker) < str(other.ticker) and self.date < other.date
 
+    def tostring(self, *args, delimiter="_", dateformat="%Y%m%d", **kwargs):
+        ticker = str(self.ticker).upper()
+        date = str(self.date.strftime(str(dateformat)))
+        return str(delimiter).join([ticker, date])
+
     @classmethod
-    def fromstr(cls, string, delimiter="_"):
+    def fromstring(cls, string, *args, delimiter="_", **kwargs):
         ticker, date = str(string).split(delimiter)
         ticker = str(ticker).upper()
         date = Datetime.strptime(date, "%Y%m%d")
@@ -75,8 +82,13 @@ class Contract(ntuple("Contract", "ticker expire")):
     def __eq__(self, other): return str(self.ticker) == str(other.ticker) and self.expire == other.expire
     def __lt__(self, other): return str(self.ticker) < str(other.ticker) and self.expire < other.expire
 
+    def tostring(self, *args, delimiter="_", dateformat="%Y%m%d", **kwargs):
+        ticker = str(self.ticker).upper()
+        expire = str(self.expire.strftime(str(dateformat)))
+        return str(delimiter).join([ticker, expire])
+
     @classmethod
-    def fromstr(cls, string, delimiter="_"):
+    def fromstring(cls, string, *args, delimiter="_", **kwargs):
         ticker, expire = str(string).split(delimiter)
         ticker = str(ticker).upper()
         expire = Datetime.strptime(expire, "%Y%m%d")
@@ -90,12 +102,18 @@ class Product(ntuple("Product", "ticker expire strike")):
     def __eq__(self, other): return str(self.ticker) == str(other.ticker) and self.expire == other.expire and round(self.strike, 2) == round(other.strike, 2)
     def __lt__(self, other): return str(self.ticker) < str(other.ticker) and self.expire < other.expire and round(self.strike, 2) < round(other.strike, 2)
 
+    def tostring(self, *args, delimiter="_", dateformat="%Y%m%d", decimals=2, **kwargs):
+        ticker = str(self.ticker).upper()
+        expire = str(self.date.strftime(str(dateformat)))
+        strike = str(round(float(self.strike, int(decimals))))
+        return str(delimiter).join([ticker, expire, strike])
+
     @classmethod
-    def fromstr(cls, string, delimiter="_"):
+    def fromstring(cls, string, *args, delimiter="_", decimals=2, **kwargs):
         ticker, expire, strike = str(string).split(delimiter)
         ticker = str(ticker).upper()
         expire = Datetime.strptime(expire, "%Y%m%d")
-        strike = round(float(strike), 2)
+        strike = round(float(strike, int(decimals)))
         return cls(ticker, expire, strike)
 
 

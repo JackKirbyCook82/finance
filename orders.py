@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 
 from finance.variables import Variables, Contract
-from support.mixins import Empty, Sizing, Logging
+from support.mixins import Emptying, Sizing, Logging, Pipelining
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -38,12 +38,13 @@ class OrderVariables(object):
         self.header = self.index + self.columns
 
 
-class OrderCalculator(Sizing, Empty, Logging):
+class OrderCalculator(Pipelining, Sizing, Emptying, Logging):
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        Pipelining.__init__(self, *args, **kwargs)
+        Logging.__init__(self, *args, **kwargs)
         self.__variables = OrderVariables(*args, **kwargs)
 
-    def __call__(self, valuations, *args, **kwargs):
+    def execute(self, valuations, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame)
         for contract, dataframe in self.contracts(valuations):
             orders = self.execute(dataframe, *args, **kwargs)
@@ -59,16 +60,12 @@ class OrderCalculator(Sizing, Empty, Logging):
             if self.empty(dataframe): continue
             yield Contract(*contract), dataframe
 
-    def execute(self, valuations, *args, **kwargs):
-        assert isinstance(valuations, pd.DataFrame)
-        orders = self.calculate(valuations, *args, **kwargs)
-        orders = pd.concat(orders, axis=0)
-        orders = orders.reset_index(drop=True, inplace=False)
-        return orders
-
     def calculate(self, valuations, *args, **kwargs):
+        assert isinstance(valuations, pd.DataFrame)
         securities = self.securities(valuations, *args, **kwargs)
         orders = list(self.orders(securities, *args, **kwargs))
+        orders = pd.concat(orders, axis=0)
+        orders = orders.reset_index(drop=True, inplace=False)
         return orders
 
     def securities(self, valuations, *args, **kwargs):
