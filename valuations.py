@@ -15,9 +15,8 @@ from functools import reduce
 from itertools import product, count
 from collections import namedtuple as ntuple
 
-from finance.variables import Variables, Contract
+from support.mixins import Emptying, Sizing, Logging, Pipelining, Sourcing
 from support.calculations import Variable, Equation, Calculation
-from support.mixins import Emptying, Sizing, Logging, Pipelining
 from support.meta import RegistryMeta, ParametersMeta
 from support.tables import Table, View
 from support.filtering import Filter
@@ -56,8 +55,8 @@ class ValuationVariables(object):
 
 
 class ValuationView(View, ABC, datatype=pd.DataFrame, **dict(ValuationFormatting)): pass
-class ValuationTable(Table, ABC, datatype=pd.DataFrame, view=ValuationView): pass
-class ArbitrageTable(ValuationTable, ABC, variable=Variables.Valuations.ARBITRAGE): pass
+class ValuationTable(Table, ABC, datatype=pd.DataFrame, viewtype=ValuationView): pass
+class ArbitrageTable(ValuationTable, ABC, variable=Variables.Valuations.ARBITRAGE, vartype=ValuationVariables): pass
 
 
 class ValuationEquation(Equation): pass
@@ -99,7 +98,7 @@ class MinimumArbitrageCalculation(ArbitrageCalculation, equation=MinimumArbitrag
 class MaximumArbitrageCalculation(ArbitrageCalculation, equation=MaximumArbitrageEquation, register=(Variables.Valuations.ARBITRAGE, Variables.Scenarios.MAXIMUM)): pass
 
 
-class ValuationFilter(Pipelining, Sizing, Emptying, Logging, Filter):
+class ValuationFilter(Pipelining, Sourcing, Sizing, Emptying, Logging, Filter):
     def __init__(self, *args, valuation, **kwargs):
         Pipelining.__init__(self, *args, **kwargs)
         Logging.__init__(self, *args, **kwargs)
@@ -120,17 +119,11 @@ class ValuationFilter(Pipelining, Sizing, Emptying, Logging, Filter):
             if self.empty(dataframe): continue
             yield dataframe
 
-    def contracts(self, valuations, *args, **kwargs):
-        assert isinstance(valuations, pd.DataFrame)
-        for contract, dataframe in valuations.groupby(self.variables.contract):
-            if self.empty(dataframe): continue
-            yield Contract(*contract), dataframe
-
     @property
     def variables(self): return self.__variables
 
 
-class ValuationCalculator(Pipelining, Sizing, Emptying, Logging):
+class ValuationCalculator(Pipelining, Sourcing, Sizing, Emptying, Logging):
     def __init__(self, *args, valuation, **kwargs):
         Pipelining.__init__(self, *args, **kwargs)
         Logging.__init__(self, *args, **kwargs)
@@ -152,15 +145,6 @@ class ValuationCalculator(Pipelining, Sizing, Emptying, Logging):
             self.logger.info(string)
             if self.empty(valuations): continue
             yield valuations
-
-    def contracts(self, strategies):
-        assert isinstance(strategies, xr.Dataset)
-        for variable in self.variables.contract:
-            strategies = strategies.expand_dims(variable)
-        strategies = strategies.stack(contract=self.variables.contract)
-        for contract, dataset in strategies.groupby("contract"):
-            if self.empty(dataset["size"]): continue
-            yield Contract(*contract), dataset.unstack().drop_vars("contract")
 
     def calculate(self, strategies, *args, **kwargs):
         assert isinstance(strategies, xr.Dataset)
@@ -208,7 +192,7 @@ class ValuationCalculator(Pipelining, Sizing, Emptying, Logging):
     def valuation(self): return self.__valuation
 
 
-class ValuationWriter(Pipelining, Sizing, Emptying, Logging):
+class ValuationWriter(Pipelining, Sourcing, Sizing, Emptying, Logging):
     def __init__(self, *args, table, valuation, priority, **kwargs):
         assert callable(priority)
         Pipelining.__init__(self, *args, **kwargs)
@@ -229,12 +213,6 @@ class ValuationWriter(Pipelining, Sizing, Emptying, Logging):
                 dataframe = self.portfolio(dataframe, *args, **kwargs)
                 dataframe = self.prospect(dataframe, *args, **kwargs)
                 self.write(dataframe, *args, **kwargs)
-
-    def contracts(self, exposures):
-        assert isinstance(exposures, pd.DataFrame)
-        for contract, dataframe in exposures.groupby(self.variables.contract):
-            if self.empty(dataframe): continue
-            yield Contract(*contract), dataframe
 
     def obsolete(self, contract, *args, **kwargs):
         contract = lambda table: [table[key] == value for key, value in zip(self.variables.contract, contract)]
@@ -311,12 +289,6 @@ class ValuationReader(Pipelining, Sizing, Emptying, Logging):
         accepted = lambda table: table["status"] == Variables.Status.ACCEPTED
         valuations = self.table.extract(accepted)
         return valuations
-
-    def contracts(self, valuations):
-        assert isinstance(valuations, pd.DataFrame)
-        for contract, dataframe in valuations.groupby(self.variables.contract):
-            if self.empty(dataframe): continue
-            yield Contract(*contract), dataframe
 
     @property
     def variables(self): return self.__variables

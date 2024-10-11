@@ -9,17 +9,15 @@ Created on Fri May 17 2024
 import logging
 import numpy as np
 import pandas as pd
-from abc import ABC
 from functools import reduce
 
-from finance.variables import Variables, Contract
-from support.mixins import Emptying, Sizing, Logging, Pipelining
-from support.tables import Table, View
+from finance.variables import Variables, Querys
+from support.mixins import Emptying, Sizing, Logging, Pipelining, Sourcing
 from support.meta import ParametersMeta
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["ExposureCalculator", "ExposureTable"]
+__all__ = ["ExposureCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
@@ -30,44 +28,25 @@ class ExposureFormatting(metaclass=ParametersMeta):
     formats = {"strike": lambda column: f"{column:.02f}", "quantity": lambda column: f"{column:.0f}"}
 
 
-class ExposureVariables(object):
-    axes = {Variables.Querys.CONTRACT: ["ticker", "expire"], Variables.Querys.PRODUCT: ["ticker", "expire", "strike"], Variables.Querys.SECURITY: ["instrument", "option", "position"]}
-    data = {Variables.Datasets.EXPOSURE: ["quantity"]}
-
-    def __init__(self, *args, **kwargs):
-        self.contract = self.axes[Variables.Querys.CONTRACT]
-        self.product = self.axes[Variables.Querys.PRODUCT]
-        self.security = self.axes[Variables.Querys.SECURITY]
-        self.index = self.product + self.security
-        self.columns = self.data[Variables.Datasets.EXPOSURE]
-        self.header = self.index + self.columns
+# class ExposureView(View, ABC, datatype=pd.DataFrame, **dict(ExposureFormatting)): pass
+# class ExposureTable(Table, ABC, datatype=pd.DataFrame, view=ExposureView, variable=Datasets.EXPOSURE): pass
 
 
-class ExposureView(View, ABC, datatype=pd.DataFrame, **dict(ExposureFormatting)): pass
-class ExposureTable(Table, ABC, datatype=pd.DataFrame, view=ExposureView, variable=Variables.Datasets.EXPOSURE): pass
-
-
-class ExposureCalculator(Pipelining, Sizing, Emptying, Logging):
+class ExposureCalculator(Pipelining, Sourcing, Sizing, Emptying, Logging):
     def __init__(self, *args, **kwargs):
         Logging.__init__(self, *args, **kwargs)
         Pipelining.__init__(self, *args, **kwargs)
-        self.__variables = ExposureVariables(*args, **kwargs)
 
     def execute(self, holdings, *args, **kwargs):
         assert isinstance(holdings, pd.DataFrame)
-        for contract, dataframe in self.contracts(holdings):
+        for contract, dataframe in self.source(holdings, Querys.Contract):
+            if self.empty(dataframe): continue
             exposures = self.calculate(holdings, *args, **kwargs)
             size = self.size(exposures)
             string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
             self.logger.info(string)
             if self.empty(exposures): continue
             yield exposures
-
-    def contracts(self, holdings):
-        assert isinstance(holdings, pd.DataFrame)
-        for contract, dataframe in holdings.groupby(self.variables.contract):
-            if self.empty(dataframe): continue
-            yield Contract(*contract), dataframe
 
     def calculate(self, holdings, *args, **kwargs):
         assert isinstance(holdings, pd.DataFrame)
@@ -135,32 +114,24 @@ class ExposureCalculator(Pipelining, Sizing, Emptying, Logging):
         exposures = exposures.reset_index(drop=True, inplace=False)
         return exposures
 
-    @property
-    def variables(self): return self.__variables
 
-
-class ExposureWriter(Pipelining, Sizing, Emptying, Logging):
+class ExposureWriter(Pipelining, Sourcing, Sizing, Emptying, Logging):
     def __init__(self, *args, table, **kwargs):
         Pipelining.__init__(self, *args, **kwargs)
         Logging.__init__(self, *args, **kwargs)
-        self.__variables = ExposureVariables(*args, **kwargs)
         self.__table = table
 
     def execute(self, exposures, *args, **kwargs):
         assert isinstance(exposures, pd.DataFrame)
-        for contract, dataframe in self.contracts(exposures):
+        for contract, dataframe in self.source(exposures, Querys.Contract):
+            if self.empty(dataframe): continue
             with self.table.mutex:
                 self.obsolete(contract, *args, **kwargs)
                 self.write(dataframe, *args, **kwargs)
 
-    def contracts(self, exposures):
-        assert isinstance(exposures, pd.DataFrame)
-        for contract, dataframe in exposures.groupby(self.variables.contract):
-            if self.empty(dataframe): continue
-            yield Contract(*contract), dataframe
-
     def obsolete(self, contract, *args, **kwargs):
-        contract = lambda table: [table[key] == value for key, value in zip(self.variables.contract, contract)]
+        assert isinstance(contract, Querys.Contract)
+        contract = lambda table: [table[key] == value for key, value in iter(contract)]
         obsolete = lambda table: reduce(lambda x, y: x & y, contract(table))
         self.table.remove(obsolete)
 
@@ -170,8 +141,6 @@ class ExposureWriter(Pipelining, Sizing, Emptying, Logging):
         self.table.reset()
         self.table.sort(list(sorting.keys()), reverse=list(sorting.values()))
 
-    @property
-    def variables(self): return self.__variables
     @property
     def table(self): return self.__table
 

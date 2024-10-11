@@ -11,9 +11,9 @@ import numpy as np
 import pandas as pd
 from abc import ABC
 
-from finance.variables import Variables, Symbol
+from finance.variables import Variables, Querys
+from support.mixins import Emptying, Sizing, Logging, Pipelining, Sourcing
 from support.calculations import Variable, Equation, Calculation
-from support.mixins import Emptying, Sizing, Logging, Pipelining
 from support.meta import RegistryMeta, ParametersMeta
 from support.files import File
 
@@ -29,21 +29,8 @@ class TechnicalParameters(metaclass=ParametersMeta):
     types = {"ticker": str, "volume": np.int64} | {column: np.float32 for column in ("price", "open", "close", "high", "low")}
     types.update({"trend": np.float32, "volatility": np.float32, "oscillator": np.float32})
     dates = {"date": "%Y%m%d"}
-    queryname = lambda filename: Symbol.fromstring(filename)
-    filename = lambda queryname: Symbol.tostring(queryname)
-
-
-class TechnicalVariables(object):
-    axes = {Variables.Querys.HISTORY: ["date", "ticker"], Variables.Querys.SYMBOL: ["ticker"]}
-    data = {Variables.Technicals.STATISTIC: ["price", "trend", "volatility"], Variables.Technicals.STOCHASTIC: ["price", "oscillator"]}
-
-    def __init__(self, *args, technical, **kwargs):
-        assert technical in self.data.keys()
-        self.history = self.axes[Variables.Querys.HISTORY]
-        self.symbol = self.axes[Variables.Querys.SYMBOL]
-        self.index = self.history
-        self.columns = self.data[technical]
-        self.header = self.index + self.columns
+#    queryname = lambda filename: Querys.Symbol.fromstring(filename)
+#    filename = lambda queryname: Querys.Symbol.tostring(queryname)
 
 
 class TechnicalFile(File, datatype=pd.DataFrame, **dict(TechnicalParameters)): pass
@@ -80,17 +67,16 @@ class StochasticCalculation(TechnicalCalculation, equation=StochasticEquation, r
         yield equation.xk(bars)
 
 
-class TechnicalCalculator(Pipelining, Sizing, Emptying, Logging):
+class TechnicalCalculator(Pipelining, Sourcing, Sizing, Emptying, Logging):
     def __init__(self, *args, technical, **kwargs):
         Pipelining.__init__(self, *args, **kwargs)
         Logging.__init__(self, *args, **kwargs)
-        self.__variables = TechnicalVariables(*args, technical=technical, **kwargs)
         self.__calculation = TechnicalCalculation[technical](*args, **kwargs)
-        self.__technical = technical
 
     def execute(self, bars, *args, **kwargs):
         assert isinstance(bars, pd.DataFrame)
-        for symbol, dataframe in self.symbols(bars):
+        for symbol, dataframe in self.source(bars, Querys.Symbol):
+            if self.empty(dataframe): continue
             parameters = dict(ticker=symbol.ticker)
             technicals = self.calculate(dataframe, *args, **parameters, **kwargs)
             size = self.size(technicals)
@@ -104,21 +90,10 @@ class TechnicalCalculator(Pipelining, Sizing, Emptying, Logging):
         bars = bars.sort_values("date", ascending=False, inplace=False)
         technicals = self.calculation(bars, *args, **kwargs)
         assert isinstance(technicals, pd.DataFrame)
-        technicals = technicals if bool(technicals) else pd.DataFrame(columns=self.variables.header)
         return technicals
-
-    def symbols(self, bars):
-        assert isinstance(bars, pd.DataFrame)
-        for symbol, dataframe in bars.groupby(self.variables.symbol):
-            if self.empty(dataframe): continue
-            yield Symbol(*symbol), dataframe
 
     @property
     def calculation(self): return self.__calculations
-    @property
-    def variables(self): return self.__variables
-    @property
-    def technical(self): return self.__technical
 
 
 

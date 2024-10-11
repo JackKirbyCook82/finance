@@ -13,9 +13,9 @@ import xarray as xr
 from abc import ABC
 from functools import reduce
 
-from finance.variables import Variables, Contract
+from finance.variables import Variables, Querys
+from support.mixins import Emptying, Sizing, Logging, Pipelining, Sourcing
 from support.calculations import Variable, Equation, Calculation
-from support.mixins import Emptying, Sizing, Logging, Pipelining
 from support.meta import RegistryMeta
 
 __version__ = "1.0.0"
@@ -24,15 +24,6 @@ __all__ = ["StrategyCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
-
-
-class StrategyVariables(object):
-    axes = {Variables.Querys.CONTRACT: ["ticker", "expire"], Variables.Querys.PRODUCT: ["ticker", "expire", "strike"], Variables.Querys.SECURITY: ["instrument", "option", "position"]}
-
-    def __init__(self, *args, **kwargs):
-        self.contract = self.axes[Variables.Querys.CONTRACT]
-        self.product = self.axes[Variables.Querys.PRODUCT]
-        self.security = self.axes[Variables.Querys.SECURITY]
 
 
 class StrategyEquation(Equation):
@@ -96,18 +87,18 @@ class CollarLongCalculation(StrategyCalculation, equation=CollarLongEquation, re
 class CollarShortCalculation(StrategyCalculation, equation=CollarShortEquation, register=Variables.Strategies.Collar.Short): pass
 
 
-class StrategyCalculator(Pipelining, Sizing, Emptying, Logging):
+class StrategyCalculator(Pipelining, Sourcing, Sizing, Emptying, Logging):
     def __init__(self, *args, strategies=[], **kwargs):
-        strategies = list(dict(StrategyCalculation).keys()) if not bool(strategies) else list(strategies)
-        calculations = dict(StrategyCalculation).items()
         Pipelining.__init__(self, *args, **kwargs)
         Logging.__init__(self, *args, **kwargs)
+        strategies = list(dict(StrategyCalculation).keys()) if not bool(strategies) else list(strategies)
+        calculations = dict(StrategyCalculation).items()
         self.__calculations = {strategy: calculation(*args, **kwargs) for strategy, calculation in calculations if strategy in strategies}
-        self.__variables = StrategyVariables(*args, **kwargs)
 
     def execute(self, options, *args, **kwargs):
         assert isinstance(options, pd.DataFrame)
-        for contract, dataframe in self.contracts(options):
+        for contract, dataframe in self.source(options, Querys.Contract):
+            if self.empty(dataframe): continue
             datasets = dict(self.options(dataframe, *args, **kwargs))
             for strategy, strategies in self.calculate(datasets, *args, **kwargs):
                 size = self.size(strategies["size"])
@@ -116,21 +107,15 @@ class StrategyCalculator(Pipelining, Sizing, Emptying, Logging):
                 if self.empty(strategies["size"]): continue
                 yield strategies
 
-    def contracts(self, options):
-        assert isinstance(options, pd.DataFrame)
-        for contract, dataframe in options.groupby(list(self.variables.contract)):
-            if bool(dataframe.empty): continue
-            yield Contract(*contract), dataframe
-
     def options(self, options, *args, **kwargs):
         assert isinstance(options, pd.DataFrame)
-        for security, dataframe in options.groupby(self.variables.security, sort=False):
+        for security, dataframe in options.groupby(Variables.Security.fields, sort=False):
             if self.empty(dataframe): continue
             security = Variables.Securities[security]
-            dataframe = dataframe.set_index(self.variables.product, drop=True, inplace=False)
-            dataframe = dataframe.drop([variable for variable in self.variables.security if variable in dataframe.columns], axis=1)
+            dataframe = dataframe.set_index(Querys.Product.fields, drop=True, inplace=False)
+            dataframe = dataframe.drop([variable for variable in Variables.Security.fields if variable in dataframe.columns], axis=1)
             dataset = xr.Dataset.from_dataframe(dataframe)
-            dataset = reduce(lambda content, axis: content.squeeze(axis), self.variables.contract, dataset)
+            dataset = reduce(lambda content, axis: content.squeeze(axis), Querys.Contract.fields, dataset)
             dataset = dataset.drop_vars(self.variables.security, errors="ignore")
             dataset = dataset.rename({"strike": str(security)})
             dataset["strike"] = dataset[str(security)]
@@ -150,8 +135,6 @@ class StrategyCalculator(Pipelining, Sizing, Emptying, Logging):
 
     @property
     def calculations(self): return self.__calculations
-    @property
-    def variables(self): return self.__variables
 
 
 

@@ -13,16 +13,15 @@ import pandas as pd
 from abc import ABC
 from scipy.stats import norm
 
-from finance.variables import Variables, Contract
+from finance.variables import Variables, Querys
+from support.mixins import Emptying, Sizing, Logging, Pipelining, Sourcing
 from support.calculations import Variable, Equation, Calculation
-from support.mixins import Emptying, Sizing, Logging, Pipelining
 from support.meta import RegistryMeta, ParametersMeta
 from support.filtering import Filter
-from support.files import File
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["SecurityFilter", "SecurityCalculator", "StockFile", "OptionFile"]
+__all__ = ["SecurityFilter", "SecurityCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
@@ -33,29 +32,13 @@ class SecurityParameters(metaclass=ParametersMeta):
     parsers = {"instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}
     formatters = {"instrument": int, "option": int, "position": int}
     dates = {"current": "%Y%m%d-%H%M", "expire": "%Y%m%d"}
-    queryname = lambda filename: Contract.fromstring(filename)
-    filename = lambda queryname: Contract.tostring(queryname)
+#    queryname = lambda filename: Querys.Contract.fromstring(filename)
+#    filename = lambda queryname: Querys.Contract.tostring(queryname)
 
 
-class SecurityVariables(object):
-    axes = {Variables.Querys.CONTRACT: ["ticker", "expire"], Variables.Querys.PRODUCT: ["ticker", "expire", "strike"], Variables.Querys.SECURITY: ["instrument", "option", "position"]}
-    data = {Variables.Datasets.PRICING: ["price", "underlying"], Variables.Datasets.SIZING: ["volume", "size", "interest"], Variables.Datasets.TIMING: ["current"]}
-
-    def __init__(self, *args, **kwargs):
-        self.contract = self.axes[Variables.Querys.CONTRACT]
-        self.product = self.axes[Variables.Querys.PRODUCT]
-        self.security = self.axes[Variables.Querys.SECURITY]
-        self.pricing = self.data[Variables.Datasets.PRICING]
-        self.sizing = self.data[Variables.Datasets.SIZING]
-        self.timing = self.data[Variables.Datasets.TIMING]
-        self.index = self.product + self.security
-        self.columns = self.pricing + self.sizing + self.timing
-        self.header = self.index + self.columns
-
-
-class SecurityFile(File, datatype=pd.DataFrame, **dict(SecurityParameters)): pass
-class StockFile(SecurityFile, variable=Variables.Instruments.STOCK): pass
-class OptionFile(SecurityFile, variable=Variables.Instruments.OPTION): pass
+# class SecurityFile(File, datatype=pd.DataFrame, **dict(SecurityParameters)): pass
+# class StockFile(SecurityFile, variable=Variables.Instruments.STOCK): pass
+# class OptionFile(SecurityFile, variable=Variables.Instruments.OPTION): pass
 
 
 class PricingEquation(Equation): pass
@@ -104,16 +87,16 @@ class BlackScholesCalculation(PricingCalculation, equation=BlackScholesEquation,
         yield equation.to(exposures)
 
 
-class SecurityFilter(Pipelining, Sizing, Emptying, Logging, Filter):
+class SecurityFilter(Pipelining, Sourcing, Sizing, Emptying, Logging, Filter):
     def __init__(self, *args, **kwargs):
         Pipelining.__init__(self, *args, **kwargs)
         Logging.__init__(self, *args, **kwargs)
         Filter.__init__(self, *args, **kwargs)
-        self.__variables = SecurityVariables(*args, **kwargs)
 
     def execute(self, securities, *args, **kwargs):
         assert isinstance(securities, pd.DataFrame)
-        for contract, dataframe in self.contracts(securities, *args, **kwargs):
+        for contract, dataframe in self.source(securities, Querys.Contract):
+            if self.empty(dataframe): continue
             prior = self.size(dataframe)
             dataframe = self.filter(dataframe, *args, **kwargs)
             assert isinstance(dataframe, pd.DataFrame)
@@ -124,30 +107,24 @@ class SecurityFilter(Pipelining, Sizing, Emptying, Logging, Filter):
             if self.empty(dataframe): continue
             yield dataframe
 
-    def contracts(self, securities, *args, **kwargs):
-        assert isinstance(securities, pd.DataFrame)
-        for contract, dataframe in securities.groupby(self.variables.contract):
-            if self.empty(dataframe): continue
-            yield Contract(*contract), dataframe
 
-    @property
-    def variables(self): return self.__variables
-
-
-class SecurityCalculator(Pipelining, Sizing, Emptying, Logging):
-    def __init__(self, *args, pricing, sizings, timings, **kwargs):
+class SecurityCalculator(Pipelining, Sourcing, Sizing, Emptying, Logging):
+    def __init__(self, *args, instrument, pricing, sizings={}, timings={}, **kwargs):
         Pipelining.__init__(self, *args, **kwargs)
         Logging.__init__(self, *args, **kwargs)
+        index = {Variables.Instruments.STOCK: ["ticker"], Variables.Instruments.OPTION: ["ticker", "expire", "strike"]}
+        columns = dict(pricing=["price", "underlying"], sizing=["volume", "size", "interest"], timing=["current"])
         self.__calculation = PricingCalculation[pricing](*args, **kwargs)
-        self.__variables = SecurityVariables(*args, **kwargs)
+        self.__index = index[instrument]
+        self.__columns = columns
         self.__sizings = sizings
         self.__timings = timings
-        self.__pricing = pricing
 
     def execute(self, exposures, statistics, *args, **kwargs):
         assert isinstance(exposures, pd.DataFrame) and isinstance(statistics, pd.DataFrame)
         exposures = self.exposures(exposures, statistics, *args, **kwargs)
-        for contract, dataframe in self.contracts(exposures):
+        for contract, dataframe in self.source(exposures, Querys.Contract):
+            if self.empty(dataframe): continue
             options = self.calculate(dataframe, *args, **kwargs)
             size = self.size(options)
             string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
@@ -155,20 +132,14 @@ class SecurityCalculator(Pipelining, Sizing, Emptying, Logging):
             if self.empty(options): continue
             yield options
 
-    def contracts(self, exposures):
-        assert isinstance(exposures, pd.DataFrame)
-        for contract, dataframe in exposures.groupby(self.variables.contract):
-            if self.empty(dataframe): continue
-            yield Contract(*contract), dataframe
-
     def calculate(self, exposures, *args, **kwargs):
         assert isinstance(exposures, pd.DataFrame)
         pricings = self.calculation(exposures, *args, **kwargs)
-        dataframe = pricings[self.variables.index]
-        sizings = lambda cols: {sizing: self.sizings.get(sizing, np.NaN) for sizing in self.variables.sizing}
-        sizings = dataframe.apply(sizings, axis=1, result_type="expand")
-        timings = lambda cols: {timing: self.timings.get(timing, np.NaN) for timing in self.variables.timing}
-        timings = dataframe.apply(timings, axis=1, result_type="expand")
+        pricings = pricings[self.index + self.columns["pricing"]]
+        sizings = lambda cols: {sizing: self.sizings.get(sizing, np.NaN) for sizing in self.columns["sizing"]}
+        sizings = pricings.apply(sizings, axis=1, result_type="expand")
+        timings = lambda cols: {timing: self.timings.get(timing, np.NaN) for timing in self.columns["timing"]}
+        timings = pricings.apply(timings, axis=1, result_type="expand")
         options = pd.concat([pricings, sizings, timings], axis=1)
         return options
 
@@ -182,13 +153,13 @@ class SecurityCalculator(Pipelining, Sizing, Emptying, Logging):
     @property
     def calculation(self): return self.__calculations
     @property
-    def variables(self): return self.__variables
-    @property
-    def pricing(self): return self.__pricing
-    @property
     def sizings(self): return self.__sizings
     @property
     def timings(self): return self.__timings
+    @property
+    def columns(self): return self.__columns
+    @property
+    def index(self): return self.__index
 
 
 

@@ -13,9 +13,8 @@ import xarray as xr
 from functools import reduce
 from collections import OrderedDict as ODict
 
-from finance.variables import Variables, Contract
+from support.mixins import Emptying, Sizing, Logging, Pipelining, Sourcing
 from support.calculations import Variable, Equation, Calculation
-from support.mixins import Emptying, Sizing, Logging, Pipelining
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -62,7 +61,7 @@ class StabilityCalculation(Calculation, equation=StabilityEquation):
         yield equation.m(portfolios)
 
 
-class StabilityFilter(Pipelining, Sizing, Emptying, Logging):
+class StabilityFilter(Pipelining, Sourcing, Sizing, Emptying, Logging):
     def __init__(self, *args, **kwargs):
         Pipelining.__init__(self, *args, **kwargs)
         Logging.__init__(self, *args, **kwargs)
@@ -78,15 +77,6 @@ class StabilityFilter(Pipelining, Sizing, Emptying, Logging):
             if self.empty(dataframe): continue
             yield dataframe
 
-    def contracts(self, valuations, stabilities):
-        assert isinstance(valuations, pd.DataFrame) and isinstance(stabilities, pd.DataFrame)
-        for contract, primary in valuations.groupby(self.variables.contract):
-            if self.empty(primary): continue
-            mask = [stabilities[key] == value for key, value in zip(self.variables.contract, contract)]
-            mask = reduce(lambda x, y: x & y, mask)
-            secondary = stabilities.where(mask).dropna(how="all", inplace=False)
-            yield Contract(*contract), primary, secondary
-
     def calculate(self, valuations, stabilities, *args, **kwargs):
         pass
 
@@ -94,7 +84,7 @@ class StabilityFilter(Pipelining, Sizing, Emptying, Logging):
     def variables(self): return self.__variables
 
 
-class StabilityCalculator(Pipelining, Sizing, Emptying, Logging):
+class StabilityCalculator(Pipelining, Sourcing, Sizing, Emptying, Logging):
     def __init__(self, *args, **kwargs):
         Pipelining.__init__(self, *args, **kwargs)
         Logging.__init__(self, *args, **kwargs)
@@ -110,15 +100,6 @@ class StabilityCalculator(Pipelining, Sizing, Emptying, Logging):
             self.logger.info(string)
             if self.empty(stabilities): continue
             yield stabilities
-
-    def contracts(self, orders, exposures):
-        assert isinstance(orders, pd.DataFrame) and isinstance(exposures, pd.DataFrame)
-        for contract, primary in orders.groupby(self.variables.contract):
-            if self.empty(primary): continue
-            mask = [exposures[key] == value for key, value in zip(self.variables.contract, contract)]
-            mask = reduce(lambda x, y: x & y, mask)
-            secondary = exposures.where(mask).dropna(how="all", inplace=False)
-            yield Contract(*contract), primary, secondary
 
     def calculate(self, orders, exposures, *args, **kwargs):
         assert isinstance(orders, pd.DataFrame) and isinstance(exposures, pd.DataFrame)

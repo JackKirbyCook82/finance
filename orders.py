@@ -10,8 +10,7 @@ import logging
 import numpy as np
 import pandas as pd
 
-from finance.variables import Variables, Contract
-from support.mixins import Emptying, Sizing, Logging, Pipelining
+from support.mixins import Emptying, Sizing, Logging, Pipelining, Sourcing
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -38,7 +37,7 @@ class OrderVariables(object):
         self.header = self.index + self.columns
 
 
-class OrderCalculator(Pipelining, Sizing, Emptying, Logging):
+class OrderCalculator(Pipelining, Sourcing, Sizing, Emptying, Logging):
     def __init__(self, *args, **kwargs):
         Pipelining.__init__(self, *args, **kwargs)
         Logging.__init__(self, *args, **kwargs)
@@ -53,12 +52,6 @@ class OrderCalculator(Pipelining, Sizing, Emptying, Logging):
             self.logger.info(string)
             if self.empty(orders): continue
             yield orders
-
-    def contracts(self, valuations):
-        assert isinstance(valuations, pd.DataFrame)
-        for contract, dataframe in valuations.groupby(self.variables.contract):
-            if self.empty(dataframe): continue
-            yield Contract(*contract), dataframe
 
     def calculate(self, valuations, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame)
