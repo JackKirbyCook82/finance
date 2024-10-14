@@ -87,13 +87,15 @@ class CollarLongCalculation(StrategyCalculation, equation=CollarLongEquation, re
 class CollarShortCalculation(StrategyCalculation, equation=CollarShortEquation, register=Variables.Strategies.Collar.Short): pass
 
 
-class StrategyCalculator(Pipelining, Sourcing, Sizing, Emptying, Logging):
+class StrategyCalculator(Pipelining, Sourcing, Logging, Sizing, Emptying):
     def __init__(self, *args, strategies=[], **kwargs):
+        assert all([strategy in list(Variables.Strategies) for strategy in strategies])
         Pipelining.__init__(self, *args, **kwargs)
         Logging.__init__(self, *args, **kwargs)
         strategies = list(dict(StrategyCalculation).keys()) if not bool(strategies) else list(strategies)
         calculations = dict(StrategyCalculation).items()
-        self.__calculations = {strategy: calculation(*args, **kwargs) for strategy, calculation in calculations if strategy in strategies}
+        calculations = {strategy: calculation(*args, **kwargs) for strategy, calculation in calculations if strategy in strategies}
+        self.__calculations = calculations
 
     def execute(self, options, *args, **kwargs):
         assert isinstance(options, pd.DataFrame)
@@ -109,14 +111,15 @@ class StrategyCalculator(Pipelining, Sourcing, Sizing, Emptying, Logging):
 
     def options(self, options, *args, **kwargs):
         assert isinstance(options, pd.DataFrame)
-        for security, dataframe in options.groupby(Variables.Security.fields, sort=False):
+        for security, dataframe in options.groupby(list(Variables.Security), sort=False):
             if self.empty(dataframe): continue
             security = Variables.Securities[security]
-            dataframe = dataframe.set_index(Querys.Product.fields, drop=True, inplace=False)
-            dataframe = dataframe.drop([variable for variable in Variables.Security.fields if variable in dataframe.columns], axis=1)
+            dataframe = dataframe.set_index(list(Querys.Product), drop=True, inplace=False)
+            columns = [column for column in list(Variables.Security) if column in dataframe.columns]
+            dataframe = dataframe.drop(columns, axis=1)
             dataset = xr.Dataset.from_dataframe(dataframe)
-            dataset = reduce(lambda content, axis: content.squeeze(axis), Querys.Contract.fields, dataset)
-            dataset = dataset.drop_vars(self.variables.security, errors="ignore")
+            dataset = reduce(lambda content, axis: content.squeeze(axis), list(Querys.Contract), dataset)
+            dataset = dataset.drop_vars(list(Variables.Security), errors="ignore")
             dataset = dataset.rename({"strike": str(security)})
             dataset["strike"] = dataset[str(security)]
             yield security, dataset

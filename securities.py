@@ -87,7 +87,7 @@ class BlackScholesCalculation(PricingCalculation, equation=BlackScholesEquation,
         yield equation.to(exposures)
 
 
-class SecurityFilter(Pipelining, Sourcing, Sizing, Emptying, Logging, Filter):
+class SecurityFilter(Pipelining, Sourcing, Logging, Sizing, Emptying, Filter):
     def __init__(self, *args, **kwargs):
         Pipelining.__init__(self, *args, **kwargs)
         Logging.__init__(self, *args, **kwargs)
@@ -108,8 +108,9 @@ class SecurityFilter(Pipelining, Sourcing, Sizing, Emptying, Logging, Filter):
             yield dataframe
 
 
-class SecurityCalculator(Pipelining, Sourcing, Sizing, Emptying, Logging):
+class SecurityCalculator(Pipelining, Sourcing, Logging, Sizing, Emptying):
     def __init__(self, *args, instrument, pricing, sizings={}, timings={}, **kwargs):
+        assert instrument in list(Variables.Instruments) and pricing in list(Variables.Pricing)
         Pipelining.__init__(self, *args, **kwargs)
         Logging.__init__(self, *args, **kwargs)
         index = {Variables.Instruments.STOCK: ["ticker"], Variables.Instruments.OPTION: ["ticker", "expire", "strike"]}

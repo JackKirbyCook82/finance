@@ -15,15 +15,15 @@ from functools import reduce
 from itertools import product, count
 from collections import namedtuple as ntuple
 
+from finance.variables import Variables, Querys
 from support.mixins import Emptying, Sizing, Logging, Pipelining, Sourcing
 from support.calculations import Variable, Equation, Calculation
 from support.meta import RegistryMeta, ParametersMeta
-from support.tables import Table, View
 from support.filtering import Filter
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["ValuationFilter", "ValuationCalculator", "ValuationWriter", "ArbitrageTable"]
+__all__ = ["ValuationFilter", "ValuationCalculator", "ValuationWriter"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
@@ -35,28 +35,9 @@ class ValuationFormatting(metaclass=ParametersMeta):
     numbers = lambda column: f"{column:.02f}"
 
 
-class ValuationVariables(object):
-    axes = {Variables.Querys.CONTRACT: ["ticker", "expire"], Variables.Querys.PRODUCT: ["ticker", "expire", "strike"], Variables.Querys.SECURITY: ["instrument", "option", "position"]}
-    axes.update({Variables.Instruments.STOCK: list(map(str, Variables.Securities.Stocks)), Variables.Instruments.OPTION: list(map(str, Variables.Securities.Options))})
-    data = {Variables.Datasets.PRICING: ["underlying"], Variables.Datasets.TIMING: ["current"], Variables.Datasets.SIZING: ["size"]}
-    data.update({Variables.Valuations.ARBITRAGE: ["apy", "npv", "cost"]})
-
-    def __init__(self, *args, valuation, index=[], columns=[], **kwargs):
-        self.options = self.axes[Variables.Instruments.STOCK]
-        self.stocks = self.axes[Variables.Instruments.OPTION]
-        self.contract = self.axes[Variables.Querys.CONTRACT]
-        self.product = self.axes[Variables.Querys.PRODUCT]
-        self.security = self.axes[Variables.Querys.SECURITY]
-        self.unstacked = self.data[Variables.Datasets.PRICING] + self.data[Variables.Datasets.TIMING] + self.data[Variables.Datasets.SIZING]
-        self.stacked = self.data[valuation]
-        self.columns = list(product(self.stacked, list(Variables.Scenarios))) + list(product(self.unstacked + list(columns), [""]))
-        self.index = list(product(["valuation", "strategy"] + self.contract + self.options + list(index), [""]))
-        self.header = self.index + self.columns
-
-
-class ValuationView(View, ABC, datatype=pd.DataFrame, **dict(ValuationFormatting)): pass
-class ValuationTable(Table, ABC, datatype=pd.DataFrame, viewtype=ValuationView): pass
-class ArbitrageTable(ValuationTable, ABC, variable=Variables.Valuations.ARBITRAGE, vartype=ValuationVariables): pass
+# class ValuationView(View, ABC, datatype=pd.DataFrame, **dict(ValuationFormatting)): pass
+# class ValuationTable(Table, ABC, datatype=pd.DataFrame, viewtype=ValuationView): pass
+# class ArbitrageTable(ValuationTable, ABC, variable=Variables.Valuations.ARBITRAGE, vartype=ValuationVariables): pass
 
 
 class ValuationEquation(Equation): pass
@@ -98,17 +79,15 @@ class MinimumArbitrageCalculation(ArbitrageCalculation, equation=MinimumArbitrag
 class MaximumArbitrageCalculation(ArbitrageCalculation, equation=MaximumArbitrageEquation, register=(Variables.Valuations.ARBITRAGE, Variables.Scenarios.MAXIMUM)): pass
 
 
-class ValuationFilter(Pipelining, Sourcing, Sizing, Emptying, Logging, Filter):
-    def __init__(self, *args, valuation, **kwargs):
+class ValuationFilter(Pipelining, Sourcing, Logging, Sizing, Emptying, Filter):
+    def __init__(self, *args, **kwargs):
         Pipelining.__init__(self, *args, **kwargs)
         Logging.__init__(self, *args, **kwargs)
         Filter.__init__(self, *args, **kwargs)
-        parameters = dict(valuation=valuation)
-        self.__variables = ValuationVariables(*args, **parameters, **kwargs)
 
     def execute(self, valuations, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame)
-        for contract, dataframe in self.contracts(valuations, *args, **kwargs):
+        for contract, dataframe in self.source(valuations, Querys.Contract):
             prior = self.size(dataframe)
             dataframe = self.filter(dataframe, *args, **kwargs)
             assert isinstance(dataframe, pd.DataFrame)
@@ -119,26 +98,25 @@ class ValuationFilter(Pipelining, Sourcing, Sizing, Emptying, Logging, Filter):
             if self.empty(dataframe): continue
             yield dataframe
 
-    @property
-    def variables(self): return self.__variables
 
-
-class ValuationCalculator(Pipelining, Sourcing, Sizing, Emptying, Logging):
+class ValuationCalculator(Pipelining, Sourcing, Logging, Sizing, Emptying):
     def __init__(self, *args, valuation, **kwargs):
+        assert valuation in list(Variables.Valuations)
         Pipelining.__init__(self, *args, **kwargs)
         Logging.__init__(self, *args, **kwargs)
         Identity = ntuple("Identity", "valuation scenario")
-        parameters = dict(valuation=valuation)
         calculations = {Identity(*identity): calculation for identity, calculation in dict(ValuationCalculation).items()}
         calculations = {identity.scenario: calculation for identity, calculation in calculations.items() if identity.valuation == valuation}
+        valuations = {Variables.Valuations.ARBITRAGE: ["apy", "npv", "cost"]}
         self.__calculations = {scenario: calculation(*args, **kwargs) for scenario, calculation in calculations.items()}
-        self.__variables = ValuationVariables(*args, **parameters, **kwargs)
         self.__portfolios = count(start=1, step=1)
+        self.__stacking = valuations[valuation]
         self.__valuation = valuation
 
     def execute(self, strategies, *args, **kwargs):
         assert isinstance(strategies, xr.Dataset)
-        for contract, dataset in self.contracts(strategies):
+        for contract, dataset in self.source(strategies, Querys.Contract):
+            if self.empty(dataset): continue
             valuations = self.calculate(dataset, *args, **kwargs)
             size = self.size(valuations)
             string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
@@ -151,7 +129,7 @@ class ValuationCalculator(Pipelining, Sourcing, Sizing, Emptying, Logging):
         scenarios = dict(self.scenarios(strategies, *args, **kwargs))
         valuations = dict(self.valuations(scenarios, *args, **kwargs))
         valuations = pd.concat(list(valuations.values()), axis=0)
-        if self.empty(valuations): return pd.DataFrame(columns=self.variables.header)
+        if self.empty(valuations): return
         valuations = self.pivot(valuations, *args, **kwargs)
         return valuations
 
@@ -166,134 +144,144 @@ class ValuationCalculator(Pipelining, Sourcing, Sizing, Emptying, Logging):
             valuations = valuations.assign_coords(coordinates).expand_dims("scenario")
             yield scenario, valuations
 
-    def valuations(self, scenarios, *args, **kwargs):
+    def pivot(self, dataframe, *args, **kwargs):
+        assert isinstance(dataframe, pd.DataFrame)
+        index = set(dataframe.columns) - ({"scenario"} | set(self.stacking))
+        dataframe = dataframe.pivot(index=list(index), columns="scenario")
+        dataframe = dataframe.reset_index(drop=False, inplace=False)
+        return dataframe
+
+    @staticmethod
+    def valuations(scenarios, *args, **kwargs):
         assert isinstance(scenarios, dict)
         for scenario, dataset in scenarios.items():
-            dataset = dataset.drop_vars(self.variables.security, errors="ignore")
+            dataset = dataset.drop_vars(list(Variables.Security), errors="ignore")
             dataset = dataset.expand_dims(list(set(iter(dataset.coords)) - set(iter(dataset.dims))))
             dataframe = dataset.to_dataframe().dropna(how="all", inplace=False)
             dataframe = dataframe.reset_index(drop=False, inplace=False)
             yield scenario, dataframe
-
-    def pivot(self, dataframe, *args, **kwargs):
-        assert isinstance(dataframe, pd.DataFrame)
-        index = set(dataframe.columns) - ({"scenario"} | set(self.variables.stacked))
-        dataframe = dataframe.pivot(index=list(index), columns="scenario")
-        dataframe = dataframe.reset_index(drop=False, inplace=False)
-        return dataframe
 
     @property
     def calculations(self): return self.__calculations
     @property
     def portfolios(self): return self.__portfolios
     @property
-    def variables(self): return self.__variables
-    @property
     def valuation(self): return self.__valuation
 
 
-class ValuationWriter(Pipelining, Sourcing, Sizing, Emptying, Logging):
-    def __init__(self, *args, table, valuation, priority, **kwargs):
-        assert callable(priority)
-        Pipelining.__init__(self, *args, **kwargs)
-        Logging.__init__(self, *args, **kwargs)
-        parameters = dict(valuation=valuation, index=["portfolio"], columns=["priority", "status"])
-        self.__variables = ValuationVariables(*args, **parameters, **kwargs)
-        self.__status = Variables.Status.PROSPECT
-        self.__priority = priority
-        self.__table = table
+# class ValuationWriter(Pipelining, Sourcing, Logging, Sizing, Emptying):
+#     def __init__(self, *args, valuation, table, priority, **kwargs):
+#         assert callable(priority) and valuation in list(Variables.Valuations)
+#         Pipelining.__init__(self, *args, **kwargs)
+#         Logging.__init__(self, *args, **kwargs)
+#         valuations = {Variables.Valuations.ARBITRAGE: ["apy", "npv", "cost"]}
+#         stacked = lambda cols: list(product(cols, list(Variables.Scenarios)))
+#         unstacked = lambda cols: list(product(cols, [""]))
+#         columns = stacked(valuations[valuation]) + unstacked(["underlying", "size", "current"] + ["status", "priority"])
+#         index = unstacked(["valuation", "strategy"] + list(Variables.Contract) + list(map(str, Variables.Securities.Options)))
+#         self.__status = Variables.Status.PROSPECT
+#         self.__priority = priority
+#         self.__table = table
+#         self.__columns = columns
+#         self.__index = index
+#
+#     def execute(self, valuations, *args, **kwargs):
+#         assert isinstance(valuations, pd.DataFrame)
+#         if self.empty(valuations): return
+#         with self.table.mutex:
+#             for contract, dataframe in self.source(valuations, Querys.Contract):
+#                 if self.empty(dataframe): continue
+#                 self.obsolete(contract, *args, **kwargs)
+#                 dataframe = self.valuations(dataframe, *args, **kwargs)
+#                 dataframe = self.portfolio(dataframe, *args, **kwargs)
+#                 dataframe = self.prospect(dataframe, *args, **kwargs)
+#                 self.write(dataframe, *args, **kwargs)
+#
+#     def obsolete(self, contract, *args, **kwargs):
+#         assert isinstance(contract, Querys.Contract)
+#         contract = lambda table: [table[key] == value for key, value in iter(contract)]
+#         status = lambda table: table["status"] == Variables.Status.PROSPECT
+#         obsolete = lambda table: reduce(lambda x, y: x & y, contract(table) + status(table))
+#         self.table.remove(obsolete)
+#         dataframe = obsolete.dropna(how="all", inplace=False)
+#         string = f"Discarded: {repr(self)}|{str(contract)}|{len(dataframe):.0f}"
+#         self.logger.info(string)
+#
+#     def valuations(self, valuations, *args, **kwargs):
+#         assert isinstance(valuations, pd.Dataframe)
+#         if not bool(self): return valuations
+#         overlap = self.dataframe.merge(valuations, on=self.index, how="inner", suffixes=("_", ""))[self.columns]
+#         valuations = pd.concat([valuations, overlap], axis=0)
+#         valuations = valuations.drop_duplicates(self.index, keep="last", inplace=False)
+#         return valuations
+#
+#     def prioritize(self, valuations, *args, **kwargs):
+#         assert isinstance(valuations, pd.DataFrame)
+#         valuations["priority"] = valuations.apply(self.priority, axis=1)
+#         parameters = dict(ascending=False, inplace=False, ignore_index=False)
+#         valuations = valuations.sort_values("priority", axis=0, **parameters)
+#         return valuations
+#
+#     def prospect(self, valuations, *args, **kwargs):
+#         assert isinstance(valuations, pd.DataFrame)
+#         if "status" not in valuations.columns.levels[0]: valuations["status"] = np.NaN
+#         function = lambda status: self.status if np.isnan(status) else status
+#         valuations["status"] = valuations["status"].apply(function)
+#         return valuations
+#
+#     def write(self, valuations, *args, **kwargs):
+#         assert isinstance(valuations, pd.DataFrame)
+#         self.table.combine(valuations)
+#         self.table.unique(self.index)
+#         self.table.sort("priority", reverse=True)
+#
+#     @property
+#     def priority(self): return self.__priority
+#     @property
+#     def status(self): return self.__status
+#     @property
+#     def table(self): return self.__table
+#     @property
+#     def columns(self): return self.__columns
+#     @property
+#     def index(self): return self.__index
 
-    def execute(self, valuations, *args, **kwargs):
-        assert isinstance(valuations, pd.DataFrame)
-        if self.empty(valuations): return
-        with self.table.mutex:
-            for contract, dataframe in self.contracts(valuations):
-                self.obsolete(contract, *args, **kwargs)
-                dataframe = self.valuations(dataframe, *args, **kwargs)
-                dataframe = self.portfolio(dataframe, *args, **kwargs)
-                dataframe = self.prospect(dataframe, *args, **kwargs)
-                self.write(dataframe, *args, **kwargs)
 
-    def obsolete(self, contract, *args, **kwargs):
-        contract = lambda table: [table[key] == value for key, value in zip(self.variables.contract, contract)]
-        status = lambda table: table["status"] == Variables.Status.PROSPECT
-        obsolete = lambda table: reduce(lambda x, y: x & y, contract(table) + status(table))
-        self.table.remove(obsolete)
-
-    def valuations(self, valuations, *args, **kwargs):
-        if not bool(self): return valuations
-        index, columns = list(self.variables.index), list(self.variables.columns)
-        overlap = self.dataframe.merge(valuations, on=index, how="inner", suffixes=("_", ""))[columns]
-        valuations = pd.concat([valuations, overlap], axis=0)
-        valuations = valuations.drop_duplicates(index, keep="last", inplace=False)
-        return valuations
-
-    def prioritize(self, valuations, *args, **kwargs):
-        valuations["priority"] = valuations.apply(self.priority, axis=1)
-        parameters = dict(ascending=False, inplace=False, ignore_index=False)
-        valuations = valuations.sort_values("priority", axis=0, **parameters)
-        return valuations
-
-    def prospect(self, valuations, *args, **kwargs):
-        if "status" not in valuations.columns.levels[0]: valuations["status"] = np.NaN
-        function = lambda status: self.status if np.isnan(status) else status
-        valuations["status"] = valuations["status"].apply(function)
-        return valuations
-
-    def write(self, valuations, *args, **kwargs):
-        index = list(self.variables.index)
-        self.table.combine(valuations)
-        self.table.unique(index)
-        self.table.sort("priority", reverse=True)
-
-    @property
-    def priority(self): return self.__priority
-    @property
-    def status(self): return self.__status
-    @property
-    def variables(self): return self.__variables
-    @property
-    def table(self): return self.__table
-
-
-class ValuationReader(Pipelining, Sizing, Emptying, Logging):
-    def __init__(self, *args, table, valuation, **kwargs):
-        Logging.__init__(self, *args, **kwargs)
-        parameters = dict(valuation=valuation, index=["portfolio"], columns=["priority", "status"])
-        self.__variables = ValuationVariables(*args, **parameters, **kwargs)
-        self.__table = table
-
-    def execute(self, *args, **kwargs):
-        if not bool(self.table): return
-        with self.table.mutex:
-            self.obsolete(*args, **kwargs)
-            valuations = self.read(*args, **kwargs)
-            if self.empty(valuations): return
-            for contract, dataframe in self.contracts(valuations):
-                string = f"Accepted: {repr(self)}|{str(contract)}|{len(dataframe):.0f}"
-                self.logger.info(string)
-                if self.empty(dataframe): continue
-                yield dataframe
-
-    def obsolete(self, *args, tenure=None, **kwargs):
-        rejected = lambda table: table["status"] == Variables.Status.REJECTED
-        abandoned = lambda table: table["status"] == Variables.Status.ABANDONED
-        timeout = lambda table: (pd.to_datetime("now") - table["current"]) >= tenure if (tenure is not None) else False
-        obsolete = lambda table: rejected(table) | abandoned(table) | timeout(table)
-        self.table.remove(obsolete)
-        dataframe = obsolete.dropna(how="all", inplace=False)
-        string = f"Rejected: {repr(self)}|{len(dataframe):.0f}"
-        self.logger.info(string)
-
-    def read(self, *args, **kwargs):
-        accepted = lambda table: table["status"] == Variables.Status.ACCEPTED
-        valuations = self.table.extract(accepted)
-        return valuations
-
-    @property
-    def variables(self): return self.__variables
-    @property
-    def table(self): return self.__table
+# class ValuationReader(Pipelining, Sourcing, Logging, Sizing, Emptying):
+#     def __init__(self, *args, table, **kwargs):
+#         Pipelining.__init__(self, *args, **kwargs)
+#         Logging.__init__(self, *args, **kwargs)
+#         self.__table = table
+#
+#     def execute(self, *args, **kwargs):
+#         if not bool(self.table): return
+#         with self.table.mutex:
+#             self.obsolete(*args, **kwargs)
+#             valuations = self.read(*args, **kwargs)
+#             if self.empty(valuations): return
+#             for contract, dataframe in self.source(valuations, Querys.Contract):
+#                 if self.empty(dataframe): continue
+#                 string = f"Accepted: {repr(self)}|{str(contract)}|{len(dataframe):.0f}"
+#                 self.logger.info(string)
+#                 yield dataframe
+#
+#     def obsolete(self, *args, tenure=None, **kwargs):
+#         rejected = lambda table: table["status"] == Variables.Status.REJECTED
+#         abandoned = lambda table: table["status"] == Variables.Status.ABANDONED
+#         timeout = lambda table: (pd.to_datetime("now") - table["current"]) >= tenure if (tenure is not None) else False
+#         obsolete = lambda table: rejected(table) | abandoned(table) | timeout(table)
+#         self.table.remove(obsolete)
+#         dataframe = obsolete.dropna(how="all", inplace=False)
+#         string = f"Discarded: {repr(self)}|{len(dataframe):.0f}"
+#         self.logger.info(string)
+#
+#     def read(self, *args, **kwargs):
+#         accepted = lambda table: table["status"] == Variables.Status.ACCEPTED
+#         valuations = self.table.extract(accepted)
+#         return valuations
+#
+#     @property
+#     def table(self): return self.__table
 
 
 

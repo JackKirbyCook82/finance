@@ -13,6 +13,7 @@ import xarray as xr
 from functools import reduce
 from collections import OrderedDict as ODict
 
+from finance.variables import Variables, Querys
 from support.mixins import Emptying, Sizing, Logging, Pipelining, Sourcing
 from support.calculations import Variable, Equation, Calculation
 
@@ -22,21 +23,6 @@ __all__ = ["StabilityCalculator", "StabilityFilter"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
-
-
-class StabilityVariables(object):
-    axes = {Variables.Querys.CONTRACT: ["ticker", "expire"], Variables.Querys.PRODUCT: ["ticker", "expire", "strike"], Variables.Datasets.SECURITY: ["instrument", "option", "position"]}
-    data = {Variables.Datasets.EXPOSURE: ["quantity"]}
-
-    def __init__(self, *args, **kwargs):
-        self.contract = self.axes[Variables.Querys.CONTRACT]
-        self.product = self.axes[Variables.Querys.PRODUCT]
-        self.security = self.axes[Variables.Datasets.SECURITY]
-        self.identity = ["portfolio"]
-        self.index = self.identity + self.product + self.security
-        self.columns = self.data[Variables.Datasets.EXPOSURE]
-        self.header = self.index + self.columns
-        self.holdings = list(set(self.index) - set(self.contract))
 
 
 class StabilityEquation(Equation):
@@ -61,15 +47,16 @@ class StabilityCalculation(Calculation, equation=StabilityEquation):
         yield equation.m(portfolios)
 
 
-class StabilityFilter(Pipelining, Sourcing, Sizing, Emptying, Logging):
+class StabilityFilter(Pipelining, Sourcing, Logging, Sizing, Emptying):
     def __init__(self, *args, **kwargs):
         Pipelining.__init__(self, *args, **kwargs)
         Logging.__init__(self, *args, **kwargs)
-        self.__variables = StabilityVariables(*args, **kwargs)
 
     def execute(self, valuations, stabilities, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame) and isinstance(stabilities, pd.DataFrame)
-        for contract, primary, secondary in self.contracts(valuations, stabilities):
+        for contract, primary in self.source(valuations, Querys.Contract):
+            if self.empty(primary): continue
+            secondary = self.align(stabilities, contract)
             dataframe = self.calculate(primary, secondary, *args, **kwargs)
             size = self.size(dataframe)
             string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
@@ -80,20 +67,18 @@ class StabilityFilter(Pipelining, Sourcing, Sizing, Emptying, Logging):
     def calculate(self, valuations, stabilities, *args, **kwargs):
         pass
 
-    @property
-    def variables(self): return self.__variables
 
-
-class StabilityCalculator(Pipelining, Sourcing, Sizing, Emptying, Logging):
+class StabilityCalculator(Pipelining, Sourcing, Logging, Sizing, Emptying):
     def __init__(self, *args, **kwargs):
         Pipelining.__init__(self, *args, **kwargs)
         Logging.__init__(self, *args, **kwargs)
         self.__calculation = StabilityCalculation(*args, **kwargs)
-        self.__variables = StabilityVariables(*args, **kwargs)
 
     def execute(self, orders, exposures, *args, **kwargs):
         assert isinstance(orders, pd.DataFrame) and isinstance(exposures, pd.DataFrame)
-        for contract, primary, secondary in self.contracts(orders, exposures):
+        for contract, primary in self.source(orders, Querys.Contract):
+            if self.empty(primary): continue
+            secondary = self.align(exposures, contract)
             stabilities = self.calculate(primary, secondary, *args, **kwargs)
             size = self.size(stabilities)
             string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
@@ -107,11 +92,13 @@ class StabilityCalculator(Pipelining, Sourcing, Sizing, Emptying, Logging):
         exposures = self.exposures(exposures, *args, **kwargs)
         portfolios = list(self.portfolios(orders, exposures, *args, **kwargs))
         portfolios = xr.concat(portfolios, join="outer", fill_value=0, dim="portfolio")
-        portfolios = portfolios.stack(holdings=self.variables.holdings).to_dataset()
+        holdings = list(Variables.Security) + ["strike"]
+        portfolios = portfolios.stack(holdings=holdings).to_dataset()
         stabilities = self.stabilities(portfolios, *args, **kwargs)
         return stabilities
 
     def stabilities(self, portfolios, *args, **kwargs):
+        assert isinstance(portfolios, xr.Dataset)
         portfolios = self.underlying(portfolios, *args, **kwargs)
         stabilities = self.calculation(portfolios, *args, **kwargs)
         assert isinstance(stabilities, xr.Dataset)
@@ -124,22 +111,26 @@ class StabilityCalculator(Pipelining, Sourcing, Sizing, Emptying, Logging):
         stabilities["stable"] = (stabilities["bear"] == 0) & (stabilities["bull"] == 0)
         return stabilities
 
-    def orders(self, orders, *args, **kwargs):
+    @staticmethod
+    def orders(orders, *args, **kwargs):
         assert isinstance(orders, pd.DataFrame)
         for portfolio, dataframe in orders.groupby("portfolio"):
             dataframe = dataframe.drop(columns="portfolio", inplace=False)
-            dataframe = dataframe.set_index(self.index, drop=True, inplace=False).squeeze()
+            index = list(Variables.Contract) + list(Variables.Product)
+            dataframe = dataframe.set_index(index, drop=True, inplace=False).squeeze()
             dataarray = xr.DataArray.from_series(dataframe).fillna(0)
             function = lambda content, axis: content.squeeze(axis)
-            dataarray = reduce(function, self.variables.contract, dataarray)
+            dataarray = reduce(function, list(Variables.Contract), dataarray)
             yield portfolio, dataarray
 
-    def exposures(self, exposures, *args, **kwargs):
+    @staticmethod
+    def exposures(exposures, *args, **kwargs):
         assert isinstance(exposures, pd.DataFrame)
-        exposures = exposures.set_index(self.variables.index, drop=True, inplace=False).squeeze()
+        index = list(Variables.Contract) + list(Variables.Product)
+        exposures = exposures.set_index(index, drop=True, inplace=False).squeeze()
         exposures = xr.DataArray.from_series(exposures).fillna(0)
         function = lambda content, axis: content.squeeze(axis)
-        exposures = reduce(function, self.variables.contract, exposures)
+        exposures = reduce(function, list(Variables.Contract), exposures)
         return exposures
 
     @staticmethod
@@ -161,8 +152,6 @@ class StabilityCalculator(Pipelining, Sourcing, Sizing, Emptying, Logging):
 
     @property
     def calculation(self): return self.__calculations
-    @property
-    def variables(self): return self.__variables
 
 
 

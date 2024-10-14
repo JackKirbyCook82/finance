@@ -10,6 +10,7 @@ import logging
 import numpy as np
 import pandas as pd
 
+from finance.variables import Variables, Querys
 from support.mixins import Emptying, Sizing, Logging, Pipelining, Sourcing
 
 __version__ = "1.0.0"
@@ -20,33 +21,16 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-class OrderVariables(object):
-    axes = {Variables.Querys.CONTRACT: ["ticker", "expire"], Variables.Querys.PRODUCT: ["ticker", "expire", "strike"], Variables.Datasets.SECURITY: ["instrument", "option", "position"]}
-    axes.update({Variables.Instruments.STOCK: list(map(str, Variables.Securities.Stocks)), Variables.Instruments.OPTION: list(map(str, Variables.Securities.Options))})
-    data = {Variables.Datasets.EXPOSURE: ["quantity"]}
-
-    def __init__(self, *args, **kwargs):
-        self.options = list(map(str, self.axes[Variables.Instruments.OPTIONS]))
-        self.stocks = list(map(str, self.axes[Variables.Instruments.STOCK]))
-        self.contract = self.axes[Variables.Querys.CONTRACT]
-        self.product = self.axes[Variables.Querys.PRODUCT]
-        self.security = self.axes[Variables.Datasets.SECURITY]
-        self.identity = ["portfolio"]
-        self.index = self.identity + self.product + self.security
-        self.columns = self.data[Variables.Datasets.EXPOSURE]
-        self.header = self.index + self.columns
-
-
-class OrderCalculator(Pipelining, Sourcing, Sizing, Emptying, Logging):
+class OrderCalculator(Pipelining, Sourcing, Logging, Sizing, Emptying):
     def __init__(self, *args, **kwargs):
         Pipelining.__init__(self, *args, **kwargs)
         Logging.__init__(self, *args, **kwargs)
-        self.__variables = OrderVariables(*args, **kwargs)
 
     def execute(self, valuations, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame)
-        for contract, dataframe in self.contracts(valuations):
-            orders = self.execute(dataframe, *args, **kwargs)
+        for contract, dataframe in self.source(valuations, Querys.Contract):
+            if self.empty(dataframe): continue
+            orders = self.calculate(dataframe, *args, **kwargs)
             size = self.size(orders)
             string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
             self.logger.info(string)
@@ -61,17 +45,8 @@ class OrderCalculator(Pipelining, Sourcing, Sizing, Emptying, Logging):
         orders = orders.reset_index(drop=True, inplace=False)
         return orders
 
-    def securities(self, valuations, *args, **kwargs):
-        strategy = lambda cols: list(map(str, cols["strategy"].stocks))
-        function = lambda cols: {stock: cols["underlying"] if stock in strategy(cols) else np.NaN for stock in self.variables.stocks}
-        options = valuations[self.variables.identity + self.variables.contract + self.variables.options + ["valuation", "strategy", "underlying"]]
-        options = options.droplevel("scenario", axis=1)
-        stocks = options.apply(function, axis=1, result_type="expand")
-        securities = pd.concat([options, stocks], axis=1)
-        securities = securities[self.variables.identity + self.variables.contract + self.variables.options + self.variables.stocks]
-        return securities
-
     def orders(self, securities, *args, **kwargs):
+        assert isinstance(securities, pd.DataFrame)
         for index, dataframe in securities.iterrows():
             stocks = self.stocks(dataframe, *args, **kwargs)
             options = self.options(dataframe, *args, **kwargs)
@@ -80,28 +55,56 @@ class OrderCalculator(Pipelining, Sourcing, Sizing, Emptying, Logging):
             allocations = allocations.reset_index(drop=True, inplace=False)
             yield allocations
 
-    def stocks(self, securities, *args, **kwargs):
-        security = lambda cols: list(Variables.Securities(cols["security"])) + [1]
-        stocks = securities[self.variables.stocks].to_frame("strike")
+    @staticmethod
+    def securities(valuations, *args, **kwargs):
+        assert isinstance(valuations, pd.DataFrame)
+        stocks, options = list(map(str, Variables.Securities.Stocks)), list(map(str, Variables.Securities.Options))
+        strategy = lambda cols: list(map(str, cols["strategy"].stocks))
+        function = lambda cols: {stock: cols["underlying"] if stock in strategy(cols) else np.NaN for stock in stocks}
+        columns = list(Querys.Contract) + list(options) + ["valuation", "strategy", "underlying"]
+        options = valuations[columns]
+        options = options.droplevel("scenario", axis=1)
+        stocks = options.apply(function, axis=1, result_type="expand")
+        securities = pd.concat([options, stocks], axis=1)
+        columns = list(Querys.Contract) + list(options) + list(stocks)
+        securities = securities[columns]
+        return securities
+
+    @staticmethod
+    def stocks(securities, *args, **kwargs):
+        assert isinstance(securities, pd.DataFrame)
+        function = lambda cols: list(Variables.Securities(cols["security"])) + [1]
+        stocks = list(map(str, Variables.Securities.Stocks))
+        stocks = securities[stocks].to_frame("strike")
         stocks = stocks.reset_index(names="security", drop=False, inplace=False)
-        stocks[self.variables.security + self.variables.columns] = stocks.apply(security, axis=1, result_type="expand")
-        stocks = stocks[[column for column in stocks.columns if column != "security"]]
-        contract = {key: value for key, value in securities[self.variables.identity + self.variables.contract].to_dict().items()}
+        security = list(Variables.Security) + ["quantity"]
+        stocks[security] = stocks.apply(function, axis=1, result_type="expand")
+        columns = [column for column in stocks.columns if column != "security"]
+        stocks = stocks[columns]
+        contract = list(Variables.Contract)
+        contract = {key: value for key, value in securities[contract].to_dict().items()}
         stocks = stocks.assign(**contract)
         return stocks
 
-    def options(self, securities, *args, **kwargs):
-        security = lambda cols: list(Variables.Securities(cols["security"])) + [1]
-        options = securities[self.variables.options].to_frame("strike")
+    @staticmethod
+    def options(securities, *args, **kwargs):
+        assert isinstance(securities, pd.DataFrame)
+        function = lambda cols: list(Variables.Securities(cols["security"])) + [1]
+        options = list(map(str, Variables.Securities.Options))
+        options = securities[options].to_frame("strike")
         options = options.reset_index(names="security", drop=False, inplace=False)
-        options[self.variables.security + self.variables.columns] = options.apply(security, axis=1, result_type="expand")
-        options = options[[column for column in options.columns if column != "security"]]
-        contract = {key: value for key, value in securities[self.variables.identity + self.variables.contract].to_dict().items()}
+        security = list(Variables.Security) + ["quantity"]
+        options[security] = options.apply(function, axis=1, result_type="expand")
+        columns = [column for column in options.columns if column != "security"]
+        options = options[columns]
+        contract = list(Variables.Contract)
+        contract = {key: value for key, value in securities[contract].to_dict().items()}
         options = options.assign(**contract)
         return options
 
     @staticmethod
     def virtuals(stocks, *args, **kwargs):
+        assert isinstance(stocks, pd.DataFrame)
         security = lambda instrument, option, position: dict(instrument=instrument, option=option, position=position)
         function = lambda records, instrument, option, position: pd.DataFrame.from_records([record | security(instrument, option, position) for record in records])
         stocklong = stocks["position"] == Variables.Positions.LONG
@@ -115,9 +118,6 @@ class OrderCalculator(Pipelining, Sourcing, Sizing, Emptying, Logging):
         virtuals = pd.concat([putlong, putshort, calllong, callshort], axis=0)
         virtuals["strike"] = virtuals["strike"].apply(lambda strike: np.round(strike, decimals=2))
         return virtuals
-
-    @property
-    def variables(self): return self.__variables
 
 
 

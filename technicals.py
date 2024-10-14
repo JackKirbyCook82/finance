@@ -67,8 +67,9 @@ class StochasticCalculation(TechnicalCalculation, equation=StochasticEquation, r
         yield equation.xk(bars)
 
 
-class TechnicalCalculator(Pipelining, Sourcing, Sizing, Emptying, Logging):
+class TechnicalCalculator(Pipelining, Sourcing, Logging, Sizing, Emptying):
     def __init__(self, *args, technical, **kwargs):
+        assert technical in list(Variables.Technicals)
         Pipelining.__init__(self, *args, **kwargs)
         Logging.__init__(self, *args, **kwargs)
         self.__calculation = TechnicalCalculation[technical](*args, **kwargs)

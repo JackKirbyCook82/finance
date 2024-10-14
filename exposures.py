@@ -32,16 +32,16 @@ class ExposureFormatting(metaclass=ParametersMeta):
 # class ExposureTable(Table, ABC, datatype=pd.DataFrame, view=ExposureView, variable=Datasets.EXPOSURE): pass
 
 
-class ExposureCalculator(Pipelining, Sourcing, Sizing, Emptying, Logging):
+class ExposureCalculator(Pipelining, Sourcing, Logging, Sizing, Emptying):
     def __init__(self, *args, **kwargs):
-        Logging.__init__(self, *args, **kwargs)
         Pipelining.__init__(self, *args, **kwargs)
+        Logging.__init__(self, *args, **kwargs)
 
     def execute(self, holdings, *args, **kwargs):
         assert isinstance(holdings, pd.DataFrame)
         for contract, dataframe in self.source(holdings, Querys.Contract):
             if self.empty(dataframe): continue
-            exposures = self.calculate(holdings, *args, **kwargs)
+            exposures = self.calculate(dataframe, *args, **kwargs)
             size = self.size(exposures)
             string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
             self.logger.info(string)
@@ -115,34 +115,39 @@ class ExposureCalculator(Pipelining, Sourcing, Sizing, Emptying, Logging):
         return exposures
 
 
-class ExposureWriter(Pipelining, Sourcing, Sizing, Emptying, Logging):
-    def __init__(self, *args, table, **kwargs):
-        Pipelining.__init__(self, *args, **kwargs)
-        Logging.__init__(self, *args, **kwargs)
-        self.__table = table
-
-    def execute(self, exposures, *args, **kwargs):
-        assert isinstance(exposures, pd.DataFrame)
-        for contract, dataframe in self.source(exposures, Querys.Contract):
-            if self.empty(dataframe): continue
-            with self.table.mutex:
-                self.obsolete(contract, *args, **kwargs)
-                self.write(dataframe, *args, **kwargs)
-
-    def obsolete(self, contract, *args, **kwargs):
-        assert isinstance(contract, Querys.Contract)
-        contract = lambda table: [table[key] == value for key, value in iter(contract)]
-        obsolete = lambda table: reduce(lambda x, y: x & y, contract(table))
-        self.table.remove(obsolete)
-
-    def write(self, exposures, *args, **kwargs):
-        sorting = dict(ticker=False, expire=False)
-        self.table.combine(exposures)
-        self.table.reset()
-        self.table.sort(list(sorting.keys()), reverse=list(sorting.values()))
-
-    @property
-    def table(self): return self.__table
+# class ExposureWriter(Pipelining, Sourcing, Logging, Sizing, Emptying):
+#     def __init__(self, *args, table, **kwargs):
+#         Pipelining.__init__(self, *args, **kwargs)
+#         Logging.__init__(self, *args, **kwargs)
+#         self.__table = table
+#
+#     def execute(self, exposures, *args, **kwargs):
+#         assert isinstance(exposures, pd.DataFrame)
+#         if self.empty(exposures): return
+#         with self.table.mutex:
+#             for contract, dataframe in self.source(exposures, Querys.Contract):
+#                 if self.empty(dataframe): continue
+#                 self.obsolete(contract, *args, **kwargs)
+#                 self.write(dataframe, *args, **kwargs)
+#
+#     def obsolete(self, contract, *args, **kwargs):
+#         assert isinstance(contract, Querys.Contract)
+#         contract = lambda table: [table[key] == value for key, value in iter(contract)]
+#         obsolete = lambda table: reduce(lambda x, y: x & y, contract(table))
+#         self.table.remove(obsolete)
+#         dataframe = obsolete.dropna(how="all", inplace=False)
+#         string = f"Discarded: {repr(self)}|{str(contract)}|{len(dataframe):.0f}"
+#         self.logger.info(string)
+#
+#     def write(self, exposures, *args, **kwargs):
+#         assert isinstance(exposures, pd.DataFrame)
+#         sorting = dict(ticker=False, expire=False)
+#         self.table.combine(exposures)
+#         self.table.reset()
+#         self.table.sort(list(sorting.keys()), reverse=list(sorting.values()))
+#
+#     @property
+#     def table(self): return self.__table
 
 
 

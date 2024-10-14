@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 
 from finance.variables import Variables, Querys
-from support.mixins import Sizing, Logging, Pipelining, Sourcing
+from support.mixins import Emptying, Sizing, Logging, Pipelining, Sourcing
 from support.meta import ParametersMeta
 
 __version__ = "1.0.0"
@@ -35,13 +35,12 @@ class HoldingParameters(metaclass=ParametersMeta):
 #     pass
 
 
-class HoldingCalculator(Pipelining, Sourcing, Sizing, Logging):
+class HoldingCalculator(Pipelining, Sourcing, Logging, Sizing, Emptying):
     def __init__(self, *args, valuation, **kwargs):
+        assert valuation in list(Variables.Valuations)
         Pipelining.__init__(self, *args, **kwargs)
         Logging.__init__(self, *args, **kwargs)
-        index = list(Querys.Product.fields) + list(Variables.Security.fields)
         valuations = {Variables.Valuations.ARBITRAGE: ["apy", "npv", "cost"]}
-        self.__header = list(index) + ["quantity"]
         self.__stacking = valuations[valuation]
 
     def execute(self, valuations, *args, **kwargs):
@@ -64,6 +63,27 @@ class HoldingCalculator(Pipelining, Sourcing, Sizing, Logging):
         return holdings
 
     @staticmethod
+    def holdings(securities, *args, **kwargs):
+        assert isinstance(securities, pd.DataFrame)
+        header = list(Querys.Product) + list(Variables.Security) + ["quantity"]
+        columns = [column for column in list(header) if column in securities.columns]
+        securities = securities[columns + list(Variables.Securities)]
+        holdings = securities.melt(id_vars=list(Variables.Contract), value_vars=list(Variables.Securities), var_name="security", value_name="strike")
+        holdings = holdings.where(holdings["strike"].notna()).dropna(how="all", inplace=False)
+        holdings["security"] = holdings["security"].apply(Variables.Securities)
+        holdings["instrument"] = holdings["security"].apply(lambda security: security.instrument)
+        holdings["option"] = holdings["security"].apply(lambda security: security.option)
+        holdings["position"] = holdings["security"].apply(lambda security: security.position)
+        holdings = holdings.assign(quantity=1)
+        return holdings[header]
+
+    def unpivot(self, dataframe, *args, **kwargs):
+        assert isinstance(dataframe, pd.DataFrame)
+        index = set(dataframe.columns) - ({"scenario"} | set(self.stacking))
+        valuations = dataframe[list(index)].droplevel("scenario", axis=1)
+        return valuations
+
+    @staticmethod
     def stocks(valuations, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame)
         strategy = lambda cols: list(map(str, cols["strategy"].stocks))
@@ -72,29 +92,8 @@ class HoldingCalculator(Pipelining, Sourcing, Sizing, Logging):
         stocks = valuations.apply(function, axis=1, result_type="expand")
         return stocks
 
-    def holdings(self, securities, *args, **kwargs):
-        assert isinstance(securities, pd.DataFrame)
-        securities = securities[[column for column in list(self.header) if column in securities.columns] + list(Variables.Securities)]
-        contracts = [column for column in securities.columns if column not in list(Variables.Securities)]
-        holdings = securities.melt(id_vars=contracts, value_vars=list(Variables.Securities), var_name="security", value_name="strike")
-        holdings = holdings.where(holdings["strike"].notna()).dropna(how="all", inplace=False)
-        holdings["security"] = holdings["security"].apply(Variables.Securities)
-        holdings["instrument"] = holdings["security"].apply(lambda security: security.instrument)
-        holdings["option"] = holdings["security"].apply(lambda security: security.option)
-        holdings["position"] = holdings["security"].apply(lambda security: security.position)
-        holdings = holdings.assign(quantity=1)
-        return holdings[self.variables.header]
-
-    def unpivot(self, dataframe, *args, **kwargs):
-        assert isinstance(dataframe, pd.DataFrame)
-        index = set(dataframe.columns) - ({"scenario"} | set(self.stacking))
-        valuations = dataframe[list(index)].droplevel("scenario", axis=1)
-        return valuations
-
     @property
     def stacking(self): return self.__stacking
-    @property
-    def header(self): return self.__header
 
 
 

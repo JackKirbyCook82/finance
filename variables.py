@@ -6,6 +6,7 @@ Created on Sun Jan 28 2024
 
 """
 
+import numbers
 import logging
 import datetime
 import pandas as pd
@@ -13,8 +14,8 @@ from abc import ABC, ABCMeta
 from enum import Enum, EnumMeta
 from collections import namedtuple as ntuple
 
+from support.querys import Field, Query
 from support.dispatchers import typedispatcher
-from support.mixins import Field, Fields
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -24,14 +25,15 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-class Ticker(Field, type=str): pass
-class Date(Field, type=datetime.date, format="%Y%m%d"): pass
-class Expire(Field, type=datetime.date, format="%Y%m%d"): pass
-class Strike(Field, type=float, decimals=2): pass
-class Symbol(Fields, fields={"ticker": Ticker}): pass
-class History(Fields, fields={"ticker": Ticker, "date": Date}): pass
-class Contract(Fields, fields={"ticker": Ticker, "expire": Expire}): pass
-class Product(Fields, fields={"ticker": Ticker, "expire": Expire, "strike": Strike}): pass
+class Ticker(Field, ABC, dataname="ticker", datatype=str): pass
+class Date(Field, ABC, dataname="date", datatype=datetime.date, format="%Y%m%d"): pass
+class Expire(Field, ABC, dataname="expire", datatype=datetime.date, format="%Y%m%d"): pass
+class Strike(Field, ABC, dataname="strike", datatype=numbers.Number, digits=2): pass
+
+class Symbol(Query, fields=[Ticker]): pass
+class History(Query, fields=[Ticker, Date]): pass
+class Contract(Query, fields=[Ticker, Expire]): pass
+class Product(Query, fields=[Ticker, Expire, Strike]): pass
 
 
 class DateRange(ntuple("DateRange", "minimum maximum")):
@@ -112,7 +114,9 @@ class MultiVariable(ABC):
 
     def __int__(self): return int(sum([pow(10, index) * int(content) for index, content in enumerate(reversed(self))]))
     def __str__(self): return str("|".join([str(content) for content in iter(self) if bool(content)]))
+    def __bool__(self): return any([bool(content) for content in iter(self)])
     def __hash__(self): return hash(tuple(zip(self.fields, self.contents)))
+
     def __reversed__(self): return reversed(self.contents)
     def __iter__(self): return iter(self.contents)
 
@@ -149,9 +153,6 @@ class Scenarios(members=["MINIMUM", "MAXIMUM"], metaclass=VariableMeta): pass
 class Valuations(members=["ARBITRAGE"], metaclass=VariableMeta): pass
 class Pricing(members=["BLACKSCHOLES"], metaclass=VariableMeta): pass
 class Status(members=["PROSPECT", "PENDING", "ABANDONED", "REJECTED", "ACCEPTED"], metaclass=VariableMeta): pass
-
-# class Querys(members=["HISTORY", "SYMBOL", "CONTRACT", "PRODUCT", "SECURITY"], metaclass=VariableMeta): pass
-# class Datasets(members=["PRICING", "SIZING", "TIMING", "EXPOSURE"], metaclass=VariableMeta): pass
 
 class Markets(members=["EMPTY", "BEAR", "BULL"], start=0, metaclass=VariableMeta): pass
 class Instruments(members=["EMPTY", "STOCK", "OPTION"], start=0, metaclass=VariableMeta): pass
@@ -195,28 +196,26 @@ class Strategies(contents=[VerticalPut, VerticalCall, CollarLong, CollarShort], 
     class Collar: Long = CollarLong; Short = CollarShort
 
 
-#class Variables:
-#    Securities = Securities
-#    Strategies = Strategies
-#    Markets = Markets
-#    Pricing = Pricing
-#    Instruments = Instruments
-#    Options = Options
-#    Positions = Positions
-#    Spreads = Spreads
-#    Valuations = Valuations
-#    Scenarios = Scenarios
-#    Technicals = Technicals
-#    Status = Status
-#    Querys = Querys
-#    Datasets = Datasets
-#    Omega = Omega
-#    Theta = Theta
-#    Phi = Phi
+class Variables:
+    Securities = Securities
+    Strategies = Strategies
+    Markets = Markets
+    Pricing = Pricing
+    Instruments = Instruments
+    Options = Options
+    Positions = Positions
+    Spreads = Spreads
+    Valuations = Valuations
+    Scenarios = Scenarios
+    Technicals = Technicals
+    Status = Status
+    Omega = Omega
+    Theta = Theta
+    Phi = Phi
 
-#class Querys:
-#    Product = Product
-#    Contract = Contract
-#    Symbol = Symbol
-#    History = History
+class Querys:
+    Product = Product
+    Contract = Contract
+    Symbol = Symbol
+    History = History
 
