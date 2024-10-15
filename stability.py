@@ -54,9 +54,12 @@ class StabilityFilter(Pipelining, Sourcing, Logging, Sizing, Emptying):
 
     def execute(self, valuations, stabilities, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame) and isinstance(stabilities, pd.DataFrame)
-        for contract, primary in self.source(valuations, Querys.Contract):
+        if self.empty(valuations): return
+        for contract, primary in self.source(valuations, keys=list(Querys.Contract)):
+            contract = Querys.Contract(contract)
             if self.empty(primary): continue
-            secondary = self.align(stabilities, contract)
+            parameters = dict(keys=list(contract.keys()), values=list(contract.values()))
+            secondary = self.align(stabilities, **parameters)
             dataframe = self.calculate(primary, secondary, *args, **kwargs)
             size = self.size(dataframe)
             string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
@@ -76,9 +79,12 @@ class StabilityCalculator(Pipelining, Sourcing, Logging, Sizing, Emptying):
 
     def execute(self, orders, exposures, *args, **kwargs):
         assert isinstance(orders, pd.DataFrame) and isinstance(exposures, pd.DataFrame)
-        for contract, primary in self.source(orders, Querys.Contract):
+        if self.empty(orders): return
+        for contract, primary in self.source(orders, keys=list(Querys.Contract)):
+            contract = Querys.Contract(contract)
             if self.empty(primary): continue
-            secondary = self.align(exposures, contract)
+            parameters = dict(keys=list(contract.keys()), values=list(contract.values()))
+            secondary = self.align(exposures, **parameters)
             stabilities = self.calculate(primary, secondary, *args, **kwargs)
             size = self.size(stabilities)
             string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"

@@ -28,7 +28,9 @@ class OrderCalculator(Pipelining, Sourcing, Logging, Sizing, Emptying):
 
     def execute(self, valuations, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame)
-        for contract, dataframe in self.source(valuations, Querys.Contract):
+        if self.empty(valuations): return
+        for contract, dataframe in self.source(valuations, keys=list(Querys.Contract)):
+            contract = Querys.Contract(contract)
             if self.empty(dataframe): continue
             orders = self.calculate(dataframe, *args, **kwargs)
             size = self.size(orders)

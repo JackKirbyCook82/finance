@@ -29,8 +29,6 @@ class TechnicalParameters(metaclass=ParametersMeta):
     types = {"ticker": str, "volume": np.int64} | {column: np.float32 for column in ("price", "open", "close", "high", "low")}
     types.update({"trend": np.float32, "volatility": np.float32, "oscillator": np.float32})
     dates = {"date": "%Y%m%d"}
-#    queryname = lambda filename: Querys.Symbol.fromstring(filename)
-#    filename = lambda queryname: Querys.Symbol.tostring(queryname)
 
 
 class TechnicalFile(File, datatype=pd.DataFrame, **dict(TechnicalParameters)): pass
@@ -76,7 +74,9 @@ class TechnicalCalculator(Pipelining, Sourcing, Logging, Sizing, Emptying):
 
     def execute(self, bars, *args, **kwargs):
         assert isinstance(bars, pd.DataFrame)
-        for symbol, dataframe in self.source(bars, Querys.Symbol):
+        if self.empty(bars): return
+        for symbol, dataframe in self.source(bars, keys=list(Querys.Symbol)):
+            symbol = Querys.Symbol(symbol)
             if self.empty(dataframe): continue
             parameters = dict(ticker=symbol.ticker)
             technicals = self.calculate(dataframe, *args, **parameters, **kwargs)

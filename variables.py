@@ -30,10 +30,10 @@ class Date(Field, ABC, dataname="date", datatype=datetime.date, format="%Y%m%d")
 class Expire(Field, ABC, dataname="expire", datatype=datetime.date, format="%Y%m%d"): pass
 class Strike(Field, ABC, dataname="strike", datatype=numbers.Number, digits=2): pass
 
-class Symbol(Query, fields=[Ticker]): pass
-class History(Query, fields=[Ticker, Date]): pass
-class Contract(Query, fields=[Ticker, Expire]): pass
-class Product(Query, fields=[Ticker, Expire, Strike]): pass
+class Symbol(Query, fields=[Ticker], delimiter="|"): pass
+class History(Query, fields=[Ticker, Date], delimiter="|"): pass
+class Contract(Query, fields=[Ticker, Expire], delimiter="|"): pass
+class Product(Query, fields=[Ticker, Expire, Strike], delimiter="|"): pass
 
 
 class DateRange(ntuple("DateRange", "minimum maximum")):

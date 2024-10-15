@@ -99,7 +99,9 @@ class StrategyCalculator(Pipelining, Sourcing, Logging, Sizing, Emptying):
 
     def execute(self, options, *args, **kwargs):
         assert isinstance(options, pd.DataFrame)
-        for contract, dataframe in self.source(options, Querys.Contract):
+        if self.empty(options): return
+        for contract, dataframe in self.source(options, keys=list(Querys.Contract)):
+            contract = Querys.Contract(contract)
             if self.empty(dataframe): continue
             datasets = dict(self.options(dataframe, *args, **kwargs))
             for strategy, strategies in self.calculate(datasets, *args, **kwargs):
