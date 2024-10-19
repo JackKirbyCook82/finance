@@ -13,13 +13,13 @@ from abc import ABC
 from functools import reduce
 
 from finance.variables import Variables, Querys
-from support.mixins import Emptying, Sizing, Logging, Pipelining, Sourcing
+from support.mixins import Function, Emptying, Sizing, Logging
 from support.tables import Writer, Table, View
 from support.meta import ParametersMeta
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["ExposureCalculator"]
+__all__ = ["ExposureCalculator", "ExposureWriter", "ExposureTable"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
@@ -39,23 +39,22 @@ class ExposureTable(Table, ABC, datatype=pd.DataFrame, view=ExposureView):
         self.remove(obsolete)
 
 
-class ExposureCalculator(Pipelining, Sourcing, Logging, Sizing, Emptying):
+class ExposureCalculator(Function, Logging, Sizing, Emptying):
     def __init__(self, *args, **kwargs):
-        Pipelining.__init__(self, *args, **kwargs)
+        Function.__init__(self, *args, **kwargs)
         Logging.__init__(self, *args, **kwargs)
 
-    def execute(self, holdings, *args, **kwargs):
-        assert isinstance(holdings, pd.DataFrame)
+    def execute(self, source, *args, **kwargs):
+        assert isinstance(source, tuple)
+        contract, holdings = source
+        assert isinstance(contract, Querys.Contract) and isinstance(holdings, pd.DataFrame)
         if self.empty(holdings): return
-        for contract, dataframe in self.source(holdings, keys=list(Querys.Contract)):
-            contract = Querys.Contract(contract)
-            if self.empty(dataframe): continue
-            exposures = self.calculate(dataframe, *args, **kwargs)
-            size = self.size(exposures)
-            string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
-            self.logger.info(string)
-            if self.empty(exposures): continue
-            yield exposures
+        exposures = self.calculate(holdings, *args, **kwargs)
+        size = self.size(exposures)
+        string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
+        self.logger.info(string)
+        if self.empty(exposures): return
+        return exposures
 
     def calculate(self, holdings, *args, **kwargs):
         assert isinstance(holdings, pd.DataFrame)
@@ -127,12 +126,11 @@ class ExposureCalculator(Pipelining, Sourcing, Logging, Sizing, Emptying):
 class ExposureWriter(Writer):
     def write(self, contract, exposures, *args, **kwargs):
         assert isinstance(contract, Querys.Contract) and isinstance(exposures, pd.DataFrame)
-        with self.table.mutex:
-            self.table.obsolete(contract)
-            if bool(exposures.empty): return
-            self.table.combine(exposures)
-            self.table.reset()
-            self.table.sort(["ticker", "expire"], reverse=[False, False])
+        self.table.obsolete(contract)
+        if bool(exposures.empty): return
+        self.table.combine(exposures)
+        self.table.reset()
+        self.table.sort(["ticker", "expire"], reverse=[False, False])
 
 
 

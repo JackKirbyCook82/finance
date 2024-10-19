@@ -14,8 +14,8 @@ from functools import reduce
 from collections import OrderedDict as ODict
 
 from finance.variables import Variables, Querys
-from support.mixins import Emptying, Sizing, Logging, Pipelining, Sourcing
-from support.calculations import Variable, Equation, Calculation
+from support.calculations import Calculation, Variable
+from support.mixins import Function, Emptying, Sizing, Logging
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -25,72 +25,75 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-class StabilityEquation(Equation):
-    y = Variable("y", "value", np.float32, function=lambda q, Θ, Φ, Ω, Δ: q * Θ * Φ * Δ * (1 - Θ * Ω) / 2)
-    m = Variable("m", "trend", np.float32, function=lambda q, Θ, Φ, Ω: q * Θ * Φ * Ω)
-    Ω = Variable("Ω", "omega", np.int32, function=lambda x, k: np.sign(x / k - 1))
-    Δ = Variable("Δ", "delta", np.int32, function=lambda x, k: np.subtract(x, k))
-    Θ = Variable("Θ", "theta", np.int32, function=lambda i: + int(Variables.Theta(str(i))))
-    Φ = Variable("Φ", "phi", np.int32, function=lambda j: + int(Variables.Phi(str(j))))
-
-    x = Variable("x", "underlying", np.float32, position=0, locator="underlying")
-    q = Variable("q", "quantity", np.int32, position=0, locator="quantity")
-    i = Variable("i", "option", Variables.Options, position=0, locator="option")
-    j = Variable("j", "position", Variables.Positions, position=0, locator="position")
-    k = Variable("k", "strike", np.float32, position=0, locator="strike")
-
-
-class StabilityCalculation(Calculation, equation=StabilityEquation):
-    def execute(self, portfolios, *args, **kwargs):
-        equation = self.equation(*args, **kwargs)
-        yield equation.y(portfolios)
-        yield equation.m(portfolios)
-
-
-class StabilityFilter(Pipelining, Sourcing, Logging, Sizing, Emptying):
+class StabilityFilter(Function, Logging, Sizing, Emptying):
     def __init__(self, *args, **kwargs):
-        Pipelining.__init__(self, *args, **kwargs)
+        Function.__init__(self, *args, **kwargs)
         Logging.__init__(self, *args, **kwargs)
 
-    def execute(self, valuations, stabilities, *args, **kwargs):
-        assert isinstance(valuations, pd.DataFrame) and isinstance(stabilities, pd.DataFrame)
+    def execute(self, source, *args, **kwargs):
+        assert isinstance(source, tuple)
+        contract, valuations, stabilities = source
+        assert isinstance(contract, Querys.Contract) and isinstance(valuations, pd.DataFrame) and isinstance(stabilities, pd.DataFrame)
         if self.empty(valuations): return
-        for contract, primary in self.source(valuations, keys=list(Querys.Contract)):
-            contract = Querys.Contract(contract)
-            if self.empty(primary): continue
-            parameters = dict(keys=list(contract.keys()), values=list(contract.values()))
-            secondary = self.align(stabilities, **parameters)
-            dataframe = self.calculate(primary, secondary, *args, **kwargs)
-            size = self.size(dataframe)
-            string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
-            self.logger.info(string)
-            if self.empty(dataframe): continue
-            yield dataframe
+        valuations = self.calculate(valuations, stabilities, *args, **kwargs)
+        size = self.size(valuations)
+        string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
+        self.logger.info(string)
+        if self.empty(valuations): return
+        return valuations
 
     def calculate(self, valuations, stabilities, *args, **kwargs):
         pass
 
 
-class StabilityCalculator(Pipelining, Sourcing, Logging, Sizing, Emptying):
+class StabilityCalculation(Calculation):
+    y = Variable("value", np.float32, function=lambda q, Θ, Φ, Ω, Δ: q * Θ * Φ * Δ * (1 - Θ * Ω) / 2)
+    m = Variable("trend", np.float32, function=lambda q, Θ, Φ, Ω: q * Θ * Φ * Ω)
+    Ω = Variable("omega", np.int32, function=lambda x, k: np.sign(x / k - 1))
+    Δ = Variable("delta", np.int32, function=lambda x, k: np.subtract(x, k))
+    Θ = Variable("theta", np.int32, function=lambda i: + int(Variables.Theta(str(i))))
+    Φ = Variable("phi", np.int32, function=lambda j: + int(Variables.Phi(str(j))))
+
+    x = Variable("underlying", np.float32, locator=)
+    q = Variable("quantity", np.int32, locator=)
+    i = Variable("option", Variables.Options, locator=)
+    j = Variable("position", Variables.Positions, locator=)
+    k = Variable("strike", np.float32, locator=)
+
+    def calculate(self, portfolios, *args, **kwargs):
+        sources = {source: portfolios[source] for source in self.sources}
+        for axis, content in sources.items(): self[axis] = content
+
+    def execute(self, *args, **kwargs):
+        dataarrays = {axis: self[axis](*args, **kwargs) for axis in ("value", "trend")}
+        dataset = xr.merge(dataarrays)
+        dataset = dataset.sum(dim="holdings")
+        dataset["maximum"] = dataset["value"].max(dim="underlying")
+        dataset["minimum"] = dataset["value"].min(dim="underlying")
+        dataset["bull"] = dataset["trend"].isel(underlying=0).drop_vars(["underlying"])
+        dataset["bear"] = dataset["trend"].isel(underlying=-1).drop_vars(["underlying"])
+        dataframe = xr.Dataset(dataarrays).to_dataframe()
+        dataframe["stable"] = (dataframe["bear"] == 0) & (dataframe["bull"] == 0)
+        return dataframe
+
+
+class StabilityCalculator(Function, Logging, Sizing, Emptying):
     def __init__(self, *args, **kwargs):
-        Pipelining.__init__(self, *args, **kwargs)
+        Function.__init__(self, *args, **kwargs)
         Logging.__init__(self, *args, **kwargs)
         self.__calculation = StabilityCalculation(*args, **kwargs)
 
-    def execute(self, orders, exposures, *args, **kwargs):
-        assert isinstance(orders, pd.DataFrame) and isinstance(exposures, pd.DataFrame)
+    def execute(self, source, *args, **kwargs):
+        assert isinstance(source, tuple)
+        contract, orders, exposures = source
+        assert isinstance(contract, Querys.Contract) and isinstance(orders, pd.DataFrame) and isinstance(exposures, pd.DataFrame)
         if self.empty(orders): return
-        for contract, primary in self.source(orders, keys=list(Querys.Contract)):
-            contract = Querys.Contract(contract)
-            if self.empty(primary): continue
-            parameters = dict(keys=list(contract.keys()), values=list(contract.values()))
-            secondary = self.align(exposures, **parameters)
-            stabilities = self.calculate(primary, secondary, *args, **kwargs)
-            size = self.size(stabilities)
-            string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
-            self.logger.info(string)
-            if self.empty(stabilities): continue
-            yield stabilities
+        stabilities = self.calculate(orders, exposures, *args, **kwargs)
+        size = self.size(stabilities)
+        string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
+        self.logger.info(string)
+        if self.empty(stabilities): return
+        return stabilities
 
     def calculate(self, orders, exposures, *args, **kwargs):
         assert isinstance(orders, pd.DataFrame) and isinstance(exposures, pd.DataFrame)
@@ -107,14 +110,7 @@ class StabilityCalculator(Pipelining, Sourcing, Logging, Sizing, Emptying):
         assert isinstance(portfolios, xr.Dataset)
         portfolios = self.underlying(portfolios, *args, **kwargs)
         stabilities = self.calculation(portfolios, *args, **kwargs)
-        assert isinstance(stabilities, xr.Dataset)
-        stabilities = stabilities.sum(dim="holdings")
-        stabilities["maximum"] = stabilities["value"].max(dim="underlying")
-        stabilities["minimum"] = stabilities["value"].min(dim="underlying")
-        stabilities["bull"] = stabilities["trend"].isel(underlying=0).drop_vars(["underlying"])
-        stabilities["bear"] = stabilities["trend"].isel(underlying=-1).drop_vars(["underlying"])
-        stabilities = xr.Dataset(stabilities).to_dataframe()
-        stabilities["stable"] = (stabilities["bear"] == 0) & (stabilities["bull"] == 0)
+        assert isinstance(stabilities, pd.DataFrame)
         return stabilities
 
     @staticmethod

@@ -10,12 +10,11 @@ import logging
 import numpy as np
 import pandas as pd
 from abc import ABC
-
 from finance.variables import Variables, Querys
-from support.mixins import Emptying, Sizing, Logging, Pipelining, Sourcing
-from support.calculations import Variable, Equation, Calculation
-from support.meta import RegistryMeta, ParametersMeta
 from support.files import File
+from support.meta import ParametersMeta, RegistryMeta
+from support.calculations import Calculation, Variable
+from support.mixins import Emptying, Sizing, Logging, Function
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -37,54 +36,55 @@ class StatisticFile(TechnicalFile, variable=Variables.Technicals.STATISTIC): pas
 class StochasticFile(TechnicalFile, variable=Variables.Technicals.STOCHASTIC): pass
 
 
-class TechnicalEquation(Equation): pass
-class StochasticEquation(TechnicalEquation):
-    xk = Variable("xk", "oscillator", np.float32, function=lambda x, xl, xh: (x - xl) * 100 / (xh - xl))
-    xh = Variable("xh", "highest", np.float32, position=0, locator="highest")
-    xl = Variable("xl", "lowest", np.float32, position=0, locator="lowest")
-    x = Variable("x", "price", np.float32, position=0, locator="price")
-
-
 class TechnicalCalculation(Calculation, ABC, metaclass=RegistryMeta): pass
 class StatisticCalculation(TechnicalCalculation, register=Variables.Technicals.STATISTIC):
     @staticmethod
     def execute(bars, *args, period, **kwargs):
         assert (bars["ticker"].to_numpy()[0] == bars["ticker"]).all()
-        yield from iter([bars["ticker"], bars["date"], bars["price"]])
-        yield bars["price"].pct_change(1).rolling(period).mean().rename("trend")
-        yield bars["price"].pct_change(1).rolling(period).std().rename("volatility")
+        trend = bars["price"].pct_change(1).rolling(period).mean().rename("trend")
+        volatility = bars["price"].pct_change(1).rolling(period).std().rename("volatility")
+        series = [bars[axis] for axis in ("ticker", "date", "price")]
+        series.append([trend, volatility])
+        return pd.concat(series, axis=1)
 
-class StochasticCalculation(TechnicalCalculation, equation=StochasticEquation, register=Variables.Technicals.STOCHASTIC):
-    def execute(self, bars, *args, period, **kwargs):
+class StochasticCalculation(TechnicalCalculation, register=Variables.Technicals.STOCHASTIC):
+    xk = Variable("xk", "oscillator", np.float32, function=lambda x, xl, xh: (x - xl) * 100 / (xh - xl))
+    xh = Variable("xh", "highest", np.float32)
+    xl = Variable("xl", "lowest", np.float32)
+    x = Variable("x", "price", np.float32)
+
+    def calculate(self, bars, *args, period, **kwargs):
         assert (bars["ticker"].to_numpy()[0] == bars["ticker"]).all()
-        equation = self.equation(*args, **kwargs)
         lowest = bars["low"].rolling(period).min().rename("lowest")
         highest = bars["high"].rolling(period).max().rename("highest")
-        bars = pd.concat([bars, lowest, highest], axis=1)
-        yield from iter([bars["ticker"], bars["date"], bars["price"]])
-        yield equation.xk(bars)
+        sources = dict(price=bars["price"], lowest=lowest, highest=highest)
+        for axis, content in sources.items(): self[axis] = content
+
+    def execute(self, bars, *args, **kwargs):
+        series = [bars[axis] for axis in ("ticker", "date", "price")]
+        series.append(self["oscillator"](*args, **kwargs))
+        return pd.concat(series, axis=1)
 
 
-class TechnicalCalculator(Pipelining, Sourcing, Logging, Sizing, Emptying):
+class TechnicalCalculator(Function, Logging, Sizing, Emptying):
     def __init__(self, *args, technical, **kwargs):
         assert technical in list(Variables.Technicals)
-        Pipelining.__init__(self, *args, **kwargs)
+        Function.__init__(self, *args, **kwargs)
         Logging.__init__(self, *args, **kwargs)
         self.__calculation = TechnicalCalculation[technical](*args, **kwargs)
 
-    def execute(self, bars, *args, **kwargs):
-        assert isinstance(bars, pd.DataFrame)
+    def execute(self, source, *args, **kwargs):
+        assert isinstance(source, tuple)
+        symbol, bars = source
+        assert isinstance(symbol, Querys.Symbol) and isinstance(bars, pd.DataFrame)
         if self.empty(bars): return
-        for symbol, dataframe in self.source(bars, keys=list(Querys.Symbol)):
-            symbol = Querys.Symbol(symbol)
-            if self.empty(dataframe): continue
-            parameters = dict(ticker=symbol.ticker)
-            technicals = self.calculate(dataframe, *args, **parameters, **kwargs)
-            size = self.size(technicals)
-            string = f"Calculated: {repr(self)}|{str(symbol)}[{size:.0f}]"
-            self.logger.info(string)
-            if self.empty(technicals): continue
-            yield technicals
+        parameters = dict(ticker=symbol.ticker)
+        technicals = self.calculate(bars, *args, **parameters, **kwargs)
+        size = self.size(technicals)
+        string = f"Calculated: {repr(self)}|{str(symbol)}[{size:.0f}]"
+        self.logger.info(string)
+        if self.empty(technicals): return
+        return technicals
 
     def calculate(self, bars, *args, **kwargs):
         assert isinstance(bars, pd.DataFrame)
