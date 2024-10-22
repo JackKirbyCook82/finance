@@ -11,13 +11,13 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 from abc import ABC
-from itertools import chain
+from itertools import product
 from functools import reduce
 from collections import namedtuple as ntuple
 
 from finance.variables import Variables, Querys
 from support.meta import RegistryMeta
-from support.calculations import Calculation, Variable
+from support.calculations import Calculation, Equation, Variable
 from support.mixins import Function, Emptying, Sizing, Logging
 
 __version__ = "1.0.0"
@@ -29,7 +29,7 @@ __logger__ = logging.getLogger(__name__)
 
 
 class StrategySource(ntuple("Source", "axis position")): pass
-class StrategyCalculation(Calculation, ABC, metaclass=RegistryMeta):
+class StrategyEquation(Equation, ABC, metaclass=RegistryMeta):
     t = Variable("current", np.datetime64, function=lambda tα, tβ: np.minimum(np.datetime64(tα, "ns"), np.datetime64(tβ, "ns")))
     q = Variable("size", np.float32, function=lambda qα, qβ: np.minimum(qα, qβ))
     x = Variable("underlying", np.float32, function=lambda xα, xβ: (xα + xβ) / 2)
@@ -47,41 +47,52 @@ class StrategyCalculation(Calculation, ABC, metaclass=RegistryMeta):
     xβ = Variable("underlying", np.float32, locator=StrategySource("underlying", Variables.Positions.SHORT))
     yβ = Variable("price", np.float32, locator=StrategySource("price", Variables.Positions.SHORT))
     kβ = Variable("strike", np.float32, locator=StrategySource("strike", Variables.Positions.SHORT))
-    ε = Variable("fees", np.float32, locator="fees")
 
-    def calculate(self, options, *args, fees, **kwargs):
-        positions = [option.position for option in options.keys()]
-        assert len(set(positions)) == len(list(positions))
-        options = {option.position: dataset for option, dataset in options.items()}
-        sources = {source: options[source.position][source.axis] for source in self.sources}
-        constants = dict(fees=fees)
-        for axis, content in chain(sources.items(), constants.items()): self[axis] = content
-
-    def execute(self, *args, **kwargs):
-        dataarrays = {axis: self[axis](*args, **kwargs) for axis in ("maximum", "minimum", "spot", "underlying", "size", "current")}
-        return xr.merge(dataarrays)
-
-class VerticalEquation(StrategyCalculation):
+class VerticalEquation(StrategyEquation):
     y = Variable("spot", np.float32, function=lambda yα, yβ: - yα + yβ)
 
-class CollarEquation(StrategyCalculation):
+class CollarEquation(StrategyEquation):
     y = Variable("spot", np.float32, function=lambda yα, yβ, x: - yα + yβ - x)
 
-class VerticalPutCalculation(VerticalEquation, register=Variables.Strategies.Vertical.Put):
+class VerticalPutEquation(VerticalEquation, register=Variables.Strategies.Vertical.Put):
     yh = Variable("maximum", np.float32, function=lambda kα, kβ: np.maximum(kα - kβ, 0))
     yl = Variable("minimum", np.float32, function=lambda kα, kβ: np.minimum(kα - kβ, 0))
 
-class VerticalCallCalculation(VerticalEquation, register=Variables.Strategies.Vertical.Call):
+class VerticalCallEquation(VerticalEquation, register=Variables.Strategies.Vertical.Call):
     yh = Variable("maximum", np.float32, function=lambda kα, kβ: np.maximum(-kα + kβ, 0))
     yl = Variable("minimum", np.float32, function=lambda kα, kβ: np.minimum(-kα + kβ, 0))
 
-class CollarLongCalculation(CollarEquation, register=Variables.Strategies.Collar.Long):
+class CollarLongEquation(CollarEquation, register=Variables.Strategies.Collar.Long):
     yh = Variable("maximum", np.float32, function=lambda kα, kβ: np.maximum(kα, kβ))
     yl = Variable("minimum", np.float32, function=lambda kα, kβ: np.minimum(kα, kβ))
 
-class CollarShortCalculation(CollarEquation, register=Variables.Strategies.Collar.Short):
+class CollarShortEquation(CollarEquation, register=Variables.Strategies.Collar.Short):
     yh = Variable("maximum", np.float32, function=lambda kα, kβ: np.maximum(-kα, -kβ))
     yl = Variable("minimum", np.float32, function=lambda kα, kβ: np.minimum(-kα, -kβ))
+
+
+class StrategyCalculation(Calculation, metaclass=RegistryMeta):
+    def execute(self, options, *args, fees, **kwargs):
+        positions = [option.position for option in options.keys()]
+        assert len(set(positions)) == len(list(positions))
+        options = {option.position: dataset for option, dataset in options.items()}
+        variables, positions = ("price", "underlying", "strike", "size", "current"), list(Variables.Positions)
+        sources = {StrategySource(variable, positions): options[positions][variable] for variable, position in product(variables, positions)}
+        with self.equation(sources, fees=fees) as equation:
+            yield equation.t()
+            yield equation.q()
+            yield equation.x()
+            yield equation.y()
+            yield equation.yl()
+            yield equation.yh()
+
+
+class VerticalCalculation(StrategyCalculation): pass
+class CollarCalculation(StrategyCalculation): pass
+class VerticalPutCalculation(VerticalCalculation, equation=VerticalPutEquation, register=Variables.Strategies.Vertical.Put): pass
+class VerticalCallCalculation(VerticalCalculation, equation=VerticalCallEquation, register=Variables.Strategies.Vertical.Call): pass
+class CollarLongCalculation(CollarCalculation, equation=CollarLongEquation, register=Variables.Strategies.Collar.LongV): pass
+class CollarShortCalculation(CollarCalculation, equation=CollarShortEquation, register=Variables.Strategies.Collar.Shor): pass
 
 
 class StrategyCalculator(Function, Logging, Sizing, Emptying):

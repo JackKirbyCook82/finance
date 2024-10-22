@@ -12,12 +12,12 @@ import pandas as pd
 import xarray as xr
 from abc import ABC
 from functools import reduce
-from itertools import product, chain
+from itertools import product
 from collections import namedtuple as ntuple
 
 from finance.variables import Variables, Querys
 from support.meta import ParametersMeta, RegistryMeta
-from support.calculations import Calculation, Variable
+from support.calculations import Calculation, Equation, Variable
 from support.tables import Writer, Reader, Table, View
 from support.mixins import Function, Emptying, Sizing, Logging
 
@@ -73,40 +73,42 @@ class ValuationHeader(object):
     def index(self): return self.__index
 
 
-class ValuationCalculation(Calculation, ABC, metaclass=RegistryMeta): pass
-class ArbitrageCalculation(ValuationCalculation, ABC):
-    xα = Variable(str(Variables.Securities.Stock.Long), np.float32, function=lambda xo, stg: np.round(xo, decimals=2) if Variables.Securities.Stock.Long in list(stg.stocks) else np.NaN)
-    xβ = Variable(str(Variables.Securities.Stock.Short), np.float32, function=lambda xo, stg: np.round(xo, decimals=2) if Variables.Securities.Stock.Short in list(stg.stocks) else np.NaN)
-
+class ValuationEquation(Equation, ABC, metaclass=RegistryMeta):
     tau = Variable("tau", np.int32, function=lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
-    irr = Variable("irr", np.float32, function=lambda inc, exp, tau: np.power(np.divide(inc, exp), np.power(tau, -1)) - 1)
-    npv = Variable("npv", np.float32, function=lambda inc, exp, tau, ρ: np.divide(inc, np.power(1 + ρ, tau / 365)) - exp)
-    apy = Variable("apy", np.float32, function=lambda irr, tau: np.power(irr + 1, np.power(tau / 365, -1)) - 1)
     inc = Variable("income", np.float32, function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
     exp = Variable("cost", np.float32, function=lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0))
 
-    stg = Variable("strategy", Variables.Strategies, locator=)
-    xo = Variable("underlying", np.float32, locator=)
-    tτ = Variable("expire", np.datetime64, locator=)
-    to = Variable("current", np.datetime64, locator=)
-    vo = Variable("spot", np.float32, locator=)
-    ρ = Variable("discount", np.float32, locator=)
+    xo = Variable("underlying", np.float32, locator="underlying")
+    tτ = Variable("expire", np.datetime64, locator="expire")
+    to = Variable("current", np.datetime64, locator="current")
+    vo = Variable("spot", np.float32, locator="spot")
+    ρ = Variable("discount", np.float32, locator="discount")
 
-    def calculate(self, strategies, *args, discount, **kwargs):
-        sources = {source: strategies[source] for source in self.sources}
-        constants = dict(discount=discount)
-        for axis, content in chain(sources.items(), constants.items()): self[axis] = content
-
-    def execute(self, strategies, *args, **kwargs):
-        dataarrays = {axis: strategies[axis] for axis in ("underlying", "size", "current")}
-        dataarrays.update({axis: self[axis](*args, **kwargs) for axis in ("npv", "apy", "exp")})
-        return xr.merge(dataarrays)
+class ArbitrageCalculation(ValuationEquation, ABC):
+    irr = Variable("irr", np.float32, function=lambda inc, exp, tau: np.power(np.divide(inc, exp), np.power(tau, -1)) - 1)
+    npv = Variable("npv", np.float32, function=lambda inc, exp, tau, ρ: np.divide(inc, np.power(1 + ρ, tau / 365)) - exp)
+    apy = Variable("apy", np.float32, function=lambda irr, tau: np.power(irr + 1, np.power(tau / 365, -1)) - 1)
 
 class MinimumArbitrageCalculation(ArbitrageCalculation, register=(Variables.Valuations.ARBITRAGE, Variables.Scenarios.MINIMUM)):
-    vτ = Variable("minimum", np.float32, locator=)
+    vτ = Variable("minimum", np.float32, locator="minimum")
 
 class MaximumArbitrageCalculation(ArbitrageCalculation, register=(Variables.Valuations.ARBITRAGE, Variables.Scenarios.MAXIMUM)):
-    vτ = Variable("maximum", np.float32, locator=)
+    vτ = Variable("maximum", np.float32, locator="maximum")
+
+
+class ValuationCalculation(Calculation, ABC, metaclass=RegistryMeta): pass
+class ArbitrageCalculation(ValuationCalculation, ABC):
+    def execute(self, strategies, *args, discount, **kwargs):
+        with self.equation(strategies, discount=discount) as equation:
+            yield equation["underlying"]
+            yield equation["size"]
+            yield equation["current"]
+            yield equation.exp()
+            yield equation.npv()
+            yield equation.apy()
+
+class MinimumArbitrageCalculation(ArbitrageCalculation, equation=MinimumArbitrageCalculation, register=(Variables.Valuations.ARBITRAGE, Variables.Scenarios.MINIMUM)): pass
+class MaximumArbitrageCalculation(ArbitrageCalculation, equation=MaximumArbitrageCalculation, register=(Variables.Valuations.ARBITRAGE, Variables.Scenarios.MAXIMUM)): pass
 
 
 class ValuationCalculator(Function, Logging, Sizing, Emptying):

@@ -14,7 +14,6 @@ from functools import reduce
 from collections import OrderedDict as ODict
 
 from finance.variables import Variables, Querys
-from support.calculations import Calculation, Variable
 from support.mixins import Function, Emptying, Sizing, Logging
 
 __version__ = "1.0.0"
@@ -46,42 +45,10 @@ class StabilityFilter(Function, Logging, Sizing, Emptying):
         pass
 
 
-class StabilityCalculation(Calculation):
-    y = Variable("value", np.float32, function=lambda q, Θ, Φ, Ω, Δ: q * Θ * Φ * Δ * (1 - Θ * Ω) / 2)
-    m = Variable("trend", np.float32, function=lambda q, Θ, Φ, Ω: q * Θ * Φ * Ω)
-    Ω = Variable("omega", np.int32, function=lambda x, k: np.sign(x / k - 1))
-    Δ = Variable("delta", np.int32, function=lambda x, k: np.subtract(x, k))
-    Θ = Variable("theta", np.int32, function=lambda i: + int(Variables.Theta(str(i))))
-    Φ = Variable("phi", np.int32, function=lambda j: + int(Variables.Phi(str(j))))
-
-    x = Variable("underlying", np.float32, locator=)
-    q = Variable("quantity", np.int32, locator=)
-    i = Variable("option", Variables.Options, locator=)
-    j = Variable("position", Variables.Positions, locator=)
-    k = Variable("strike", np.float32, locator=)
-
-    def calculate(self, portfolios, *args, **kwargs):
-        sources = {source: portfolios[source] for source in self.sources}
-        for axis, content in sources.items(): self[axis] = content
-
-    def execute(self, *args, **kwargs):
-        dataarrays = {axis: self[axis](*args, **kwargs) for axis in ("value", "trend")}
-        dataset = xr.merge(dataarrays)
-        dataset = dataset.sum(dim="holdings")
-        dataset["maximum"] = dataset["value"].max(dim="underlying")
-        dataset["minimum"] = dataset["value"].min(dim="underlying")
-        dataset["bull"] = dataset["trend"].isel(underlying=0).drop_vars(["underlying"])
-        dataset["bear"] = dataset["trend"].isel(underlying=-1).drop_vars(["underlying"])
-        dataframe = xr.Dataset(dataarrays).to_dataframe()
-        dataframe["stable"] = (dataframe["bear"] == 0) & (dataframe["bull"] == 0)
-        return dataframe
-
-
 class StabilityCalculator(Function, Logging, Sizing, Emptying):
     def __init__(self, *args, **kwargs):
         Function.__init__(self, *args, **kwargs)
         Logging.__init__(self, *args, **kwargs)
-        self.__calculation = StabilityCalculation(*args, **kwargs)
 
     def execute(self, source, *args, **kwargs):
         assert isinstance(source, tuple)
@@ -152,8 +119,7 @@ class StabilityCalculator(Function, Logging, Sizing, Emptying):
         portfolios["underlying"] = underlying
         return portfolios
 
-    @property
-    def calculation(self): return self.__calculations
+
 
 
 

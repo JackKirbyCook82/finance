@@ -13,7 +13,7 @@ from abc import ABC
 from finance.variables import Variables, Querys
 from support.files import File
 from support.meta import ParametersMeta, RegistryMeta
-from support.calculations import Calculation, Variable
+from support.calculations import Calculation, Equation, Variable
 from support.mixins import Emptying, Sizing, Logging, Function
 
 __version__ = "1.0.0"
@@ -36,34 +36,39 @@ class StatisticFile(TechnicalFile, variable=Variables.Technicals.STATISTIC): pas
 class StochasticFile(TechnicalFile, variable=Variables.Technicals.STOCHASTIC): pass
 
 
+class TechnicalEquation(Equation, ABC, metaclass=RegistryMeta):
+    dt = Variable("period", np.int32, locator="period")
+    x = Variable("price", np.float32, locator="price")
+
+class StatisticEquation(TechnicalEquation, register=Variables.Technicals.STATISTIC):
+    δ = Variable("volatility", np.float32, function=lambda x, dt: x.pct_change(1).rolling(dt).std())
+    m = Variable("trend", np.float32, function=lambda x, dt: x.pct_change(1).rolling(dt).mean())
+
+class StochasticEquation(TechnicalEquation, register=Variables.Technicals.STOCHASTIC):
+    xk = Variable("oscillator", np.float32, function=lambda x, xl, xh: (x - xl) * 100 / (xh - xl))
+    xh = Variable("highest", np.float32, function=lambda x, dt: x.rolling(dt).min())
+    xl = Variable("lowest", np.float32, function=lambda x, dt: x.rolling(dt).max())
+
+
 class TechnicalCalculation(Calculation, ABC, metaclass=RegistryMeta): pass
-class StatisticCalculation(TechnicalCalculation, register=Variables.Technicals.STATISTIC):
-    @staticmethod
-    def execute(bars, *args, period, **kwargs):
+class StatisticCalculation(TechnicalCalculation, equation=StatisticEquation, register=Variables.Technicals.STATISTIC):
+    def execute(self, bars, *args, period, **kwargs):
         assert (bars["ticker"].to_numpy()[0] == bars["ticker"]).all()
-        trend = bars["price"].pct_change(1).rolling(period).mean().rename("trend")
-        volatility = bars["price"].pct_change(1).rolling(period).std().rename("volatility")
-        series = [bars[axis] for axis in ("ticker", "date", "price")]
-        series.append([trend, volatility])
-        return pd.concat(series, axis=1)
+        with self.equation(bars, period=period) as equation:
+            yield equation["ticker"]
+            yield equation["date"]
+            yield equation["price"]
+            yield equation.m()
+            yield equation.δ()
 
-class StochasticCalculation(TechnicalCalculation, register=Variables.Technicals.STOCHASTIC):
-    xk = Variable("xk", "oscillator", np.float32, function=lambda x, xl, xh: (x - xl) * 100 / (xh - xl))
-    xh = Variable("xh", "highest", np.float32)
-    xl = Variable("xl", "lowest", np.float32)
-    x = Variable("x", "price", np.float32)
-
-    def calculate(self, bars, *args, period, **kwargs):
+class StochasticCalculation(TechnicalCalculation, equation=StochasticEquation, register=Variables.Technicals.STOCHASTIC):
+    def execute(self, bars, *args, period, **kwargs):
         assert (bars["ticker"].to_numpy()[0] == bars["ticker"]).all()
-        lowest = bars["low"].rolling(period).min().rename("lowest")
-        highest = bars["high"].rolling(period).max().rename("highest")
-        sources = dict(price=bars["price"], lowest=lowest, highest=highest)
-        for axis, content in sources.items(): self[axis] = content
-
-    def execute(self, bars, *args, **kwargs):
-        series = [bars[axis] for axis in ("ticker", "date", "price")]
-        series.append(self["oscillator"](*args, **kwargs))
-        return pd.concat(series, axis=1)
+        with self.equation(bars, period=period) as equation:
+            yield equation["ticker"]
+            yield equation["date"]
+            yield equation["price"]
+            yield equation.xk()
 
 
 class TechnicalCalculator(Function, Logging, Sizing, Emptying):
