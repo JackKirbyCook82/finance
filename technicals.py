@@ -6,10 +6,12 @@ Created on Fri Apr 19 2024
 
 """
 
+import types
 import logging
 import numpy as np
 import pandas as pd
 from abc import ABC
+
 from finance.variables import Variables, Querys
 from support.files import File
 from support.meta import ParametersMeta, RegistryMeta
@@ -25,6 +27,7 @@ __logger__ = logging.getLogger(__name__)
 
 
 class TechnicalParameters(metaclass=ParametersMeta):
+    filename = lambda query: str(query.ticker)
     types = {"ticker": str, "volume": np.int64} | {column: np.float32 for column in ("price", "open", "close", "high", "low")}
     types.update({"trend": np.float32, "volatility": np.float32, "oscillator": np.float32})
     dates = {"date": "%Y%m%d"}
@@ -36,18 +39,18 @@ class StatisticFile(TechnicalFile, variable=Variables.Technicals.STATISTIC): pas
 class StochasticFile(TechnicalFile, variable=Variables.Technicals.STOCHASTIC): pass
 
 
-class TechnicalEquation(Equation, ABC, metaclass=RegistryMeta):
-    dt = Variable("period", np.int32, locator="period")
-    x = Variable("price", np.float32, locator="price")
+class TechnicalEquation(Equation, ABC):
+    dt = Variable("dt", "period", np.int32, types.NoneType, locator="period")
+    x = Variable("x", "price", np.float32, pd.Series, locator="price")
 
-class StatisticEquation(TechnicalEquation, register=Variables.Technicals.STATISTIC):
-    δ = Variable("volatility", np.float32, function=lambda x, dt: x.pct_change(1).rolling(dt).std())
-    m = Variable("trend", np.float32, function=lambda x, dt: x.pct_change(1).rolling(dt).mean())
+class StatisticEquation(TechnicalEquation):
+    δ = Variable("δ", "volatility", np.float32, pd.Series, vectorize=False, function=lambda x, dt: x.pct_change(1).rolling(dt).std())
+    m = Variable("m", "trend", np.float32, pd.Series, vectorize=False, function=lambda x, dt: x.pct_change(1).rolling(dt).mean())
 
-class StochasticEquation(TechnicalEquation, register=Variables.Technicals.STOCHASTIC):
-    xk = Variable("oscillator", np.float32, function=lambda x, xl, xh: (x - xl) * 100 / (xh - xl))
-    xh = Variable("highest", np.float32, function=lambda x, dt: x.rolling(dt).min())
-    xl = Variable("lowest", np.float32, function=lambda x, dt: x.rolling(dt).max())
+class StochasticEquation(TechnicalEquation):
+    xk = Variable("xk", "oscillator", np.float32, pd.Series, vectorize=False, function=lambda x, xl, xh: (x - xl) * 100 / (xh - xl))
+    xh = Variable("xh", "highest", np.float32, pd.Series, vectorize=False, function=lambda x, dt: x.rolling(dt).min())
+    xl = Variable("xl", "lowest", np.float32, pd.Series, vectorize=False, function=lambda x, dt: x.rolling(dt).max())
 
 
 class TechnicalCalculation(Calculation, ABC, metaclass=RegistryMeta): pass

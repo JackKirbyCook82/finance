@@ -6,6 +6,7 @@ Created on Weds Jul 19 2023
 
 """
 
+import types
 import logging
 import numpy as np
 import pandas as pd
@@ -28,47 +29,48 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-class StrategySource(ntuple("Source", "axis position")): pass
-class StrategyEquation(Equation, ABC, metaclass=RegistryMeta):
-    t = Variable("current", np.datetime64, function=lambda tα, tβ: np.minimum(np.datetime64(tα, "ns"), np.datetime64(tβ, "ns")))
-    q = Variable("size", np.float32, function=lambda qα, qβ: np.minimum(qα, qβ))
-    x = Variable("underlying", np.float32, function=lambda xα, xβ: (xα + xβ) / 2)
-    w = Variable("spot", np.float32, function=lambda y, ε: y * 100 - ε)
-    wh = Variable("maximum", np.float32, function=lambda yh, ε: yh * 100 - ε)
-    wl = Variable("minimum", np.float32, function=lambda yl, ε: yl * 100 - ε)
+class StrategyLocator(ntuple("Source", "axis position")): pass
+class StrategyEquation(Equation, ABC):
+    t = Variable("t", "current", np.datetime64, xr.DataArray, vectorize=True, function=lambda tα, tβ: np.minimum(np.datetime64(tα, "ns"), np.datetime64(tβ, "ns")))
+    q = Variable("q", "size", np.float32, xr.DataArray, vectorize=True, function=lambda qα, qβ: np.minimum(qα, qβ))
+    x = Variable("x", "underlying", np.float32, xr.DataArray, vectorize=True, function=lambda xα, xβ: (xα + xβ) / 2)
+    w = Variable("w", "spot", np.float32, xr.DataArray, vectorize=True, function=lambda y, ε: y * 100 - ε)
+    wh = Variable("wh", "maximum", np.float32, xr.DataArray, vectorize=True, function=lambda yh, ε: yh * 100 - ε)
+    wl = Variable("wl", "minimum", np.float32, xr.DataArray, vectorize=True, function=lambda yl, ε: yl * 100 - ε)
 
-    tα = Variable("current", np.datetime64, locator=StrategySource("current", Variables.Positions.LONG))
-    qα = Variable("size", np.float32, locator=StrategySource("size", Variables.Positions.LONG))
-    xα = Variable("underlying", np.float32, locator=StrategySource("underlying", Variables.Positions.LONG))
-    yα = Variable("price", np.float32, locator=StrategySource("price", Variables.Positions.LONG))
-    kα = Variable("strike", np.float32, locator=StrategySource("strike", Variables.Positions.LONG))
-    tβ = Variable("current", np.datetime64, locator=StrategySource("current", Variables.Positions.SHORT))
-    qβ = Variable("size", np.float32, locator=StrategySource("size", Variables.Positions.SHORT))
-    xβ = Variable("underlying", np.float32, locator=StrategySource("underlying", Variables.Positions.SHORT))
-    yβ = Variable("price", np.float32, locator=StrategySource("price", Variables.Positions.SHORT))
-    kβ = Variable("strike", np.float32, locator=StrategySource("strike", Variables.Positions.SHORT))
+    tα = Variable("tα", "current", np.datetime64, xr.DataArray, locator=StrategyLocator("current", Variables.Positions.LONG))
+    qα = Variable("qα", "size", np.float32, xr.DataArray, locator=StrategyLocator("size", Variables.Positions.LONG))
+    xα = Variable("xα", "underlying", np.float32, xr.DataArray, locator=StrategyLocator("underlying", Variables.Positions.LONG))
+    yα = Variable("yα", "price", np.float32, xr.DataArray, locator=StrategyLocator("price", Variables.Positions.LONG))
+    kα = Variable("kα", "strike", np.float32, xr.DataArray, locator=StrategyLocator("strike", Variables.Positions.LONG))
+    tβ = Variable("tβ", "current", np.datetime64, xr.DataArray, locator=StrategyLocator("current", Variables.Positions.SHORT))
+    qβ = Variable("qβ", "size", np.float32, xr.DataArray, locator=StrategyLocator("size", Variables.Positions.SHORT))
+    xβ = Variable("xβ", "underlying", np.float32, xr.DataArray, locator=StrategyLocator("underlying", Variables.Positions.SHORT))
+    yβ = Variable("yβ", "price", np.float32, xr.DataArray, locator=StrategyLocator("price", Variables.Positions.SHORT))
+    kβ = Variable("kβ", "strike", np.float32, xr.DataArray, locator=StrategyLocator("strike", Variables.Positions.SHORT))
+    ε = Variable("ε", "fees", np.float32, types.NoneType, locator="fees")
 
 class VerticalEquation(StrategyEquation):
-    y = Variable("spot", np.float32, function=lambda yα, yβ: - yα + yβ)
+    y = Variable("y", "spot", np.float32, xr.DataArray, vectorize=True, function=lambda yα, yβ: - yα + yβ)
 
 class CollarEquation(StrategyEquation):
-    y = Variable("spot", np.float32, function=lambda yα, yβ, x: - yα + yβ - x)
+    y = Variable("y", "spot", np.float32, xr.DataArray, vectorize=True, function=lambda x, yα, yβ: - yα + yβ - x)
 
-class VerticalPutEquation(VerticalEquation, register=Variables.Strategies.Vertical.Put):
-    yh = Variable("maximum", np.float32, function=lambda kα, kβ: np.maximum(kα - kβ, 0))
-    yl = Variable("minimum", np.float32, function=lambda kα, kβ: np.minimum(kα - kβ, 0))
+class VerticalPutEquation(VerticalEquation):
+    yh = Variable("yh", "maximum", np.float32, xr.DataArray, vectorize=True, function=lambda kα, kβ: np.maximum(kα - kβ, 0))
+    yl = Variable("yl", "minimum", np.float32, xr.DataArray, vectorize=True, function=lambda kα, kβ: np.minimum(kα - kβ, 0))
 
-class VerticalCallEquation(VerticalEquation, register=Variables.Strategies.Vertical.Call):
-    yh = Variable("maximum", np.float32, function=lambda kα, kβ: np.maximum(-kα + kβ, 0))
-    yl = Variable("minimum", np.float32, function=lambda kα, kβ: np.minimum(-kα + kβ, 0))
+class VerticalCallEquation(VerticalEquation):
+    yh = Variable("yh", "maximum", np.float32, xr.DataArray, vectorize=True, function=lambda kα, kβ: np.maximum(-kα + kβ, 0))
+    yl = Variable("yl", "minimum", np.float32, xr.DataArray, vectorize=True, function=lambda kα, kβ: np.minimum(-kα + kβ, 0))
 
-class CollarLongEquation(CollarEquation, register=Variables.Strategies.Collar.Long):
-    yh = Variable("maximum", np.float32, function=lambda kα, kβ: np.maximum(kα, kβ))
-    yl = Variable("minimum", np.float32, function=lambda kα, kβ: np.minimum(kα, kβ))
+class CollarLongEquation(CollarEquation):
+    yh = Variable("yh", "maximum", np.float32, xr.DataArray, vectorize=True, function=lambda kα, kβ: np.maximum(kα, kβ))
+    yl = Variable("yl", "minimum", np.float32, xr.DataArray, vectorize=True, function=lambda kα, kβ: np.minimum(kα, kβ))
 
-class CollarShortEquation(CollarEquation, register=Variables.Strategies.Collar.Short):
-    yh = Variable("maximum", np.float32, function=lambda kα, kβ: np.maximum(-kα, -kβ))
-    yl = Variable("minimum", np.float32, function=lambda kα, kβ: np.minimum(-kα, -kβ))
+class CollarShortEquation(CollarEquation):
+    yh = Variable("yh", "maximum", np.float32, xr.DataArray, vectorize=True, function=lambda kα, kβ: np.maximum(-kα, -kβ))
+    yl = Variable("yl", "minimum", np.float32, xr.DataArray, vectorize=True, function=lambda kα, kβ: np.minimum(-kα, -kβ))
 
 
 class StrategyCalculation(Calculation, metaclass=RegistryMeta):
@@ -77,7 +79,7 @@ class StrategyCalculation(Calculation, metaclass=RegistryMeta):
         assert len(set(positions)) == len(list(positions))
         options = {option.position: dataset for option, dataset in options.items()}
         variables, positions = ("price", "underlying", "strike", "size", "current"), list(Variables.Positions)
-        sources = {StrategySource(variable, positions): options[positions][variable] for variable, position in product(variables, positions)}
+        sources = {StrategyLocator(variable, position): options[position][variable] for variable, position in product(variables, positions)}
         with self.equation(sources, fees=fees) as equation:
             yield equation.t()
             yield equation.q()
@@ -91,13 +93,13 @@ class VerticalCalculation(StrategyCalculation): pass
 class CollarCalculation(StrategyCalculation): pass
 class VerticalPutCalculation(VerticalCalculation, equation=VerticalPutEquation, register=Variables.Strategies.Vertical.Put): pass
 class VerticalCallCalculation(VerticalCalculation, equation=VerticalCallEquation, register=Variables.Strategies.Vertical.Call): pass
-class CollarLongCalculation(CollarCalculation, equation=CollarLongEquation, register=Variables.Strategies.Collar.LongV): pass
-class CollarShortCalculation(CollarCalculation, equation=CollarShortEquation, register=Variables.Strategies.Collar.Shor): pass
+class CollarLongCalculation(CollarCalculation, equation=CollarLongEquation, register=Variables.Strategies.Collar.Long): pass
+class CollarShortCalculation(CollarCalculation, equation=CollarShortEquation, register=Variables.Strategies.Collar.Short): pass
 
 
 class StrategyCalculator(Function, Logging, Sizing, Emptying):
     def __init__(self, *args, strategies=[], **kwargs):
-        assert all([strategy in list(Variables.Strategies) for strategy in strategies])
+        assert all([strategy in list(Variables.Strategies) for strategy in list(strategies)])
         Function.__init__(self, *args, **kwargs)
         Logging.__init__(self, *args, **kwargs)
         strategies = list(dict(StrategyCalculation).keys()) if not bool(strategies) else list(strategies)

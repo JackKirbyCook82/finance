@@ -26,8 +26,8 @@ __logger__ = logging.getLogger(__name__)
 
 
 class Ticker(Field, ABC, dataname="ticker", datatype=str): pass
-class Date(Field, ABC, dataname="date", datatype=datetime.date, format="%Y%m%d"): pass
-class Expire(Field, ABC, dataname="expire", datatype=datetime.date, format="%Y%m%d"): pass
+class Date(Field, ABC, dataname="date", datatype=datetime.date, format="%Y-%m-%d"): pass
+class Expire(Field, ABC, dataname="expire", datatype=datetime.date, format="%Y-%m-%d"): pass
 class Strike(Field, ABC, dataname="strike", datatype=numbers.Number, digits=2): pass
 
 class Symbol(Query, fields=[Ticker], delimiter="|"): pass
@@ -40,8 +40,7 @@ class DateRange(ntuple("DateRange", "minimum maximum")):
     def __contains__(self, date): return self.minimum <= date <= self.maximum
     def __new__(cls, dates):
         assert isinstance(dates, list)
-        assert all([isinstance(date, Date) for date in dates])
-        dates = [date if isinstance(date, Date) else date.date() for date in dates]
+        assert all([isinstance(date, (datetime.date, datetime.datetime)) for date in dates])
         return super().__new__(cls, min(dates), max(dates)) if dates else None
 
     def __iter__(self): return (date for date in pd.date_range(start=self.minimum, end=self.maximum))
@@ -72,6 +71,7 @@ class VariableMeta(EnumMeta):
             attrs[member] = variable
         return super(VariableMeta, mcs).__new__(mcs, name, bases, attrs)
 
+    def __iter__(cls): return iter([variable for variable in super().__iter__() if bool(variable)])
     def __call__(cls, content, *args, **kwargs):
         if isinstance(content, (int, str)):
             content = int(content) if str(content).isdigit() else str(content)
@@ -99,52 +99,6 @@ class VariableMeta(EnumMeta):
             yield member, variable
 
 
-class MultiVariable(ABC):
-    def __init_subclass__(cls, fields=[], attributes=[]):
-        cls.fields, cls.attributes = list(fields), list(attributes)
-
-    def __init__(self, *args, **kwargs):
-        attributes, fields, contents = type(self).attributes, type(self).fields, list(args)
-        assert isinstance(contents, list) and len(contents) == len(fields)
-        self.attributes, self.fields, self.contents = attributes, fields, contents
-        for field, content in zip(fields, contents):
-            setattr(self, field, content)
-        for attribute in attributes:
-            setattr(self, attribute, kwargs[attribute])
-
-    def __int__(self): return int(sum([pow(10, index) * int(content) for index, content in enumerate(reversed(self))]))
-    def __str__(self): return str("|".join([str(content) for content in iter(self) if bool(content)]))
-    def __bool__(self): return any([bool(content) for content in iter(self)])
-    def __hash__(self): return hash(tuple(zip(self.fields, self.contents)))
-
-    def __reversed__(self): return reversed(self.contents)
-    def __iter__(self): return iter(self.contents)
-
-    def items(self): return tuple(zip(self.fields, self.contents))
-    def values(self): return tuple(self.fields)
-    def keys(self): return tuple(self.contents)
-
-
-class MultiVariableMeta(ABCMeta):
-    def __new__(mcs, name, base, attrs, *args, **kwargs):
-        return super(MultiVariableMeta, mcs).__new__(mcs, name, base, attrs)
-
-    def __init__(cls, *args, contents=[], **kwargs): cls.contents = list(contents)
-    def __iter__(cls): return iter(cls.contents)
-
-    def __call__(cls, content): return cls.create(int(content) if str(content).isdigit() else str(content))
-    def __getitem__(cls, manifest): return {tuple(content): content for content in iter(cls)}[manifest]
-
-    @typedispatcher
-    def create(cls, content): raise TypeError(type(content).__name__)
-    @create.register(MultiVariable)
-    def value(cls, value): return {hash(content): content for content in iter(cls)}[value]
-    @create.register(int)
-    def integer(cls, number): return {int(content): content for content in iter(cls)}[number]
-    @create.register(str)
-    def string(cls, string): return {str(content): content for content in iter(cls)}[string]
-
-
 class Theta(members=["PUT", "NEUTRAL", "CALL"], start=-1, metaclass=VariableMeta): pass
 class Phi(members=["SHORT", "NEUTRAL", "LONG"], start=-1, metaclass=VariableMeta): pass
 class Omega(members=["BEAR", "NEUTRAL", "BULL"], start=-1, metaclass=VariableMeta): pass
@@ -159,6 +113,51 @@ class Instruments(members=["EMPTY", "STOCK", "OPTION"], start=0, metaclass=Varia
 class Options(members=["EMPTY", "PUT", "CALL"], start=0, metaclass=VariableMeta): pass
 class Positions(members=["EMPTY", "LONG", "SHORT"], start=0, metaclass=VariableMeta): pass
 class Spreads(members=["STRANGLE", "COLLAR", "VERTICAL"], start=1, metaclass=VariableMeta): pass
+
+
+class MultiVariableMeta(ABCMeta):
+    def __init__(cls, *args, fields=[], attributes=[], **kwargs):
+        cls.attributes = attributes
+        cls.fields = fields
+
+    def __iter__(cls): return iter(cls.fields)
+    def __call__(cls, *args, **kwargs):
+        attributes, fields, contents = cls.attributes, cls.fields, list(args)
+        assert isinstance(contents, list) and len(contents) == len(fields)
+        attributes = {attribute: kwargs[attribute] for attribute in attributes}
+        instance = super(MultiVariableMeta, cls).__call__(fields, contents, attributes)
+        return instance
+
+
+class MultiVariable(ABC, metaclass=MultiVariableMeta):
+    def __init_subclass__(cls, fields=[], attributes=[]):
+        cls.fields, cls.attributes = list(fields), list(attributes)
+
+    def __new__(cls, fields, contents, attributes):
+        instance = super().__new__(cls)
+        for field, content in zip(fields, contents):
+            setattr(instance, field, content)
+        for attribute, value in attributes.items():
+            setattr(instance, attribute, value)
+        return instance
+
+    def __init__(self, fields, contents, attributes):
+        self.attributes = attributes
+        self.contents = contents
+        self.fields = fields
+
+    def __int__(self): return int(sum([pow(10, index) * int(content) for index, content in enumerate(reversed(self))]))
+    def __str__(self): return str("|".join([str(content) for content in iter(self) if bool(content)]))
+    def __bool__(self): return any([bool(content) for content in iter(self)])
+    def __hash__(self): return hash(tuple(zip(self.fields, self.contents)))
+
+    def __reversed__(self): return reversed(self.contents)
+    def __iter__(self): return iter(self.contents)
+
+    def items(self): return tuple(zip(self.fields, self.contents))
+    def values(self): return tuple(self.fields)
+    def keys(self): return tuple(self.contents)
+
 
 class Security(MultiVariable, fields=["instrument", "option", "position"]): pass
 class Strategy(MultiVariable, fields=["spread", "option", "position"], attributes=["stocks", "options"]): pass
@@ -176,7 +175,27 @@ CollarLong = Strategy(Spreads.COLLAR, Options.EMPTY, Positions.LONG, options=[Op
 CollarShort = Strategy(Spreads.COLLAR, Options.EMPTY, Positions.SHORT, options=[OptionCallLong, OptionPutShort], stocks=[StockShort])
 
 
-class Securities(contents=[StockLong, StockShort, OptionPutLong, OptionPutShort, OptionCallLong, OptionCallShort], metaclass=MultiVariableMeta):
+class CollectionMeta(ABCMeta):
+    def __new__(mcs, name, base, attrs, *args, **kwargs):
+        return super(CollectionMeta, mcs).__new__(mcs, name, base, attrs)
+
+    def __init__(cls, *args, contents=[], **kwargs): cls.contents = list(contents)
+    def __iter__(cls): return iter(cls.contents)
+
+    def __call__(cls, content): return cls.create(int(content) if str(content).isdigit() else str(content))
+    def __getitem__(cls, manifest): return {tuple(content): content for content in iter(cls)}[manifest]
+
+    @typedispatcher
+    def create(cls, content): raise TypeError(type(content))
+    @create.register(MultiVariable)
+    def value(cls, value): return {hash(content): content for content in iter(cls)}[value]
+    @create.register(int)
+    def integer(cls, number): return {int(content): content for content in iter(cls)}[number]
+    @create.register(str)
+    def string(cls, string): return {str(content): content for content in iter(cls)}[string]
+
+
+class Securities(contents=[StockLong, StockShort, OptionPutLong, OptionPutShort, OptionCallLong, OptionCallShort], metaclass=CollectionMeta):
     Options = [OptionPutLong, OptionCallLong, OptionPutShort, OptionCallShort]
     Puts = [OptionPutLong, OptionPutShort]
     Calls = [OptionCallLong, OptionCallShort]
@@ -188,7 +207,7 @@ class Securities(contents=[StockLong, StockShort, OptionPutLong, OptionPutShort,
         class Call: Long = OptionCallLong; Short = OptionCallShort
 
 
-class Strategies(contents=[VerticalPut, VerticalCall, CollarLong, CollarShort], metaclass=MultiVariableMeta):
+class Strategies(contents=[VerticalPut, VerticalCall, CollarLong, CollarShort], metaclass=CollectionMeta):
     Verticals = [VerticalPut, VerticalCall]
     Collars = [CollarLong, CollarShort]
 
@@ -199,6 +218,8 @@ class Strategies(contents=[VerticalPut, VerticalCall, CollarLong, CollarShort], 
 class Variables:
     Securities = Securities
     Strategies = Strategies
+    Security = Security
+    Strategy = Strategy
     Markets = Markets
     Pricing = Pricing
     Instruments = Instruments

@@ -6,10 +6,10 @@ Created on Weds Jul 19 2023
 
 """
 
+import types
 import logging
 import numpy as np
 import pandas as pd
-import xarray as xr
 from abc import ABC
 from numbers import Number
 from scipy.stats import norm
@@ -22,54 +22,54 @@ from support.mixins import Function, Emptying, Sizing, Logging
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["OptionCalculator", "StockFile", "OptionFile"]
+__all__ = ["OptionCalculator", "OptionFile"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
 class SecurityParameters(metaclass=ParametersMeta):
+    filename = lambda query: "_".join([str(query.ticker), str(query.expire.strftime("%Y%m%d"))])
     types = {"ticker": str, "strike": np.float32, "price": np.float32, "underlying": np.float32, "size": np.float32, "volume": np.float32, "interest": np.float32}
     parsers = {"instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}
-    formatters = {"instrument": int, "option": int, "position": int}
+    formatters = {"instrument": int, "option": int, "position": int, "strike": lambda strike: round(strike, 2), "underlying": lambda underlying: round(underlying, 2)}
     dates = {"current": "%Y%m%d-%H%M", "expire": "%Y%m%d"}
 
 
 class SecurityFile(File, datatype=pd.DataFrame, **dict(SecurityParameters)): pass
-class StockFile(SecurityFile, variable=Variables.Instruments.STOCK): pass
 class OptionFile(SecurityFile, variable=Variables.Instruments.OPTION): pass
 
 
-class PricingEquation(Equation, ABC, metaclass=RegistryMeta):
-    τ = Variable("tau", np.int32, function=lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
-    Θ = Variable("theta", np.int32, function=lambda i: + int(Variables.Theta(str(i))))
-    Φ = Variable("phi", np.int32, function=lambda j: + int(Variables.Phi(str(j))))
+class PricingEquation(Equation, ABC):
+    τ = Variable("τ", "tau", np.int32, pd.Series, vectorize=True, function=lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
+    Θ = Variable("Θ", "theta", np.int32, pd.Series, vectorize=True, function=lambda i: + int(Variables.Theta(str(i))))
+    Φ = Variable("Φ", "phi", np.int32, pd.Series, vectorize=True, function=lambda j: + int(Variables.Phi(str(j))))
 
-    i = Variable("option", Variables.Options, locator="option")
-    j = Variable("position", Variables.Positions, locator="position")
-    k = Variable("strike", np.float32, locator="strike")
+    i = Variable("i", "option", Variables.Options, pd.Series, locator="option")
+    j = Variable("j", "position", Variables.Positions, pd.Series, locator="position")
+    k = Variable("k", "strike", np.float32, pd.Series, locator="strike")
 
-    xo = Variable("underlying", np.float32, locator="underlying")
-    to = Variable("current", np.datetime64, locator="current")
-    tτ = Variable("expire", np.datetime64, locator="expire")
+    xo = Variable("xo", "underlying", np.float32, pd.Series, locator="underlying")
+    to = Variable("to", "current", np.datetime64, pd.Series, locator="current")
+    tτ = Variable("tτ", "expire", np.datetime64, pd.Series, locator="expire")
 
-    δ = Variable("volatility", np.float32, locator="volatility")
-    ρ = Variable("discount", np.float32, locator="discount")
+    δ = Variable("δ", "volatility", np.float32, pd.Series, locator="volatility")
+    ρ = Variable("ρ", "discount", np.float32, types.NoneType, locator="discount")
 
-class BlackScholesEquation(PricingEquation, register=Variables.Pricing.BLACKSCHOLES):
-    yo = Variable("price", np.float32, function=lambda zx, zk: (zx - zk))
-    so = Variable("ratio", np.float32, function=lambda xo, k: np.log(xo / k))
+class BlackScholesEquation(PricingEquation):
+    yo = Variable("yo", "price", np.float32, pd.Series, vectorize=True, function=lambda zx, zk: (zx - zk))
+    so = Variable("so", "ratio", np.float32, pd.Series, vectorize=True, function=lambda xo, k: np.log(xo / k))
 
-    zx = Variable("zx", np.float32, function=lambda xo, Θ, N1: xo * Θ * N1)
-    zk = Variable("zk", np.float32, function=lambda k, Θ, N2, D: k * Θ * D * N2)
-    d1 = Variable("d1", np.float32, function=lambda so, A, B: (so + A) / B)
-    d2 = Variable("d2", np.float32, function=lambda d1, B: d1 - B)
-    N1 = Variable("N1", np.float32, function=lambda d1, Θ: norm.cdf(Θ * d1))
-    N2 = Variable("N2", np.float32, function=lambda d2, Θ: norm.cdf(Θ * d2))
+    zx = Variable("zx", "zx", np.float32, pd.Series, vectorize=True, function=lambda xo, Θ, N1: xo * Θ * N1)
+    zk = Variable("zk", "zk", np.float32, pd.Series, vectorize=True, function=lambda k, Θ, N2, D: k * Θ * D * N2)
+    d1 = Variable("d1", "d1", np.float32, pd.Series, vectorize=True, function=lambda so, A, B: (so + A) / B)
+    d2 = Variable("d2", "d2", np.float32, pd.Series, vectorize=True, function=lambda d1, B: d1 - B)
+    N1 = Variable("N1", "N1", np.float32, pd.Series, vectorize=True, function=lambda d1, Θ: norm.cdf(Θ * d1))
+    N2 = Variable("N2", "N2", np.float32, pd.Series, vectorize=True, function=lambda d2, Θ: norm.cdf(Θ * d2))
 
-    A = Variable("alpha", np.float32, function=lambda τ, δ, ρ: (ρ + np.divide(np.power(δ * np.sqrt(252), 2), 2)) * τ / 252)
-    B = Variable("beta", np.float32, function=lambda τ, δ: δ * np.sqrt(252) * np.sqrt(τ / 252))
-    D = Variable("discount", np.float32, function=lambda τ, ρ: np.exp(-ρ * τ / 252))
+    A = Variable("A", "alpha", np.float32, pd.Series, vectorize=True, function=lambda τ, δ, ρ: (ρ + np.divide(np.power(δ * np.sqrt(252), 2), 2)) * τ / 252)
+    B = Variable("B", "beta", np.float32, pd.Series, vectorize=True, function=lambda τ, δ: δ * np.sqrt(252) * np.sqrt(τ / 252))
+    D = Variable("D", "discount", np.float32, pd.Series, vectorize=True, function=lambda τ, ρ: np.exp(-ρ * τ / 252))
 
 
 class PricingCalculation(Calculation, ABC, metaclass=RegistryMeta): pass
@@ -112,7 +112,7 @@ class OptionCalculator(Function, Logging, Sizing, Emptying):
         string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
         self.logger.info(string)
         if self.empty(options): return
-        yield options
+        return options
 
     def calculate(self, exposures, *args, **kwargs):
         assert isinstance(exposures, pd.DataFrame)
