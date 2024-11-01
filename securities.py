@@ -29,12 +29,10 @@ __logger__ = logging.getLogger(__name__)
 
 
 class SecurityParameters(metaclass=ParametersMeta):
-    filename = lambda query: "_".join([str(query.ticker), str(query.expire.strftime("%Y%m%d"))])
     types = {"ticker": str, "strike": np.float32, "price": np.float32, "underlying": np.float32, "size": np.float32, "volume": np.float32, "interest": np.float32}
     parsers = {"instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}
     formatters = {"instrument": int, "option": int, "position": int, "strike": lambda strike: round(strike, 2), "underlying": lambda underlying: round(underlying, 2)}
     dates = {"current": "%Y%m%d-%H%M", "expire": "%Y%m%d"}
-
 
 class SecurityFile(File, datatype=pd.DataFrame, **dict(SecurityParameters)): pass
 class OptionFile(SecurityFile, variable=Variables.Instruments.OPTION): pass

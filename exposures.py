@@ -14,7 +14,7 @@ from functools import reduce
 
 from finance.variables import Variables, Querys
 from support.mixins import Function, Emptying, Sizing, Logging
-from support.tables import Writer, Table, View
+from support.tables import Writer, Table, View, Header
 from support.meta import ParametersMeta
 
 __version__ = "1.0.0"
@@ -31,10 +31,16 @@ class ExposureFormatting(metaclass=ParametersMeta):
 
 
 class ExposureView(View, ABC, datatype=pd.DataFrame, **dict(ExposureFormatting)): pass
-class ExposureTable(Table, ABC, datatype=pd.DataFrame, view=ExposureView):
-    def obsolete(self, contract):
+class ExposureHeader(Header, ABC):
+    def __init__(self, *args, **kwargs):
+        index, columns = ["ticker", "expire", "instrument", "option", "position", "strike"], ["quantity"]
+        super().__init__(*args, index=index, columns=columns, **kwargs)
+
+
+class ExposureTable(Table, ABC, datatype=pd.DataFrame, viewtype=ExposureView, headertype=ExposureHeader):
+    def obsolete(self, contract, *args, **kwargs):
         assert isinstance(contract, Querys.Contract)
-        contract = lambda table: [table[key] == value for key, value in contract.items()]
+        contract = [lambda table: table[:, key] == value for key, value in contract.items()]
         obsolete = lambda table: reduce(lambda x, y: x & y, contract(table))
         self.remove(obsolete)
 
@@ -126,7 +132,7 @@ class ExposureCalculator(Function, Logging, Sizing, Emptying):
 class ExposureWriter(Writer):
     def write(self, contract, exposures, *args, **kwargs):
         assert isinstance(contract, Querys.Contract) and isinstance(exposures, pd.DataFrame)
-        self.table.obsolete(contract)
+        self.table.obsolete(contract, *args, **kwargs)
         if bool(exposures.empty): return
         self.table.combine(exposures)
         self.table.reset()

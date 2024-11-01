@@ -19,7 +19,7 @@ from collections import namedtuple as ntuple
 from finance.variables import Variables, Querys
 from support.meta import ParametersMeta, RegistryMeta
 from support.calculations import Calculation, Equation, Variable
-from support.tables import Writer, Reader, Table, View
+from support.tables import Writer, Reader, Table, View, Header
 from support.mixins import Function, Emptying, Sizing, Logging
 
 __version__ = "1.0.0"
@@ -37,55 +37,48 @@ class ValuationFormatting(metaclass=ParametersMeta):
     numbers = lambda column: f"{column:.02f}"
 
 
-class ValuationHeader(object):
-    def __iter__(self): return iter(self.index + self.columns)
-    def __init__(self, *args, valuation, columns=[], **kwargs):
-        assert valuation in list(Variables.Valuations) and isinstance(columns, list)
+class ValuationView(View, ABC, datatype=pd.DataFrame, **dict(ValuationFormatting)): pass
+class ValuationHeader(Header, ABC):
+    def __init__(self, *args, valuation, exclude=[], **kwargs):
+        assert valuation in list(Variables.Valuations)
         valuations = {Variables.Valuations.ARBITRAGE: ["apy", "npv", "cost"]}
+        constants = ["underlying", "size", "current"] + ["priority", "status"]
         stacked = lambda cols: list(product(cols, list(Variables.Scenarios)))
         unstacked = lambda cols: list(product(cols, [""]))
-        columns = stacked(valuations[valuation]) + unstacked(["underlying", "size", "current"] + list(columns))
+        columns = stacked(valuations[valuation]) + unstacked([column for column in constants if column not in exclude])
         index = unstacked(["valuation", "strategy"] + list(Querys.Contract) + list(map(str, Variables.Securities.Options)))
+        super().__init__(*args, index=index, columns=columns, **kwargs)
         self.__stacking = valuations[valuation]
         self.__valuation = valuation
-        self.__columns = columns
-        self.__index = index
 
     @property
     def valuation(self): return self.__valuation
     @property
     def stacking(self): return self.__stacking
-    @property
-    def columns(self): return self.__columns
-    @property
-    def index(self): return self.__index
 
 
-class ValuationView(View, ABC, datatype=pd.DataFrame, **dict(ValuationFormatting)): pass
-class ValuationTable(Table, ABC, datatype=pd.DataFrame):
-    def __init__(self, *args, **kwargs):
-        header = ValuationHeader(*args, columns=["priority", "status"], **kwargs)
-        table = pd.DataFrame(columns=list(header))
-        view = ValuationView(*args, **kwargs)
-        parameters = dict(table=table, view=view)
-        Table.__init__(self, *args, **parameters, **kwargs)
-
+class ValuationTable(Table, ABC, datatype=pd.DataFrame, viewtype=ValuationView, headertype=ValuationHeader):
     def obsolete(self, contract, *args, **kwargs):
-        assert isinstance(contract, Querys.Contract)
-        primary = lambda table: [table[:, key] == value for key, value in contract.items()]
-        secondary = lambda table: table[:, "status"] == Variables.Status.PROSPECT
-        function = lambda table: reduce(lambda x, y: x & y, primary(table) + [secondary(table)])
+        assert isinstance(contract, (Querys.Contract, types.NoneType))
+        contract = [lambda table: table[:, key] == value for key, value in contract.items()] if contract is not None else []
+        status = [lambda table: table[:, "status"] == Variables.Status.PROSPECT]
+        function = lambda table: reduce(lambda x, y: x & y, contract + status)
         return self.extract(function)
 
-    def rejected(self, *args, tenure=None, **kwargs):
-        timeout = lambda table: (pd.to_datetime("now") - table[:, "current"]) >= tenure if (tenure is not None) else False
-        rejected = lambda table: table[:, "status"] == Variables.Status.REJECTED
-        abandoned = lambda table: table[:, "status"] == Variables.Status.ABANDONED
-        function = lambda table: rejected(table) | abandoned(table) | timeout(table)
+    def rejected(self, contract, *args, tenure=None, **kwargs):
+        assert isinstance(contract, (Querys.Contract, types.NoneType))
+        contract = [lambda table: table[:, key] == value for key, value in contract.items()] if contract is not None else []
+        timeout = [lambda table: (pd.to_datetime("now") - table[:, "current"]) >= tenure if (tenure is not None) else False]
+        rejected = [lambda table: table[:, "status"] == Variables.Status.REJECTED]
+        abandoned = [lambda table: table[:, "status"] == Variables.Status.ABANDONED]
+        function = lambda table: reduce(lambda x, y: x & y, contract + timeout + rejected + abandoned)
         return self.extract(function)
 
-    def accepted(self, *args, **kwargs):
-        function = lambda table: table[:, "status"] == Variables.Status.ACCEPTED
+    def accepted(self, contract, *args, **kwargs):
+        assert isinstance(contract, (Querys.Contract, types.NoneType))
+        contract = [lambda table: table[:, key] == value for key, value in contract.items()] if contract is not None else []
+        status = [lambda table: table[:, "status"] == Variables.Status.ACCEPTED]
+        function = lambda table: reduce(lambda x, y: x & y, contract + status)
         return self.extract(function)
 
 
@@ -135,7 +128,7 @@ class ValuationCalculator(Function, Logging, Sizing, Emptying):
         calculations = {Identity(*identity): calculation for identity, calculation in dict(ValuationCalculation).items()}
         calculations = {identity.scenario: calculation for identity, calculation in calculations.items() if identity.valuation == kwargs["valuation"]}
         self.__calculations = {scenario: calculation(*args, **kwargs) for scenario, calculation in calculations.items()}
-        self.__header = ValuationHeader(*args, columns=[], **kwargs)
+        self.__header = ValuationHeader(*args, exclude=["priority", "status"], **kwargs)
 
     def execute(self, source, *args, **kwargs):
         assert isinstance(source, tuple)
@@ -206,32 +199,11 @@ class ValuationCalculator(Function, Logging, Sizing, Emptying):
     def header(self): return self.__header
 
 
-class ValuationReader(Reader):
-    def read(self, *args, **kwargs):
-        rejected = self.rejected(*args, **kwargs)
-        accepted = self.accepted(*args, **kwargs)
-        return accepted
-
-    def rejected(self, *args, **kwargs):
-        rejected = self.table.rejected(*args, **kwargs)
-        size = self.size(rejected)
-        string = f"Rejected: {repr(self)}[{size:.0f}]"
-        self.logger.info(string)
-        return rejected
-
-    def accepted(self, *args, **kwargs):
-        accepted = self.table.accepted(*args, **kwargs)
-        size = self.size(accepted)
-        string = f"Accepted: {repr(self)}[{size:.0f}]"
-        self.logger.info(string)
-        return accepted
-
-
 class ValuationWriter(Writer):
     def __init__(self, *args, priority, status=Variables.Status.PROSPECT, **kwargs):
         assert callable(priority) and status == Variables.Status.PROSPECT
         Writer.__init__(self, *args, **kwargs)
-        self.__header = ValuationHeader(*args, columns=["status", "priority"], **kwargs)
+        self.__header = ValuationHeader(*args, **kwargs)
         self.__priority = priority
         self.__status = status
 
@@ -278,6 +250,27 @@ class ValuationWriter(Writer):
     def status(self): return self.__status
     @property
     def header(self): return self.__header
+
+
+class ValuationReader(Reader):
+    def read(self, contract, *args, **kwargs):
+        rejected = self.rejected(contract, *args, **kwargs)
+        accepted = self.accepted(contract, *args, **kwargs)
+        return accepted
+
+    def rejected(self, contract, *args, **kwargs):
+        rejected = self.table.rejected(contract, *args, **kwargs)
+        size = self.size(rejected)
+        string = f"Rejected: {repr(self)}[{size:.0f}]"
+        self.logger.info(string)
+        return rejected
+
+    def accepted(self, contract, *args, **kwargs):
+        accepted = self.table.accepted(contract, *args, **kwargs)
+        size = self.size(accepted)
+        string = f"Accepted: {repr(self)}[{size:.0f}]"
+        self.logger.info(string)
+        return accepted
 
 
 

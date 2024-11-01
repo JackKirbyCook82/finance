@@ -24,12 +24,10 @@ __logger__ = logging.getLogger(__name__)
 
 
 class HoldingParameters(metaclass=ParametersMeta):
-    filename = lambda query: "_".join([str(query.ticker), str(query.expire.strftime("%Y%m%d"))])
     parsers = {"instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}
     formatters = {"instrument": int, "option": int, "position": int, "strike": lambda strike: round(strike, 2)}
     types = {"ticker": str, "strike": np.float32, "quantity": np.int32}
     dates = {"expire": "%Y%m%d"}
-
 
 class HoldingFile(File, variable="holdings", datatype=pd.DataFrame, **dict(HoldingParameters)):
     pass

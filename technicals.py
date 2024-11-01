@@ -27,11 +27,9 @@ __logger__ = logging.getLogger(__name__)
 
 
 class TechnicalParameters(metaclass=ParametersMeta):
-    filename = lambda query: str(query.ticker)
     types = {"ticker": str, "volume": np.int64} | {column: np.float32 for column in ("price", "open", "close", "high", "low")}
     types.update({"trend": np.float32, "volatility": np.float32, "oscillator": np.float32})
     dates = {"date": "%Y%m%d"}
-
 
 class TechnicalFile(File, datatype=pd.DataFrame, **dict(TechnicalParameters)): pass
 class BarsFile(TechnicalFile, variable=Variables.Technicals.BARS): pass

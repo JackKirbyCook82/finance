@@ -26,8 +26,8 @@ __logger__ = logging.getLogger(__name__)
 
 
 class Ticker(Field, ABC, dataname="ticker", datatype=str): pass
-class Date(Field, ABC, dataname="date", datatype=datetime.date, format="%Y-%m-%d"): pass
-class Expire(Field, ABC, dataname="expire", datatype=datetime.date, format="%Y-%m-%d"): pass
+class Date(Field, ABC, dataname="date", datatype=datetime.date, format="%Y%m%d"): pass
+class Expire(Field, ABC, dataname="expire", datatype=datetime.date, format="%Y%m%d"): pass
 class Strike(Field, ABC, dataname="strike", datatype=numbers.Number, digits=2): pass
 
 class Symbol(Query, fields=[Ticker], delimiter="|"): pass
