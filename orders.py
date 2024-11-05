@@ -26,10 +26,8 @@ class OrderCalculator(Function, Logging, Sizing, Emptying):
         Function.__init__(self, *args, **kwargs)
         Logging.__init__(self, *args, **kwargs)
 
-    def execute(self, source, *args, **kwargs):
-        assert isinstance(source, tuple)
-        contract, valuations = source
-        assert isinstance(contract, Querys.Contract) and isinstance(valuations, pd.DataFrame)
+    def execute(self, contract, valuations, *args, **kwargs):
+        assert isinstance(valuations, pd.DataFrame)
         if self.empty(valuations): return
         orders = self.calculate(valuations, *args, **kwargs)
         size = self.size(orders)

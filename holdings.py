@@ -9,6 +9,7 @@ Created on Thurs Jan 31 2024
 import logging
 import numpy as np
 import pandas as pd
+from datetime import datetime as Datetime
 
 from finance.variables import Variables, Querys
 from support.mixins import Function, Emptying, Sizing, Logging
@@ -30,7 +31,18 @@ class HoldingParameters(metaclass=ParametersMeta):
     dates = {"expire": "%Y%m%d"}
 
 class HoldingFile(File, variable="holdings", datatype=pd.DataFrame, **dict(HoldingParameters)):
-    pass
+    @staticmethod
+    def filename(*args, query, **kwargs):
+        ticker = str(query.ticker).upper()
+        expire = str(query.expire.strftime("%Y%m%d"))
+        return "_".join([ticker, expire])
+
+    @staticmethod
+    def parameters(*args, filename, **kwargs):
+        ticker, expire = str(filename).split("_")
+        ticker = str(ticker).upper()
+        expire = Datetime.strptime(expire, "%Y%m%d").date()
+        return dict(ticker=ticker, expire=expire)
 
 
 class HoldingCalculator(Function, Logging, Sizing, Emptying):
@@ -40,10 +52,8 @@ class HoldingCalculator(Function, Logging, Sizing, Emptying):
         valuations = {Variables.Valuations.ARBITRAGE: ["apy", "npv", "cost"]}
         self.__stacking = valuations[valuation]
 
-    def execute(self, contents, *args, **kwargs):
-        assert isinstance(contents, tuple)
-        contract, valuations = contents
-        assert isinstance(contract, Querys.Contract) and isinstance(valuations, pd.DataFrame)
+    def execute(self, contract, valuations, *args, **kwargs):
+        assert isinstance(valuations, pd.DataFrame)
         if self.empty(valuations): return
         holdings = self.calculate(valuations, *args, **kwargs)
         size = self.size(holdings)

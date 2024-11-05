@@ -39,10 +39,11 @@ class ExposureHeader(Header, ABC):
 
 class ExposureTable(Table, ABC, datatype=pd.DataFrame, viewtype=ExposureView, headertype=ExposureHeader):
     def obsolete(self, contract, *args, **kwargs):
+        if not bool(self): return
         assert isinstance(contract, Querys.Contract)
-        contract = [lambda table: table[:, key] == value for key, value in contract.items()]
-        obsolete = lambda table: reduce(lambda x, y: x & y, contract(table))
-        self.remove(obsolete)
+        mask = [self[:, key] == value for key, value in contract.items()] if contract is not None else []
+        mask = reduce(lambda lead, lag: lead & lag, mask)
+        self.remove(mask)
 
 
 class ExposureCalculator(Function, Logging, Sizing, Emptying):
@@ -50,10 +51,8 @@ class ExposureCalculator(Function, Logging, Sizing, Emptying):
         Function.__init__(self, *args, **kwargs)
         Logging.__init__(self, *args, **kwargs)
 
-    def execute(self, source, *args, **kwargs):
-        assert isinstance(source, tuple)
-        contract, holdings = source
-        assert isinstance(contract, Querys.Contract) and isinstance(holdings, pd.DataFrame)
+    def execute(self, contract, holdings, *args, **kwargs):
+        assert isinstance(holdings, pd.DataFrame)
         if self.empty(holdings): return
         exposures = self.calculate(holdings, *args, **kwargs)
         size = self.size(exposures)
@@ -69,7 +68,7 @@ class ExposureCalculator(Function, Logging, Sizing, Emptying):
         virtuals = self.virtuals(stocks, *args, **kwargs)
         securities = self.securities(options, virtuals, *args, **kwargs)
         exposures = self.exposures(securities, *args, *kwargs)
-        yield exposures
+        return exposures
 
     @staticmethod
     def stocks(holdings, *args, **kwargs):

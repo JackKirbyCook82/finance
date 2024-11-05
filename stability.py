@@ -29,10 +29,8 @@ class StabilityFilter(Function, Logging, Sizing, Emptying):
         Function.__init__(self, *args, **kwargs)
         Logging.__init__(self, *args, **kwargs)
 
-    def execute(self, source, *args, **kwargs):
-        assert isinstance(source, tuple)
-        contract, valuations, stabilities = source
-        assert isinstance(contract, Querys.Contract) and isinstance(valuations, pd.DataFrame) and isinstance(stabilities, pd.DataFrame)
+    def execute(self, contract, valuations, stabilities, *args, **kwargs):
+        assert isinstance(valuations, pd.DataFrame) and isinstance(stabilities, pd.DataFrame)
         if self.empty(valuations): return
         valuations = self.calculate(valuations, stabilities, *args, **kwargs)
         size = self.size(valuations)
@@ -50,10 +48,8 @@ class StabilityCalculator(Function, Logging, Sizing, Emptying):
         Function.__init__(self, *args, **kwargs)
         Logging.__init__(self, *args, **kwargs)
 
-    def execute(self, source, *args, **kwargs):
-        assert isinstance(source, tuple)
-        contract, orders, exposures = source
-        assert isinstance(contract, Querys.Contract) and isinstance(orders, pd.DataFrame) and isinstance(exposures, pd.DataFrame)
+    def execute(self, contract, orders, exposures, *args, **kwargs):
+        assert isinstance(orders, pd.DataFrame) and isinstance(exposures, pd.DataFrame)
         if self.empty(orders): return
         stabilities = self.calculate(orders, exposures, *args, **kwargs)
         size = self.size(stabilities)

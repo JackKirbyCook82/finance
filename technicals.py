@@ -13,10 +13,10 @@ import pandas as pd
 from abc import ABC
 
 from finance.variables import Variables, Querys
-from support.files import File
-from support.meta import ParametersMeta, RegistryMeta
-from support.calculations import Calculation, Equation, Variable
 from support.mixins import Emptying, Sizing, Logging, Function
+from support.calculations import Calculation, Equation, Variable
+from support.meta import ParametersMeta, RegistryMeta
+from support.files import File
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -31,7 +31,13 @@ class TechnicalParameters(metaclass=ParametersMeta):
     types.update({"trend": np.float32, "volatility": np.float32, "oscillator": np.float32})
     dates = {"date": "%Y%m%d"}
 
-class TechnicalFile(File, datatype=pd.DataFrame, **dict(TechnicalParameters)): pass
+class TechnicalFile(File, ABC, datatype=pd.DataFrame, **dict(TechnicalParameters)):
+    @staticmethod
+    def filename(*args, query, **kwargs): return str(query.ticker)
+    @staticmethod
+    def parameters(*args, filename, **kwargs): return dict(ticker=str(filename).upper())
+
+
 class BarsFile(TechnicalFile, variable=Variables.Technicals.BARS): pass
 class StatisticFile(TechnicalFile, variable=Variables.Technicals.STATISTIC): pass
 class StochasticFile(TechnicalFile, variable=Variables.Technicals.STOCHASTIC): pass
@@ -79,10 +85,8 @@ class TechnicalCalculator(Function, Logging, Sizing, Emptying):
         Logging.__init__(self, *args, **kwargs)
         self.__calculation = TechnicalCalculation[technical](*args, **kwargs)
 
-    def execute(self, source, *args, **kwargs):
-        assert isinstance(source, tuple)
-        symbol, bars = source
-        assert isinstance(symbol, Querys.Symbol) and isinstance(bars, pd.DataFrame)
+    def execute(self, symbol, bars, *args, **kwargs):
+        assert isinstance(bars, pd.DataFrame)
         if self.empty(bars): return
         parameters = dict(ticker=symbol.ticker)
         technicals = self.calculate(bars, *args, **parameters, **kwargs)

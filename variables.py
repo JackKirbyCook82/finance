@@ -7,33 +7,18 @@ Created on Sun Jan 28 2024
 """
 
 import numbers
-import logging
 import datetime
 import pandas as pd
-from abc import ABC, ABCMeta
-from enum import Enum, EnumMeta
 from collections import namedtuple as ntuple
 
+from support.variables import VariablesMeta, Variables, Variable
 from support.querys import Field, Query
-from support.dispatchers import typedispatcher
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
 __all__ = ["DateRange", "Variables", "Querys"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
-__logger__ = logging.getLogger(__name__)
-
-
-class Ticker(Field, ABC, dataname="ticker", datatype=str): pass
-class Date(Field, ABC, dataname="date", datatype=datetime.date, format="%Y%m%d"): pass
-class Expire(Field, ABC, dataname="expire", datatype=datetime.date, format="%Y%m%d"): pass
-class Strike(Field, ABC, dataname="strike", datatype=numbers.Number, digits=2): pass
-
-class Symbol(Query, fields=[Ticker], delimiter="|"): pass
-class History(Query, fields=[Ticker, Date], delimiter="|"): pass
-class Contract(Query, fields=[Ticker, Expire], delimiter="|"): pass
-class Product(Query, fields=[Ticker, Expire, Strike], delimiter="|"): pass
 
 
 class DateRange(ntuple("DateRange", "minimum maximum")):
@@ -49,153 +34,47 @@ class DateRange(ntuple("DateRange", "minimum maximum")):
     def __len__(self): return (self.maximum - self.minimum).days
 
 
-class Variable(object):
-    def __str__(self): return str(self.name).lower()
-    def __bool__(self): return bool(self.index)
-    def __int__(self): return int(self.index)
-    def __init__(self, name, index):
-        self.__name = str(name).upper()
-        self.__index = int(index)
+Ticker = Field("ticker", str)
+Date = Field("date", datetime.date, format="%Y%m%d")
+Expire = Field("expire", datetime.date, format="%Y%m%d")
+Strike = Field("strike", numbers.Number, digits=2)
 
-    @property
-    def index(self): return self.__index
-    @property
-    def name(self): return self.__name
+Symbol = Query("Symbol", [Ticker], delimiter="|")
+History = Query("History", [Ticker, Date], delimiter="|")
+Contract = Query("Contract", [Ticker, Expire], delimiter="|")
+Product = Query("Product", [Ticker, Expire, Strike], delimiter="|")
 
+Theta = Variable("Theta", ["PUT", "NEUTRAL", "CALL"], start=-1)
+Phi = Variable("Phi", ["SHORT", "NEUTRAL", "LONG"], start=-1)
+Omega = Variable("Omega", ["BEAR", "NEUTRAL", "BULL"], start=-1)
+Technicals = Variable("Technicals", ["BARS", "STATISTIC", "STOCHASTIC"])
+Scenarios = Variable("Scenarios", ["MINIMUM", "MAXIMUM"])
+Valuations = Variable("Valuations", ["ARBITRAGE"])
+Pricing = Variable("Pricing", ["BLACKSCHOLES"])
+Status = Variable("Status", ["PROSPECT", "PENDING", "ABANDONED", "REJECTED", "ACCEPTED"])
 
-class VariableMeta(EnumMeta):
-    def __new__(mcs, name, bases, attrs, *args, **kwargs):
-        assert not any([issubclass(base, Enum) for base in bases])
-        bases = (mcs.variable(name), Enum)
-        for member, variable in mcs.variables(*args, **kwargs):
-            attrs[member] = variable
-        return super(VariableMeta, mcs).__new__(mcs, name, bases, attrs)
+Markets = Variable("Markets", ["EMPTY", "BEAR", "BULL"], start=0)
+Instruments = Variable("Instruments", ["EMPTY", "STOCK", "OPTION"], start=0)
+Options = Variable("Options", ["EMPTY", "PUT", "CALL"], start=0)
+Positions = Variable("Positions", ["EMPTY", "LONG", "SHORT"], start=0)
+Spreads = Variable("Spreads", ["STRANGLE", "COLLAR", "VERTICAL"], start=1)
 
-    def __iter__(cls): return iter([variable for variable in super().__iter__() if bool(variable)])
-    def __call__(cls, content, *args, **kwargs):
-        if isinstance(content, (int, str)):
-            content = int(content) if str(content).isdigit() else str(content)
-            mapping = {type(content)(variable): variable for variable in iter(cls)}
-            variable = mapping[content]
-            return variable
-        if isinstance(content, Enum):
-            return content
-        return super(VariableMeta, cls).__call__(content, *args, **kwargs)
+Security = Variables("Security", ["instrument", "option", "position"])
+Strategy = Variables("Strategy", ["spread", "option", "position"], {"stocks", "options"})
 
-    @staticmethod
-    def variable(name):
-        def __str__(self): return str(self.value).lower()
-        def __bool__(self): return bool(self.value)
-        def __int__(self): return int(self.value)
-        attrs = dict(__str__=__str__, __bool__=__bool__, __int__=__int__)
-        return type(name, (object,), attrs)
-
-    @staticmethod
-    def variables(*args, members, start=1, **kwargs):
-        assert isinstance(members, list) and bool(members)
-        members = list(map(str.upper, list(members)))
-        for index, member in enumerate(members, start=start):
-            variable = Variable(member, index)
-            yield member, variable
+StockLong = Security("StockLong", [Instruments.STOCK, Options.EMPTY, Positions.LONG])
+StockShort = Security("StockShort", [Instruments.STOCK, Options.EMPTY, Positions.SHORT])
+OptionPutLong = Security("OptionPutLong", [Instruments.OPTION, Options.PUT, Positions.LONG])
+OptionPutShort = Security("OptionPutShort", [Instruments.OPTION, Options.PUT, Positions.SHORT])
+OptionCallLong = Security("OptionCallLong", [Instruments.OPTION, Options.CALL, Positions.LONG])
+OptionCallShort = Security("OptionCallShort", [Instruments.OPTION, Options.CALL, Positions.SHORT])
+VerticalPut = Strategy("VerticalPut", [Spreads.VERTICAL, Options.PUT, Positions.EMPTY], options=[OptionPutLong, OptionPutShort], stocks=[])
+VerticalCall = Strategy("VerticalCall", [Spreads.VERTICAL, Options.CALL, Positions.EMPTY], options=[OptionCallLong, OptionCallShort], stocks=[])
+CollarLong = Strategy("CollarLong", [Spreads.COLLAR, Options.EMPTY, Positions.LONG], options=[OptionPutLong, OptionCallShort], stocks=[StockLong])
+CollarShort = Strategy("CollarShort", [Spreads.COLLAR, Options.EMPTY, Positions.SHORT], options=[OptionCallLong, OptionPutShort], stocks=[StockShort])
 
 
-class Theta(members=["PUT", "NEUTRAL", "CALL"], start=-1, metaclass=VariableMeta): pass
-class Phi(members=["SHORT", "NEUTRAL", "LONG"], start=-1, metaclass=VariableMeta): pass
-class Omega(members=["BEAR", "NEUTRAL", "BULL"], start=-1, metaclass=VariableMeta): pass
-class Technicals(members=["BARS", "STATISTIC", "STOCHASTIC"], metaclass=VariableMeta): pass
-class Scenarios(members=["MINIMUM", "MAXIMUM"], metaclass=VariableMeta): pass
-class Valuations(members=["ARBITRAGE"], metaclass=VariableMeta): pass
-class Pricing(members=["BLACKSCHOLES"], metaclass=VariableMeta): pass
-class Status(members=["PROSPECT", "PENDING", "ABANDONED", "REJECTED", "ACCEPTED"], metaclass=VariableMeta): pass
-
-class Markets(members=["EMPTY", "BEAR", "BULL"], start=0, metaclass=VariableMeta): pass
-class Instruments(members=["EMPTY", "STOCK", "OPTION"], start=0, metaclass=VariableMeta): pass
-class Options(members=["EMPTY", "PUT", "CALL"], start=0, metaclass=VariableMeta): pass
-class Positions(members=["EMPTY", "LONG", "SHORT"], start=0, metaclass=VariableMeta): pass
-class Spreads(members=["STRANGLE", "COLLAR", "VERTICAL"], start=1, metaclass=VariableMeta): pass
-
-
-class MultiVariableMeta(ABCMeta):
-    def __init__(cls, *args, fields=[], attributes=[], **kwargs):
-        cls.attributes = attributes
-        cls.fields = fields
-
-    def __iter__(cls): return iter(cls.fields)
-    def __call__(cls, *args, **kwargs):
-        attributes, fields, contents = cls.attributes, cls.fields, list(args)
-        assert isinstance(contents, list) and len(contents) == len(fields)
-        attributes = {attribute: kwargs[attribute] for attribute in attributes}
-        instance = super(MultiVariableMeta, cls).__call__(fields, contents, attributes)
-        return instance
-
-
-class MultiVariable(ABC, metaclass=MultiVariableMeta):
-    def __init_subclass__(cls, fields=[], attributes=[]):
-        cls.fields, cls.attributes = list(fields), list(attributes)
-
-    def __new__(cls, fields, contents, attributes):
-        instance = super().__new__(cls)
-        for field, content in zip(fields, contents):
-            setattr(instance, field, content)
-        for attribute, value in attributes.items():
-            setattr(instance, attribute, value)
-        return instance
-
-    def __init__(self, fields, contents, attributes):
-        self.attributes = attributes
-        self.contents = contents
-        self.fields = fields
-
-    def __int__(self): return int(sum([pow(10, index) * int(content) for index, content in enumerate(reversed(self))]))
-    def __str__(self): return str("|".join([str(content) for content in iter(self) if bool(content)]))
-    def __bool__(self): return any([bool(content) for content in iter(self)])
-    def __hash__(self): return hash(tuple(zip(self.fields, self.contents)))
-
-    def __reversed__(self): return reversed(self.contents)
-    def __iter__(self): return iter(self.contents)
-
-    def items(self): return tuple(zip(self.fields, self.contents))
-    def values(self): return tuple(self.fields)
-    def keys(self): return tuple(self.contents)
-
-
-class Security(MultiVariable, fields=["instrument", "option", "position"]): pass
-class Strategy(MultiVariable, fields=["spread", "option", "position"], attributes=["stocks", "options"]): pass
-
-
-StockLong = Security(Instruments.STOCK, Options.EMPTY, Positions.LONG)
-StockShort = Security(Instruments.STOCK, Options.EMPTY, Positions.SHORT)
-OptionPutLong = Security(Instruments.OPTION, Options.PUT, Positions.LONG)
-OptionPutShort = Security(Instruments.OPTION, Options.PUT, Positions.SHORT)
-OptionCallLong = Security(Instruments.OPTION, Options.CALL, Positions.LONG)
-OptionCallShort = Security(Instruments.OPTION, Options.CALL, Positions.SHORT)
-VerticalPut = Strategy(Spreads.VERTICAL, Options.PUT, Positions.EMPTY, options=[OptionPutLong, OptionPutShort], stocks=[])
-VerticalCall = Strategy(Spreads.VERTICAL, Options.CALL, Positions.EMPTY, options=[OptionCallLong, OptionCallShort], stocks=[])
-CollarLong = Strategy(Spreads.COLLAR, Options.EMPTY, Positions.LONG, options=[OptionPutLong, OptionCallShort], stocks=[StockLong])
-CollarShort = Strategy(Spreads.COLLAR, Options.EMPTY, Positions.SHORT, options=[OptionCallLong, OptionPutShort], stocks=[StockShort])
-
-
-class CollectionMeta(ABCMeta):
-    def __new__(mcs, name, base, attrs, *args, **kwargs):
-        return super(CollectionMeta, mcs).__new__(mcs, name, base, attrs)
-
-    def __init__(cls, *args, contents=[], **kwargs): cls.contents = list(contents)
-    def __iter__(cls): return iter(cls.contents)
-
-    def __call__(cls, content): return cls.create(int(content) if str(content).isdigit() else str(content))
-    def __getitem__(cls, manifest): return {tuple(content): content for content in iter(cls)}[manifest]
-
-    @typedispatcher
-    def create(cls, content): raise TypeError(type(content))
-    @create.register(MultiVariable)
-    def value(cls, value): return {hash(content): content for content in iter(cls)}[value]
-    @create.register(int)
-    def integer(cls, number): return {int(content): content for content in iter(cls)}[number]
-    @create.register(str)
-    def string(cls, string): return {str(content): content for content in iter(cls)}[string]
-
-
-class Securities(contents=[StockLong, StockShort, OptionPutLong, OptionPutShort, OptionCallLong, OptionCallShort], metaclass=CollectionMeta):
+class Securities(contents=[StockLong, StockShort, OptionPutLong, OptionPutShort, OptionCallLong, OptionCallShort], metaclass=VariablesMeta):
     Options = [OptionPutLong, OptionCallLong, OptionPutShort, OptionCallShort]
     Puts = [OptionPutLong, OptionPutShort]
     Calls = [OptionCallLong, OptionCallShort]
@@ -207,7 +86,7 @@ class Securities(contents=[StockLong, StockShort, OptionPutLong, OptionPutShort,
         class Call: Long = OptionCallLong; Short = OptionCallShort
 
 
-class Strategies(contents=[VerticalPut, VerticalCall, CollarLong, CollarShort], metaclass=CollectionMeta):
+class Strategies(contents=[VerticalPut, VerticalCall, CollarLong, CollarShort], metaclass=VariablesMeta):
     Verticals = [VerticalPut, VerticalCall]
     Collars = [CollarLong, CollarShort]
 

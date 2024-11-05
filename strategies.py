@@ -107,10 +107,8 @@ class StrategyCalculator(Function, Logging, Sizing, Emptying):
         calculations = {strategy: calculation(*args, **kwargs) for strategy, calculation in calculations if strategy in strategies}
         self.__calculations = calculations
 
-    def execute(self, source, *args, **kwargs):
-        assert isinstance(source, tuple)
-        contract, options = source
-        assert isinstance(contract, Querys.Contract) and isinstance(options, pd.DataFrame)
+    def execute(self, contract, options, *args, **kwargs):
+        assert isinstance(options, pd.DataFrame)
         if self.empty(options): return
         options = dict(self.options(options))
         for strategy, strategies in self.calculate(options, *args, **kwargs):
@@ -124,7 +122,7 @@ class StrategyCalculator(Function, Logging, Sizing, Emptying):
         assert isinstance(options, pd.DataFrame)
         for security, dataframe in options.groupby(list(Variables.Security), sort=False):
             if self.empty(dataframe): continue
-            security = Variables.Securities[security]
+            security = Variables.Securities(security)
             dataframe = dataframe.set_index(list(Querys.Product), drop=True, inplace=False)
             columns = [column for column in list(Variables.Security) if column in dataframe.columns]
             dataframe = dataframe.drop(columns, axis=1)

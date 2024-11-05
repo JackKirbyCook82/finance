@@ -13,12 +13,13 @@ import pandas as pd
 from abc import ABC
 from numbers import Number
 from scipy.stats import norm
+from datetime import datetime as Datetime
 
 from finance.variables import Variables, Querys
-from support.files import File
-from support.meta import ParametersMeta, RegistryMeta
+from support.mixins import Emptying, Sizing, Logging, Function
 from support.calculations import Calculation, Equation, Variable
-from support.mixins import Function, Emptying, Sizing, Logging
+from support.meta import ParametersMeta, RegistryMeta
+from support.files import File
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -34,14 +35,26 @@ class SecurityParameters(metaclass=ParametersMeta):
     formatters = {"instrument": int, "option": int, "position": int, "strike": lambda strike: round(strike, 2), "underlying": lambda underlying: round(underlying, 2)}
     dates = {"current": "%Y%m%d-%H%M", "expire": "%Y%m%d"}
 
-class SecurityFile(File, datatype=pd.DataFrame, **dict(SecurityParameters)): pass
-class OptionFile(SecurityFile, variable=Variables.Instruments.OPTION): pass
+class SecurityFile(File, ABC, datatype=pd.DataFrame, **dict(SecurityParameters)): pass
+class OptionFile(SecurityFile, variable=Variables.Instruments.OPTION):
+    @staticmethod
+    def filename(*args, query, **kwargs):
+        ticker = str(query.ticker).upper()
+        expire = str(query.expire.strftime("%Y%m%d"))
+        return "_".join([ticker, expire])
+
+    @staticmethod
+    def parameters(*args, filename, **kwargs):
+        ticker, expire = str(filename).split("_")
+        ticker = str(ticker).upper()
+        expire = Datetime.strptime(expire, "%Y%m%d").date()
+        return dict(ticker=ticker, expire=expire)
 
 
 class PricingEquation(Equation, ABC):
     τ = Variable("τ", "tau", np.int32, pd.Series, vectorize=True, function=lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
-    Θ = Variable("Θ", "theta", np.int32, pd.Series, vectorize=True, function=lambda i: + int(Variables.Theta(str(i))))
-    Φ = Variable("Φ", "phi", np.int32, pd.Series, vectorize=True, function=lambda j: + int(Variables.Phi(str(j))))
+    Θ = Variable("Θ", "theta", np.int32, pd.Series, vectorize=True, function=lambda i: + int(Variables.Theta[str(i)]))
+    Φ = Variable("Φ", "phi", np.int32, pd.Series, vectorize=True, function=lambda j: + int(Variables.Phi[str(j)]))
 
     i = Variable("i", "option", Variables.Options, pd.Series, locator="option")
     j = Variable("j", "position", Variables.Positions, pd.Series, locator="position")
@@ -94,15 +107,13 @@ class OptionCalculator(Function, Logging, Sizing, Emptying):
         Logging.__init__(self, *args, **kwargs)
         columns = dict(pricing=["price", "underlying"], sizing=["volume", "size", "interest"], timing=["current"])
         self.__calculation = PricingCalculation[pricing](*args, **kwargs)
-        self.__index = list(Variables.Querys.Product)
+        self.__index = list(Querys.Product)
         self.__columns = columns
         self.__sizings = sizings
         self.__timings = timings
 
-    def execute(self, source, *args, **kwargs):
-        assert isinstance(source, tuple)
-        contract, exposures, statistics = source
-        assert isinstance(contract, Querys.Contract) and isinstance(exposures, pd.DataFrame) and isinstance(statistics, pd.DataFrame)
+    def execute(self, contract, exposures, statistics, *args, **kwargs):
+        assert isinstance(exposures, pd.DataFrame) and isinstance(statistics, pd.DataFrame)
         if self.empty(exposures): return
         exposures = self.exposures(exposures, statistics, *args, **kwargs)
         options = self.calculate(exposures, *args, **kwargs)

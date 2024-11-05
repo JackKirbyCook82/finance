@@ -59,27 +59,24 @@ class ValuationHeader(Header, ABC):
 
 class ValuationTable(Table, ABC, datatype=pd.DataFrame, viewtype=ValuationView, headertype=ValuationHeader):
     def obsolete(self, contract, *args, **kwargs):
-        assert isinstance(contract, (Querys.Contract, types.NoneType))
-        contract = [lambda table: table[:, key] == value for key, value in contract.items()] if contract is not None else []
-        status = [lambda table: table[:, "status"] == Variables.Status.PROSPECT]
-        function = lambda table: reduce(lambda x, y: x & y, contract + status)
-        return self.extract(function)
+        if not bool(self): return
+        assert isinstance(contract, Querys.Contract)
+        mask = [self[:, key] == value for key, value in contract.items()] + [self[:, "status"] == Variables.Status.PROSPECT]
+        mask = reduce(lambda lead, lag: lead & lag, mask)
+        return self.extract(mask)
 
-    def rejected(self, contract, *args, tenure=None, **kwargs):
-        assert isinstance(contract, (Querys.Contract, types.NoneType))
-        contract = [lambda table: table[:, key] == value for key, value in contract.items()] if contract is not None else []
-        timeout = [lambda table: (pd.to_datetime("now") - table[:, "current"]) >= tenure if (tenure is not None) else False]
-        rejected = [lambda table: table[:, "status"] == Variables.Status.REJECTED]
-        abandoned = [lambda table: table[:, "status"] == Variables.Status.ABANDONED]
-        function = lambda table: reduce(lambda x, y: x & y, contract + timeout + rejected + abandoned)
-        return self.extract(function)
+    def rejected(self, *args, tenure=None, **kwargs):
+        if not bool(self): return
+        mask = [self[:, "status"] == Variables.Status.REJECTED, self[:, "status"] == Variables.Status.ABANDONED]
+        if tenure is not None: mask.append(pd.to_datetime("now") - self.table[:, "current"] >= tenure)
+        mask = reduce(lambda lead, lag: lead & lag, mask)
+        return self.extract(mask)
 
-    def accepted(self, contract, *args, **kwargs):
-        assert isinstance(contract, (Querys.Contract, types.NoneType))
-        contract = [lambda table: table[:, key] == value for key, value in contract.items()] if contract is not None else []
-        status = [lambda table: table[:, "status"] == Variables.Status.ACCEPTED]
-        function = lambda table: reduce(lambda x, y: x & y, contract + status)
-        return self.extract(function)
+    def accepted(self, *args, **kwargs):
+        if not bool(self): return
+        mask = [self[:, "status"] == Variables.Status.ACCEPTED]
+        mask = reduce(lambda lead, lag: lead & lag, mask)
+        return self.extract(mask)
 
 
 class ValuationEquation(Equation, ABC):
@@ -130,10 +127,8 @@ class ValuationCalculator(Function, Logging, Sizing, Emptying):
         self.__calculations = {scenario: calculation(*args, **kwargs) for scenario, calculation in calculations.items()}
         self.__header = ValuationHeader(*args, exclude=["priority", "status"], **kwargs)
 
-    def execute(self, source, *args, **kwargs):
-        assert isinstance(source, tuple)
-        contract, strategies = source
-        assert isinstance(contract, Querys.Contract) and isinstance(strategies, (list, xr.Dataset))
+    def execute(self, contract, strategies, *args, **kwargs):
+        assert isinstance(strategies, (list, xr.Dataset))
         assert all([isinstance(dataset, xr.Dataset) for dataset in strategies]) if isinstance(strategies, list) else True
         if self.empty(strategies["size"]): return
         strategies = list(self.strategies(strategies))
@@ -253,20 +248,20 @@ class ValuationWriter(Writer):
 
 
 class ValuationReader(Reader):
-    def read(self, contract, *args, **kwargs):
-        rejected = self.rejected(contract, *args, **kwargs)
-        accepted = self.accepted(contract, *args, **kwargs)
+    def read(self, *args, **kwargs):
+        rejected = self.rejected(*args, **kwargs)
+        accepted = self.accepted(*args, **kwargs)
         return accepted
 
-    def rejected(self, contract, *args, **kwargs):
-        rejected = self.table.rejected(contract, *args, **kwargs)
+    def rejected(self, *args, **kwargs):
+        rejected = self.table.rejected(*args, **kwargs)
         size = self.size(rejected)
         string = f"Rejected: {repr(self)}[{size:.0f}]"
         self.logger.info(string)
         return rejected
 
-    def accepted(self, contract, *args, **kwargs):
-        accepted = self.table.accepted(contract, *args, **kwargs)
+    def accepted(self, *args, **kwargs):
+        accepted = self.table.accepted(*args, **kwargs)
         size = self.size(accepted)
         string = f"Accepted: {repr(self)}[{size:.0f}]"
         self.logger.info(string)
