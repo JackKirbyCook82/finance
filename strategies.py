@@ -19,7 +19,7 @@ from collections import namedtuple as ntuple
 from finance.variables import Variables, Querys
 from support.meta import RegistryMeta
 from support.calculations import Calculation, Equation, Variable
-from support.mixins import Function, Emptying, Sizing, Logging
+from support.mixins import Emptying, Sizing, Logging
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -97,11 +97,10 @@ class CollarLongCalculation(CollarCalculation, equation=CollarLongEquation, regi
 class CollarShortCalculation(CollarCalculation, equation=CollarShortEquation, register=Variables.Strategies.Collar.Short): pass
 
 
-class StrategyCalculator(Function, Logging, Sizing, Emptying):
+class StrategyCalculator(Logging, Sizing, Emptying):
     def __init__(self, *args, strategies=[], **kwargs):
         assert all([strategy in list(Variables.Strategies) for strategy in list(strategies)])
-        Function.__init__(self, *args, **kwargs)
-        Logging.__init__(self, *args, **kwargs)
+        super().__init__(*args, **kwargs)
         strategies = list(dict(StrategyCalculation).keys()) if not bool(strategies) else list(strategies)
         calculations = dict(StrategyCalculation).items()
         calculations = {strategy: calculation(*args, **kwargs) for strategy, calculation in calculations if strategy in strategies}

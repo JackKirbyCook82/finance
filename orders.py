@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 
 from finance.variables import Variables, Querys
-from support.mixins import Function, Emptying, Sizing, Logging
+from support.mixins import Emptying, Sizing, Logging
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -21,9 +21,8 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-class OrderCalculator(Function, Logging, Sizing, Emptying):
+class OrderCalculator(Logging, Sizing, Emptying):
     def __init__(self, *args, **kwargs):
-        Function.__init__(self, *args, **kwargs)
         Logging.__init__(self, *args, **kwargs)
 
     def execute(self, contract, valuations, *args, **kwargs):

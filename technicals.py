@@ -12,8 +12,8 @@ import numpy as np
 import pandas as pd
 from abc import ABC
 
-from finance.variables import Variables, Querys
-from support.mixins import Emptying, Sizing, Logging, Function
+from finance.variables import Variables
+from support.mixins import Emptying, Sizing, Logging
 from support.calculations import Calculation, Equation, Variable
 from support.meta import ParametersMeta, RegistryMeta
 from support.files import File
@@ -78,11 +78,10 @@ class StochasticCalculation(TechnicalCalculation, equation=StochasticEquation, r
             yield equation.xk()
 
 
-class TechnicalCalculator(Function, Logging, Sizing, Emptying):
+class TechnicalCalculator(Logging, Sizing, Emptying):
     def __init__(self, *args, technical, **kwargs):
         assert technical in list(Variables.Technicals)
-        Function.__init__(self, *args, **kwargs)
-        Logging.__init__(self, *args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.__calculation = TechnicalCalculation[technical](*args, **kwargs)
 
     def execute(self, symbol, bars, *args, **kwargs):

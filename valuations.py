@@ -20,7 +20,7 @@ from finance.variables import Variables, Querys
 from support.meta import ParametersMeta, RegistryMeta
 from support.calculations import Calculation, Equation, Variable
 from support.tables import Writer, Reader, Table, View, Header
-from support.mixins import Function, Emptying, Sizing, Logging
+from support.mixins import Emptying, Sizing, Logging
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -61,21 +61,20 @@ class ValuationTable(Table, ABC, datatype=pd.DataFrame, viewtype=ValuationView, 
     def obsolete(self, contract, *args, **kwargs):
         if not bool(self): return
         assert isinstance(contract, Querys.Contract)
-        mask = [self[:, key] == value for key, value in contract.items()] + [self[:, "status"] == Variables.Status.PROSPECT]
+        mask = [self[:, key] == value for key, value in contract.items()]
         mask = reduce(lambda lead, lag: lead & lag, mask)
+        mask = mask & self[:, "status"] == Variables.Status.PROSPECT
         return self.extract(mask)
 
     def rejected(self, *args, tenure=None, **kwargs):
         if not bool(self): return
-        mask = [self[:, "status"] == Variables.Status.REJECTED, self[:, "status"] == Variables.Status.ABANDONED]
-        if tenure is not None: mask.append(pd.to_datetime("now") - self.table[:, "current"] >= tenure)
-        mask = reduce(lambda lead, lag: lead & lag, mask)
+        mask = (self[:, "status"] == Variables.Status.REJECTED) | (self[:, "status"] == Variables.Status.ABANDONED)
+        if tenure is not None: mask = mask | (pd.to_datetime("now") - self.table[:, "current"] >= tenure)
         return self.extract(mask)
 
     def accepted(self, *args, **kwargs):
         if not bool(self): return
-        mask = [self[:, "status"] == Variables.Status.ACCEPTED]
-        mask = reduce(lambda lead, lag: lead & lag, mask)
+        mask = self[:, "status"] == Variables.Status.ACCEPTED
         return self.extract(mask)
 
 
@@ -117,10 +116,9 @@ class MinimumArbitrageCalculation(ArbitrageCalculation, equation=MinimumArbitrag
 class MaximumArbitrageCalculation(ArbitrageCalculation, equation=MaximumArbitrageEquation, register=(Variables.Valuations.ARBITRAGE, Variables.Scenarios.MAXIMUM)): pass
 
 
-class ValuationCalculator(Function, Logging, Sizing, Emptying):
+class ValuationCalculator(Logging, Sizing, Emptying):
     def __init__(self, *args, **kwargs):
-        Function.__init__(self, *args, **kwargs)
-        Logging.__init__(self, *args, **kwargs)
+        super().__init__(*args, **kwargs)
         Identity = ntuple("Identity", "valuation scenario")
         calculations = {Identity(*identity): calculation for identity, calculation in dict(ValuationCalculation).items()}
         calculations = {identity.scenario: calculation for identity, calculation in calculations.items() if identity.valuation == kwargs["valuation"]}
@@ -197,7 +195,7 @@ class ValuationCalculator(Function, Logging, Sizing, Emptying):
 class ValuationWriter(Writer):
     def __init__(self, *args, priority, status=Variables.Status.PROSPECT, **kwargs):
         assert callable(priority) and status == Variables.Status.PROSPECT
-        Writer.__init__(self, *args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.__header = ValuationHeader(*args, **kwargs)
         self.__priority = priority
         self.__status = status

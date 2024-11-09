@@ -12,7 +12,7 @@ import pandas as pd
 from datetime import datetime as Datetime
 
 from finance.variables import Variables, Querys
-from support.mixins import Function, Emptying, Sizing, Logging
+from support.mixins import Emptying, Sizing, Logging
 from support.meta import ParametersMeta
 from support.files import File
 
@@ -45,7 +45,7 @@ class HoldingFile(File, variable="holdings", datatype=pd.DataFrame, **dict(Holdi
         return dict(ticker=ticker, expire=expire)
 
 
-class HoldingCalculator(Function, Logging, Sizing, Emptying):
+class HoldingCalculator(Logging, Sizing, Emptying):
     def __init__(self, *args, valuation, **kwargs):
         assert valuation in list(Variables.Valuations)
         Logging.__init__(self, *args, **kwargs)

@@ -13,8 +13,8 @@ import xarray as xr
 from functools import reduce
 from collections import OrderedDict as ODict
 
-from finance.variables import Variables, Querys
-from support.mixins import Function, Emptying, Sizing, Logging
+from finance.variables import Variables
+from support.mixins import Emptying, Sizing, Logging
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -24,11 +24,7 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-class StabilityFilter(Function, Logging, Sizing, Emptying):
-    def __init__(self, *args, **kwargs):
-        Function.__init__(self, *args, **kwargs)
-        Logging.__init__(self, *args, **kwargs)
-
+class StabilityFilter(Logging, Sizing, Emptying):
     def execute(self, contract, valuations, stabilities, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame) and isinstance(stabilities, pd.DataFrame)
         if self.empty(valuations): return
@@ -43,11 +39,7 @@ class StabilityFilter(Function, Logging, Sizing, Emptying):
         pass
 
 
-class StabilityCalculator(Function, Logging, Sizing, Emptying):
-    def __init__(self, *args, **kwargs):
-        Function.__init__(self, *args, **kwargs)
-        Logging.__init__(self, *args, **kwargs)
-
+class StabilityCalculator(Logging, Sizing, Emptying):
     def execute(self, contract, orders, exposures, *args, **kwargs):
         assert isinstance(orders, pd.DataFrame) and isinstance(exposures, pd.DataFrame)
         if self.empty(orders): return

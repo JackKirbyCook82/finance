@@ -16,7 +16,7 @@ from scipy.stats import norm
 from datetime import datetime as Datetime
 
 from finance.variables import Variables, Querys
-from support.mixins import Emptying, Sizing, Logging, Function
+from support.mixins import Emptying, Sizing, Logging
 from support.calculations import Calculation, Equation, Variable
 from support.meta import ParametersMeta, RegistryMeta
 from support.files import File
@@ -100,10 +100,9 @@ class BlackScholesCalculation(PricingCalculation, equation=BlackScholesEquation,
             yield equation.yo()
 
 
-class OptionCalculator(Function, Logging, Sizing, Emptying):
+class OptionCalculator(Logging, Sizing, Emptying):
     def __init__(self, *args, pricing, sizings={}, timings={}, **kwargs):
         assert pricing in list(Variables.Pricing)
-        Function.__init__(self, *args, **kwargs)
         Logging.__init__(self, *args, **kwargs)
         columns = dict(pricing=["price", "underlying"], sizing=["volume", "size", "interest"], timing=["current"])
         self.__calculation = PricingCalculation[pricing](*args, **kwargs)

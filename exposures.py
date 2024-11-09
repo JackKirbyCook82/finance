@@ -13,7 +13,7 @@ from abc import ABC
 from functools import reduce
 
 from finance.variables import Variables, Querys
-from support.mixins import Function, Emptying, Sizing, Logging
+from support.mixins import Emptying, Sizing, Logging
 from support.tables import Writer, Table, View, Header
 from support.meta import ParametersMeta
 
@@ -41,14 +41,13 @@ class ExposureTable(Table, ABC, datatype=pd.DataFrame, viewtype=ExposureView, he
     def obsolete(self, contract, *args, **kwargs):
         if not bool(self): return
         assert isinstance(contract, Querys.Contract)
-        mask = [self[:, key] == value for key, value in contract.items()] if contract is not None else []
+        mask = [self[:, key] == value for key, value in contract.items()]
         mask = reduce(lambda lead, lag: lead & lag, mask)
         self.remove(mask)
 
 
-class ExposureCalculator(Function, Logging, Sizing, Emptying):
+class ExposureCalculator(Logging, Sizing, Emptying):
     def __init__(self, *args, **kwargs):
-        Function.__init__(self, *args, **kwargs)
         Logging.__init__(self, *args, **kwargs)
 
     def execute(self, contract, holdings, *args, **kwargs):
