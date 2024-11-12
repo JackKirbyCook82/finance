@@ -128,7 +128,6 @@ class ValuationCalculator(Logging, Sizing, Emptying):
     def execute(self, contract, strategies, *args, **kwargs):
         assert isinstance(strategies, (list, xr.Dataset))
         assert all([isinstance(dataset, xr.Dataset) for dataset in strategies]) if isinstance(strategies, list) else True
-        if self.empty(strategies["size"]): return
         strategies = list(self.strategies(strategies))
         for valuations in self.calculate(strategies, *args, **kwargs):
             size = self.size(valuations)
@@ -142,10 +141,11 @@ class ValuationCalculator(Logging, Sizing, Emptying):
         assert isinstance(strategies, (list, xr.Dataset))
         assert all([isinstance(dataset, xr.Dataset) for dataset in strategies]) if isinstance(strategies, list) else True
         for dataset in list(strategies):
+            if self.empty(dataset["size"]): continue
             scenarios = dict(self.scenarios(dataset, *args, **kwargs))
             valuations = dict(self.valuations(scenarios, *args, **kwargs))
             valuations = pd.concat(list(valuations.values()), axis=0)
-            if self.empty(valuations): return
+            if self.empty(valuations): continue
             valuations = self.pivot(valuations, *args, **kwargs)
             yield valuations
 
@@ -236,6 +236,13 @@ class ValuationWriter(Writer):
         function = lambda status: self.status if np.isnan(status) else status
         valuations["status"] = valuations["status"].apply(function)
         return valuations
+
+    @staticmethod
+    def generator(contents):
+        assert isinstance(contents, (list, pd.DataFrame))
+        assert all([isinstance(content, pd.DataFrame) for content in contents]) if isinstance(contents, list) else True
+        contents = [contents] if isinstance(contents, pd.DataFrame) else contents
+        yield from iter(contents)
 
     @property
     def priority(self): return self.__priority
