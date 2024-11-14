@@ -7,7 +7,6 @@ Created on Weds Jul 19 2023
 """
 
 import types
-import logging
 import numpy as np
 import pandas as pd
 import xarray as xr
@@ -27,7 +26,6 @@ __author__ = "Jack Kirby Cook"
 __all__ = ["ValuationCalculator", "ValuationReader", "ValuationWriter", "ValuationTable"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
-__logger__ = logging.getLogger(__name__)
 
 
 class ValuationFormatting(metaclass=ParametersMeta):
@@ -126,8 +124,7 @@ class ValuationCalculator(Logging, Sizing, Emptying):
         self.__header = ValuationHeader(*args, exclude=["priority", "status"], **kwargs)
 
     def execute(self, contract, strategies, *args, **kwargs):
-        assert isinstance(strategies, (list, xr.Dataset))
-        assert all([isinstance(dataset, xr.Dataset) for dataset in strategies]) if isinstance(strategies, list) else True
+        if self.empty(strategies): return
         strategies = list(self.strategies(strategies))
         for valuations in self.calculate(strategies, *args, **kwargs):
             size = self.size(valuations)
@@ -201,13 +198,13 @@ class ValuationWriter(Writer):
         self.__status = status
 
     def write(self, contract, valuations, *args, **kwargs):
-        assert isinstance(contract, Querys.Contract) and isinstance(valuations, pd.DataFrame)
         obsolete = self.table.obsolete(contract, *args, **kwargs)
         size = self.size(obsolete)
         string = f"Obsolete: {repr(self)}|{str(contract)}[{size:.0f}]"
         self.logger.info(string)
+        if self.empty(valuations): return
         valuations = self.valuations(valuations, *args, **kwargs)
-        if bool(valuations.empty): return
+        if self.empty(valuations): return
         valuations = self.prioritize(valuations, *args, **kwargs)
         valuations = self.prospect(valuations, *args, **kwargs)
         self.table.combine(valuations)

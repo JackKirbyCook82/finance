@@ -6,7 +6,6 @@ Created on Fri May 17 2024
 
 """
 
-import logging
 import numpy as np
 import pandas as pd
 from abc import ABC
@@ -22,7 +21,6 @@ __author__ = "Jack Kirby Cook"
 __all__ = ["ExposureCalculator", "ExposureWriter", "ExposureTable"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
-__logger__ = logging.getLogger(__name__)
 
 
 class ExposureFormatting(metaclass=ParametersMeta):
@@ -51,7 +49,6 @@ class ExposureCalculator(Logging, Sizing, Emptying):
         Logging.__init__(self, *args, **kwargs)
 
     def execute(self, contract, holdings, *args, **kwargs):
-        assert isinstance(holdings, pd.DataFrame)
         if self.empty(holdings): return
         exposures = self.calculate(holdings, *args, **kwargs)
         size = self.size(exposures)
@@ -129,9 +126,8 @@ class ExposureCalculator(Logging, Sizing, Emptying):
 
 class ExposureWriter(Writer):
     def write(self, contract, exposures, *args, **kwargs):
-        assert isinstance(contract, Querys.Contract) and isinstance(exposures, pd.DataFrame)
         self.table.obsolete(contract, *args, **kwargs)
-        if bool(exposures.empty): return
+        if self.empty(exposures): return
         self.table.combine(exposures)
         self.table.reset()
         self.table.sort(["ticker", "expire"], reverse=[False, False])

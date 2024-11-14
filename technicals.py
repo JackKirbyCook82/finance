@@ -7,7 +7,6 @@ Created on Fri Apr 19 2024
 """
 
 import types
-import logging
 import numpy as np
 import pandas as pd
 from abc import ABC
@@ -23,7 +22,6 @@ __author__ = "Jack Kirby Cook"
 __all__ = ["TechnicalCalculator", "BarsFile", "StatisticFile", "StochasticFile"]
 __copyright__ = "Copyright 2024, Jack Kirby Cook"
 __license__ = "MIT License"
-__logger__ = logging.getLogger(__name__)
 
 
 class TechnicalParameters(metaclass=ParametersMeta):
@@ -85,7 +83,6 @@ class TechnicalCalculator(Logging, Sizing, Emptying):
         self.__calculation = TechnicalCalculation[technical](*args, **kwargs)
 
     def execute(self, symbol, bars, *args, **kwargs):
-        assert isinstance(bars, pd.DataFrame)
         if self.empty(bars): return
         parameters = dict(ticker=symbol.ticker)
         technicals = self.calculate(bars, *args, **parameters, **kwargs)

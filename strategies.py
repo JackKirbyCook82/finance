@@ -7,7 +7,6 @@ Created on Weds Jul 19 2023
 """
 
 import types
-import logging
 import numpy as np
 import pandas as pd
 import xarray as xr
@@ -26,7 +25,6 @@ __author__ = "Jack Kirby Cook"
 __all__ = ["StrategyCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
-__logger__ = logging.getLogger(__name__)
 
 
 class StrategyLocator(ntuple("Source", "axis position")): pass
@@ -107,7 +105,6 @@ class StrategyCalculator(Logging, Sizing, Emptying):
         self.__calculations = calculations
 
     def execute(self, contract, options, *args, **kwargs):
-        assert isinstance(options, pd.DataFrame)
         if self.empty(options): return
         options = dict(self.options(options))
         for strategy, strategies in self.calculate(options, *args, **kwargs):

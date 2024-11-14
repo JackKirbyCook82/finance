@@ -6,7 +6,6 @@ Created on Fri May 17 2024
 
 """
 
-import logging
 import numpy as np
 import pandas as pd
 import xarray as xr
@@ -21,12 +20,10 @@ __author__ = "Jack Kirby Cook"
 __all__ = ["StabilityCalculator", "StabilityFilter"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
-__logger__ = logging.getLogger(__name__)
 
 
 class StabilityFilter(Logging, Sizing, Emptying):
     def execute(self, contract, valuations, stabilities, *args, **kwargs):
-        assert isinstance(valuations, pd.DataFrame) and isinstance(stabilities, pd.DataFrame)
         if self.empty(valuations): return
         valuations = self.calculate(valuations, stabilities, *args, **kwargs)
         size = self.size(valuations)
@@ -41,7 +38,6 @@ class StabilityFilter(Logging, Sizing, Emptying):
 
 class StabilityCalculator(Logging, Sizing, Emptying):
     def execute(self, contract, orders, exposures, *args, **kwargs):
-        assert isinstance(orders, pd.DataFrame) and isinstance(exposures, pd.DataFrame)
         if self.empty(orders): return
         stabilities = self.calculate(orders, exposures, *args, **kwargs)
         size = self.size(stabilities)

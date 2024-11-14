@@ -7,7 +7,6 @@ Created on Weds Jul 19 2023
 """
 
 import types
-import logging
 import numpy as np
 import pandas as pd
 from abc import ABC
@@ -26,7 +25,6 @@ __author__ = "Jack Kirby Cook"
 __all__ = ["OptionCalculator", "OptionFile"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
-__logger__ = logging.getLogger(__name__)
 
 
 class SecurityParameters(metaclass=ParametersMeta):
@@ -112,7 +110,6 @@ class OptionCalculator(Logging, Sizing, Emptying):
         self.__timings = timings
 
     def execute(self, contract, exposures, statistics, *args, **kwargs):
-        assert isinstance(exposures, pd.DataFrame) and isinstance(statistics, pd.DataFrame)
         if self.empty(exposures): return
         exposures = self.exposures(exposures, statistics, *args, **kwargs)
         options = self.calculate(exposures, *args, **kwargs)
