@@ -12,7 +12,8 @@ import xarray as xr
 from functools import reduce
 from collections import OrderedDict as ODict
 
-from finance.variables import Variables
+from finance.variables import Variables, Querys
+from support.calculations import Calculation, Equation, Variable
 from support.mixins import Emptying, Sizing, Logging
 
 __version__ = "1.0.0"
@@ -22,21 +23,45 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class StabilityFilter(Logging, Sizing, Emptying):
-    def execute(self, contract, valuations, stabilities, *args, **kwargs):
-        if self.empty(valuations): return
-        valuations = self.calculate(valuations, stabilities, *args, **kwargs)
-        size = self.size(valuations)
-        string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
-        self.logger.info(string)
-        if self.empty(valuations): return
-        return valuations
+class StabilityEquation(Equation):
+    y = Variable("y", "value", np.float32, xr.DataArray, vectorize=True, function=lambda q, Θ, Φ, Ω, Δ: q * Θ * Φ * Δ * (1 - Θ * Ω) / 2)
+    m = Variable("m", "trend", np.float32, xr.DataArray, vectorize=True, function=lambda q, Θ, Φ, Ω: q * Θ * Φ * Ω)
+    Ω = Variable("Ω", "omega", np.int32, xr.DataArray, vectorize=True, function=lambda x, k: np.sign(x / k - 1))
+    Δ = Variable("Δ", "delta", np.int32, xr.DataArray, vectorize=True, function=lambda x, k: np.subtract(x, k))
+    Θ = Variable("Θ", "theta", np.int32, xr.DataArray, vectorize=True, function=lambda i: + int(Variables.Theta(str(i))))
+    Φ = Variable("Φ", "phi", np.int32, xr.DataArray, vectorize=True, function=lambda j: + int(Variables.Phi(str(j))))
 
-    def calculate(self, valuations, stabilities, *args, **kwargs):
-        pass
+    Σy = Variable("Σy", "value", np.float32, xr.DataArray, vectorize=False, function=lambda y: y.sum("holdings").drop(list(Querys.Contract)))
+    Σm = Variable("Σm", "value", np.float32, xr.DataArray, vectorize=False, function=lambda m: m.sum("holdings").drop(list(Querys.Contract)))
+
+    Σyh = Variable("Σyh", "maximum", np.float32, xr.DataArray, vectorize=False, function=lambda Σy: Σy.max(dim="underlying"))
+    Σyl = Variable("Σyl", "minimum", np.float32, xr.DataArray, vectorize=False, function=lambda Σy: Σy.min(dim="underlying"))
+    Σmh = Variable("Σmh", "bull", np.float32, xr.DataArray, vectorize=False, function=lambda Σm: Σm.isel(underlying=0).drop_vars(["underlying"]))
+    Σml = Variable("Σml", "bear", np.float32, xr.DataArray, vectorize=False, function=lambda Σm: Σm.isel(underlying=-1).drop_vars(["underlying"]))
+
+    x = Variable("x", "underlying", np.float32, xr.DataArray, locator="underlying")
+    q = Variable("q", "quantity", np.int32, xr.DataArray, locator="quantity")
+    i = Variable("i", "option", Variables.Options, xr.DataArray, locator="option")
+    j = Variable("j", "position", Variables.Positions, xr.DataArray, locator="position")
+    k = Variable("k", "strike", np.float32, xr.DataArray, locator="strike")
+
+
+class StabilityCalculation(Calculation, equation=StabilityEquation):
+    def execute(self, portfolios, *args, **kwargs):
+        with self.equation(portfolios) as equation:
+            equation.y(portfolios)
+            equation.m(portfolios)
+            yield equation.Σyh(portfolios)
+            yield equation.Σyl(portfolios)
+            yield equation.Σmh(portfolios)
+            yield equation.Σml(portfolios)
 
 
 class StabilityCalculator(Logging, Sizing, Emptying):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.__calculation = StabilityCalculation(*args, **kwargs)
+
     def execute(self, contract, orders, exposures, *args, **kwargs):
         if self.empty(orders): return
         stabilities = self.calculate(orders, exposures, *args, **kwargs)
@@ -51,49 +76,47 @@ class StabilityCalculator(Logging, Sizing, Emptying):
         orders = ODict(list(self.orders(orders, *args, **kwargs)))
         exposures = self.exposures(exposures, *args, **kwargs)
         portfolios = list(self.portfolios(orders, exposures, *args, **kwargs))
-        portfolios = xr.concat(portfolios, join="outer", fill_value=0, dim="portfolio")
+        portfolios = xr.concat(portfolios, join="outer", fill_value=0, dim="order")
         holdings = list(Variables.Security) + ["strike"]
         portfolios = portfolios.stack(holdings=holdings).to_dataset()
-        stabilities = self.stabilities(portfolios, *args, **kwargs)
-        return stabilities
-
-    def stabilities(self, portfolios, *args, **kwargs):
-        assert isinstance(portfolios, xr.Dataset)
         portfolios = self.underlying(portfolios, *args, **kwargs)
         stabilities = self.calculation(portfolios, *args, **kwargs)
-        assert isinstance(stabilities, pd.DataFrame)
+        stabilities = stabilities.to_dataframe()
+        stabilities["stable"] = (stabilities["bear"] == 0) & (stabilities["bull"] == 0)
+        stabilities = stabilities.reset_index(drop=False, inplace=False)
+        stabilities.columns = pd.MultiIndex.from_product([stabilities.columns, [""]])
         return stabilities
 
     @staticmethod
     def orders(orders, *args, **kwargs):
         assert isinstance(orders, pd.DataFrame)
-        for portfolio, dataframe in orders.groupby("portfolio"):
-            dataframe = dataframe.drop(columns="portfolio", inplace=False)
-            index = list(Variables.Contract) + list(Variables.Product)
-            dataframe = dataframe.set_index(index, drop=True, inplace=False).squeeze()
-            dataarray = xr.DataArray.from_series(dataframe).fillna(0)
+        for order, dataframe in orders.groupby("order"):
+            dataframe = dataframe.drop(columns="order", inplace=False)
+            index = list(Querys.Product) + list(Variables.Security)
+            series = dataframe.set_index(index, drop=True, inplace=False).squeeze()
+            dataarray = xr.DataArray.from_series(series).fillna(0)
             function = lambda content, axis: content.squeeze(axis)
-            dataarray = reduce(function, list(Variables.Contract), dataarray)
-            yield portfolio, dataarray
+            dataarray = reduce(function, list(Querys.Contract), dataarray)
+            yield order, dataarray
 
     @staticmethod
     def exposures(exposures, *args, **kwargs):
         assert isinstance(exposures, pd.DataFrame)
-        index = list(Variables.Contract) + list(Variables.Product)
+        index = list(Querys.Product) + list(Variables.Security)
         exposures = exposures.set_index(index, drop=True, inplace=False).squeeze()
         exposures = xr.DataArray.from_series(exposures).fillna(0)
         function = lambda content, axis: content.squeeze(axis)
-        exposures = reduce(function, list(Variables.Contract), exposures)
+        exposures = reduce(function, list(Querys.Contract), exposures)
         return exposures
 
     @staticmethod
     def portfolios(orders, exposures, *args, **kwargs):
         assert isinstance(orders, dict) and isinstance(exposures, xr.DataArray)
-        assert all([isinstance(dataframe, xr.DataArray) for dataframe in orders.values()])
-        for portfolio, dataframe in orders.items():
-            dataarray = xr.align(dataframe, exposures, fill_value=0, join="outer")[0]
-            dataarray = dataarray.assign_coords(portfolio=portfolio).expand_dims("portfolio")
-            yield dataarray
+        assert all([isinstance(dataarray, xr.DataArray) for dataarray in orders.values()])
+        for order, dataarray in orders.items():
+            dataarrays = xr.align(dataarray, exposures, fill_value=0, join="outer")
+            dataarrays = sum(dataarrays).assign_coords(order=order).expand_dims("order")
+            yield dataarrays
 
     @staticmethod
     def underlying(portfolios, *args, **kwargs):
@@ -103,7 +126,27 @@ class StabilityCalculator(Logging, Sizing, Emptying):
         portfolios["underlying"] = underlying
         return portfolios
 
+    @property
+    def calculation(self): return self.__calculation
 
+
+class StabilityFilter(Logging, Sizing, Emptying):
+    def execute(self, contract, valuations, stabilities, *args, **kwargs):
+        if self.empty(valuations): return
+        valuations = self.calculate(valuations, stabilities, *args, **kwargs)
+        size = self.size(valuations)
+        string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
+        self.logger.info(string)
+        if self.empty(valuations): return
+        return valuations
+
+    @staticmethod
+    def calculate(valuations, stabilities, *args, **kwargs):
+        assert isinstance(valuations, pd.DataFrame) and isinstance(stabilities, pd.DataFrame)
+        valuations = valuations.merge(stabilities, on="order", how="inner")
+        valuations = valuations.where(valuations["stable"])
+        valuations = valuations.reset_index(drop=True, inplace=False)
+        return valuations
 
 
 

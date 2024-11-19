@@ -58,8 +58,8 @@ class PricingEquation(Equation, ABC):
     j = Variable("j", "position", Variables.Positions, pd.Series, locator="position")
     k = Variable("k", "strike", np.float32, pd.Series, locator="strike")
 
-    xo = Variable("xo", "underlying", np.float32, pd.Series, locator="underlying")
-    to = Variable("to", "current", np.datetime64, pd.Series, locator="current")
+    xo = Variable("xo", "underlying", np.float32, pd.Series, locator="price")
+    to = Variable("to", "current", np.datetime64, pd.Series, locator="date")
     tτ = Variable("tτ", "expire", np.datetime64, pd.Series, locator="expire")
 
     δ = Variable("δ", "volatility", np.float32, pd.Series, locator="volatility")
@@ -87,27 +87,23 @@ class BlackScholesCalculation(PricingCalculation, equation=BlackScholesEquation,
         assert isinstance(exposures, pd.DataFrame) and isinstance(discount, Number)
         invert = lambda position: Variables.Positions(int(Variables.Positions.LONG) + int(Variables.Positions.SHORT) - int(position))
         with self.equation(exposures, discount=discount) as equation:
-            yield equation["ticker"]
-            yield equation["expire"]
-            yield equation["instrument"]
-            yield equation["option"]
-            yield equation["position"].apply(invert)
-            yield equation["strike"]
+            yield exposures["ticker"]
+            yield exposures["expire"]
+            yield exposures["instrument"]
+            yield exposures["option"]
+            yield exposures["position"].apply(invert)
+            yield exposures["strike"]
             yield equation["underlying"]
-            yield equation.to()
+            yield equation["current"]
             yield equation.yo()
 
 
 class OptionCalculator(Logging, Sizing, Emptying):
-    def __init__(self, *args, pricing, sizings={}, timings={}, **kwargs):
-        assert pricing in list(Variables.Pricing)
+    def __init__(self, *args, pricing, sizing, **kwargs):
+        assert pricing in list(Variables.Pricing) and callable(sizing)
         Logging.__init__(self, *args, **kwargs)
-        columns = dict(pricing=["price", "underlying"], sizing=["volume", "size", "interest"], timing=["current"])
         self.__calculation = PricingCalculation[pricing](*args, **kwargs)
-        self.__index = list(Querys.Product)
-        self.__columns = columns
-        self.__sizings = sizings
-        self.__timings = timings
+        self.__sizing = sizing
 
     def execute(self, contract, exposures, statistics, *args, **kwargs):
         if self.empty(exposures): return
@@ -122,12 +118,8 @@ class OptionCalculator(Logging, Sizing, Emptying):
     def calculate(self, exposures, *args, **kwargs):
         assert isinstance(exposures, pd.DataFrame)
         pricings = self.calculation(exposures, *args, **kwargs)
-        pricings = pricings[self.index + self.columns["pricing"]]
-        sizings = lambda columns: {sizing: self.sizings.get(sizing, lambda cols: np.NaN)(columns) for sizing in self.columns["sizing"]}
-        sizings = pricings.apply(sizings, axis=1, result_type="expand")
-        timings = lambda columns: {timing: self.timings.get(timing, lambda cols: np.NaN)(columns) for timing in self.columns["timing"]}
-        timings = pricings.apply(timings, axis=1, result_type="expand")
-        options = pd.concat([pricings, sizings, timings], axis=1)
+        sizings = pricings.apply(self.sizing, axis=1, result_type="expand")
+        options = pd.concat([pricings, sizings], axis=1)
         return options
 
     @staticmethod
@@ -138,16 +130,9 @@ class OptionCalculator(Logging, Sizing, Emptying):
         return exposures
 
     @property
-    def calculation(self): return self.__calculations
+    def calculation(self): return self.__calculation
     @property
-    def sizings(self): return self.__sizings
-    @property
-    def timings(self): return self.__timings
-    @property
-    def columns(self): return self.__columns
-    @property
-    def index(self): return self.__index
-
+    def sizing(self): return self.__sizing
 
 
 

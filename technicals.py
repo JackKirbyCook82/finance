@@ -60,15 +60,16 @@ class StatisticCalculation(TechnicalCalculation, equation=StatisticEquation, reg
     def execute(self, bars, *args, period, **kwargs):
         assert (bars["ticker"].to_numpy()[0] == bars["ticker"]).all()
         with self.equation(bars, period=period) as equation:
-            yield equation["ticker"]
-            yield equation["date"]
-            yield equation["price"]
+            yield bars["ticker"]
+            yield bars["date"]
+            yield bars["price"]
             yield equation.m()
             yield equation.δ()
 
 class StochasticCalculation(TechnicalCalculation, equation=StochasticEquation, register=Variables.Technicals.STOCHASTIC):
     def execute(self, bars, *args, period, **kwargs):
         assert (bars["ticker"].to_numpy()[0] == bars["ticker"]).all()
+        bars = bars.sort_values("date", ascending=True, inplace=False)
         with self.equation(bars, period=period) as equation:
             yield equation["ticker"]
             yield equation["date"]
@@ -94,13 +95,12 @@ class TechnicalCalculator(Logging, Sizing, Emptying):
 
     def calculate(self, bars, *args, **kwargs):
         assert isinstance(bars, pd.DataFrame)
-        bars = bars.sort_values("date", ascending=False, inplace=False)
         technicals = self.calculation(bars, *args, **kwargs)
         assert isinstance(technicals, pd.DataFrame)
         return technicals
 
     @property
-    def calculation(self): return self.__calculations
+    def calculation(self): return self.__calculation
 
 
 

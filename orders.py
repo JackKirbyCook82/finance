@@ -9,6 +9,7 @@ Created on Fri May 17 2024
 import logging
 import numpy as np
 import pandas as pd
+from collections import namedtuple as ntuple
 
 from finance.variables import Variables, Querys
 from support.mixins import Emptying, Sizing, Logging
@@ -24,6 +25,10 @@ __logger__ = logging.getLogger(__name__)
 class OrderCalculator(Logging, Sizing, Emptying):
     def __init__(self, *args, **kwargs):
         Logging.__init__(self, *args, **kwargs)
+        Columns = ntuple("Columns", "stocks options")
+        stocks = list(map(str, Variables.Securities.Stocks))
+        options = list(map(str, Variables.Securities.Options))
+        self.__columns = Columns(stocks, options)
 
     def execute(self, contract, valuations, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame)
@@ -37,68 +42,47 @@ class OrderCalculator(Logging, Sizing, Emptying):
 
     def calculate(self, valuations, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame)
-        securities = self.securities(valuations, *args, **kwargs)
-        orders = list(self.orders(securities, *args, **kwargs))
+        valuations = self.valuations(valuations, *args, **kwargs)
+        orders = list(self.orders(valuations, *args, **kwargs))
         orders = pd.concat(orders, axis=0)
         orders = orders.reset_index(drop=True, inplace=False)
         return orders
 
+    def valuations(self, valuations, *args, **kwargs):
+        assert isinstance(valuations, pd.DataFrame)
+        strategy = lambda cols: list(map(str, cols["strategy"].stocks))
+        function = lambda cols: {stock: cols["underlying"] if stock in strategy(cols) else np.NaN for stock in self.columns.stocks}
+        columns = list(Querys.Contract) + list(self.columns.options) + ["order", "valuation", "strategy", "underlying"]
+        options = valuations[columns]
+        options = options.droplevel("scenario", axis=1)
+        stocks = options.apply(function, axis=1, result_type="expand")
+        valuations = pd.concat([options, stocks], axis=1)
+        return valuations
+
     def orders(self, securities, *args, **kwargs):
         assert isinstance(securities, pd.DataFrame)
-        for index, dataframe in securities.iterrows():
-            stocks = self.stocks(dataframe, *args, **kwargs)
-            options = self.options(dataframe, *args, **kwargs)
+        for index, series in securities.iterrows():
+            stocks = self.securities(series, *args, columns=self.columns.stocks, **kwargs)
+            options = self.securities(series, *args, columns=self.columns.options, **kwargs)
             virtuals = self.virtuals(stocks, *args, **kwargs)
             allocations = pd.concat([options, virtuals], axis=0).dropna(how="any", inplace=False)
             allocations = allocations.reset_index(drop=True, inplace=False)
             yield allocations
 
     @staticmethod
-    def securities(valuations, *args, **kwargs):
-        assert isinstance(valuations, pd.DataFrame)
-        stocks, options = list(map(str, Variables.Securities.Stocks)), list(map(str, Variables.Securities.Options))
-        strategy = lambda cols: list(map(str, cols["strategy"].stocks))
-        function = lambda cols: {stock: cols["underlying"] if stock in strategy(cols) else np.NaN for stock in stocks}
-        columns = list(Querys.Contract) + list(options) + ["valuation", "strategy", "underlying"]
-        options = valuations[columns]
-        options = options.droplevel("scenario", axis=1)
-        stocks = options.apply(function, axis=1, result_type="expand")
-        securities = pd.concat([options, stocks], axis=1)
-        columns = list(Querys.Contract) + list(options) + list(stocks)
-        securities = securities[columns]
-        return securities
-
-    @staticmethod
-    def stocks(securities, *args, **kwargs):
-        assert isinstance(securities, pd.DataFrame)
+    def securities(securities, *args, columns, **kwargs):
+        assert isinstance(securities, pd.Series)
         function = lambda cols: list(Variables.Securities(cols["security"])) + [1]
-        stocks = list(map(str, Variables.Securities.Stocks))
-        stocks = securities[stocks].to_frame("strike")
-        stocks = stocks.reset_index(names="security", drop=False, inplace=False)
+        dataframe = securities[columns].to_frame("strike")
+        dataframe = dataframe.reset_index(names="security", drop=False, inplace=False)
         security = list(Variables.Security) + ["quantity"]
-        stocks[security] = stocks.apply(function, axis=1, result_type="expand")
-        columns = [column for column in stocks.columns if column != "security"]
-        stocks = stocks[columns]
-        contract = list(Variables.Contract)
+        dataframe[security] = dataframe.apply(function, axis=1, result_type="expand")
+        columns = [column for column in dataframe.columns if column != "security"]
+        dataframe = dataframe[columns]
+        contract = list(Querys.Contract)
         contract = {key: value for key, value in securities[contract].to_dict().items()}
-        stocks = stocks.assign(**contract)
-        return stocks
-
-    @staticmethod
-    def options(securities, *args, **kwargs):
-        assert isinstance(securities, pd.DataFrame)
-        function = lambda cols: list(Variables.Securities(cols["security"])) + [1]
-        options = list(map(str, Variables.Securities.Options))
-        options = securities[options].to_frame("strike")
-        options = options.reset_index(names="security", drop=False, inplace=False)
-        security = list(Variables.Security) + ["quantity"]
-        options[security] = options.apply(function, axis=1, result_type="expand")
-        columns = [column for column in options.columns if column != "security"]
-        options = options[columns]
-        contract = list(Variables.Contract)
-        contract = {key: value for key, value in securities[contract].to_dict().items()}
-        options = options.assign(**contract)
-        return options
+        dataframe = dataframe.assign(**contract, order=securities["order"])
+        return dataframe
 
     @staticmethod
     def virtuals(stocks, *args, **kwargs):
@@ -116,6 +100,9 @@ class OrderCalculator(Logging, Sizing, Emptying):
         virtuals = pd.concat([putlong, putshort, calllong, callshort], axis=0)
         virtuals["strike"] = virtuals["strike"].apply(lambda strike: np.round(strike, decimals=2))
         return virtuals
+
+    @property
+    def columns(self): return self.__columns
 
 
 

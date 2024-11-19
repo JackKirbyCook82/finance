@@ -12,7 +12,7 @@ import pandas as pd
 import xarray as xr
 from abc import ABC
 from functools import reduce
-from itertools import product
+from itertools import product, count
 from collections import namedtuple as ntuple
 
 from finance.variables import Variables, Querys
@@ -104,8 +104,8 @@ class ArbitrageCalculation(ValuationCalculation, ABC):
     def execute(self, strategies, *args, discount, **kwargs):
         with self.equation(strategies, discount=discount) as equation:
             yield strategies["underlying"]
-            yield strategies["size"]
             yield strategies["current"]
+            yield strategies["size"]
             yield equation.exp()
             yield equation.npv()
             yield equation.apy()
@@ -122,13 +122,16 @@ class ValuationCalculator(Logging, Sizing, Emptying):
         calculations = {identity.scenario: calculation for identity, calculation in calculations.items() if identity.valuation == kwargs["valuation"]}
         self.__calculations = {scenario: calculation(*args, **kwargs) for scenario, calculation in calculations.items()}
         self.__header = ValuationHeader(*args, exclude=["priority", "status"], **kwargs)
+        self.__counter = count(start=1, step=1)
 
     def execute(self, contract, strategies, *args, **kwargs):
-        if self.empty(strategies): return
+        if self.empty(strategies, "size"): return
         strategies = list(self.strategies(strategies))
         for valuations in self.calculate(strategies, *args, **kwargs):
             size = self.size(valuations)
             valuations = valuations.reindex(columns=list(self.header), fill_value=np.NaN)
+            valuations = valuations.assign(order=[next(self.counter) for _ in range(len(valuations))])
+            valuations["order"] = valuations["order"].astype(np.int64)
             string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
             self.logger.info(string)
             if self.empty(valuations): continue
@@ -186,6 +189,8 @@ class ValuationCalculator(Logging, Sizing, Emptying):
     @property
     def valuation(self): return self.__valuation
     @property
+    def counter(self): return self.__counter
+    @property
     def header(self): return self.__header
 
 
@@ -214,8 +219,10 @@ class ValuationWriter(Writer):
 
     def valuations(self, valuations, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame)
+        columns = [column for column in list(self.header) if column in valuations.columns]
+        valuations = valuations[columns]
         if not bool(self.table): return valuations
-        overlap = self.table.dataframe.merge(valuations, on=self.header.index, how="inner", suffixes=("_", ""))[self.header.columns]
+        overlap = self.table.dataframe.merge(valuations, on=self.header.index, how="inner", suffixes=("_", ""))[list(self.header)]
         valuations = pd.concat([valuations, overlap], axis=0)
         valuations = valuations.drop_duplicates(self.header.index, keep="last", inplace=False)
         return valuations
@@ -230,7 +237,7 @@ class ValuationWriter(Writer):
     def prospect(self, valuations, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame)
         if "status" not in valuations.columns.levels[0]: valuations["status"] = np.NaN
-        function = lambda status: self.status if np.isnan(status) else status
+        function = lambda status: self.status if pd.isna(status) else status
         valuations["status"] = valuations["status"].apply(function)
         return valuations
 

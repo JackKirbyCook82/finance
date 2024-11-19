@@ -108,10 +108,10 @@ class StrategyCalculator(Logging, Sizing, Emptying):
         if self.empty(options): return
         options = dict(self.options(options))
         for strategy, strategies in self.calculate(options, *args, **kwargs):
-            size = self.size(strategies["size"])
+            size = self.size(strategies, "size")
             string = f"Calculated: {repr(self)}|{str(contract)}|{str(strategy)}[{size:.0f}]"
             self.logger.info(string)
-            if self.empty(strategies["size"]): continue
+            if self.empty(strategies, "size"): continue
             yield strategies
 
     def options(self, options):

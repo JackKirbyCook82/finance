@@ -10,6 +10,7 @@ import logging
 import numpy as np
 import pandas as pd
 from datetime import datetime as Datetime
+from collections import namedtuple as ntuple
 
 from finance.variables import Variables, Querys
 from support.mixins import Emptying, Sizing, Logging
@@ -49,7 +50,11 @@ class HoldingCalculator(Logging, Sizing, Emptying):
     def __init__(self, *args, valuation, **kwargs):
         assert valuation in list(Variables.Valuations)
         Logging.__init__(self, *args, **kwargs)
+        Columns = ntuple("Columns", "stocks options")
         valuations = {Variables.Valuations.ARBITRAGE: ["apy", "npv", "cost"]}
+        stocks = list(map(str, Variables.Securities.Stocks))
+        options = list(map(str, Variables.Securities.Options))
+        self.__columns = Columns(stocks, options)
         self.__stacking = valuations[valuation]
 
     def execute(self, contract, valuations, *args, **kwargs):
@@ -76,12 +81,11 @@ class HoldingCalculator(Logging, Sizing, Emptying):
         valuations = dataframe[list(index)].droplevel("scenario", axis=1)
         return valuations
 
-    @staticmethod
-    def holdings(dataframe, *args, **kwargs):
+    def holdings(self, dataframe, *args, **kwargs):
         assert isinstance(dataframe, pd.DataFrame)
         header = list(Querys.Product) + list(Variables.Security) + ["quantity"]
         columns = [column for column in list(header) if column in dataframe.columns]
-        securities = dataframe[columns + list(map(str, Variables.Securities))]
+        securities = dataframe[columns + self.columns.stocks + self.columns.options]
         holdings = securities.melt(id_vars=list(Querys.Contract), value_vars=list(map(str, Variables.Securities)), var_name="security", value_name="strike")
         holdings = holdings.where(holdings["strike"].notna()).dropna(how="all", inplace=False)
         holdings["security"] = holdings["security"].apply(Variables.Securities)
@@ -91,17 +95,17 @@ class HoldingCalculator(Logging, Sizing, Emptying):
         holdings = holdings.assign(quantity=1)
         return holdings[header]
 
-    @staticmethod
-    def stocks(valuations, *args, **kwargs):
+    def stocks(self, valuations, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame)
-        stocks = list(map(str, Variables.Securities.Stocks))
         strategy = lambda cols: list(map(str, cols["strategy"].stocks))
-        function = lambda cols: {stock: cols["underlying"] if stock in strategy(cols) else np.NaN for stock in stocks}
+        function = lambda cols: {stock: cols["underlying"] if stock in strategy(cols) else np.NaN for stock in self.columns.stocks}
         stocks = valuations.apply(function, axis=1, result_type="expand")
         return stocks
 
     @property
     def stacking(self): return self.__stacking
+    @property
+    def columns(self): return self.__columns
 
 
 
