@@ -12,12 +12,11 @@ import pandas as pd
 from abc import ABC
 from numbers import Number
 from scipy.stats import norm
-from datetime import datetime as Datetime
 
 from finance.variables import Variables, Querys
-from support.mixins import Emptying, Sizing, Logging
 from support.calculations import Calculation, Equation, Variable
-from support.meta import ParametersMeta, RegistryMeta
+from support.mixins import Emptying, Sizing, Logging, Sourcing
+from support.meta import RegistryMeta
 from support.files import File
 
 __version__ = "1.0.0"
@@ -27,26 +26,20 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class SecurityParameters(metaclass=ParametersMeta):
+class SecurityFile(File, ABC, datatype=pd.DataFrame):
+    formatters = {"instrument": int, "option": int, "position": int, "strike": lambda strike: round(strike, 2), "underlying": lambda underlying: round(underlying, 2)}
     types = {"ticker": str, "strike": np.float32, "price": np.float32, "underlying": np.float32, "size": np.float32, "volume": np.float32, "interest": np.float32}
     parsers = {"instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}
-    formatters = {"instrument": int, "option": int, "position": int, "strike": lambda strike: round(strike, 2), "underlying": lambda underlying: round(underlying, 2)}
     dates = {"current": "%Y%m%d-%H%M", "expire": "%Y%m%d"}
 
-class SecurityFile(File, ABC, datatype=pd.DataFrame, **dict(SecurityParameters)): pass
-class OptionFile(SecurityFile, variable=Variables.Instruments.OPTION):
     @staticmethod
     def filename(*args, query, **kwargs):
         ticker = str(query.ticker).upper()
         expire = str(query.expire.strftime("%Y%m%d"))
         return "_".join([ticker, expire])
 
-    @staticmethod
-    def parameters(*args, filename, **kwargs):
-        ticker, expire = str(filename).split("_")
-        ticker = str(ticker).upper()
-        expire = Datetime.strptime(expire, "%Y%m%d").date()
-        return dict(ticker=ticker, expire=expire)
+class StockFile(SecurityFile, variable=Variables.Instruments.STOCK): pass
+class OptionFile(SecurityFile, variable=Variables.Instruments.OPTION): pass
 
 
 class PricingEquation(Equation, ABC):
@@ -98,22 +91,23 @@ class BlackScholesCalculation(PricingCalculation, equation=BlackScholesEquation,
             yield equation.yo()
 
 
-class OptionCalculator(Logging, Sizing, Emptying):
+class OptionCalculator(Logging, Sizing, Emptying, Sourcing):
     def __init__(self, *args, pricing, sizing, **kwargs):
         assert pricing in list(Variables.Pricing) and callable(sizing)
-        Logging.__init__(self, *args, **kwargs)
-        self.__calculation = PricingCalculation[pricing](*args, **kwargs)
-        self.__sizing = sizing
+        super().__init__(*args, **kwargs)
+        self.calculation = PricingCalculation[pricing](*args, **kwargs)
+        self.sizing = sizing
 
-    def execute(self, contract, exposures, statistics, *args, **kwargs):
+    def execute(self, exposures, statistics, *args, **kwargs):
         if self.empty(exposures): return
         exposures = self.exposures(exposures, statistics, *args, **kwargs)
-        options = self.calculate(exposures, *args, **kwargs)
-        size = self.size(options)
-        string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
-        self.logger.info(string)
-        if self.empty(options): return
-        return options
+        for contract, dataframe in self.source(exposures, *args, query=Querys.Contract, **kwargs):
+            options = self.calculate(dataframe, *args, **kwargs)
+            size = self.size(options)
+            string = f"Calculated: {repr(self)}|{str(contract)}[{int(size):.0f}]"
+            self.logger.info(string)
+            if self.empty(options): return
+            return options
 
     def calculate(self, exposures, *args, **kwargs):
         assert isinstance(exposures, pd.DataFrame)
@@ -129,10 +123,6 @@ class OptionCalculator(Logging, Sizing, Emptying):
         exposures = pd.merge(exposures, statistics, how="inner", on="ticker")
         return exposures
 
-    @property
-    def calculation(self): return self.__calculation
-    @property
-    def sizing(self): return self.__sizing
 
 
 

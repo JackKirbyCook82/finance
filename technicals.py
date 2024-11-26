@@ -11,10 +11,10 @@ import numpy as np
 import pandas as pd
 from abc import ABC
 
-from finance.variables import Variables
-from support.mixins import Emptying, Sizing, Logging
+from finance.variables import Querys, Variables
 from support.calculations import Calculation, Equation, Variable
-from support.meta import ParametersMeta, RegistryMeta
+from support.mixins import Emptying, Sizing, Logging, Sourcing
+from support.meta import RegistryMeta
 from support.files import File
 
 __version__ = "1.0.0"
@@ -24,17 +24,13 @@ __copyright__ = "Copyright 2024, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class TechnicalParameters(metaclass=ParametersMeta):
+class TechnicalFile(File, ABC, datatype=pd.DataFrame):
     types = {"ticker": str, "volume": np.int64} | {column: np.float32 for column in ("price", "open", "close", "high", "low")}
     types.update({"trend": np.float32, "volatility": np.float32, "oscillator": np.float32})
     dates = {"date": "%Y%m%d"}
 
-class TechnicalFile(File, ABC, datatype=pd.DataFrame, **dict(TechnicalParameters)):
     @staticmethod
-    def filename(*args, query, **kwargs): return str(query.ticker)
-    @staticmethod
-    def parameters(*args, filename, **kwargs): return dict(ticker=str(filename).upper())
-
+    def filename(*args, query, **kwargs): return str(query.ticker).upper()
 
 class BarsFile(TechnicalFile, variable=Variables.Technicals.BARS): pass
 class StatisticFile(TechnicalFile, variable=Variables.Technicals.STATISTIC): pass
@@ -77,21 +73,22 @@ class StochasticCalculation(TechnicalCalculation, equation=StochasticEquation, r
             yield equation.xk()
 
 
-class TechnicalCalculator(Logging, Sizing, Emptying):
+class TechnicalCalculator(Logging, Sizing, Emptying, Sourcing):
     def __init__(self, *args, technical, **kwargs):
         assert technical in list(Variables.Technicals)
         super().__init__(*args, **kwargs)
-        self.__calculation = TechnicalCalculation[technical](*args, **kwargs)
+        self.calculation = TechnicalCalculation[technical](*args, **kwargs)
 
-    def execute(self, symbol, bars, *args, **kwargs):
+    def execute(self, bars, *args, **kwargs):
         if self.empty(bars): return
-        parameters = dict(ticker=symbol.ticker)
-        technicals = self.calculate(bars, *args, **parameters, **kwargs)
-        size = self.size(technicals)
-        string = f"Calculated: {repr(self)}|{str(symbol)}[{size:.0f}]"
-        self.logger.info(string)
-        if self.empty(technicals): return
-        return technicals
+        for symbol, dataframe in self.source(bars, *args, query=Querys.Symbol, **kwargs):
+            parameters = dict(ticker=symbol.ticker)
+            technicals = self.calculate(dataframe, *args, **parameters, **kwargs)
+            size = self.size(technicals)
+            string = f"Calculated: {repr(self)}|{str(symbol)}[{int(size):.0f}]"
+            self.logger.info(string)
+            if self.empty(technicals): continue
+            yield technicals
 
     def calculate(self, bars, *args, **kwargs):
         assert isinstance(bars, pd.DataFrame)
@@ -99,8 +96,7 @@ class TechnicalCalculator(Logging, Sizing, Emptying):
         assert isinstance(technicals, pd.DataFrame)
         return technicals
 
-    @property
-    def calculation(self): return self.__calculation
+
 
 
 

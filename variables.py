@@ -8,30 +8,15 @@ Created on Sun Jan 28 2024
 
 import numbers
 import datetime
-import pandas as pd
-from collections import namedtuple as ntuple
 
 from support.variables import VariablesMeta, Variables, Variable
 from support.querys import Field, Query
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["DateRange", "Variables", "Querys"]
+__all__ = ["Variables", "Querys", "Scenarios"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
-
-
-class DateRange(ntuple("DateRange", "minimum maximum")):
-    def __contains__(self, date): return self.minimum <= date <= self.maximum
-    def __new__(cls, dates):
-        assert isinstance(dates, list)
-        assert all([isinstance(date, (datetime.date, datetime.datetime)) for date in dates])
-        return super().__new__(cls, min(dates), max(dates)) if dates else None
-
-    def __iter__(self): return (date for date in pd.date_range(start=self.minimum, end=self.maximum))
-    def __str__(self): return f"{str(self.minimum)}|{str(self.maximum)}"
-    def __bool__(self): return self.minimum < self.maximum
-    def __len__(self): return (self.maximum - self.minimum).days
 
 
 Ticker = Field("ticker", str)
@@ -47,11 +32,11 @@ Product = Query("Product", [Ticker, Expire, Strike], delimiter="|")
 Theta = Variable("Theta", ["PUT", "NEUTRAL", "CALL"], start=-1)
 Phi = Variable("Phi", ["SHORT", "NEUTRAL", "LONG"], start=-1)
 Omega = Variable("Omega", ["BEAR", "NEUTRAL", "BULL"], start=-1)
+Status = Variable("Status", ["PROSPECT", "PENDING", "ABANDONED", "REJECTED", "ACCEPTED"])
 Technicals = Variable("Technicals", ["BARS", "STATISTIC", "STOCHASTIC"])
 Scenarios = Variable("Scenarios", ["MINIMUM", "MAXIMUM"])
 Valuations = Variable("Valuations", ["ARBITRAGE"])
 Pricing = Variable("Pricing", ["BLACKSCHOLES"])
-Status = Variable("Status", ["PROSPECT", "PENDING", "ABANDONED", "REJECTED", "ACCEPTED"])
 
 Markets = Variable("Markets", ["EMPTY", "BEAR", "BULL"], start=0)
 Instruments = Variable("Instruments", ["EMPTY", "STOCK", "OPTION"], start=0)
@@ -85,7 +70,6 @@ class Securities(contents=[StockLong, StockShort, OptionPutLong, OptionPutShort,
         class Put: Long = OptionPutLong; Short = OptionPutShort
         class Call: Long = OptionCallLong; Short = OptionCallShort
 
-
 class Strategies(contents=[VerticalPut, VerticalCall, CollarLong, CollarShort], metaclass=VariablesMeta):
     Verticals = [VerticalPut, VerticalCall]
     Collars = [CollarLong, CollarShort]
@@ -94,7 +78,14 @@ class Strategies(contents=[VerticalPut, VerticalCall, CollarLong, CollarShort], 
     class Collar: Long = CollarLong; Short = CollarShort
 
 
+class Querys:
+    Product = Product
+    Contract = Contract
+    Symbol = Symbol
+    History = History
+
 class Variables:
+    Scenarios = Scenarios
     Securities = Securities
     Strategies = Strategies
     Security = Security
@@ -106,16 +97,11 @@ class Variables:
     Positions = Positions
     Spreads = Spreads
     Valuations = Valuations
-    Scenarios = Scenarios
     Technicals = Technicals
     Status = Status
     Omega = Omega
     Theta = Theta
     Phi = Phi
 
-class Querys:
-    Product = Product
-    Contract = Contract
-    Symbol = Symbol
-    History = History
+
 

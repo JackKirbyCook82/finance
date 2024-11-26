@@ -11,69 +11,18 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 from abc import ABC
-from functools import reduce
-from itertools import product, count
 from collections import namedtuple as ntuple
 
 from finance.variables import Variables, Querys
-from support.meta import ParametersMeta, RegistryMeta
+from support.mixins import Emptying, Sizing, Logging, Sourcing, Pivoting
 from support.calculations import Calculation, Equation, Variable
-from support.tables import Writer, Reader, Table, View, Header
-from support.mixins import Emptying, Sizing, Logging
+from support.meta import RegistryMeta
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["ValuationCalculator", "ValuationReader", "ValuationWriter", "ValuationTable"]
+__all__ = ["ValuationCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
-
-
-class ValuationFormatting(metaclass=ParametersMeta):
-    order = ["ticker", "expire", "valuation", "strategy"] + list(map(str, Variables.Securities.Options)) + ["apy", "npv", "cost"] + ["size", "status"]
-    formats = dict(status=lambda status: str(status), size=lambda size: f"{size:.0f}")
-    formats["apy"] = lambda column: (f"{column * 100:.02f}%" if column < 10 else "EsV") if np.isfinite(column) else "InF"
-    numbers = lambda column: f"{column:.02f}"
-
-
-class ValuationView(View, ABC, datatype=pd.DataFrame, **dict(ValuationFormatting)): pass
-class ValuationHeader(Header, ABC):
-    def __init__(self, *args, valuation, exclude=[], **kwargs):
-        assert valuation in list(Variables.Valuations)
-        valuations = {Variables.Valuations.ARBITRAGE: ["apy", "npv", "cost"]}
-        constants = ["underlying", "size", "current"] + ["priority", "status"]
-        stacked = lambda cols: list(product(cols, list(Variables.Scenarios)))
-        unstacked = lambda cols: list(product(cols, [""]))
-        columns = stacked(valuations[valuation]) + unstacked([column for column in constants if column not in exclude])
-        index = unstacked(["valuation", "strategy"] + list(Querys.Contract) + list(map(str, Variables.Securities.Options)))
-        super().__init__(*args, index=index, columns=columns, **kwargs)
-        self.__stacking = valuations[valuation]
-        self.__valuation = valuation
-
-    @property
-    def valuation(self): return self.__valuation
-    @property
-    def stacking(self): return self.__stacking
-
-
-class ValuationTable(Table, ABC, datatype=pd.DataFrame, viewtype=ValuationView, headertype=ValuationHeader):
-    def obsolete(self, contract, *args, **kwargs):
-        if not bool(self): return
-        assert isinstance(contract, Querys.Contract)
-        mask = [self[:, key] == value for key, value in contract.items()]
-        mask = reduce(lambda lead, lag: lead & lag, mask)
-        mask = mask & self[:, "status"] == Variables.Status.PROSPECT
-        return self.extract(mask)
-
-    def rejected(self, *args, tenure=None, **kwargs):
-        if not bool(self): return
-        mask = (self[:, "status"] == Variables.Status.REJECTED) | (self[:, "status"] == Variables.Status.ABANDONED)
-        if tenure is not None: mask = mask | (pd.to_datetime("now") - self.table[:, "current"] >= tenure)
-        return self.extract(mask)
-
-    def accepted(self, *args, **kwargs):
-        if not bool(self): return
-        mask = self[:, "status"] == Variables.Status.ACCEPTED
-        return self.extract(mask)
 
 
 class ValuationEquation(Equation, ABC):
@@ -114,28 +63,26 @@ class MinimumArbitrageCalculation(ArbitrageCalculation, equation=MinimumArbitrag
 class MaximumArbitrageCalculation(ArbitrageCalculation, equation=MaximumArbitrageEquation, register=(Variables.Valuations.ARBITRAGE, Variables.Scenarios.MAXIMUM)): pass
 
 
-class ValuationCalculator(Logging, Sizing, Emptying):
-    def __init__(self, *args, **kwargs):
+class ValuationCalculator(Logging, Sizing, Emptying, Sourcing, Pivoting):
+    def __init__(self, *args, header, **kwargs):
+        assert hasattr(header, "valuation") and hasattr(header, "variate")
         super().__init__(*args, **kwargs)
         Identity = ntuple("Identity", "valuation scenario")
         calculations = {Identity(*identity): calculation for identity, calculation in dict(ValuationCalculation).items()}
-        calculations = {identity.scenario: calculation for identity, calculation in calculations.items() if identity.valuation == kwargs["valuation"]}
-        self.__calculations = {scenario: calculation(*args, **kwargs) for scenario, calculation in calculations.items()}
-        self.__header = ValuationHeader(*args, exclude=["priority", "status"], **kwargs)
-        self.__counter = count(start=1, step=1)
+        calculations = {identity.scenario: calculation for identity, calculation in calculations.items() if identity.valuation == header.valuation}
+        self.calculations = {scenario: calculation(*args, **kwargs) for scenario, calculation in calculations.items()}
+        self.header = header
 
-    def execute(self, contract, strategies, *args, **kwargs):
+    def execute(self, strategies, *args, **kwargs):
         if self.empty(strategies, "size"): return
-        strategies = list(self.strategies(strategies))
-        for valuations in self.calculate(strategies, *args, **kwargs):
-            size = self.size(valuations)
-            valuations = valuations.reindex(columns=list(self.header), fill_value=np.NaN)
-            valuations = valuations.assign(order=[next(self.counter) for _ in range(len(valuations))])
-            valuations["order"] = valuations["order"].astype(np.int64)
-            string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
-            self.logger.info(string)
-            if self.empty(valuations): continue
-            yield valuations
+        for contract, dataset in self.source(strategies, *args, query=Querys.Contract, **kwargs):
+            for valuations in self.calculate(dataset, *args, **kwargs):
+                valuations = self.pivot(valuations, stacking=self.header.variate, by="scenario")
+                size = self.size(valuations)
+                string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
+                self.logger.info(string)
+                if self.empty(valuations): continue
+                yield valuations
 
     def calculate(self, strategies, *args, **kwargs):
         assert isinstance(strategies, (list, xr.Dataset))
@@ -146,7 +93,6 @@ class ValuationCalculator(Logging, Sizing, Emptying):
             valuations = dict(self.valuations(scenarios, *args, **kwargs))
             valuations = pd.concat(list(valuations.values()), axis=0)
             if self.empty(valuations): continue
-            valuations = self.pivot(valuations, *args, **kwargs)
             yield valuations
 
     def scenarios(self, strategies, *args, **kwargs):
@@ -160,19 +106,17 @@ class ValuationCalculator(Logging, Sizing, Emptying):
             valuations = valuations.assign_coords(coordinates).expand_dims("scenario")
             yield scenario, valuations
 
-    def pivot(self, dataframe, *args, **kwargs):
-        assert isinstance(dataframe, pd.DataFrame)
-        index = set(dataframe.columns) - ({"scenario"} | set(self.header.stacking))
-        dataframe = dataframe.pivot(index=list(index), columns="scenario")
-        dataframe = dataframe.reset_index(drop=False, inplace=False)
-        return dataframe
-
     @staticmethod
-    def strategies(strategies):
+    def source(strategies, *args, **kwargs):
         assert isinstance(strategies, (list, xr.Dataset))
         assert all([isinstance(dataset, xr.Dataset) for dataset in strategies]) if isinstance(strategies, list) else True
         strategies = [strategies] if isinstance(strategies, xr.Dataset) else strategies
-        yield from iter(strategies)
+        strategies = [datasets.expand_dims("ticker").expand_dims("expire").stack(contract=["ticker", "expire"]) for datasets in strategies]
+        strategies = (contract, dataset for datasets in strategies for contract, dataset in datasets.groupby("contract"))
+        for contract, dataset in strategies:
+            contract = Querys.Contract(*contract)
+            dataset = dataset.unstack().drop_vars("contract")
+            yield contract, dataset
 
     @staticmethod
     def valuations(scenarios, *args, **kwargs):
@@ -184,97 +128,8 @@ class ValuationCalculator(Logging, Sizing, Emptying):
             dataframe = dataframe.reset_index(drop=False, inplace=False)
             yield scenario, dataframe
 
-    @property
-    def calculations(self): return self.__calculations
-    @property
-    def valuation(self): return self.__valuation
-    @property
-    def counter(self): return self.__counter
-    @property
-    def header(self): return self.__header
 
 
-class ValuationWriter(Writer):
-    def __init__(self, *args, priority, status=Variables.Status.PROSPECT, **kwargs):
-        assert callable(priority) and status == Variables.Status.PROSPECT
-        super().__init__(*args, **kwargs)
-        self.__header = ValuationHeader(*args, **kwargs)
-        self.__priority = priority
-        self.__status = status
-
-    def write(self, contract, valuations, *args, **kwargs):
-        obsolete = self.table.obsolete(contract, *args, **kwargs)
-        size = self.size(obsolete)
-        string = f"Obsolete: {repr(self)}|{str(contract)}[{size:.0f}]"
-        self.logger.info(string)
-        if self.empty(valuations): return
-        valuations = self.valuations(valuations, *args, **kwargs)
-        if self.empty(valuations): return
-        valuations = self.prioritize(valuations, *args, **kwargs)
-        valuations = self.prospect(valuations, *args, **kwargs)
-        self.table.combine(valuations)
-        self.table.unique(self.header.index)
-        self.table.sort("priority", reverse=True)
-        self.table.reset()
-
-    def valuations(self, valuations, *args, **kwargs):
-        assert isinstance(valuations, pd.DataFrame)
-        columns = [column for column in list(self.header) if column in valuations.columns]
-        valuations = valuations[columns]
-        if not bool(self.table): return valuations
-        overlap = self.table.dataframe.merge(valuations, on=self.header.index, how="inner", suffixes=("_", ""))[list(self.header)]
-        valuations = pd.concat([valuations, overlap], axis=0)
-        valuations = valuations.drop_duplicates(self.header.index, keep="last", inplace=False)
-        return valuations
-
-    def prioritize(self, valuations, *args, **kwargs):
-        assert isinstance(valuations, pd.DataFrame)
-        valuations["priority"] = valuations.apply(self.priority, axis=1)
-        parameters = dict(ascending=False, inplace=False, ignore_index=False)
-        valuations = valuations.sort_values("priority", axis=0, **parameters)
-        return valuations
-
-    def prospect(self, valuations, *args, **kwargs):
-        assert isinstance(valuations, pd.DataFrame)
-        if "status" not in valuations.columns.levels[0]: valuations["status"] = np.NaN
-        function = lambda status: self.status if pd.isna(status) else status
-        valuations["status"] = valuations["status"].apply(function)
-        return valuations
-
-    @staticmethod
-    def generator(contents):
-        assert isinstance(contents, (list, pd.DataFrame))
-        assert all([isinstance(content, pd.DataFrame) for content in contents]) if isinstance(contents, list) else True
-        contents = [contents] if isinstance(contents, pd.DataFrame) else contents
-        yield from iter(contents)
-
-    @property
-    def priority(self): return self.__priority
-    @property
-    def status(self): return self.__status
-    @property
-    def header(self): return self.__header
-
-
-class ValuationReader(Reader):
-    def read(self, *args, **kwargs):
-        rejected = self.rejected(*args, **kwargs)
-        accepted = self.accepted(*args, **kwargs)
-        return accepted
-
-    def rejected(self, *args, **kwargs):
-        rejected = self.table.rejected(*args, **kwargs)
-        size = self.size(rejected)
-        string = f"Rejected: {repr(self)}[{size:.0f}]"
-        self.logger.info(string)
-        return rejected
-
-    def accepted(self, *args, **kwargs):
-        accepted = self.table.accepted(*args, **kwargs)
-        size = self.size(accepted)
-        string = f"Accepted: {repr(self)}[{size:.0f}]"
-        self.logger.info(string)
-        return accepted
 
 
 

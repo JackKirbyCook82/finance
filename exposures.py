@@ -8,54 +8,27 @@ Created on Fri May 17 2024
 
 import numpy as np
 import pandas as pd
-from abc import ABC
-from functools import reduce
 
-from finance.variables import Variables, Querys
-from support.mixins import Emptying, Sizing, Logging
-from support.tables import Writer, Table, View, Header
-from support.meta import ParametersMeta
+from finance.variables import Querys, Variables
+from support.mixins import Emptying, Sizing, Logging, Sourcing
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["ExposureCalculator", "ExposureWriter", "ExposureTable"]
+__all__ = ["ExposureCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class ExposureFormatting(metaclass=ParametersMeta):
-    order = ["ticker", "expire", "instrument", "option", "position", "strike", "quantity"]
-    formats = {"strike": lambda column: f"{column:.02f}", "quantity": lambda column: f"{column:.0f}"}
-
-
-class ExposureView(View, ABC, datatype=pd.DataFrame, **dict(ExposureFormatting)): pass
-class ExposureHeader(Header, ABC):
-    def __init__(self, *args, **kwargs):
-        index, columns = ["ticker", "expire", "instrument", "option", "position", "strike"], ["quantity"]
-        super().__init__(*args, index=index, columns=columns, **kwargs)
-
-
-class ExposureTable(Table, ABC, datatype=pd.DataFrame, viewtype=ExposureView, headertype=ExposureHeader):
-    def obsolete(self, contract, *args, **kwargs):
-        if not bool(self): return
-        assert isinstance(contract, Querys.Contract)
-        mask = [self[:, key] == value for key, value in contract.items()]
-        mask = reduce(lambda lead, lag: lead & lag, mask)
-        self.remove(mask)
-
-
-class ExposureCalculator(Logging, Sizing, Emptying):
-    def __init__(self, *args, **kwargs):
-        Logging.__init__(self, *args, **kwargs)
-
-    def execute(self, contract, holdings, *args, **kwargs):
+class ExposureCalculator(Logging, Sizing, Emptying, Sourcing):
+    def execute(self, holdings, *args, **kwargs):
         if self.empty(holdings): return
-        exposures = self.calculate(holdings, *args, **kwargs)
-        size = self.size(exposures)
-        string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
-        self.logger.info(string)
-        if self.empty(exposures): return
-        return exposures
+        for contract, dataframe in self.source(holdings, *args, query=Querys.Contract, **kwargs):
+            exposures = self.calculate(dataframe, *args, **kwargs)
+            size = self.size(exposures)
+            string = f"Calculated: {repr(self)}|{str(contract)}[{int(size):.0f}]"
+            self.logger.info(string)
+            if self.empty(exposures): continue
+            yield exposures
 
     def calculate(self, holdings, *args, **kwargs):
         assert isinstance(holdings, pd.DataFrame)
@@ -63,7 +36,7 @@ class ExposureCalculator(Logging, Sizing, Emptying):
         options = self.options(holdings, *args, **kwargs)
         virtuals = self.virtuals(stocks, *args, **kwargs)
         securities = self.securities(options, virtuals, *args, **kwargs)
-        exposures = self.exposures(securities, *args, *kwargs)
+        exposures = self.exposures(securities, *args, **kwargs)
         return exposures
 
     @staticmethod
@@ -122,15 +95,5 @@ class ExposureCalculator(Logging, Sizing, Emptying):
         exposures["quantity"] = exposures["quantity"].apply(np.abs)
         exposures = exposures.reset_index(drop=True, inplace=False)
         return exposures
-
-
-class ExposureWriter(Writer):
-    def write(self, contract, exposures, *args, **kwargs):
-        self.table.obsolete(contract, *args, **kwargs)
-        if self.empty(exposures): return
-        self.table.combine(exposures)
-        self.table.reset()
-        self.table.sort(["ticker", "expire"], reverse=[False, False])
-
 
 

@@ -16,9 +16,9 @@ from functools import reduce
 from collections import namedtuple as ntuple
 
 from finance.variables import Variables, Querys
-from support.meta import RegistryMeta
 from support.calculations import Calculation, Equation, Variable
-from support.mixins import Emptying, Sizing, Logging
+from support.mixins import Emptying, Sizing, Logging, Sourcing
+from support.meta import RegistryMeta
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -95,26 +95,27 @@ class CollarLongCalculation(CollarCalculation, equation=CollarLongEquation, regi
 class CollarShortCalculation(CollarCalculation, equation=CollarShortEquation, register=Variables.Strategies.Collar.Short): pass
 
 
-class StrategyCalculator(Logging, Sizing, Emptying):
+class StrategyCalculator(Logging, Sizing, Emptying, Sourcing):
     def __init__(self, *args, strategies=[], **kwargs):
         assert all([strategy in list(Variables.Strategies) for strategy in list(strategies)])
         super().__init__(*args, **kwargs)
         strategies = list(dict(StrategyCalculation).keys()) if not bool(strategies) else list(strategies)
         calculations = dict(StrategyCalculation).items()
         calculations = {strategy: calculation(*args, **kwargs) for strategy, calculation in calculations if strategy in strategies}
-        self.__calculations = calculations
+        self.calculations = calculations
 
-    def execute(self, contract, options, *args, **kwargs):
+    def execute(self, options, *args, **kwargs):
         if self.empty(options): return
-        options = dict(self.options(options))
-        for strategy, strategies in self.calculate(options, *args, **kwargs):
-            size = self.size(strategies, "size")
-            string = f"Calculated: {repr(self)}|{str(contract)}|{str(strategy)}[{size:.0f}]"
-            self.logger.info(string)
-            if self.empty(strategies, "size"): continue
-            yield strategies
+        for contract, dataframe in self.source(options, *args, query=Querys.Contract, **kwargs):
+            contents = dict(self.options(dataframe, *args, **kwargs))
+            for strategy, strategies in self.calculate(contents, *args, **kwargs):
+                size = self.size(strategies, "size")
+                string = f"Calculated: {repr(self)}|{str(contract)}|{str(strategy)}[{size:.0f}]"
+                self.logger.info(string)
+                if self.empty(strategies, "size"): continue
+                yield strategies
 
-    def options(self, options):
+    def options(self, options, *args, **kwargs):
         assert isinstance(options, pd.DataFrame)
         for security, dataframe in options.groupby(list(Variables.Security), sort=False):
             if self.empty(dataframe): continue
@@ -141,8 +142,6 @@ class StrategyCalculator(Logging, Sizing, Emptying):
             strategies = strategies.assign_coords(coordinates)
             yield strategy, strategies
 
-    @property
-    def calculations(self): return self.__calculations
 
 
 

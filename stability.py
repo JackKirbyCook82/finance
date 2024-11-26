@@ -60,16 +60,18 @@ class StabilityCalculation(Calculation, equation=StabilityEquation):
 class StabilityCalculator(Logging, Sizing, Emptying):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.__calculation = StabilityCalculation(*args, **kwargs)
+        self.calculation = StabilityCalculation(*args, **kwargs)
 
-    def execute(self, contract, orders, exposures, *args, **kwargs):
+    def execute(self, orders, exposures, *args, **kwargs):
         if self.empty(orders): return
-        stabilities = self.calculate(orders, exposures, *args, **kwargs)
-        size = self.size(stabilities)
-        string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
-        self.logger.info(string)
-        if self.empty(stabilities): return
-        return stabilities
+        assert isinstance(orders, pd.DataFrame) and isinstance(exposures, pd.DataFrame)
+        for contract, dataframes in self.source(orders, exposures, *args, **kwargs):
+            stabilities = self.calculate(*dataframes, *args, **kwargs)
+            size = self.size(stabilities)
+            string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
+            self.logger.info(string)
+            if self.empty(stabilities): continue
+            return stabilities
 
     def calculate(self, orders, exposures, *args, **kwargs):
         assert isinstance(orders, pd.DataFrame) and isinstance(exposures, pd.DataFrame)
@@ -86,6 +88,15 @@ class StabilityCalculator(Logging, Sizing, Emptying):
         stabilities = stabilities.reset_index(drop=False, inplace=False)
         stabilities.columns = pd.MultiIndex.from_product([stabilities.columns, [""]])
         return stabilities
+
+    @staticmethod
+    def source(orders, exposures, *args, **kwargs):
+        assert isinstance(orders, pd.DataFrame) and isinstance(exposures, pd.DataFrame)
+        for (ticker, expire), primary in orders.groupby(["ticker", "expire"]):
+            contract = Querys.Contract(ticker, expire)
+            mask = exposures["ticker"] == ticker & exposures["expire"] == expire
+            secondary = exposures.where(mask)
+            yield contract, (primary, secondary)
 
     @staticmethod
     def orders(orders, *args, **kwargs):
@@ -126,27 +137,35 @@ class StabilityCalculator(Logging, Sizing, Emptying):
         portfolios["underlying"] = underlying
         return portfolios
 
-    @property
-    def calculation(self): return self.__calculation
-
 
 class StabilityFilter(Logging, Sizing, Emptying):
-    def execute(self, contract, valuations, stabilities, *args, **kwargs):
-        if self.empty(valuations): return
-        valuations = self.calculate(valuations, stabilities, *args, **kwargs)
-        size = self.size(valuations)
-        string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
-        self.logger.info(string)
-        if self.empty(valuations): return
-        return valuations
+    def execute(self, prospects, stabilities, *args, **kwargs):
+        if self.empty(prospects): return
+        assert isinstance(prospects, pd.DataFrame) and isinstance(stabilities, pd.DataFrame)
+        for contract, dataframes in self.source(prospects, stabilities, *args, **kwargs):
+            filtered = self.calculate(*dataframes, *args, **kwargs)
+            size = self.size(filtered)
+            string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
+            self.logger.info(string)
+            if self.empty(filtered): continue
+            return filtered
 
     @staticmethod
-    def calculate(valuations, stabilities, *args, **kwargs):
-        assert isinstance(valuations, pd.DataFrame) and isinstance(stabilities, pd.DataFrame)
-        valuations = valuations.merge(stabilities, on="order", how="inner")
-        valuations = valuations.where(valuations["stable"])
-        valuations = valuations.reset_index(drop=True, inplace=False)
-        return valuations
+    def source(prospects, stabilities, *args, **kwargs):
+        assert isinstance(prospects, pd.DataFrame) and isinstance(stabilities, pd.DataFrame)
+        for (ticker, expire), primary in prospects.groupby(["ticker", "expire"]):
+            contract = Querys.Contract(ticker, expire)
+            mask = stabilities["ticker"] == ticker & stabilities["expire"] == expire
+            secondary = stabilities.where(mask)
+            yield contract, (primary, secondary)
+
+    @staticmethod
+    def calculate(prospects, stabilities, *args, **kwargs):
+        assert isinstance(prospects, pd.DataFrame) and isinstance(stabilities, pd.DataFrame)
+        prospects = prospects.merge(stabilities, on="order", how="inner")
+        prospects = prospects.where(prospects["stable"])
+        prospects = prospects.reset_index(drop=True, inplace=False)
+        return prospects
 
 
 

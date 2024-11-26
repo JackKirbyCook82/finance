@@ -9,12 +9,9 @@ Created on Thurs Jan 31 2024
 import logging
 import numpy as np
 import pandas as pd
-from datetime import datetime as Datetime
-from collections import namedtuple as ntuple
 
 from finance.variables import Variables, Querys
-from support.mixins import Emptying, Sizing, Logging
-from support.meta import ParametersMeta
+from support.mixins import Emptying, Sizing, Logging, Sourcing, Pivoting
 from support.files import File
 
 __version__ = "1.0.0"
@@ -25,67 +22,49 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-class HoldingParameters(metaclass=ParametersMeta):
+class HoldingFile(File, variable="holdings", datatype=pd.DataFrame):
     parsers = {"instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}
     formatters = {"instrument": int, "option": int, "position": int, "strike": lambda strike: round(strike, 2)}
     types = {"ticker": str, "strike": np.float32, "quantity": np.int32}
     dates = {"expire": "%Y%m%d"}
 
-class HoldingFile(File, variable="holdings", datatype=pd.DataFrame, **dict(HoldingParameters)):
     @staticmethod
     def filename(*args, query, **kwargs):
         ticker = str(query.ticker).upper()
         expire = str(query.expire.strftime("%Y%m%d"))
         return "_".join([ticker, expire])
 
-    @staticmethod
-    def parameters(*args, filename, **kwargs):
-        ticker, expire = str(filename).split("_")
-        ticker = str(ticker).upper()
-        expire = Datetime.strptime(expire, "%Y%m%d").date()
-        return dict(ticker=ticker, expire=expire)
 
+class HoldingCalculator(Logging, Sizing, Emptying, Sourcing, Pivoting):
+    def __init__(self, *args, header, **kwargs):
+        assert hasattr(header, "valuation") and hasattr(header, "variate")
+        super().__init__(*args, **kwargs)
+        self.header = header
 
-class HoldingCalculator(Logging, Sizing, Emptying):
-    def __init__(self, *args, valuation, **kwargs):
-        assert valuation in list(Variables.Valuations)
-        Logging.__init__(self, *args, **kwargs)
-        Columns = ntuple("Columns", "stocks options")
-        valuations = {Variables.Valuations.ARBITRAGE: ["apy", "npv", "cost"]}
-        stocks = list(map(str, Variables.Securities.Stocks))
-        options = list(map(str, Variables.Securities.Options))
-        self.__columns = Columns(stocks, options)
-        self.__stacking = valuations[valuation]
+    def execute(self, prospects, *args, **kwargs):
+        if self.empty(prospects): return
+        for contract, dataframe in self.source(prospects, *args, query=Querys.Contract, **kwargs):
+            dataframe = self.unpivot(dataframe, unstacking=self.header.variate, by="scenario")
+            holdings = self.calculate(dataframe, *args, **kwargs)
+            size = self.size(holdings)
+            string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
+            self.logger.info(string)
+            if self.empty(holdings): continue
+            return holdings
 
-    def execute(self, contract, valuations, *args, **kwargs):
-        assert isinstance(valuations, pd.DataFrame)
-        if self.empty(valuations): return
-        holdings = self.calculate(valuations, *args, **kwargs)
-        size = self.size(holdings)
-        string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
-        self.logger.info(string)
-        if self.empty(holdings): return
-        return holdings
-
-    def calculate(self, valuations, *args, **kwargs):
-        assert isinstance(valuations, pd.DataFrame)
-        valuations = self.unpivot(valuations, *args, **kwargs)
-        stocks = self.stocks(valuations, *args, **kwargs)
-        dataframe = pd.concat([valuations, stocks], axis=1)
+    def calculate(self, prospects, *args, **kwargs):
+        assert isinstance(prospects, pd.DataFrame)
+        stocks = self.stocks(prospects, *args, **kwargs)
+        dataframe = pd.concat([prospects, stocks], axis=1)
         holdings = self.holdings(dataframe, *args, **kwargs)
         return holdings
 
-    def unpivot(self, dataframe, *args, **kwargs):
-        assert isinstance(dataframe, pd.DataFrame)
-        index = set(dataframe.columns) - ({"scenario"} | set(self.stacking))
-        valuations = dataframe[list(index)].droplevel("scenario", axis=1)
-        return valuations
-
-    def holdings(self, dataframe, *args, **kwargs):
+    @staticmethod
+    def holdings(dataframe, *args, **kwargs):
         assert isinstance(dataframe, pd.DataFrame)
         header = list(Querys.Product) + list(Variables.Security) + ["quantity"]
         columns = [column for column in list(header) if column in dataframe.columns]
-        securities = dataframe[columns + self.columns.stocks + self.columns.options]
+        securities = dataframe[columns + list(map(str, Variables.Securities.Stocks)) + list(map(str, Variables.Securities.Options))]
         holdings = securities.melt(id_vars=list(Querys.Contract), value_vars=list(map(str, Variables.Securities)), var_name="security", value_name="strike")
         holdings = holdings.where(holdings["strike"].notna()).dropna(how="all", inplace=False)
         holdings["security"] = holdings["security"].apply(Variables.Securities)
@@ -95,17 +74,13 @@ class HoldingCalculator(Logging, Sizing, Emptying):
         holdings = holdings.assign(quantity=1)
         return holdings[header]
 
-    def stocks(self, valuations, *args, **kwargs):
+    @staticmethod
+    def stocks(valuations, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame)
         strategy = lambda cols: list(map(str, cols["strategy"].stocks))
-        function = lambda cols: {stock: cols["underlying"] if stock in strategy(cols) else np.NaN for stock in self.columns.stocks}
+        function = lambda cols: {stock: cols["underlying"] if stock in strategy(cols) else np.NaN for stock in list(map(str, Variables.Securities.Stocks))}
         stocks = valuations.apply(function, axis=1, result_type="expand")
         return stocks
-
-    @property
-    def stacking(self): return self.__stacking
-    @property
-    def columns(self): return self.__columns
 
 
 
