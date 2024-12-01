@@ -65,7 +65,6 @@ class MaximumArbitrageCalculation(ArbitrageCalculation, equation=MaximumArbitrag
 
 class ValuationCalculator(Logging, Sizing, Emptying, Sourcing, Pivoting):
     def __init__(self, *args, header, **kwargs):
-        assert hasattr(header, "valuation") and hasattr(header, "variate")
         super().__init__(*args, **kwargs)
         Identity = ntuple("Identity", "valuation scenario")
         calculations = {Identity(*identity): calculation for identity, calculation in dict(ValuationCalculation).items()}

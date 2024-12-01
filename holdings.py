@@ -37,7 +37,6 @@ class HoldingFile(File, variable="holdings", datatype=pd.DataFrame):
 
 class HoldingCalculator(Logging, Sizing, Emptying, Sourcing, Pivoting):
     def __init__(self, *args, header, **kwargs):
-        assert hasattr(header, "valuation") and hasattr(header, "variate")
         super().__init__(*args, **kwargs)
         self.header = header
 

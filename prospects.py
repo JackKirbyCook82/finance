@@ -9,16 +9,17 @@ Created on Thurs Nov 21 2024
 import numpy as np
 import pandas as pd
 from abc import ABC
+from functools import reduce
 from itertools import product, count
 
 from finance.variables import Variables, Querys
 from support.mixins import Emptying, Sizing, Logging, Sourcing
-from support.tables import Reader, Writer, Table, View
+from support.tables import Reader, Routine, Writer, Table, View
 from support.meta import ParametersMeta
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["ProspectCalculator", "ProspectWriter", "ProspectReader", "ProspectTable"]
+__all__ = ["ProspectCalculator", "ProspectReader", "ProspectDiscarding", "ProspectAltering", "ProspectWriter", "ProspectTable"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
@@ -34,13 +35,13 @@ class ProspectParameters(metaclass=ParametersMeta):
     contract = list(map(str, Variables.Contract))
 
 
-class ProspectFormat(ProspectParameters):
+class ProspectLayout(ProspectParameters):
     def __init__(self, parameters, *args, valuation, **kwargs):
         assert valuation in Variables.Valuations
         order = parameters["contract"] + parameters["context"] + parameters["options"]
         order = order + parameters["variant"][valuation] + ["size", "status"]
         self.name = kwargs.get("name", self.__class__.__name__)
-        self.format = dict(status=lambda status: str(status), size=lambda size: f"{size:.0f}")
+        self.formats = dict(status=lambda status: str(status), size=lambda size: f"{size:.0f}")
         self.formats["apy"] = lambda column: (f"{column * 100:.02f}%" if column < 10 else "EsV") if np.isfinite(column) else "InF"
         self.numbers = lambda column: f"{column:.02f}"
         self.valuation = valuation
@@ -63,7 +64,7 @@ class ProspectHeader(ProspectParameters):
         self.valuation = valuation
 
 
-class ProspectView(View, ABC, datatype=pd.DataFrame, formattype=ProspectFormat): pass
+class ProspectView(View, ABC, datatype=pd.DataFrame, layouttype=ProspectLayout): pass
 class ProspectTable(Table, ABC, datatype=pd.DataFrame, viewtype=ProspectView, headertype=ProspectHeader): pass
 
 
@@ -91,42 +92,83 @@ class ProspectCalculator(Logging, Sizing, Emptying, Sourcing):
         prospects["priority"] = prospects.apply(self.priority, axis=1)
         parameters = dict(ascending=False, inplace=False, ignore_index=False)
         prospects = prospects.sort_values("priority", axis=0, **parameters)
-        prospects["status"] = Variables.Status.PROSPECT
+        prospects["status"] = None
         return prospects
 
 
-class ProspectWriter(Writer, query=Querys.Contract):
+class ProspectReader(Reader):
+    def __init__(self, *args, status, **kwargs):
+        assert isinstance(status, list) and all([isinstance(value, Variables.Status) for value in status])
+        super().__init__(*args, **kwargs)
+        self.status = status
+
+    def remove(self, status):
+        mask = self.table[:, "status"] == status
+        dataframe = self.table.extract(mask)
+        size = self.size(dataframe)
+        string = f"{str(self.status)}: {repr(self)}[{size:.0f}]"
+        self.logger.info(string)
+        return dataframe
+
+    def read(self, *args, **kwargs):
+        dataframes = list(map(self.remove, self.status))
+        return pd.concat(dataframes, axis=0)
+
+
+class ProspectDiscarding(Routine):
+    def __init__(self, *args, status, **kwargs):
+        assert isinstance(status, list) and all([isinstance(value, Variables.Status) for value in status])
+        super().__init__(*args, **kwargs)
+        self.status = status
+
+    def remove(self, status):
+        mask = self.table[:, "status"] == status
+        dataframe = self.table.extract(mask)
+        size = self.size(dataframe)
+        string = f"{str(self.status)}: {repr(self)}[{size:.0f}]"
+        self.logger.info(string)
+
+    def routine(self, *args, **kwargs):
+        for status in self.status:
+            self.remove(status)
+
+
+class ProspectWriter(Writer):
+    def __init__(self, *args, status, **kwargs):
+        assert isinstance(status, Variables.Status)
+        super().__init__(*args, **kwargs)
+        self.status = status
+
+    def remove(self, query):
+        mask = [self[:, key] == value for key, value in query.items()]
+        mask = reduce(lambda lead, lag: lead & lag, mask)
+        mask = mask & self[:, "status"] == self.status
+        dataframe = self.table.extract(mask)
+        size = self.size(dataframe)
+        string = f"Removed: {repr(self)}[{size:.0f}]"
+        self.logger.info(string)
+
+    def append(self, content):
+        self.table.combine(content)
+        size = self.size(content)
+        string = f"Appended: {repr(self)}[{size:.0f}]"
+        self.logger.info(string)
+
     def write(self, prospects, *args, **kwargs):
-        prospects = self.prospects(prospects, *args, **kwargs)
-        self.table.combine(prospects)
+        for query, content in self.source(prospects, *args, query=self.query, **kwargs):
+            content["status"] = self.status
+            self.remove(query)
+            self.append(content)
         self.table.sort("priority", reverse=True)
         self.table.reset()
 
-    def prospects(self, prospects, *args, **kwargs):
-        assert isinstance(prospects, pd.DataFrame)
-        assert (prospects["status"] == Variables.Status.PROSPECT).all()
-        mask = self.table[:, "prospect"] == Variables.Status.PROSPECT
-        existing = self.table.dataframe[mask]
-        index = ["valuation", "strategy"] + list(map(str, Querys.Contract)) + list(map(str, Variables.Securities.Options))
-        columns = list(prospects.columns)
-        overlap = existing.merge(prospects, on=index, how="inner", suffixes=("_", ""))[columns]
-        prospects = pd.concat([prospects, overlap], axis=0)
-        prospects = prospects.drop_duplicates(index, keep="last", inplace=False)
-        return prospects
 
+class ProspectAltering(Routine):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
-class ProspectReader(Reader, query=Querys.Contract):
-    def read(self, *args, **kwargs):
+    def routine(self, *args, **kwargs):
         pass
-
-
-
-
-
-
-
-
-
 
 
 
