@@ -75,24 +75,20 @@ class ValuationCalculator(Logging, Sizing, Emptying, Sourcing, Pivoting):
     def execute(self, strategies, *args, **kwargs):
         if self.empty(strategies, "size"): return
         for contract, dataset in self.source(strategies, *args, query=Querys.Contract, **kwargs):
-            for valuations in self.calculate(dataset, *args, **kwargs):
-                valuations = self.pivot(valuations, stacking=self.header.variate, by="scenario")
-                size = self.size(valuations)
-                string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
-                self.logger.info(string)
-                if self.empty(valuations): continue
-                yield valuations
-
-    def calculate(self, strategies, *args, **kwargs):
-        assert isinstance(strategies, (list, xr.Dataset))
-        assert all([isinstance(dataset, xr.Dataset) for dataset in strategies]) if isinstance(strategies, list) else True
-        for dataset in list(strategies):
-            if self.empty(dataset["size"]): continue
-            scenarios = dict(self.scenarios(dataset, *args, **kwargs))
-            valuations = dict(self.valuations(scenarios, *args, **kwargs))
-            valuations = pd.concat(list(valuations.values()), axis=0)
+            if self.empty(dataset, "size"): continue
+            valuations = self.calculate(dataset, *args, **kwargs)
+            valuations = self.pivot(valuations, stacking=self.header.variant, by="scenario")
+            size = self.size(valuations)
+            string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
+            self.logger.info(string)
             if self.empty(valuations): continue
             yield valuations
+
+    def calculate(self, strategies, *args, **kwargs):
+        scenarios = dict(self.scenarios(strategies, *args, **kwargs))
+        valuations = dict(self.valuations(scenarios, *args, **kwargs))
+        valuations = pd.concat(list(valuations.values()), axis=0)
+        return valuations
 
     def scenarios(self, strategies, *args, **kwargs):
         assert isinstance(strategies, xr.Dataset)
@@ -111,9 +107,9 @@ class ValuationCalculator(Logging, Sizing, Emptying, Sourcing, Pivoting):
         assert all([isinstance(dataset, xr.Dataset) for dataset in strategies]) if isinstance(strategies, list) else True
         strategies = [strategies] if isinstance(strategies, xr.Dataset) else strategies
         strategies = [datasets.expand_dims("ticker").expand_dims("expire").stack(contract=["ticker", "expire"]) for datasets in strategies]
-        strategies = (contract, dataset for datasets in strategies for contract, dataset in datasets.groupby("contract"))
+        strategies = ([contract, dataset] for datasets in strategies for contract, dataset in datasets.groupby("contract"))
         for contract, dataset in strategies:
-            contract = Querys.Contract(*contract)
+            contract = Querys.Contract(list(contract))
             dataset = dataset.unstack().drop_vars("contract")
             yield contract, dataset
 

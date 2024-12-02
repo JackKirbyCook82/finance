@@ -43,7 +43,7 @@ class HoldingCalculator(Logging, Sizing, Emptying, Sourcing, Pivoting):
     def execute(self, prospects, *args, **kwargs):
         if self.empty(prospects): return
         for contract, dataframe in self.source(prospects, *args, query=Querys.Contract, **kwargs):
-            dataframe = self.unpivot(dataframe, unstacking=self.header.variate, by="scenario")
+            dataframe = self.unpivot(dataframe, unstacking=self.header.variant, by="scenario")
             holdings = self.calculate(dataframe, *args, **kwargs)
             size = self.size(holdings)
             string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"

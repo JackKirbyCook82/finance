@@ -11,6 +11,7 @@ import pandas as pd
 from abc import ABC
 from functools import reduce
 from itertools import product, count
+from collections import OrderedDict as ODict
 
 from finance.variables import Variables, Querys
 from support.mixins import Emptying, Sizing, Logging, Sourcing
@@ -25,14 +26,14 @@ __license__ = "MIT License"
 
 
 class ProspectParameters(metaclass=ParametersMeta):
-    scenarios = {Variables.Valuations.ARBITRAGE: [Variables.Scenarios.MINIMUM, Variables.Scenarios.MAXIMUM]}
+    scenario = {Variables.Valuations.ARBITRAGE: [Variables.Scenarios.MINIMUM, Variables.Scenarios.MAXIMUM]}
     context = ["valuation", "strategy"]
     prospect = ["order", "priority", "status"]
-    variate = {Variables.Valuations.ARBITRAGE: ["apy", "npv", "cost"]}
+    variant = {Variables.Valuations.ARBITRAGE: ["apy", "npv", "cost"]}
     invariant = ["underlying", "size", "current"]
     options = list(map(str, Variables.Securities.Options))
     stocks = list(map(str, Variables.Securities.Stocks))
-    contract = list(map(str, Variables.Contract))
+    contract = list(map(str, Querys.Contract))
 
 
 class ProspectLayout(ProspectParameters):
@@ -54,13 +55,13 @@ class ProspectHeader(ProspectParameters):
         assert valuation in Variables.Valuations
         index = parameters["context"] + parameters["contract"] + parameters["options"]
         scenarios = parameters["scenario"][valuation]
-        variate = parameters["variant"][valuation]
-        invariant = parameters["invariant"]
+        variant = parameters["variant"][valuation]
+        columns = parameters["invariant"] + parameters["prospect"]
         self.name = kwargs.get("name", self.__class__.__name__)
-        self.columns = list(product(variate, scenarios)) + list(product(invariant, [""]))
+        self.columns = list(product(variant, scenarios)) + list(product(columns, [""]))
         self.index = list(product(index, [""]))
         self.scenarios = scenarios
-        self.variate = variate
+        self.variant = variant
         self.valuation = valuation
 
 
@@ -102,8 +103,8 @@ class ProspectReader(Reader):
         super().__init__(*args, **kwargs)
         self.status = status
 
-    def remove(self, status):
-        mask = self.table[:, "status"] == status
+    def retrieve(self, status):
+        mask = self.table["status"] == status
         dataframe = self.table.extract(mask)
         size = self.size(dataframe)
         string = f"{str(self.status)}: {repr(self)}[{size:.0f}]"
@@ -111,7 +112,8 @@ class ProspectReader(Reader):
         return dataframe
 
     def read(self, *args, **kwargs):
-        dataframes = list(map(self.remove, self.status))
+        if not bool(self.table): return
+        dataframes = list(map(self.retrieve, self.status))
         return pd.concat(dataframes, axis=0)
 
 
@@ -122,13 +124,14 @@ class ProspectDiscarding(Routine):
         self.status = status
 
     def remove(self, status):
-        mask = self.table[:, "status"] == status
+        mask = self.table["status"] == status
         dataframe = self.table.extract(mask)
         size = self.size(dataframe)
         string = f"{str(self.status)}: {repr(self)}[{size:.0f}]"
         self.logger.info(string)
 
     def routine(self, *args, **kwargs):
+        if not bool(self.table): return
         for status in self.status:
             self.remove(status)
 
@@ -139,16 +142,17 @@ class ProspectWriter(Writer):
         super().__init__(*args, **kwargs)
         self.status = status
 
-    def remove(self, query):
-        mask = [self[:, key] == value for key, value in query.items()]
+    def detach(self, query):
+        if not bool(self.table): return
+        mask = [self.table[key] == value for key, value in query.items()]
         mask = reduce(lambda lead, lag: lead & lag, mask)
-        mask = mask & self[:, "status"] == self.status
+        mask = mask & self.table["status"] == self.status
         dataframe = self.table.extract(mask)
         size = self.size(dataframe)
         string = f"Removed: {repr(self)}[{size:.0f}]"
         self.logger.info(string)
 
-    def append(self, content):
+    def attach(self, content):
         self.table.combine(content)
         size = self.size(content)
         string = f"Appended: {repr(self)}[{size:.0f}]"
@@ -156,19 +160,25 @@ class ProspectWriter(Writer):
 
     def write(self, prospects, *args, **kwargs):
         for query, content in self.source(prospects, *args, query=self.query, **kwargs):
+            if self.empty(content): continue
             content["status"] = self.status
-            self.remove(query)
-            self.append(content)
+            self.detach(query)
+            self.attach(content)
         self.table.sort("priority", reverse=True)
         self.table.reset()
 
 
 class ProspectAltering(Routine):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, functions={}, **kwargs):
+        assert isinstance(functions, ODict)
+        assert all([callable(function) for function in functions.keys()])
+        assert all([status in Variables.Status for status in functions.values()])
         super().__init__(*args, **kwargs)
+        self.functions = functions
 
     def routine(self, *args, **kwargs):
-        pass
+        for function, status in self.functions.items():
+            self.table.change(function, "status", status)
 
 
 
