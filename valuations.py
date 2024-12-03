@@ -77,7 +77,7 @@ class ValuationCalculator(Logging, Sizing, Emptying, Sourcing, Pivoting):
         for contract, dataset in self.source(strategies, *args, query=Querys.Contract, **kwargs):
             if self.empty(dataset, "size"): continue
             valuations = self.calculate(dataset, *args, **kwargs)
-            valuations = self.pivot(valuations, stacking=self.header.variant, by="scenario")
+            valuations = self.pivot(valuations, stacking=self.header.variants, by="scenario")
             size = self.size(valuations)
             string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
             self.logger.info(string)
