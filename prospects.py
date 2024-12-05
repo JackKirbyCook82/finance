@@ -6,11 +6,13 @@ Created on Thurs Nov 21 2024
 
 """
 
+import types
+import inspect
 import numpy as np
 import pandas as pd
 from abc import ABC
-from functools import reduce
 from itertools import product, count
+from functools import reduce, update_wrapper
 from collections import OrderedDict as ODict
 
 from finance.variables import Variables, Querys
@@ -20,7 +22,7 @@ from support.meta import ParametersMeta
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["ProspectCalculator", "ProspectReader", "ProspectDiscarding", "ProspectAltering", "ProspectWriter", "ProspectTable", "ProspectHeader", "ProspectLayout"]
+__all__ = ["ProspectCalculator", "ProspectReader", "ProspectDiscarding", "ProspectAltering", "ProspectWriter", "ProspectTable", "ProspectHeader", "ProspectLayout", "ProspectProtocols", "ProspectProtocol"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
@@ -168,18 +170,41 @@ class ProspectWriter(Writer):
         self.table.reindex()
 
 
+class ProspectProtocols(object):
+    def __iter__(self): return iter(self.protocols)
+    def __init__(self, *args, **kwargs):
+        protocols = {value.order: value for (name, value) in inspect.getmembers(self) if hasattr(value, "protocol")}
+        protocols = ODict(sorted(protocols.items()))
+        self.protocols = list(protocols.values())
+
+class ProspectProtocol(object):
+    def __new__(cls, status, order):
+        def decorator(method):
+            assert isinstance(method, types.FunctionType)
+
+            def wrapper(self, table, *args, **kwargs):
+                mask = method(self, table)
+                self.table.modify(mask, "status", status)
+
+            wrapper.status = status
+            wrapper.protocol = True
+            wrapper.order = int(order)
+            update_wrapper(wrapper, method)
+            return wrapper
+        return decorator
+
 class ProspectAltering(Routine):
     def __init__(self, *args, protocols=[], **kwargs):
-        assert isinstance(protocols, (list, tuple))
-        protocols = [protocols] if isinstance(protocols, tuple) else list(protocols)
-        assert all([isinstance(protocol, tuple) and len(protocol) == 3 for protocol in protocols])
+        assert isinstance(protocols, list) and all([isinstance(protocol, ProspectProtocol) for protocol in protocols])
         super().__init__(*args, **kwargs)
         self.protocols = protocols
 
     def routine(self, *args, **kwargs):
-        for name, status, function in self.protocols:
-            mask = function(self.table)
-            self.table.modify(mask, "status", status)
+        if not bool(self.table): return
+        for protocol in list(self.protocols):
+            protocol(self.table, *args, **kwargs)
+
+
 
 
 

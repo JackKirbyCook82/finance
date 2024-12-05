@@ -12,6 +12,7 @@ import pandas as pd
 from abc import ABC
 from numbers import Number
 from scipy.stats import norm
+from datetime import datetime as Datetime
 
 from finance.variables import Variables, Querys
 from support.calculations import Calculation, Equation, Variable
@@ -51,8 +52,8 @@ class PricingEquation(Equation, ABC):
     j = Variable("j", "position", Variables.Positions, pd.Series, locator="position")
     k = Variable("k", "strike", np.float32, pd.Series, locator="strike")
 
-    xo = Variable("xo", "underlying", np.float32, pd.Series, locator="price")
-    to = Variable("to", "current", np.datetime64, pd.Series, locator="date")
+    xo = Variable("xo", "underlying", np.float32, pd.Series, locator="underlying")
+    to = Variable("to", "current", np.datetime64, pd.Series, locator="current")
     tτ = Variable("tτ", "expire", np.datetime64, pd.Series, locator="expire")
 
     δ = Variable("δ", "volatility", np.float32, pd.Series, locator="volatility")
@@ -86,8 +87,8 @@ class BlackScholesCalculation(PricingCalculation, equation=BlackScholesEquation,
             yield exposures["option"]
             yield exposures["position"].apply(invert)
             yield exposures["strike"]
-            yield equation["underlying"]
-            yield equation["current"]
+            yield exposures["underlying"]
+            yield exposures["current"]
             yield equation.yo()
 
 
@@ -117,10 +118,12 @@ class OptionCalculator(Logging, Sizing, Emptying, Sourcing):
         return options
 
     @staticmethod
-    def exposures(exposures, statistics, *args, current, **kwargs):
-        assert isinstance(exposures, pd.DataFrame) and isinstance(statistics, pd.DataFrame)
-        statistics = statistics.where(statistics["date"] == pd.to_datetime(current))
+    def exposures(exposures, statistics, *args, current=Datetime.now(), **kwargs):
+        assert isinstance(exposures, pd.DataFrame) and isinstance(statistics, pd.DataFrame) and isinstance(current, Datetime)
+        statistics = statistics.where(statistics["date"] == pd.to_datetime(current.date()))
         exposures = pd.merge(exposures, statistics, how="inner", on="ticker")
+        exposures = exposures.rename(columns={"price": "underlying"}, inplace=False)
+        exposures["current"] = pd.to_datetime(current)
         return exposures
 
 
