@@ -109,7 +109,8 @@ class ProspectReader(Reader):
         mask = self.table["status"] == status
         dataframe = self.table.take(mask)
         size = self.size(dataframe)
-        string = f"{str(status.name)}: {repr(self)}[{size:.0f}]"
+        title = str(status.name).lower().title()
+        string = f"{str(title)}: {repr(self)}[{size:.0f}]"
         self.logger.info(string)
         return dataframe
 
@@ -129,7 +130,8 @@ class ProspectDiscarding(Routine):
         mask = self.table["status"] == status
         dataframe = self.table.take(mask)
         size = self.size(dataframe)
-        string = f"{str(status.name)}: {repr(self)}[{size:.0f}]"
+        title = str(status.name).lower().title()
+        string = f"{str(title)}: {repr(self)}[{size:.0f}]"
         self.logger.info(string)
 
     def routine(self, *args, **kwargs):
@@ -184,7 +186,7 @@ class ProspectProtocol(object):
 
             def wrapper(self, table, *args, **kwargs):
                 mask = method(self, table)
-                self.table.modify(mask, "status", status)
+                table.modify(mask, "status", status)
 
             wrapper.status = status
             wrapper.protocol = True
@@ -195,7 +197,7 @@ class ProspectProtocol(object):
 
 class ProspectAltering(Routine):
     def __init__(self, *args, protocols=[], **kwargs):
-        assert isinstance(protocols, list) and all([isinstance(protocol, ProspectProtocol) for protocol in protocols])
+        assert isinstance(protocols, list) and all(map(callable, protocols))
         super().__init__(*args, **kwargs)
         self.protocols = protocols
 

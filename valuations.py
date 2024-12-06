@@ -14,8 +14,8 @@ from abc import ABC
 from collections import namedtuple as ntuple
 
 from finance.variables import Variables, Querys
-from support.mixins import Emptying, Sizing, Logging, Sourcing, Pivoting
 from support.calculations import Calculation, Equation, Variable
+from support.mixins import Emptying, Sizing, Logging, Sourcing
 from support.meta import RegistryMeta
 
 __version__ = "1.0.0"
@@ -63,21 +63,20 @@ class MinimumArbitrageCalculation(ArbitrageCalculation, equation=MinimumArbitrag
 class MaximumArbitrageCalculation(ArbitrageCalculation, equation=MaximumArbitrageEquation, register=(Variables.Valuations.ARBITRAGE, Variables.Scenarios.MAXIMUM)): pass
 
 
-class ValuationCalculator(Logging, Sizing, Emptying, Sourcing, Pivoting):
-    def __init__(self, *args, header, **kwargs):
+class ValuationCalculator(Logging, Sizing, Emptying, Sourcing):
+    def __init__(self, *args, valuation, **kwargs):
         super().__init__(*args, **kwargs)
         Identity = ntuple("Identity", "valuation scenario")
         calculations = {Identity(*identity): calculation for identity, calculation in dict(ValuationCalculation).items()}
-        calculations = {identity.scenario: calculation for identity, calculation in calculations.items() if identity.valuation == header.valuation}
+        calculations = {identity.scenario: calculation for identity, calculation in calculations.items() if identity.valuation == valuation}
         self.calculations = {scenario: calculation(*args, **kwargs) for scenario, calculation in calculations.items()}
-        self.header = header
+        self.valuation = valuation
 
     def execute(self, strategies, *args, **kwargs):
         if self.empty(strategies, "size"): return
         for contract, dataset in self.source(strategies, *args, query=Querys.Contract, **kwargs):
             if self.empty(dataset, "size"): continue
             valuations = self.calculate(dataset, *args, **kwargs)
-            valuations = self.pivot(valuations, stacking=self.header.variants, by="scenario")
             size = self.size(valuations)
             string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
             self.logger.info(string)
@@ -96,7 +95,7 @@ class ValuationCalculator(Logging, Sizing, Emptying, Sourcing, Pivoting):
         for scenario, calculation in self.calculations.items():
             valuations = calculation(strategies, *args, **kwargs)
             assert isinstance(valuations, xr.Dataset)
-            coordinates = dict(valuation=self.header.valuation, scenario=scenario)
+            coordinates = dict(valuation=self.valuation, scenario=scenario)
             coordinates = function(coordinates)
             valuations = valuations.assign_coords(coordinates).expand_dims("scenario")
             yield scenario, valuations
@@ -122,8 +121,6 @@ class ValuationCalculator(Logging, Sizing, Emptying, Sourcing, Pivoting):
             dataframe = dataset.to_dataframe().dropna(how="all", inplace=False)
             dataframe = dataframe.reset_index(drop=False, inplace=False)
             yield scenario, dataframe
-
-
 
 
 

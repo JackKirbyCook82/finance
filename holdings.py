@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 
 from finance.variables import Variables, Querys
-from support.mixins import Emptying, Sizing, Logging, Sourcing, Pivoting
+from support.mixins import Emptying, Sizing, Logging, Sourcing
 from support.files import File
 
 __version__ = "1.0.0"
@@ -35,21 +35,16 @@ class HoldingFile(File, variable="holdings", datatype=pd.DataFrame):
         return "_".join([ticker, expire])
 
 
-class HoldingCalculator(Logging, Sizing, Emptying, Sourcing, Pivoting):
-    def __init__(self, *args, header, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.header = header
-
+class HoldingCalculator(Logging, Sizing, Emptying, Sourcing):
     def execute(self, prospects, *args, **kwargs):
         if self.empty(prospects): return
         for contract, dataframe in self.source(prospects, *args, query=Querys.Contract, **kwargs):
-            dataframe = self.unpivot(dataframe, unstacking=self.header.variants, by="scenario")
             holdings = self.calculate(dataframe, *args, **kwargs)
             size = self.size(holdings)
             string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
             self.logger.info(string)
             if self.empty(holdings): continue
-            return holdings
+            yield holdings
 
     def calculate(self, prospects, *args, **kwargs):
         assert isinstance(prospects, pd.DataFrame)
