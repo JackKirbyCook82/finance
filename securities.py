@@ -12,7 +12,6 @@ import pandas as pd
 from abc import ABC
 from numbers import Number
 from scipy.stats import norm
-from datetime import datetime as Datetime
 
 from finance.variables import Variables, Querys
 from support.calculations import Calculation, Equation, Variable
@@ -93,11 +92,12 @@ class BlackScholesCalculation(PricingCalculation, equation=BlackScholesEquation,
 
 
 class OptionCalculator(Logging, Sizing, Emptying, Sourcing):
-    def __init__(self, *args, pricing, sizing, **kwargs):
-        assert pricing in list(Variables.Pricing) and callable(sizing)
+    def __init__(self, *args, assumptions, **kwargs):
         super().__init__(*args, **kwargs)
-        self.calculation = PricingCalculation[pricing](*args, **kwargs)
-        self.sizing = sizing
+        self.calculation = PricingCalculation[assumptions.pricing](*args, **kwargs)
+        self.sizing = dict(assumptions.sizing)
+        self.current = assumptions.timing.current
+        self.pricing = assumptions.pricing
 
     def execute(self, exposures, statistics, *args, **kwargs):
         if self.empty(exposures): return
@@ -117,13 +117,12 @@ class OptionCalculator(Logging, Sizing, Emptying, Sourcing):
         options = pd.concat([pricings, sizings], axis=1)
         return options
 
-    @staticmethod
-    def exposures(exposures, statistics, *args, current=Datetime.now(), **kwargs):
-        assert isinstance(exposures, pd.DataFrame) and isinstance(statistics, pd.DataFrame) and isinstance(current, Datetime)
-        statistics = statistics.where(statistics["date"] == pd.to_datetime(current.date()))
+    def exposures(self, exposures, statistics, *args, **kwargs):
+        assert isinstance(exposures, pd.DataFrame) and isinstance(statistics, pd.DataFrame)
+        statistics = statistics.where(statistics["date"] == pd.to_datetime(self.current.date()))
         exposures = pd.merge(exposures, statistics, how="inner", on="ticker")
         exposures = exposures.rename(columns={"price": "underlying"}, inplace=False)
-        exposures["current"] = pd.to_datetime(current)
+        exposures["current"] = pd.to_datetime(self.current)
         return exposures
 
 

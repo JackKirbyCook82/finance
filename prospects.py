@@ -6,34 +6,30 @@ Created on Thurs Nov 21 2024
 
 """
 
-import types
-import inspect
 import numpy as np
 import pandas as pd
 from abc import ABC
+from functools import reduce
 from itertools import product, count
-from functools import reduce, update_wrapper
-from collections import OrderedDict as ODict
 
 from finance.variables import Variables, Querys
 from support.mixins import Emptying, Sizing, Logging, Sourcing
 from support.tables import Reader, Routine, Writer, Table
-from support.meta import ParametersMeta
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["ProspectCalculator", "ProspectReader", "ProspectDiscarding", "ProspectAltering", "ProspectWriter", "ProspectTable", "ProspectHeader", "ProspectLayout", "ProspectProtocols", "ProspectProtocol"]
+__all__ = ["ProspectCalculator", "ProspectReader", "ProspectDiscarding", "ProspectProtocols", "ProspectWriter", "ProspectTable", "ProspectHeader", "ProspectLayout"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
 class ProspectTable(Table, ABC, datatype=pd.DataFrame): pass
-class ProspectParameters(metaclass=ParametersMeta):
+class ProspectParameters(object):
     scenarios = {Variables.Valuations.ARBITRAGE: [Variables.Scenarios.MINIMUM, Variables.Scenarios.MAXIMUM]}
-    context = ["valuation", "strategy"]
-    prospect = ["order", "priority", "status"]
     variants = {Variables.Valuations.ARBITRAGE: ["apy", "npv", "cost"]}
     invariants = ["underlying", "size", "current"]
+    prospect = ["order", "priority", "status"]
+    context = ["valuation", "strategy"]
     options = list(map(str, Variables.Securities.Options))
     stocks = list(map(str, Variables.Securities.Stocks))
     contract = list(map(str, Querys.Contract))
@@ -41,32 +37,43 @@ class ProspectParameters(metaclass=ParametersMeta):
 
 class ProspectHeader(ProspectParameters):
     def __iter__(self): return iter(self.index + self.columns)
-    def __init__(self, *args, valuation, context, contract, options, scenarios, variants, invariants, prospect, **kwargs):
+    def __new__(cls, *args, valuation, **kwargs):
         assert valuation in Variables.Valuations
-        index, columns = list(context + contract + options), list(invariants + prospect)
-        scenarios, variants = list(scenarios[valuation]), list(variants[valuation])
-        self.name = kwargs.get("name", self.__class__.__name__)
-        self.columns = list(product(variants, scenarios)) + list(product(columns, [""]))
-        self.index = list(product(index, [""]))
-        self.scenarios = scenarios
-        self.variants = variants
-        self.valuation = valuation
+        scenarios = list(cls.scenarios[valuation])
+        variants = list(cls.variants[valuation])
+        index = list(cls.context + cls.contract + cls.options)
+        columns = list(cls.invariants + cls.prospect)
+        instance = super().__new__(cls)
+        instance.name = cls.__name__
+        instance.index = list(product(index, [""]))
+        instance.columns = list(product(variants, scenarios)) + list(product(columns, [""]))
+        instance.unpivot = ("scenario", variants)
+        instance.pivot = ("scenario", variants)
+        instance.scenarios = scenarios
+        instance.variants = variants
+        instance.valuation = valuation
+        return instance
 
 
 class ProspectLayout(ProspectParameters):
-    def __init__(self, *args, valuation, context, contract, options, scenarios, variants, **kwargs):
-        order = list(contract + context + options + variants[valuation] + ["size", "status"])
+    def __new__(cls, *args, valuation, **kwargs):
+        assert valuation in Variables.Valuations
+        scenarios = list(cls.scenarios[valuation])
+        variants = list(cls.variants[valuation])
+        order = list(cls.contract + cls.context + cls.options + variants + ["size", "status"])
         formats = dict(status=lambda status: str(status), size=lambda size: f"{size:.0f}")
         formats["apy"] = lambda value: (f"{value * 100:.02f}%" if value < 10 else "EsV") if np.isfinite(value) else "InF"
-        variants, scenarios = list(variants[valuation]), list(scenarios[valuation])
         generator = lambda key: product([key], scenarios) if key in variants else product([key], [""])
-        self.name = kwargs.get("name", self.__class__.__name__)
-        self.formats = {column: function for key, function in formats.items() for column in generator(key)}
-        self.order = [column for key in order for column in generator(key)]
-        self.numbers = lambda value: f"{value:.02f}"
-        self.width = kwargs.get("width", 250)
-        self.columns = kwargs.get("columns", 30)
-        self.rows = kwargs.get("rows", 30)
+        instance = super().__new__(cls)
+        instance.name = cls.__name__
+        instance.formats = {column: function for key, function in formats.items() for column in generator(key)}
+        instance.order = [column for key in order for column in generator(key)]
+        instance.numbers = lambda value: f"{value:.02f}"
+        instance.width = kwargs.get("width", 250)
+        instance.columns = kwargs.get("columns", 30)
+        instance.rows = kwargs.get("rows", 30)
+        instance.valuation = valuation
+        return instance
 
 
 class ProspectCalculator(Logging, Sizing, Emptying, Sourcing):
@@ -140,6 +147,21 @@ class ProspectDiscarding(Routine):
             self.take(status)
 
 
+class ProspectProtocols(Routine):
+    def __init__(self, *args, protocols={}, **kwargs):
+        assert isinstance(protocols, dict)
+        assert all([callable(protocol) for protocol in protocols.keys()])
+        assert all([status in Variables.Status for status in protocols.values()])
+        super().__init__(*args, **kwargs)
+        self.protocols = dict(protocols)
+
+    def routine(self, *args, **kwargs):
+        if not bool(self.table): return
+        for protocol, status in self.protocols.items():
+            mask = protocol(self.table)
+            self.table.modify(mask, "status", status)
+
+
 class ProspectWriter(Writer):
     def __init__(self, *args, status, **kwargs):
         assert isinstance(status, Variables.Status)
@@ -170,41 +192,6 @@ class ProspectWriter(Writer):
             self.attach(content)
         self.table.sort("priority", reverse=True)
         self.table.reindex()
-
-
-class ProspectProtocols(object):
-    def __iter__(self): return iter(self.protocols)
-    def __init__(self, *args, **kwargs):
-        protocols = {value.order: value for (name, value) in inspect.getmembers(self) if hasattr(value, "protocol")}
-        protocols = ODict(sorted(protocols.items()))
-        self.protocols = list(protocols.values())
-
-class ProspectProtocol(object):
-    def __new__(cls, status, order):
-        def decorator(method):
-            assert isinstance(method, types.FunctionType)
-
-            def wrapper(self, table, *args, **kwargs):
-                mask = method(self, table)
-                table.modify(mask, "status", status)
-
-            wrapper.status = status
-            wrapper.protocol = True
-            wrapper.order = int(order)
-            update_wrapper(wrapper, method)
-            return wrapper
-        return decorator
-
-class ProspectAltering(Routine):
-    def __init__(self, *args, protocols=[], **kwargs):
-        assert isinstance(protocols, list) and all(map(callable, protocols))
-        super().__init__(*args, **kwargs)
-        self.protocols = protocols
-
-    def routine(self, *args, **kwargs):
-        if not bool(self.table): return
-        for protocol in list(self.protocols):
-            protocol(self.table, *args, **kwargs)
 
 
 
