@@ -15,7 +15,7 @@ from scipy.stats import norm
 
 from finance.variables import Variables, Querys
 from support.calculations import Calculation, Equation, Variable
-from support.mixins import Emptying, Sizing, Logging, Sourcing
+from support.mixins import Emptying, Sizing, Logging, Separating
 from support.meta import RegistryMeta
 from support.files import File
 
@@ -91,18 +91,21 @@ class BlackScholesCalculation(PricingCalculation, equation=BlackScholesEquation,
             yield equation.yo()
 
 
-class OptionCalculator(Logging, Sizing, Emptying, Sourcing):
+class OptionCalculator(Logging, Sizing, Emptying, Separating):
     def __init__(self, *args, assumptions, **kwargs):
-        super().__init__(*args, **kwargs)
+        try: super().__init__(*args, **kwargs)
+        except TypeError: super().__init__()
         self.calculation = PricingCalculation[assumptions.pricing](*args, **kwargs)
         self.sizing = dict(assumptions.sizing)
         self.current = assumptions.timing.current
         self.pricing = assumptions.pricing
+        self.query = Querys.Contract
 
     def execute(self, exposures, statistics, *args, **kwargs):
         if self.empty(exposures): return
         exposures = self.exposures(exposures, statistics, *args, **kwargs)
-        for contract, dataframe in self.source(exposures, *args, query=Querys.Contract, **kwargs):
+        for group, dataframe in self.separate(exposures, *args, keys=list(self.query), **kwargs):
+            contract = self.query(group)
             options = self.calculate(dataframe, *args, **kwargs)
             size = self.size(options)
             string = f"Calculated: {repr(self)}|{str(contract)}[{int(size):.0f}]"

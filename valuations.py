@@ -15,7 +15,7 @@ from collections import namedtuple as ntuple
 
 from finance.variables import Variables, Querys
 from support.calculations import Calculation, Equation, Variable
-from support.mixins import Emptying, Sizing, Logging, Sourcing
+from support.mixins import Emptying, Sizing, Logging, Separating
 from support.meta import RegistryMeta
 
 __version__ = "1.0.0"
@@ -63,19 +63,22 @@ class MinimumArbitrageCalculation(ArbitrageCalculation, equation=MinimumArbitrag
 class MaximumArbitrageCalculation(ArbitrageCalculation, equation=MaximumArbitrageEquation, register=(Variables.Valuations.ARBITRAGE, Variables.Scenarios.MAXIMUM)): pass
 
 
-class ValuationCalculator(Logging, Sizing, Emptying, Sourcing):
+class ValuationCalculator(Logging, Sizing, Emptying, Separating):
     def __init__(self, *args, valuation, **kwargs):
-        super().__init__(*args, **kwargs)
+        try: super().__init__(*args, **kwargs)
+        except TypeError: super().__init__()
         Identity = ntuple("Identity", "valuation scenario")
         calculations = {Identity(*identity): calculation for identity, calculation in dict(ValuationCalculation).items()}
         calculations = {identity.scenario: calculation for identity, calculation in calculations.items() if identity.valuation == valuation}
         self.calculations = {scenario: calculation(*args, **kwargs) for scenario, calculation in calculations.items()}
         self.valuation = valuation
+        self.query = Querys.Contract
 
     def execute(self, strategies, *args, **kwargs):
         if self.empty(strategies, "size"): return
-        for contract, dataset in self.source(strategies, *args, query=Querys.Contract, **kwargs):
+        for group, dataset in self.separate(strategies, *args, keys=list(self.query), **kwargs):
             if self.empty(dataset, "size"): continue
+            contract = self.query(group)
             valuations = self.calculate(dataset, *args, **kwargs)
             size = self.size(valuations)
             string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"

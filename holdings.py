@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 
 from finance.variables import Variables, Querys
-from support.mixins import Emptying, Sizing, Logging, Sourcing
+from support.mixins import Emptying, Sizing, Logging, Separating
 from support.files import File
 
 __version__ = "1.0.0"
@@ -35,10 +35,16 @@ class HoldingFile(File, variable="holdings", datatype=pd.DataFrame):
         return "_".join([ticker, expire])
 
 
-class HoldingCalculator(Logging, Sizing, Emptying, Sourcing):
+class HoldingCalculator(Logging, Sizing, Emptying, Separating):
+    def __init__(self, *args, **kwargs):
+        try: super().__init__(*args, **kwargs)
+        except TypeError: super().__init__()
+        self.query = Querys.Contract
+
     def execute(self, prospects, *args, **kwargs):
         if self.empty(prospects): return
-        for contract, dataframe in self.source(prospects, *args, query=Querys.Contract, **kwargs):
+        for group, dataframe in self.separate(prospects, *args, keys=list(self.query), **kwargs):
+            contract = self.query(group)
             holdings = self.calculate(dataframe, *args, **kwargs)
             size = self.size(holdings)
             string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"

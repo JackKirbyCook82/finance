@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 
 from finance.variables import Variables, Querys
-from support.mixins import Emptying, Sizing, Logging, Sourcing
+from support.mixins import Emptying, Sizing, Logging, Separating
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -21,10 +21,16 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-class OrderCalculator(Logging, Sizing, Emptying, Sourcing):
+class OrderCalculator(Logging, Sizing, Emptying, Separating):
+    def __init__(self, *args, **kwargs):
+        try: super().__init__(*args, **kwargs)
+        except TypeError: super().__init__()
+        self.query = Querys.Contract
+
     def execute(self, prospects, *args, **kwargs):
         if self.empty(prospects): return
-        for contract, dataframe in self.source(prospects, *args, query=Querys.Contract, **kwargs):
+        for group, dataframe in self.source(prospects, *args, keys=list(self.query), **kwargs):
+            contract = self.query(group)
             orders = self.calculate(dataframe, *args, **kwargs)
             size = self.size(orders)
             string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"

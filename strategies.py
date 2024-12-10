@@ -17,7 +17,7 @@ from collections import namedtuple as ntuple
 
 from finance.variables import Variables, Querys
 from support.calculations import Calculation, Equation, Variable
-from support.mixins import Emptying, Sizing, Logging, Sourcing
+from support.mixins import Emptying, Sizing, Logging, Separating
 from support.meta import RegistryMeta
 
 __version__ = "1.0.0"
@@ -95,18 +95,21 @@ class CollarLongCalculation(CollarCalculation, equation=CollarLongEquation, regi
 class CollarShortCalculation(CollarCalculation, equation=CollarShortEquation, register=Variables.Strategies.Collar.Short): pass
 
 
-class StrategyCalculator(Logging, Sizing, Emptying, Sourcing):
+class StrategyCalculator(Logging, Sizing, Emptying, Separating):
     def __init__(self, *args, strategies=[], **kwargs):
         assert all([strategy in list(Variables.Strategies) for strategy in list(strategies)])
-        super().__init__(*args, **kwargs)
+        try: super().__init__(*args, **kwargs)
+        except TypeError: super().__init__()
         strategies = list(dict(StrategyCalculation).keys()) if not bool(strategies) else list(strategies)
         calculations = dict(StrategyCalculation).items()
         calculations = {strategy: calculation(*args, **kwargs) for strategy, calculation in calculations if strategy in strategies}
         self.calculations = calculations
+        self.query = Querys.Contract
 
     def execute(self, options, *args, **kwargs):
         if self.empty(options): return
-        for contract, dataframe in self.source(options, *args, query=Querys.Contract, **kwargs):
+        for group, dataframe in self.separate(options, *args, keys=list(self.query), **kwargs):
+            contract = self.query(group)
             contents = dict(self.options(dataframe, *args, **kwargs))
             for strategy, strategies in self.calculate(contents, *args, **kwargs):
                 size = self.size(strategies, "size")
@@ -140,6 +143,7 @@ class StrategyCalculator(Logging, Sizing, Emptying, Sourcing):
             assert isinstance(strategies, xr.Dataset)
             coordinates = function(dict(strategy=strategy))
             strategies = strategies.assign_coords(coordinates)
+            for field in list(Querys.Contract): strategies = strategies.expand_dims(field)
             yield strategy, strategies
 
 

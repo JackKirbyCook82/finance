@@ -59,13 +59,16 @@ class StabilityCalculation(Calculation, equation=StabilityEquation):
 
 class StabilityCalculator(Logging, Sizing, Emptying):
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        try: super().__init__(*args, **kwargs)
+        except TypeError: super().__init__()
         self.calculation = StabilityCalculation(*args, **kwargs)
+        self.query = Querys.Contract
 
     def execute(self, orders, exposures, *args, **kwargs):
         if self.empty(orders): return
         assert isinstance(orders, pd.DataFrame) and isinstance(exposures, pd.DataFrame)
-        for contract, dataframes in self.source(orders, exposures, *args, **kwargs):
+        for group, dataframes in self.separate(orders, exposures, *args, keys=list(self.query), **kwargs):
+            contract = self.query(group)
             stabilities = self.calculate(*dataframes, *args, **kwargs)
             size = self.size(stabilities)
             string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
@@ -90,13 +93,14 @@ class StabilityCalculator(Logging, Sizing, Emptying):
         return stabilities
 
     @staticmethod
-    def source(orders, exposures, *args, **kwargs):
+    def source(orders, exposures, *args, keys, **kwargs):
         assert isinstance(orders, pd.DataFrame) and isinstance(exposures, pd.DataFrame)
-        for (ticker, expire), primary in orders.groupby(["ticker", "expire"]):
-            contract = Querys.Contract(ticker, expire)
-            mask = exposures["ticker"] == ticker & exposures["expire"] == expire
+        for values, primary in orders.groupby(keys):
+            group = ODict(zip(keys, values))
+            mask = [exposures[key] == value for key, value in zip(keys, group)]
+            mask = reduce(lambda lead, lag: lead & lag, list(mask))
             secondary = exposures.where(mask)
-            yield contract, (primary, secondary)
+            yield group, (primary, secondary)
 
     @staticmethod
     def orders(orders, *args, **kwargs):
@@ -139,10 +143,16 @@ class StabilityCalculator(Logging, Sizing, Emptying):
 
 
 class StabilityFilter(Logging, Sizing, Emptying):
+    def __init__(self, *args, **kwargs):
+        try: super().__init__(*args, **kwargs)
+        except TypeError: super().__init__()
+        self.query = Querys.Contract
+
     def execute(self, prospects, stabilities, *args, **kwargs):
         if self.empty(prospects): return
         assert isinstance(prospects, pd.DataFrame) and isinstance(stabilities, pd.DataFrame)
-        for contract, dataframes in self.source(prospects, stabilities, *args, **kwargs):
+        for group, dataframes in self.separate(prospects, stabilities, *args, keys=list(self.query), **kwargs):
+            contract = self.query(group)
             filtered = self.calculate(*dataframes, *args, **kwargs)
             size = self.size(filtered)
             string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
@@ -151,13 +161,14 @@ class StabilityFilter(Logging, Sizing, Emptying):
             return filtered
 
     @staticmethod
-    def source(prospects, stabilities, *args, **kwargs):
+    def source(prospects, stabilities, *args, keys, **kwargs):
         assert isinstance(prospects, pd.DataFrame) and isinstance(stabilities, pd.DataFrame)
-        for (ticker, expire), primary in prospects.groupby(["ticker", "expire"]):
-            contract = Querys.Contract(ticker, expire)
-            mask = stabilities["ticker"] == ticker & stabilities["expire"] == expire
+        for values, primary in prospects.groupby(keys):
+            group = ODict(zip(keys, values))
+            mask = [stabilities[key] == value for key, value in zip(keys, group)]
+            mask = reduce(lambda lead, lag: lead & lag, list(mask))
             secondary = stabilities.where(mask)
-            yield contract, (primary, secondary)
+            yield group, (primary, secondary)
 
     @staticmethod
     def calculate(prospects, stabilities, *args, **kwargs):

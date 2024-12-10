@@ -13,7 +13,7 @@ from abc import ABC
 
 from finance.variables import Querys, Variables
 from support.calculations import Calculation, Equation, Variable
-from support.mixins import Emptying, Sizing, Logging, Sourcing
+from support.mixins import Emptying, Sizing, Logging, Separating
 from support.meta import RegistryMeta
 from support.files import File
 
@@ -73,15 +73,18 @@ class StochasticCalculation(TechnicalCalculation, equation=StochasticEquation, r
             yield equation.xk()
 
 
-class TechnicalCalculator(Logging, Sizing, Emptying, Sourcing):
+class TechnicalCalculator(Logging, Sizing, Emptying, Separating):
     def __init__(self, *args, technical, **kwargs):
         assert technical in list(Variables.Technicals)
-        super().__init__(*args, **kwargs)
+        try: super().__init__(*args, **kwargs)
+        except TypeError: super().__init__()
         self.calculation = TechnicalCalculation[technical](*args, **kwargs)
+        self.query = Querys.Symbol
 
     def execute(self, bars, *args, **kwargs):
         if self.empty(bars): return
-        for symbol, dataframe in self.source(bars, *args, query=Querys.Symbol, **kwargs):
+        for group, dataframe in self.separate(bars, *args, keys=list(self.query), **kwargs):
+            symbol = self.query(group)
             parameters = dict(ticker=symbol.ticker)
             technicals = self.calculate(dataframe, *args, **parameters, **kwargs)
             size = self.size(technicals)

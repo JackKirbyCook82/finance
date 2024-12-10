@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 
 from finance.variables import Querys, Variables
-from support.mixins import Emptying, Sizing, Logging, Sourcing
+from support.mixins import Emptying, Sizing, Logging, Separating
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -19,10 +19,16 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class ExposureCalculator(Logging, Sizing, Emptying, Sourcing):
+class ExposureCalculator(Logging, Sizing, Emptying, Separating):
+    def __init__(self, *args, **kwargs):
+        try: super().__init__(*args, **kwargs)
+        except TypeError: super().__init__()
+        self.query = Querys.Contract
+
     def execute(self, holdings, *args, **kwargs):
         if self.empty(holdings): return
-        for contract, dataframe in self.source(holdings, *args, query=Querys.Contract, **kwargs):
+        for group, dataframe in self.separate(holdings, *args, keys=list(self.query), **kwargs):
+            contract = self.query(group)
             exposures = self.calculate(dataframe, *args, **kwargs)
             size = self.size(exposures)
             string = f"Calculated: {repr(self)}|{str(contract)}[{int(size):.0f}]"
