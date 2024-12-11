@@ -8,22 +8,20 @@ Created on Thurs Nov 21 2024
 
 import numpy as np
 import pandas as pd
-from abc import ABC
 from functools import reduce
 from itertools import product, count
 
 from finance.variables import Variables, Querys
 from support.mixins import Emptying, Sizing, Logging, Separating
-from support.tables import Reader, Routine, Writer, Table
+from support.tables import Reader, Routine, Writer
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["ProspectCalculator", "ProspectReader", "ProspectDiscarding", "ProspectProtocols", "ProspectWriter", "ProspectTable", "ProspectHeader", "ProspectLayout"]
+__all__ = ["ProspectCalculator", "ProspectReader", "ProspectDiscarding", "ProspectProtocols", "ProspectWriter", "ProspectHeader", "ProspectLayout"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class ProspectTable(Table, ABC, datatype=pd.DataFrame): pass
 class ProspectParameters(object):
     scenarios = {Variables.Valuations.ARBITRAGE: [Variables.Scenarios.MINIMUM, Variables.Scenarios.MAXIMUM]}
     variants = {Variables.Valuations.ARBITRAGE: ["apy", "npv", "cost"]}
