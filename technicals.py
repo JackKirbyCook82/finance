@@ -12,9 +12,9 @@ import pandas as pd
 from abc import ABC
 
 from finance.variables import Querys, Variables
-from support.calculations import Calculation, Equation, Variable
 from support.mixins import Emptying, Sizing, Logging, Separating
-from support.meta import RegistryMeta
+from support.calculations import Calculation, Equation, Variable
+from support.meta import RegistryMeta, ParameterMeta
 from support.files import File
 
 __version__ = "1.0.0"
@@ -24,14 +24,12 @@ __copyright__ = "Copyright 2024, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class TechnicalFile(File, ABC, datatype=pd.DataFrame):
+class TechnicalParameters(object, metaclass=ParameterMeta):
     types = {"ticker": str, "volume": np.int64} | {column: np.float32 for column in ("price", "open", "close", "high", "low")}
     types.update({"trend": np.float32, "volatility": np.float32, "oscillator": np.float32})
     dates = {"date": "%Y%m%d"}
 
-    @staticmethod
-    def filename(*args, query, **kwargs): return str(query.ticker).upper()
-
+class TechnicalFile(File, ABC, **dict(TechnicalParameters)): pass
 class BarsFile(TechnicalFile, variable=Variables.Technicals.BARS): pass
 class StatisticFile(TechnicalFile, variable=Variables.Technicals.STATISTIC): pass
 class StochasticFile(TechnicalFile, variable=Variables.Technicals.STOCHASTIC): pass
@@ -78,13 +76,14 @@ class TechnicalCalculator(Logging, Sizing, Emptying, Separating):
         assert technical in list(Variables.Technicals)
         try: super().__init__(*args, **kwargs)
         except TypeError: super().__init__()
-        self.calculation = TechnicalCalculation[technical](*args, **kwargs)
-        self.query = Querys.Symbol
+        self.__calculation = TechnicalCalculation[technical](*args, **kwargs)
+        self.__query = Querys.Symbol
 
     def execute(self, bars, *args, **kwargs):
+        assert isinstance(bars, pd.DataFrame)
         if self.empty(bars): return
-        for group, dataframe in self.separate(bars, *args, keys=list(self.query), **kwargs):
-            symbol = self.query(group)
+        for parameters, dataframe in self.separate(bars, *args, fields=self.fields, **kwargs):
+            symbol = self.query(parameters)
             parameters = dict(ticker=symbol.ticker)
             technicals = self.calculate(dataframe, *args, **parameters, **kwargs)
             size = self.size(technicals)
@@ -99,7 +98,12 @@ class TechnicalCalculator(Logging, Sizing, Emptying, Separating):
         assert isinstance(technicals, pd.DataFrame)
         return technicals
 
-
+    @property
+    def fields(self): return list(self.__query)
+    @property
+    def calculation(self): return self.__calculation
+    @property
+    def query(self): return self.__query
 
 
 

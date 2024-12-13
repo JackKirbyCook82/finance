@@ -13,15 +13,16 @@ from itertools import product, count
 
 from finance.variables import Variables, Querys
 from support.mixins import Emptying, Sizing, Logging, Separating
-from support.tables import Reader, Routine, Writer
+from support.tables import Reader, Routine, Writer, Table
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["ProspectCalculator", "ProspectReader", "ProspectDiscarding", "ProspectProtocols", "ProspectWriter", "ProspectHeader", "ProspectLayout"]
+__all__ = ["ProspectCalculator", "ProspectReader", "ProspectDiscarding", "ProspectProtocols", "ProspectWriter", "ProspectTable", "ProspectHeader", "ProspectLayout"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
+class ProspectTable(Table): pass
 class ProspectParameters(object):
     scenarios = {Variables.Valuations.ARBITRAGE: [Variables.Scenarios.MINIMUM, Variables.Scenarios.MAXIMUM]}
     variants = {Variables.Valuations.ARBITRAGE: ["apy", "npv", "cost"]}
@@ -45,8 +46,7 @@ class ProspectHeader(ProspectParameters):
         instance.name = cls.__name__
         instance.index = list(product(index, [""]))
         instance.columns = list(product(variants, scenarios)) + list(product(columns, [""]))
-        instance.unpivot = ("scenario", variants)
-        instance.pivot = ("scenario", variants)
+        instance.transform = ("scenario", variants)
         instance.scenarios = scenarios
         instance.variants = variants
         instance.valuation = valuation
@@ -79,15 +79,16 @@ class ProspectCalculator(Logging, Sizing, Emptying, Separating):
         assert callable(priority)
         try: super().__init__(*args, **kwargs)
         except TypeError: super().__init__()
-        self.counter = count(start=1, step=1)
-        self.query = Querys.Contract
-        self.priority = priority
-        self.header = header
+        self.__counter = count(start=1, step=1)
+        self.__query = Querys.Contract
+        self.__priority = priority
+        self.__header = header
 
     def execute(self, valuations, *args, **kwargs):
+        assert isinstance(valuations, pd.DataFrame)
         if self.empty(valuations): return
-        for group, dataframe in self.separate(valuations, *args, keys=list(self.query), **kwargs):
-            contract = self.query(group)
+        for parameters, dataframe in self.separate(valuations, *args, fields=self.fields, **kwargs):
+            contract = self.query(parameters)
             prospects = self.calculate(dataframe, *args, **kwargs)
             prospects = prospects.reindex(columns=list(self.header), fill_value=np.NaN)
             size = self.size(prospects)
@@ -106,13 +107,24 @@ class ProspectCalculator(Logging, Sizing, Emptying, Separating):
         prospects["status"] = np.NaN
         return prospects
 
+    @property
+    def fields(self): return list(self.__query)
+    @property
+    def priority(self): return self.__priority
+    @property
+    def counter(self): return self.__counter
+    @property
+    def header(self): return self.__header
+    @property
+    def query(self): return self.__query
+
 
 class ProspectReader(Reader, query=Querys.Contract):
     def __init__(self, *args, status, **kwargs):
         assert isinstance(status, list) and all([isinstance(value, Variables.Status) for value in status])
         try: super().__init__(*args, **kwargs)
         except TypeError: super().__init__()
-        self.status = status
+        self.__status = status
 
     def take(self, status):
         mask = self.table["status"] == status
@@ -128,13 +140,16 @@ class ProspectReader(Reader, query=Querys.Contract):
         dataframes = list(map(self.take, self.status))
         return pd.concat(dataframes, axis=0)
 
+    @property
+    def status(self): return self.__status
+
 
 class ProspectDiscarding(Routine, query=Querys.Contract):
     def __init__(self, *args, status, **kwargs):
         assert isinstance(status, list) and all([isinstance(value, Variables.Status) for value in status])
         try: super().__init__(*args, **kwargs)
         except TypeError: super().__init__()
-        self.status = status
+        self.__status = status
 
     def take(self, status):
         mask = self.table["status"] == status
@@ -149,6 +164,9 @@ class ProspectDiscarding(Routine, query=Querys.Contract):
         for status in self.status:
             self.take(status)
 
+    @property
+    def status(self): return self.__status
+
 
 class ProspectProtocols(Routine, query=Querys.Contract):
     def __init__(self, *args, protocols={}, **kwargs):
@@ -157,7 +175,7 @@ class ProspectProtocols(Routine, query=Querys.Contract):
         assert all([status in Variables.Status for status in protocols.values()])
         try: super().__init__(*args, **kwargs)
         except TypeError: super().__init__()
-        self.protocols = dict(protocols)
+        self.__protocols = dict(protocols)
 
     def invoke(self, *args, **kwargs):
         if not bool(self.table): return
@@ -165,13 +183,16 @@ class ProspectProtocols(Routine, query=Querys.Contract):
             mask = protocol(self.table)
             self.table.modify(mask, "status", status)
 
+    @property
+    def protocols(self): return self.__protocols
+
 
 class ProspectWriter(Writer, query=Querys.Contract):
     def __init__(self, *args, status, **kwargs):
         assert isinstance(status, Variables.Status)
         try: super().__init__(*args, **kwargs)
         except TypeError: super().__init__()
-        self.status = status
+        self.__status = status
 
     def detach(self, query):
         if not bool(self.table): return
@@ -190,16 +211,17 @@ class ProspectWriter(Writer, query=Querys.Contract):
         self.logger.info(string)
 
     def write(self, prospects, *args, **kwargs):
-        for group, content in self.separate(prospects, *args, keys=list(self.query), **kwargs):
+        for parameters, content in self.separate(prospects, *args, fields=self.fields, **kwargs):
             if self.empty(content): continue
-            query = self.query(group)
+            query = self.query(parameters)
             content["status"] = self.status
             self.detach(query)
             self.attach(content)
         self.table.sort("priority", reverse=True)
         self.table.reindex()
 
-
+    @property
+    def status(self): return self.__status
 
 
 

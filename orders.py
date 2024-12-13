@@ -25,18 +25,19 @@ class OrderCalculator(Logging, Sizing, Emptying, Separating):
     def __init__(self, *args, **kwargs):
         try: super().__init__(*args, **kwargs)
         except TypeError: super().__init__()
-        self.query = Querys.Contract
+        self.__query = Querys.Contract
 
     def execute(self, prospects, *args, **kwargs):
+        assert isinstance(prospects, pd.DataFrame)
         if self.empty(prospects): return
-        for group, dataframe in self.source(prospects, *args, keys=list(self.query), **kwargs):
-            contract = self.query(group)
+        for parameters, dataframe in self.source(prospects, *args, fields=self.fields, **kwargs):
+            contract = self.query(parameters)
             orders = self.calculate(dataframe, *args, **kwargs)
             size = self.size(orders)
             string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
             self.logger.info(string)
             if self.empty(orders): continue
-            return orders
+            yield orders
 
     def calculate(self, prospects, *args, **kwargs):
         assert isinstance(prospects, pd.DataFrame)
@@ -100,5 +101,8 @@ class OrderCalculator(Logging, Sizing, Emptying, Separating):
         virtuals["strike"] = virtuals["strike"].apply(lambda strike: np.round(strike, decimals=2))
         return virtuals
 
-
+    @property
+    def fields(self): return list(self.__query)
+    @property
+    def query(self): return self.__query
 

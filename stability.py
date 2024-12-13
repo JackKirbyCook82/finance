@@ -61,20 +61,20 @@ class StabilityCalculator(Logging, Sizing, Emptying):
     def __init__(self, *args, **kwargs):
         try: super().__init__(*args, **kwargs)
         except TypeError: super().__init__()
-        self.calculation = StabilityCalculation(*args, **kwargs)
-        self.query = Querys.Contract
+        self.__calculation = StabilityCalculation(*args, **kwargs)
+        self.__query = Querys.Contract
 
     def execute(self, orders, exposures, *args, **kwargs):
-        if self.empty(orders): return
         assert isinstance(orders, pd.DataFrame) and isinstance(exposures, pd.DataFrame)
-        for group, dataframes in self.separate(orders, exposures, *args, keys=list(self.query), **kwargs):
-            contract = self.query(group)
+        if self.empty(orders): return
+        for parameters, dataframes in self.separate(orders, exposures, *args, fields=self.fields, **kwargs):
+            contract = self.query(parameters)
             stabilities = self.calculate(*dataframes, *args, **kwargs)
             size = self.size(stabilities)
             string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
             self.logger.info(string)
             if self.empty(stabilities): continue
-            return stabilities
+            yield stabilities
 
     def calculate(self, orders, exposures, *args, **kwargs):
         assert isinstance(orders, pd.DataFrame) and isinstance(exposures, pd.DataFrame)
@@ -141,24 +141,31 @@ class StabilityCalculator(Logging, Sizing, Emptying):
         portfolios["underlying"] = underlying
         return portfolios
 
+    @property
+    def fields(self): return list(self.__query)
+    @property
+    def calculation(self): return self.__calculation
+    @property
+    def query(self): return self.__query
+
 
 class StabilityFilter(Logging, Sizing, Emptying):
     def __init__(self, *args, **kwargs):
         try: super().__init__(*args, **kwargs)
         except TypeError: super().__init__()
-        self.query = Querys.Contract
+        self.__query = Querys.Contract
 
     def execute(self, prospects, stabilities, *args, **kwargs):
-        if self.empty(prospects): return
         assert isinstance(prospects, pd.DataFrame) and isinstance(stabilities, pd.DataFrame)
-        for group, dataframes in self.separate(prospects, stabilities, *args, keys=list(self.query), **kwargs):
-            contract = self.query(group)
+        if self.empty(prospects): return
+        for parameters, dataframes in self.separate(prospects, stabilities, *args, fields=self.fields, **kwargs):
+            contract = self.query(parameters)
             filtered = self.calculate(*dataframes, *args, **kwargs)
             size = self.size(filtered)
             string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
             self.logger.info(string)
             if self.empty(filtered): continue
-            return filtered
+            yield filtered
 
     @staticmethod
     def source(prospects, stabilities, *args, keys, **kwargs):
@@ -177,6 +184,11 @@ class StabilityFilter(Logging, Sizing, Emptying):
         prospects = prospects.where(prospects["stable"])
         prospects = prospects.reset_index(drop=True, inplace=False)
         return prospects
+
+    @property
+    def fields(self): return list(self.__query)
+    @property
+    def query(self): return self.__query
 
 
 

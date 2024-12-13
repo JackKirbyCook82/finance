@@ -14,9 +14,9 @@ from numbers import Number
 from scipy.stats import norm
 
 from finance.variables import Variables, Querys
-from support.calculations import Calculation, Equation, Variable
 from support.mixins import Emptying, Sizing, Logging, Separating
-from support.meta import RegistryMeta
+from support.calculations import Calculation, Equation, Variable
+from support.meta import RegistryMeta, ParameterMeta
 from support.files import File
 
 __version__ = "1.0.0"
@@ -26,18 +26,13 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class SecurityFile(File, ABC, datatype=pd.DataFrame):
+class SecurityParameters(object, metaclass=ParameterMeta):
     formatters = {"instrument": int, "option": int, "position": int, "strike": lambda strike: round(strike, 2), "underlying": lambda underlying: round(underlying, 2)}
     types = {"ticker": str, "strike": np.float32, "price": np.float32, "underlying": np.float32, "size": np.float32, "volume": np.float32, "interest": np.float32}
     parsers = {"instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}
     dates = {"current": "%Y%m%d-%H%M", "expire": "%Y%m%d"}
 
-    @staticmethod
-    def filename(*args, query, **kwargs):
-        ticker = str(query.ticker).upper()
-        expire = str(query.expire.strftime("%Y%m%d"))
-        return "_".join([ticker, expire])
-
+class SecurityFile(File, ABC, **dict(SecurityParameters)): pass
 class StockFile(SecurityFile, variable=Variables.Instruments.STOCK): pass
 class OptionFile(SecurityFile, variable=Variables.Instruments.OPTION): pass
 
@@ -95,23 +90,24 @@ class OptionCalculator(Logging, Sizing, Emptying, Separating):
     def __init__(self, *args, assumptions, **kwargs):
         try: super().__init__(*args, **kwargs)
         except TypeError: super().__init__()
-        self.calculation = PricingCalculation[assumptions.pricing](*args, **kwargs)
-        self.sizing = dict(assumptions.sizing)
-        self.current = assumptions.timing.current
-        self.pricing = assumptions.pricing
-        self.query = Querys.Contract
+        self.__calculation = PricingCalculation[assumptions.pricing](*args, **kwargs)
+        self.__sizing = lambda cols: dict(assumptions.sizing)
+        self.__current = assumptions.timing.current
+        self.__pricing = assumptions.pricing
+        self.__query = Querys.Contract
 
     def execute(self, exposures, statistics, *args, **kwargs):
+        assert isinstance(exposures, pd.DataFrame) and isinstance(statistics, pd.DataFrame)
         if self.empty(exposures): return
         exposures = self.exposures(exposures, statistics, *args, **kwargs)
-        for group, dataframe in self.separate(exposures, *args, keys=list(self.query), **kwargs):
-            contract = self.query(group)
+        for parameters, dataframe in self.separate(exposures, *args, fields=self.fields, **kwargs):
+            contract = self.query(parameters)
             options = self.calculate(dataframe, *args, **kwargs)
             size = self.size(options)
             string = f"Calculated: {repr(self)}|{str(contract)}[{int(size):.0f}]"
             self.logger.info(string)
-            if self.empty(options): return
-            return options
+            if self.empty(options): continue
+            yield options
 
     def calculate(self, exposures, *args, **kwargs):
         assert isinstance(exposures, pd.DataFrame)
@@ -128,6 +124,18 @@ class OptionCalculator(Logging, Sizing, Emptying, Separating):
         exposures["current"] = pd.to_datetime(self.current)
         return exposures
 
+    @property
+    def fields(self): return list(self.__query)
+    @property
+    def calculation(self): return self.__calculation
+    @property
+    def current(self): return self.__current
+    @property
+    def pricing(self): return self.__pricing
+    @property
+    def sizing(self): return self.__sizing
+    @property
+    def query(self): return self.__query
 
 
 

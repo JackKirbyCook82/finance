@@ -16,8 +16,8 @@ from functools import reduce
 from collections import namedtuple as ntuple
 
 from finance.variables import Variables, Querys
-from support.calculations import Calculation, Equation, Variable
 from support.mixins import Emptying, Sizing, Logging, Separating
+from support.calculations import Calculation, Equation, Variable
 from support.meta import RegistryMeta
 
 __version__ = "1.0.0"
@@ -103,13 +103,14 @@ class StrategyCalculator(Logging, Sizing, Emptying, Separating):
         strategies = list(dict(StrategyCalculation).keys()) if not bool(strategies) else list(strategies)
         calculations = dict(StrategyCalculation).items()
         calculations = {strategy: calculation(*args, **kwargs) for strategy, calculation in calculations if strategy in strategies}
-        self.calculations = calculations
-        self.query = Querys.Contract
+        self.__calculations = calculations
+        self.__query = Querys.Contract
 
     def execute(self, options, *args, **kwargs):
+        assert isinstance(options, pd.DataFrame)
         if self.empty(options): return
-        for group, dataframe in self.separate(options, *args, keys=list(self.query), **kwargs):
-            contract = self.query(group)
+        for parameters, dataframe in self.separate(options, *args, fields=self.fields, **kwargs):
+            contract = self.query(parameters)
             contents = dict(self.options(dataframe, *args, **kwargs))
             for strategy, strategies in self.calculate(contents, *args, **kwargs):
                 size = self.size(strategies, "size")
@@ -146,6 +147,11 @@ class StrategyCalculator(Logging, Sizing, Emptying, Separating):
             for field in list(Querys.Contract): strategies = strategies.expand_dims(field)
             yield strategy, strategies
 
-
+    @property
+    def fields(self): return list(self.__query)
+    @property
+    def calculations(self): return self.__calculations
+    @property
+    def query(self): return self.__query
 
 

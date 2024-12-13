@@ -12,6 +12,7 @@ import pandas as pd
 
 from finance.variables import Variables, Querys
 from support.mixins import Emptying, Sizing, Logging, Separating
+from support.meta import ParameterMeta
 from support.files import File
 
 __version__ = "1.0.0"
@@ -22,29 +23,27 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-class HoldingFile(File, variable="holdings", datatype=pd.DataFrame):
+class HoldingParameters(object, metaclass=ParameterMeta):
     parsers = {"instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}
     formatters = {"instrument": int, "option": int, "position": int, "strike": lambda strike: round(strike, 2)}
     types = {"ticker": str, "strike": np.float32, "quantity": np.int32}
     dates = {"expire": "%Y%m%d"}
 
-    @staticmethod
-    def filename(*args, query, **kwargs):
-        ticker = str(query.ticker).upper()
-        expire = str(query.expire.strftime("%Y%m%d"))
-        return "_".join([ticker, expire])
+class HoldingFile(File, variable="holdings", **dict(HoldingParameters)):
+    pass
 
 
 class HoldingCalculator(Logging, Sizing, Emptying, Separating):
     def __init__(self, *args, **kwargs):
         try: super().__init__(*args, **kwargs)
         except TypeError: super().__init__()
-        self.query = Querys.Contract
+        self.__query = Querys.Contract
 
     def execute(self, prospects, *args, **kwargs):
+        assert isinstance(prospects, pd.DataFrame)
         if self.empty(prospects): return
-        for group, dataframe in self.separate(prospects, *args, keys=list(self.query), **kwargs):
-            contract = self.query(group)
+        for parameters, dataframe in self.separate(prospects, *args, fields=self.fields, **kwargs):
+            contract = self.query(parameters)
             holdings = self.calculate(dataframe, *args, **kwargs)
             size = self.size(holdings)
             string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
@@ -82,5 +81,8 @@ class HoldingCalculator(Logging, Sizing, Emptying, Separating):
         stocks = valuations.apply(function, axis=1, result_type="expand")
         return stocks
 
-
+    @property
+    def fields(self): return list(self.__query)
+    @property
+    def query(self): return self.__query
 

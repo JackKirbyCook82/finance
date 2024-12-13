@@ -23,12 +23,13 @@ class ExposureCalculator(Logging, Sizing, Emptying, Separating):
     def __init__(self, *args, **kwargs):
         try: super().__init__(*args, **kwargs)
         except TypeError: super().__init__()
-        self.query = Querys.Contract
+        self.__query = Querys.Contract
 
     def execute(self, holdings, *args, **kwargs):
+        assert isinstance(holdings, pd.DataFrame)
         if self.empty(holdings): return
-        for group, dataframe in self.separate(holdings, *args, keys=list(self.query), **kwargs):
-            contract = self.query(group)
+        for parameters, dataframe in self.separate(holdings, *args, fields=self.fields, **kwargs):
+            contract = self.query(parameters)
             exposures = self.calculate(dataframe, *args, **kwargs)
             size = self.size(exposures)
             string = f"Calculated: {repr(self)}|{str(contract)}[{int(size):.0f}]"
@@ -102,4 +103,7 @@ class ExposureCalculator(Logging, Sizing, Emptying, Separating):
         exposures = exposures.reset_index(drop=True, inplace=False)
         return exposures
 
-
+    @property
+    def fields(self): return list(self.__query)
+    @property
+    def query(self): return self.__query

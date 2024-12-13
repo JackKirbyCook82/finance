@@ -14,8 +14,8 @@ from abc import ABC
 from collections import namedtuple as ntuple
 
 from finance.variables import Variables, Querys
-from support.calculations import Calculation, Equation, Variable
 from support.mixins import Emptying, Sizing, Logging, Separating
+from support.calculations import Calculation, Equation, Variable
 from support.meta import RegistryMeta
 
 __version__ = "1.0.0"
@@ -70,15 +70,16 @@ class ValuationCalculator(Logging, Sizing, Emptying, Separating):
         Identity = ntuple("Identity", "valuation scenario")
         calculations = {Identity(*identity): calculation for identity, calculation in dict(ValuationCalculation).items()}
         calculations = {identity.scenario: calculation for identity, calculation in calculations.items() if identity.valuation == valuation}
-        self.calculations = {scenario: calculation(*args, **kwargs) for scenario, calculation in calculations.items()}
-        self.valuation = valuation
-        self.query = Querys.Contract
+        self.__calculations = {scenario: calculation(*args, **kwargs) for scenario, calculation in calculations.items()}
+        self.__valuation = valuation
+        self.__query = Querys.Contract
 
     def execute(self, strategies, *args, **kwargs):
+        assert isinstance(strategies, (list, xr.Dataset))
         if self.empty(strategies, "size"): return
-        for group, dataset in self.separate(strategies, *args, keys=list(self.query), **kwargs):
+        for parameters, dataset in self.separate(strategies, *args, fields=self.fields, **kwargs):
             if self.empty(dataset, "size"): continue
-            contract = self.query(group)
+            contract = self.query(parameters)
             valuations = self.calculate(dataset, *args, **kwargs)
             size = self.size(valuations)
             string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
@@ -104,18 +105,6 @@ class ValuationCalculator(Logging, Sizing, Emptying, Separating):
             yield scenario, valuations
 
     @staticmethod
-    def source(strategies, *args, **kwargs):
-        assert isinstance(strategies, (list, xr.Dataset))
-        assert all([isinstance(dataset, xr.Dataset) for dataset in strategies]) if isinstance(strategies, list) else True
-        strategies = [strategies] if isinstance(strategies, xr.Dataset) else strategies
-        strategies = [datasets.expand_dims("ticker").expand_dims("expire").stack(contract=["ticker", "expire"]) for datasets in strategies]
-        strategies = ([contract, dataset] for datasets in strategies for contract, dataset in datasets.groupby("contract"))
-        for contract, dataset in strategies:
-            contract = Querys.Contract(list(contract))
-            dataset = dataset.unstack().drop_vars("contract")
-            yield contract, dataset
-
-    @staticmethod
     def valuations(scenarios, *args, **kwargs):
         assert isinstance(scenarios, dict)
         for scenario, dataset in scenarios.items():
@@ -125,6 +114,14 @@ class ValuationCalculator(Logging, Sizing, Emptying, Separating):
             dataframe = dataframe.reset_index(drop=False, inplace=False)
             yield scenario, dataframe
 
+    @property
+    def fields(self): return list(self.__query)
+    @property
+    def calculations(self): return self.__calculations
+    @property
+    def valuation(self): return self.__valuation
+    @property
+    def query(self): return self.__query
 
 
 
