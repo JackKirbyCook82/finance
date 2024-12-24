@@ -65,8 +65,7 @@ class MaximumArbitrageCalculation(ArbitrageCalculation, equation=MaximumArbitrag
 
 class ValuationCalculator(Logging, Sizing, Emptying, Separating):
     def __init__(self, *args, valuation, **kwargs):
-        try: super().__init__(*args, **kwargs)
-        except TypeError: super().__init__()
+        super().__init__(*args, **kwargs)
         Identity = ntuple("Identity", "valuation scenario")
         calculations = {Identity(*identity): calculation for identity, calculation in dict(ValuationCalculation).items()}
         calculations = {identity.scenario: calculation for identity, calculation in calculations.items() if identity.valuation == valuation}

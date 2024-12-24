@@ -77,8 +77,7 @@ class ProspectLayout(ProspectParameters):
 class ProspectCalculator(Logging, Sizing, Emptying, Separating):
     def __init__(self, *args, priority, header, **kwargs):
         assert callable(priority)
-        try: super().__init__(*args, **kwargs)
-        except TypeError: super().__init__()
+        super().__init__(*args, **kwargs)
         self.__counter = count(start=1, step=1)
         self.__query = Querys.Contract
         self.__priority = priority
@@ -122,8 +121,7 @@ class ProspectCalculator(Logging, Sizing, Emptying, Separating):
 class ProspectReader(Reader, query=Querys.Contract):
     def __init__(self, *args, status, **kwargs):
         assert isinstance(status, list) and all([isinstance(value, Variables.Status) for value in status])
-        try: super().__init__(*args, **kwargs)
-        except TypeError: super().__init__()
+        super().__init__(*args, **kwargs)
         self.__status = status
 
     def take(self, status):
@@ -147,8 +145,7 @@ class ProspectReader(Reader, query=Querys.Contract):
 class ProspectDiscarding(Routine, query=Querys.Contract):
     def __init__(self, *args, status, **kwargs):
         assert isinstance(status, list) and all([isinstance(value, Variables.Status) for value in status])
-        try: super().__init__(*args, **kwargs)
-        except TypeError: super().__init__()
+        super().__init__(*args, **kwargs)
         self.__status = status
 
     def take(self, status):
@@ -173,8 +170,7 @@ class ProspectProtocols(Routine, query=Querys.Contract):
         assert isinstance(protocols, dict)
         assert all([callable(protocol) for protocol in protocols.keys()])
         assert all([status in Variables.Status for status in protocols.values()])
-        try: super().__init__(*args, **kwargs)
-        except TypeError: super().__init__()
+        super().__init__(*args, **kwargs)
         self.__protocols = dict(protocols)
 
     def invoke(self, *args, **kwargs):
@@ -190,8 +186,7 @@ class ProspectProtocols(Routine, query=Querys.Contract):
 class ProspectWriter(Writer, query=Querys.Contract):
     def __init__(self, *args, status, **kwargs):
         assert isinstance(status, Variables.Status)
-        try: super().__init__(*args, **kwargs)
-        except TypeError: super().__init__()
+        super().__init__(*args, **kwargs)
         self.__status = status
 
     def detach(self, query):

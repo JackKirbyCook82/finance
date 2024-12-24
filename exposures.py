@@ -21,8 +21,7 @@ __license__ = "MIT License"
 
 class ExposureCalculator(Logging, Sizing, Emptying, Separating):
     def __init__(self, *args, **kwargs):
-        try: super().__init__(*args, **kwargs)
-        except TypeError: super().__init__()
+        super().__init__(*args, **kwargs)
         self.__query = Querys.Contract
 
     def execute(self, holdings, *args, **kwargs):

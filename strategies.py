@@ -98,8 +98,7 @@ class CollarShortCalculation(CollarCalculation, equation=CollarShortEquation, re
 class StrategyCalculator(Logging, Sizing, Emptying, Separating):
     def __init__(self, *args, strategies=[], **kwargs):
         assert all([strategy in list(Variables.Strategies) for strategy in list(strategies)])
-        try: super().__init__(*args, **kwargs)
-        except TypeError: super().__init__()
+        super().__init__(*args, **kwargs)
         strategies = list(dict(StrategyCalculation).keys()) if not bool(strategies) else list(strategies)
         calculations = dict(StrategyCalculation).items()
         calculations = {strategy: calculation(*args, **kwargs) for strategy, calculation in calculations if strategy in strategies}

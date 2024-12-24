@@ -59,8 +59,7 @@ class StabilityCalculation(Calculation, equation=StabilityEquation):
 
 class StabilityCalculator(Logging, Sizing, Emptying):
     def __init__(self, *args, **kwargs):
-        try: super().__init__(*args, **kwargs)
-        except TypeError: super().__init__()
+        super().__init__(*args, **kwargs)
         self.__calculation = StabilityCalculation(*args, **kwargs)
         self.__query = Querys.Contract
 
@@ -151,8 +150,7 @@ class StabilityCalculator(Logging, Sizing, Emptying):
 
 class StabilityFilter(Logging, Sizing, Emptying):
     def __init__(self, *args, **kwargs):
-        try: super().__init__(*args, **kwargs)
-        except TypeError: super().__init__()
+        super().__init__(*args, **kwargs)
         self.__query = Querys.Contract
 
     def execute(self, prospects, stabilities, *args, **kwargs):

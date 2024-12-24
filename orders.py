@@ -23,8 +23,7 @@ __logger__ = logging.getLogger(__name__)
 
 class OrderCalculator(Logging, Sizing, Emptying, Separating):
     def __init__(self, *args, **kwargs):
-        try: super().__init__(*args, **kwargs)
-        except TypeError: super().__init__()
+        super().__init__(*args, **kwargs)
         self.__query = Querys.Contract
 
     def execute(self, prospects, *args, **kwargs):
