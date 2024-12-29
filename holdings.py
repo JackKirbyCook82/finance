@@ -26,6 +26,7 @@ __logger__ = logging.getLogger(__name__)
 class HoldingParameters(object, metaclass=DictionaryMeta):
     parsers = {"instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}
     formatters = {"instrument": int, "option": int, "position": int, "strike": lambda strike: round(strike, 2)}
+    order = ["ticker", "expire", "strike", "instrument", "option", "position", "quantity"]
     types = {"ticker": str, "strike": np.float32, "quantity": np.int32}
     dates = {"expire": "%Y%m%d"}
 

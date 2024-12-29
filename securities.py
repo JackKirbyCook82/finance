@@ -27,6 +27,7 @@ __license__ = "MIT License"
 
 
 class SecurityParameters(object, metaclass=DictionaryMeta):
+    order = ["ticker", "expire", "strike", "price", "underlying", "volume", "size", "interest", "instrument", "option", "position", "current"]
     formatters = {"instrument": int, "option": int, "position": int, "strike": lambda strike: round(strike, 2), "underlying": lambda underlying: round(underlying, 2)}
     types = {"ticker": str, "strike": np.float32, "price": np.float32, "underlying": np.float32, "size": np.float32, "volume": np.float32, "interest": np.float32}
     parsers = {"instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}

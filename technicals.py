@@ -25,6 +25,7 @@ __license__ = "MIT License"
 
 
 class TechnicalParameters(object, metaclass=DictionaryMeta):
+    order = ["ticker", "date", "price", "open", "close", "high", "low", "trend", "volatility", "oscillator"]
     types = {"ticker": str, "volume": np.int64} | {column: np.float32 for column in ("price", "open", "close", "high", "low")}
     types.update({"trend": np.float32, "volatility": np.float32, "oscillator": np.float32})
     dates = {"date": "%Y%m%d"}
