@@ -12,7 +12,7 @@ import pandas as pd
 
 from finance.variables import Variables, Querys
 from support.mixins import Emptying, Sizing, Logging, Separating
-from support.meta import DictionaryMeta
+from support.meta import MappingMeta
 from support.files import File
 
 __version__ = "1.0.0"
@@ -23,18 +23,19 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-class HoldingParameters(object, metaclass=DictionaryMeta):
-    parsers = {"instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}
+class HoldingParameters(metaclass=MappingMeta):
     formatters = {"instrument": int, "option": int, "position": int, "strike": lambda strike: round(strike, 2)}
+    parsers = {"instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}
     order = ["ticker", "expire", "strike", "instrument", "option", "position", "quantity"]
     types = {"ticker": str, "strike": np.float32, "quantity": np.int32}
     dates = {"expire": "%Y%m%d"}
+
 
 class HoldingFile(File, variable="holdings", **dict(HoldingParameters)):
     pass
 
 
-class HoldingCalculator(Logging, Sizing, Emptying, Separating):
+class HoldingCalculator(Separating, Sizing, Emptying, Logging):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.__query = Querys.Contract

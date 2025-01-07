@@ -38,9 +38,9 @@ Scenarios = Variable("Scenarios", ["MINIMUM", "MAXIMUM"])
 Valuations = Variable("Valuations", ["ARBITRAGE"])
 Pricing = Variable("Pricing", ["BLACKSCHOLES"])
 
-OrderTypes = Variable("PriceType", ["MARKET", "LIMIT", "STOP", "STOPLIMIT", "LIMITDEBIT", "LIMITCREDIT"], start=1)
-TradeTypes = Variable("TradeType", ["OPEN", "CLOSE"], start=1)
-ActionTypes = Variable("Action", ["BUY", "SELL"], start=1)
+Orders = Variable("Order", ["MARKET", "LIMIT", "STOP", "STOPLIMIT", "LIMITDEBIT", "LIMITCREDIT"], start=1)
+Trades = Variable("Trade", ["OPEN", "CLOSE"], start=1)
+Actions = Variable("Action", ["BUY", "SELL"], start=1)
 
 Markets = Variable("Markets", ["EMPTY", "BEAR", "BULL"], start=0)
 Instruments = Variable("Instruments", ["EMPTY", "STOCK", "OPTION"], start=0)
@@ -99,9 +99,9 @@ class Variables:
     Instruments = Instruments
     Options = Options
     Positions = Positions
-    ActionTypes = ActionTypes
-    OrderTypes = OrderTypes
-    TradeTypes = TradeTypes
+    Actions = Actions
+    Orders = Orders
+    Trades = Trades
     Spreads = Spreads
     Valuations = Valuations
     Technicals = Technicals

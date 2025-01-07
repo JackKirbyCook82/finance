@@ -63,7 +63,7 @@ class MinimumArbitrageCalculation(ArbitrageCalculation, equation=MinimumArbitrag
 class MaximumArbitrageCalculation(ArbitrageCalculation, equation=MaximumArbitrageEquation, register=(Variables.Valuations.ARBITRAGE, Variables.Scenarios.MAXIMUM)): pass
 
 
-class ValuationCalculator(Logging, Sizing, Emptying, Separating):
+class ValuationCalculator(Separating, Sizing, Emptying, Logging):
     def __init__(self, *args, valuation, **kwargs):
         super().__init__(*args, **kwargs)
         Identity = ntuple("Identity", "valuation scenario")

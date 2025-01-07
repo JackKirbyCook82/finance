@@ -57,7 +57,7 @@ class StabilityCalculation(Calculation, equation=StabilityEquation):
             yield equation.Σml(portfolios)
 
 
-class StabilityCalculator(Logging, Sizing, Emptying):
+class StabilityCalculator(Sizing, Emptying, Logging):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.__calculation = StabilityCalculation(*args, **kwargs)
@@ -148,7 +148,7 @@ class StabilityCalculator(Logging, Sizing, Emptying):
     def query(self): return self.__query
 
 
-class StabilityFilter(Logging, Sizing, Emptying):
+class StabilityFilter(Sizing, Emptying, Logging):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.__query = Querys.Contract

@@ -74,7 +74,7 @@ class ProspectLayout(ProspectParameters):
         return instance
 
 
-class ProspectCalculator(Logging, Sizing, Emptying, Separating):
+class ProspectCalculator(Separating, Sizing, Emptying, Logging):
     def __init__(self, *args, priority, header, **kwargs):
         assert callable(priority)
         super().__init__(*args, **kwargs)

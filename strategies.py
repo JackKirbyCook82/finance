@@ -95,7 +95,7 @@ class CollarLongCalculation(CollarCalculation, equation=CollarLongEquation, regi
 class CollarShortCalculation(CollarCalculation, equation=CollarShortEquation, register=Variables.Strategies.Collar.Short): pass
 
 
-class StrategyCalculator(Logging, Sizing, Emptying, Separating):
+class StrategyCalculator(Separating, Sizing, Emptying, Logging):
     def __init__(self, *args, strategies=[], **kwargs):
         assert all([strategy in list(Variables.Strategies) for strategy in list(strategies)])
         super().__init__(*args, **kwargs)

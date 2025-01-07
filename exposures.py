@@ -19,7 +19,7 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class ExposureCalculator(Logging, Sizing, Emptying, Separating):
+class ExposureCalculator(Separating, Sizing, Emptying, Logging):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.__query = Querys.Contract

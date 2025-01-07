@@ -21,7 +21,7 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-class OrderCalculator(Logging, Sizing, Emptying, Separating):
+class OrderCalculator(Separating, Sizing, Emptying, Logging):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.__query = Querys.Contract

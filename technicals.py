@@ -14,7 +14,7 @@ from abc import ABC
 from finance.variables import Querys, Variables
 from support.mixins import Emptying, Sizing, Logging, Separating
 from support.calculations import Calculation, Equation, Variable
-from support.meta import RegistryMeta, DictionaryMeta
+from support.meta import RegistryMeta, MappingMeta
 from support.files import File
 
 __version__ = "1.0.0"
@@ -24,7 +24,7 @@ __copyright__ = "Copyright 2024, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class TechnicalParameters(object, metaclass=DictionaryMeta):
+class TechnicalParameters(metaclass=MappingMeta):
     order = ["ticker", "date", "price", "open", "close", "high", "low", "trend", "volatility", "oscillator"]
     types = {"ticker": str, "volume": np.int64} | {column: np.float32 for column in ("price", "open", "close", "high", "low")}
     types.update({"trend": np.float32, "volatility": np.float32, "oscillator": np.float32})
@@ -72,7 +72,7 @@ class StochasticCalculation(TechnicalCalculation, equation=StochasticEquation, r
             yield equation.xk()
 
 
-class TechnicalCalculator(Logging, Sizing, Emptying, Separating):
+class TechnicalCalculator(Separating, Sizing, Emptying, Logging):
     def __init__(self, *args, technical, **kwargs):
         assert technical in list(Variables.Technicals)
         super().__init__(*args, **kwargs)

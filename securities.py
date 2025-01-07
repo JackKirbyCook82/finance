@@ -16,7 +16,7 @@ from scipy.stats import norm
 from finance.variables import Variables, Querys
 from support.mixins import Emptying, Sizing, Logging, Separating
 from support.calculations import Calculation, Equation, Variable
-from support.meta import RegistryMeta, DictionaryMeta
+from support.meta import RegistryMeta, MappingMeta
 from support.files import File
 
 __version__ = "1.0.0"
@@ -26,11 +26,11 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class SecurityParameters(object, metaclass=DictionaryMeta):
-    order = ["ticker", "expire", "strike", "price", "underlying", "volume", "size", "interest", "instrument", "option", "position", "current"]
+class SecurityParameters(metaclass=MappingMeta):
     formatters = {"instrument": int, "option": int, "position": int, "strike": lambda strike: round(strike, 2), "underlying": lambda underlying: round(underlying, 2)}
-    types = {"ticker": str, "strike": np.float32, "price": np.float32, "underlying": np.float32, "size": np.float32, "volume": np.float32, "interest": np.float32}
     parsers = {"instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}
+    order = ["ticker", "expire", "strike", "price", "underlying", "volume", "size", "interest", "instrument", "option", "position", "current"]
+    types = {"ticker": str, "strike": np.float32, "price": np.float32, "underlying": np.float32, "size": np.float32, "volume": np.float32, "interest": np.float32}
     dates = {"current": "%Y%m%d-%H%M", "expire": "%Y%m%d"}
 
 class SecurityFile(File, ABC, **dict(SecurityParameters)): pass
@@ -87,7 +87,7 @@ class BlackScholesCalculation(PricingCalculation, equation=BlackScholesEquation,
             yield equation.yo()
 
 
-class OptionCalculator(Logging, Sizing, Emptying, Separating):
+class OptionCalculator(Separating, Sizing, Emptying, Logging):
     def __init__(self, *args, assumptions, **kwargs):
         super().__init__(*args, **kwargs)
         self.__calculation = PricingCalculation[assumptions.pricing](*args, **kwargs)
