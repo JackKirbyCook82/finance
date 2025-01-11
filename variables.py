@@ -64,22 +64,14 @@ CollarShort = Strategy("CollarShort", [Spreads.COLLAR, Options.EMPTY, Positions.
 
 
 class Securities(contents=[StockLong, StockShort, OptionPutLong, OptionPutShort, OptionCallLong, OptionCallShort], metaclass=VariablesMeta):
-    Options = [OptionPutLong, OptionCallLong, OptionPutShort, OptionCallShort]
-    Puts = [OptionPutLong, OptionPutShort]
-    Calls = [OptionCallLong, OptionCallShort]
-    Stocks = [StockLong, StockShort]
-
-    class Stock: Long = StockLong; Short = StockShort
-    class Option:
-        class Put: Long = OptionPutLong; Short = OptionPutShort
-        class Call: Long = OptionCallLong; Short = OptionCallShort
+    class Stocks: Long = StockLong; Short = StockShort
+    class Options:
+        class Puts: Long = OptionPutLong; Short = OptionPutShort
+        class Calls: Long = OptionCallLong; Short = OptionCallShort
 
 class Strategies(contents=[VerticalPut, VerticalCall, CollarLong, CollarShort], metaclass=VariablesMeta):
-    Verticals = [VerticalPut, VerticalCall]
-    Collars = [CollarLong, CollarShort]
-
-    class Vertical: Put = VerticalPut; Call = VerticalCall
-    class Collar: Long = CollarLong; Short = CollarShort
+    class Verticals: Put = VerticalPut; Call = VerticalCall
+    class Collars: Long = CollarLong; Short = CollarShort
 
 
 class Querys:
@@ -90,8 +82,6 @@ class Querys:
 
 class Variables:
     Scenarios = Scenarios
-    Securities = Securities
-    Strategies = Strategies
     Security = Security
     Strategy = Strategy
     Markets = Markets

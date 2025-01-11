@@ -49,8 +49,8 @@ class OrderCalculator(Separating, Sizing, Emptying, Logging):
     def orders(self, prospects, *args, **kwargs):
         assert isinstance(prospects, pd.DataFrame)
         for index, series in prospects.iterrows():
-            stocks = self.securities(series, *args, columns=list(map(str, Variables.Securities.Stocks)), **kwargs)
-            options = self.securities(series, *args, columns=list(map(str, Variables.Securities.Options)), **kwargs)
+#            stocks = self.securities(series, *args, columns=list(map(str, Variables.Securities.Stocks)), **kwargs)
+#            options = self.securities(series, *args, columns=list(map(str, Variables.Securities.Options)), **kwargs)
             virtuals = self.virtuals(stocks, *args, **kwargs)
             allocations = pd.concat([options, virtuals], axis=0).dropna(how="any", inplace=False)
             allocations = allocations.reset_index(drop=True, inplace=False)
@@ -60,8 +60,8 @@ class OrderCalculator(Separating, Sizing, Emptying, Logging):
     def prospects(prospects, *args, **kwargs):
         assert isinstance(prospects, pd.DataFrame)
         strategy = lambda cols: list(map(str, cols["strategy"].stocks))
-        function = lambda cols: {stock: cols["underlying"] if stock in strategy(cols) else np.NaN for stock in list(map(str, Variables.Securities.Stocks))}
-        columns = list(Querys.Contract) + list(map(str, Variables.Securities.Options)) + ["order", "valuation", "strategy", "underlying"]
+#        function = lambda cols: {stock: cols["underlying"] if stock in strategy(cols) else np.NaN for stock in list(map(str, Variables.Securities.Stocks))}
+#        columns = list(Querys.Contract) + list(map(str, Variables.Securities.Options)) + ["order", "valuation", "strategy", "underlying"]
         options = prospects[columns]
         options = options.droplevel("scenario", axis=1)
         stocks = options.apply(function, axis=1, result_type="expand")
@@ -71,7 +71,7 @@ class OrderCalculator(Separating, Sizing, Emptying, Logging):
     @staticmethod
     def securities(prospects, *args, columns, **kwargs):
         assert isinstance(prospects, pd.Series)
-        function = lambda cols: list(Variables.Securities(cols["security"])) + [1]
+#        function = lambda cols: list(Variables.Securities(cols["security"])) + [1]
         dataframe = prospects[columns].to_frame("strike")
         dataframe = dataframe.reset_index(names="security", drop=False, inplace=False)
         security = list(Variables.Security) + ["quantity"]

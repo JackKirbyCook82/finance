@@ -89,15 +89,15 @@ class StrategyCalculation(Calculation, metaclass=RegistryMeta):
 
 class VerticalCalculation(StrategyCalculation): pass
 class CollarCalculation(StrategyCalculation): pass
-class VerticalPutCalculation(VerticalCalculation, equation=VerticalPutEquation, register=Variables.Strategies.Vertical.Put): pass
-class VerticalCallCalculation(VerticalCalculation, equation=VerticalCallEquation, register=Variables.Strategies.Vertical.Call): pass
-class CollarLongCalculation(CollarCalculation, equation=CollarLongEquation, register=Variables.Strategies.Collar.Long): pass
-class CollarShortCalculation(CollarCalculation, equation=CollarShortEquation, register=Variables.Strategies.Collar.Short): pass
+# class VerticalPutCalculation(VerticalCalculation, equation=VerticalPutEquation, register=Variables.Strategies.Vertical.Put): pass
+# class VerticalCallCalculation(VerticalCalculation, equation=VerticalCallEquation, register=Variables.Strategies.Vertical.Call): pass
+# class CollarLongCalculation(CollarCalculation, equation=CollarLongEquation, register=Variables.Strategies.Collar.Long): pass
+# class CollarShortCalculation(CollarCalculation, equation=CollarShortEquation, register=Variables.Strategies.Collar.Short): pass
 
 
 class StrategyCalculator(Separating, Sizing, Emptying, Logging):
     def __init__(self, *args, strategies=[], **kwargs):
-        assert all([strategy in list(Variables.Strategies) for strategy in list(strategies)])
+#        assert all([strategy in list(Variables.Strategies) for strategy in list(strategies)])
         super().__init__(*args, **kwargs)
         strategies = list(dict(StrategyCalculation).keys()) if not bool(strategies) else list(strategies)
         calculations = dict(StrategyCalculation).items()
@@ -122,7 +122,7 @@ class StrategyCalculator(Separating, Sizing, Emptying, Logging):
         assert isinstance(options, pd.DataFrame)
         for security, dataframe in options.groupby(list(Variables.Security), sort=False):
             if self.empty(dataframe): continue
-            security = Variables.Securities(security)
+#            security = Variables.Securities(security)
             dataframe = dataframe.set_index(list(Querys.Product), drop=True, inplace=False)
             columns = [column for column in list(Variables.Security) if column in dataframe.columns]
             dataframe = dataframe.drop(columns, axis=1)

@@ -29,8 +29,8 @@ class ProspectParameters(object):
     invariants = ["underlying", "size", "current"]
     prospect = ["order", "priority", "status"]
     context = ["valuation", "strategy"]
-    options = list(map(str, Variables.Securities.Options))
-    stocks = list(map(str, Variables.Securities.Stocks))
+#    options = list(map(str, Variables.Securities.Options))
+#    stocks = list(map(str, Variables.Securities.Stocks))
     contract = list(map(str, Querys.Contract))
 
 
