@@ -9,12 +9,12 @@ Created on Sun Jan 28 2024
 import numbers
 import datetime
 
-from support.variables import VariablesMeta, Variables, Variable
+from support.variables import Category, Variables, Variable
 from support.querys import Field, Query
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["Variables", "Querys", "Scenarios"]
+__all__ = ["Categories", "Variables", "Querys", "Scenarios"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
@@ -63,16 +63,20 @@ CollarLong = Strategy("CollarLong", [Spreads.COLLAR, Options.EMPTY, Positions.LO
 CollarShort = Strategy("CollarShort", [Spreads.COLLAR, Options.EMPTY, Positions.SHORT], options=[OptionCallLong, OptionPutShort], stocks=[StockShort])
 
 
-class Securities(contents=[StockLong, StockShort, OptionPutLong, OptionPutShort, OptionCallLong, OptionCallShort], metaclass=VariablesMeta):
-    class Stocks: Long = StockLong; Short = StockShort
-    class Options:
-        class Puts: Long = OptionPutLong; Short = OptionPutShort
-        class Calls: Long = OptionCallLong; Short = OptionCallShort
+class Securities(Category):
+    class Stocks(Category): Long = StockLong; Short = StockShort
+    class Options(Category):
+        class Puts(Category): Long = OptionPutLong; Short = OptionPutShort
+        class Calls(Category): Long = OptionCallLong; Short = OptionCallShort
 
-class Strategies(contents=[VerticalPut, VerticalCall, CollarLong, CollarShort], metaclass=VariablesMeta):
-    class Verticals: Put = VerticalPut; Call = VerticalCall
-    class Collars: Long = CollarLong; Short = CollarShort
+class Strategies(Category):
+    class Verticals(Category): Put = VerticalPut; Call = VerticalCall
+    class Collars(Category): Long = CollarLong; Short = CollarShort
 
+
+class Categories:
+    Securities = Securities
+    Strategies = Strategies
 
 class Querys:
     Product = Product

@@ -15,7 +15,7 @@ from itertools import product
 from functools import reduce
 from collections import namedtuple as ntuple
 
-from finance.variables import Variables, Querys
+from finance.variables import Variables, Categories, Querys
 from support.mixins import Emptying, Sizing, Logging, Separating
 from support.calculations import Calculation, Equation, Variable
 from support.meta import RegistryMeta
@@ -89,15 +89,15 @@ class StrategyCalculation(Calculation, metaclass=RegistryMeta):
 
 class VerticalCalculation(StrategyCalculation): pass
 class CollarCalculation(StrategyCalculation): pass
-# class VerticalPutCalculation(VerticalCalculation, equation=VerticalPutEquation, register=Variables.Strategies.Vertical.Put): pass
-# class VerticalCallCalculation(VerticalCalculation, equation=VerticalCallEquation, register=Variables.Strategies.Vertical.Call): pass
-# class CollarLongCalculation(CollarCalculation, equation=CollarLongEquation, register=Variables.Strategies.Collar.Long): pass
-# class CollarShortCalculation(CollarCalculation, equation=CollarShortEquation, register=Variables.Strategies.Collar.Short): pass
+class VerticalPutCalculation(VerticalCalculation, equation=VerticalPutEquation, register=Categories.Strategies.Verticals.Put): pass
+class VerticalCallCalculation(VerticalCalculation, equation=VerticalCallEquation, register=Categories.Strategies.Verticals.Call): pass
+class CollarLongCalculation(CollarCalculation, equation=CollarLongEquation, register=Categories.Strategies.Collars.Long): pass
+class CollarShortCalculation(CollarCalculation, equation=CollarShortEquation, register=Categories.Strategies.Collars.Short): pass
 
 
 class StrategyCalculator(Separating, Sizing, Emptying, Logging):
     def __init__(self, *args, strategies=[], **kwargs):
-#        assert all([strategy in list(Variables.Strategies) for strategy in list(strategies)])
+        assert all([strategy in list(Categories.Strategies) for strategy in list(strategies)])
         super().__init__(*args, **kwargs)
         strategies = list(dict(StrategyCalculation).keys()) if not bool(strategies) else list(strategies)
         calculations = dict(StrategyCalculation).items()

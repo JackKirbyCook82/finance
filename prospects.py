@@ -11,7 +11,7 @@ import pandas as pd
 from functools import reduce
 from itertools import product, count
 
-from finance.variables import Variables, Querys
+from finance.variables import Variables, Categories, Querys
 from support.mixins import Emptying, Sizing, Logging, Separating
 from support.tables import Reader, Routine, Writer, Table
 
@@ -29,8 +29,8 @@ class ProspectParameters(object):
     invariants = ["underlying", "size", "current"]
     prospect = ["order", "priority", "status"]
     context = ["valuation", "strategy"]
-#    options = list(map(str, Variables.Securities.Options))
-#    stocks = list(map(str, Variables.Securities.Stocks))
+    options = list(map(str, Categories.Securities.Options))
+    stocks = list(map(str, Categories.Securities.Stocks))
     contract = list(map(str, Querys.Contract))
 
 

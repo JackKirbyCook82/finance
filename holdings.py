@@ -10,7 +10,7 @@ import logging
 import numpy as np
 import pandas as pd
 
-from finance.variables import Variables, Querys
+from finance.variables import Variables, Categories, Querys
 from support.mixins import Emptying, Sizing, Logging, Separating
 from support.meta import MappingMeta
 from support.files import File
@@ -64,10 +64,10 @@ class HoldingCalculator(Separating, Sizing, Emptying, Logging):
         assert isinstance(dataframe, pd.DataFrame)
         header = list(Querys.Product) + list(Variables.Security) + ["quantity"]
         columns = [column for column in list(header) if column in dataframe.columns]
-#        securities = dataframe[columns + list(map(str, Variables.Securities.Stocks)) + list(map(str, Variables.Securities.Options))]
-#        holdings = securities.melt(id_vars=list(Querys.Contract), value_vars=list(map(str, Variables.Securities)), var_name="security", value_name="strike")
+        securities = dataframe[columns + list(map(str, Categories.Securities.Stocks)) + list(map(str, Categories.Securities.Options))]
+        holdings = securities.melt(id_vars=list(Querys.Contract), value_vars=list(map(str, Categories.Securities)), var_name="security", value_name="strike")
         holdings = holdings.where(holdings["strike"].notna()).dropna(how="all", inplace=False)
-#        holdings["security"] = holdings["security"].apply(Variables.Securities)
+        holdings["security"] = holdings["security"].apply(Categories.Securities)
         holdings["instrument"] = holdings["security"].apply(lambda security: security.instrument)
         holdings["option"] = holdings["security"].apply(lambda security: security.option)
         holdings["position"] = holdings["security"].apply(lambda security: security.position)
@@ -78,7 +78,7 @@ class HoldingCalculator(Separating, Sizing, Emptying, Logging):
     def stocks(valuations, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame)
         strategy = lambda cols: list(map(str, cols["strategy"].stocks))
-#        function = lambda cols: {stock: cols["underlying"] if stock in strategy(cols) else np.NaN for stock in list(map(str, Variables.Securities.Stocks))}
+        function = lambda cols: {stock: cols["underlying"] if stock in strategy(cols) else np.NaN for stock in list(map(str, Categories.Securities.Stocks))}
         stocks = valuations.apply(function, axis=1, result_type="expand")
         return stocks
 
