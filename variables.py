@@ -32,15 +32,15 @@ Product = Query("Product", [Ticker, Expire, Strike], delimiter="|")
 Theta = Variable("Theta", ["PUT", "NEUTRAL", "CALL"], start=-1)
 Phi = Variable("Phi", ["SHORT", "NEUTRAL", "LONG"], start=-1)
 Omega = Variable("Omega", ["BEAR", "NEUTRAL", "BULL"], start=-1)
+
 Status = Variable("Status", ["PROSPECT", "PENDING", "OBSOLETE", "ABANDONED", "REJECTED", "ACCEPTED"])
 Technicals = Variable("Technicals", ["HISTORY", "STATISTIC", "STOCHASTIC"])
 Scenarios = Variable("Scenarios", ["MINIMUM", "MAXIMUM"])
 Valuations = Variable("Valuations", ["ARBITRAGE"])
-Pricing = Variable("Pricing", ["BLACKSCHOLES"])
 
-Orders = Variable("Order", ["MARKET", "LIMIT", "STOP", "STOPLIMIT", "LIMITDEBIT", "LIMITCREDIT"], start=1)
-Trades = Variable("Trade", ["OPEN", "CLOSE"], start=1)
+Terms = Variable("Terms", ["MARKET", "LIMIT", "STOP", "STOPLIMIT", "LIMITDEBIT", "LIMITCREDIT"], start=1)
 Actions = Variable("Action", ["BUY", "SELL"], start=1)
+Pricing = Variable("Pricing", ["BLACKSCHOLES"])
 
 Markets = Variable("Markets", ["EMPTY", "BEAR", "BULL"], start=0)
 Instruments = Variable("Instruments", ["EMPTY", "STOCK", "OPTION"], start=0)
@@ -89,13 +89,12 @@ class Variables:
     Security = Security
     Strategy = Strategy
     Markets = Markets
-    Pricing = Pricing
     Instruments = Instruments
     Options = Options
     Positions = Positions
+    Pricing = Pricing
     Actions = Actions
-    Orders = Orders
-    Trades = Trades
+    Terms = Terms
     Spreads = Spreads
     Valuations = Valuations
     Technicals = Technicals
