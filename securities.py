@@ -68,6 +68,7 @@ class BlackScholesEquation(PricingEquation):
     A = Variable("A", "alpha", np.float32, pd.Series, vectorize=True, function=lambda τ, δ, ρ: (ρ + np.divide(np.power(δ * np.sqrt(252), 2), 2)) * τ / 252)
     B = Variable("B", "beta", np.float32, pd.Series, vectorize=True, function=lambda τ, δ: δ * np.sqrt(252) * np.sqrt(τ / 252))
     D = Variable("D", "discount", np.float32, pd.Series, vectorize=True, function=lambda τ, ρ: np.exp(-ρ * τ / 252))
+    F = Variable("F", "factor", np.float32, pd.Series, vectorize=True, function=lambda Φ: -Φ)
 
 
 class PricingCalculation(Calculation, ABC, metaclass=RegistryMeta): pass

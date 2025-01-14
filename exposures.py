@@ -22,6 +22,7 @@ __license__ = "MIT License"
 class ExposureCalculator(Separating, Sizing, Emptying, Logging):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.__header = ["ticker", "expire", "strike", "instrument", "option", "position", "quantity"]
         self.__query = Querys.Contract
 
     def execute(self, holdings, *args, **kwargs):
@@ -30,6 +31,7 @@ class ExposureCalculator(Separating, Sizing, Emptying, Logging):
         for parameters, dataframe in self.separate(holdings, *args, fields=self.fields, **kwargs):
             contract = self.query(parameters)
             exposures = self.calculate(dataframe, *args, **kwargs)
+            exposures = exposures[self.header]
             size = self.size(exposures)
             string = f"Calculated: {repr(self)}|{str(contract)}[{int(size):.0f}]"
             self.logger.info(string)
@@ -104,5 +106,7 @@ class ExposureCalculator(Separating, Sizing, Emptying, Logging):
 
     @property
     def fields(self): return list(self.__query)
+    @property
+    def header(self): return self.__header
     @property
     def query(self): return self.__query

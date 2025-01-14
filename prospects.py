@@ -58,7 +58,7 @@ class ProspectLayout(ProspectParameters):
         assert valuation in Variables.Valuations
         scenarios = list(cls.scenarios[valuation])
         variants = list(cls.variants[valuation])
-        order = list(cls.contract + cls.context + cls.options + variants + ["size", "status"])
+        order = list(cls.contract + cls.context + cls.options + variants + ["underlying", "size", "status"])
         formats = dict(status=lambda status: str(status), size=lambda size: f"{size:.0f}")
         formats["apy"] = lambda value: (f"{value * 100:.02f}%" if value < 10 else "EsV") if np.isfinite(value) else "InF"
         generator = lambda key: product([key], scenarios) if key in variants else product([key], [""])

@@ -76,7 +76,7 @@ class StrategyCalculation(Calculation, metaclass=RegistryMeta):
         positions = [option.position for option in options.keys()]
         assert len(set(positions)) == len(list(positions))
         options = {option.position: dataset for option, dataset in options.items()}
-        variables, positions = ("price", "underlying", "strike", "size", "current"), list(Variables.Positions)
+        variables, positions = ("price", "strike", "size", "underlying", "current"), list(Variables.Positions)
         sources = {StrategyLocator(variable, position): options[position][variable] for variable, position in product(variables, positions)}
         with self.equation(sources, fees=fees) as equation:
             yield equation.t()
@@ -122,7 +122,7 @@ class StrategyCalculator(Separating, Sizing, Emptying, Logging):
         assert isinstance(options, pd.DataFrame)
         for security, dataframe in options.groupby(list(Variables.Security), sort=False):
             if self.empty(dataframe): continue
-#            security = Variables.Securities(security)
+            security = Categories.Securities(security)
             dataframe = dataframe.set_index(list(Querys.Product), drop=True, inplace=False)
             columns = [column for column in list(Variables.Security) if column in dataframe.columns]
             dataframe = dataframe.drop(columns, axis=1)

@@ -24,14 +24,16 @@ __logger__ = logging.getLogger(__name__)
 class OrderCalculator(Separating, Sizing, Emptying, Logging):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.__header = ["ticker", "expire", "strike", "instrument", "option", "position", "quantity", "order"]
         self.__query = Querys.Contract
 
     def execute(self, prospects, *args, **kwargs):
         assert isinstance(prospects, pd.DataFrame)
         if self.empty(prospects): return
-        for parameters, dataframe in self.source(prospects, *args, fields=self.fields, **kwargs):
+        for parameters, dataframe in self.separate(prospects, *args, fields=self.fields, **kwargs):
             contract = self.query(parameters)
             orders = self.calculate(dataframe, *args, **kwargs)
+            orders = orders[self.header]
             size = self.size(orders)
             string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
             self.logger.info(string)
@@ -102,6 +104,8 @@ class OrderCalculator(Separating, Sizing, Emptying, Logging):
 
     @property
     def fields(self): return list(self.__query)
+    @property
+    def header(self): return self.__header
     @property
     def query(self): return self.__query
 

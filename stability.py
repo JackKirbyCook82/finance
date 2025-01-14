@@ -14,7 +14,7 @@ from collections import OrderedDict as ODict
 
 from finance.variables import Variables, Querys
 from support.calculations import Calculation, Equation, Variable
-from support.mixins import Emptying, Sizing, Logging
+from support.mixins import Emptying, Sizing, Logging, Separating
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -92,11 +92,11 @@ class StabilityCalculator(Sizing, Emptying, Logging):
         return stabilities
 
     @staticmethod
-    def source(orders, exposures, *args, keys, **kwargs):
+    def separate(orders, exposures, *args, fields, **kwargs):
         assert isinstance(orders, pd.DataFrame) and isinstance(exposures, pd.DataFrame)
-        for values, primary in orders.groupby(keys):
-            group = ODict(zip(keys, values))
-            mask = [exposures[key] == value for key, value in zip(keys, group)]
+        for values, primary in orders.groupby(fields):
+            group = ODict(zip(fields, values))
+            mask = [exposures[key] == value for key, value in group.items()]
             mask = reduce(lambda lead, lag: lead & lag, list(mask))
             secondary = exposures.where(mask)
             yield group, (primary, secondary)
@@ -148,7 +148,7 @@ class StabilityCalculator(Sizing, Emptying, Logging):
     def query(self): return self.__query
 
 
-class StabilityFilter(Sizing, Emptying, Logging):
+class StabilityFilter(Separating, Sizing, Emptying, Logging):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.__query = Querys.Contract
@@ -156,32 +156,17 @@ class StabilityFilter(Sizing, Emptying, Logging):
     def execute(self, prospects, stabilities, *args, **kwargs):
         assert isinstance(prospects, pd.DataFrame) and isinstance(stabilities, pd.DataFrame)
         if self.empty(prospects): return
-        for parameters, dataframes in self.separate(prospects, stabilities, *args, fields=self.fields, **kwargs):
+        header = list(prospects.columns)
+        for parameters, dataframe in self.separate(prospects, *args, fields=self.fields, **kwargs):
             contract = self.query(parameters)
-            filtered = self.calculate(*dataframes, *args, **kwargs)
-            size = self.size(filtered)
+            dataframe = dataframe.merge(stabilities, on="order", how="inner")
+            dataframe = dataframe.where(dataframe["stable"])
+            dataframe = dataframe[header].reset_index(drop=True, inplace=False)
+            size = self.size(dataframe)
             string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
             self.logger.info(string)
-            if self.empty(filtered): continue
-            yield filtered
-
-    @staticmethod
-    def source(prospects, stabilities, *args, keys, **kwargs):
-        assert isinstance(prospects, pd.DataFrame) and isinstance(stabilities, pd.DataFrame)
-        for values, primary in prospects.groupby(keys):
-            group = ODict(zip(keys, values))
-            mask = [stabilities[key] == value for key, value in zip(keys, group)]
-            mask = reduce(lambda lead, lag: lead & lag, list(mask))
-            secondary = stabilities.where(mask)
-            yield group, (primary, secondary)
-
-    @staticmethod
-    def calculate(prospects, stabilities, *args, **kwargs):
-        assert isinstance(prospects, pd.DataFrame) and isinstance(stabilities, pd.DataFrame)
-        prospects = prospects.merge(stabilities, on="order", how="inner")
-        prospects = prospects.where(prospects["stable"])
-        prospects = prospects.reset_index(drop=True, inplace=False)
-        return prospects
+            if self.empty(dataframe): continue
+            yield dataframe
 
     @property
     def fields(self): return list(self.__query)

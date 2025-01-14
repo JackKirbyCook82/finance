@@ -52,9 +52,9 @@ class ValuationCalculation(Calculation, ABC, metaclass=RegistryMeta): pass
 class ArbitrageCalculation(ValuationCalculation, ABC):
     def execute(self, strategies, *args, discount, **kwargs):
         with self.equation(strategies, discount=discount) as equation:
+            yield strategies["size"]
             yield strategies["underlying"]
             yield strategies["current"]
-            yield strategies["size"]
             yield equation.exp()
             yield equation.npv()
             yield equation.apy()
