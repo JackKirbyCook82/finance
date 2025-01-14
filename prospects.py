@@ -12,7 +12,7 @@ from functools import reduce
 from itertools import product, count
 
 from finance.variables import Variables, Categories, Querys
-from support.mixins import Emptying, Sizing, Logging, Separating
+from support.mixins import Emptying, Sizing, Logging, Segregating
 from support.tables import Reader, Routine, Writer, Table
 
 __version__ = "1.0.0"
@@ -74,24 +74,22 @@ class ProspectLayout(ProspectParameters):
         return instance
 
 
-class ProspectCalculator(Separating, Sizing, Emptying, Logging):
+class ProspectCalculator(Segregating, Sizing, Emptying, Logging):
     def __init__(self, *args, priority, header, **kwargs):
         assert callable(priority)
         super().__init__(*args, **kwargs)
         self.__counter = count(start=1, step=1)
-        self.__query = Querys.Contract
         self.__priority = priority
         self.__header = header
 
     def execute(self, valuations, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame)
         if self.empty(valuations): return
-        for parameters, dataframe in self.separate(valuations, *args, fields=self.fields, **kwargs):
-            contract = self.query(parameters)
+        for query, dataframe in self.segregate(valuations, *args, **kwargs):
             prospects = self.calculate(dataframe, *args, **kwargs)
             prospects = prospects.reindex(columns=list(self.header), fill_value=np.NaN)
             size = self.size(prospects)
-            string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
+            string = f"Calculated: {repr(self)}|{str(query)}[{size:.0f}]"
             self.logger.info(string)
             if self.empty(prospects): continue
             yield prospects
@@ -107,18 +105,14 @@ class ProspectCalculator(Separating, Sizing, Emptying, Logging):
         return prospects
 
     @property
-    def fields(self): return list(self.__query)
-    @property
     def priority(self): return self.__priority
     @property
     def counter(self): return self.__counter
     @property
     def header(self): return self.__header
-    @property
-    def query(self): return self.__query
 
 
-class ProspectReader(Reader, query=Querys.Contract):
+class ProspectReader(Reader):
     def __init__(self, *args, status, **kwargs):
         assert isinstance(status, list) and all([isinstance(value, Variables.Status) for value in status])
         super().__init__(*args, **kwargs)
@@ -142,7 +136,7 @@ class ProspectReader(Reader, query=Querys.Contract):
     def status(self): return self.__status
 
 
-class ProspectDiscarding(Routine, query=Querys.Contract):
+class ProspectDiscarding(Routine):
     def __init__(self, *args, status, **kwargs):
         assert isinstance(status, list) and all([isinstance(value, Variables.Status) for value in status])
         super().__init__(*args, **kwargs)
@@ -165,7 +159,7 @@ class ProspectDiscarding(Routine, query=Querys.Contract):
     def status(self): return self.__status
 
 
-class ProspectProtocols(Routine, query=Querys.Contract):
+class ProspectProtocols(Routine):
     def __init__(self, *args, protocols={}, **kwargs):
         assert isinstance(protocols, dict)
         assert all([callable(protocol) for protocol in protocols.keys()])
@@ -183,7 +177,7 @@ class ProspectProtocols(Routine, query=Querys.Contract):
     def protocols(self): return self.__protocols
 
 
-class ProspectWriter(Writer, query=Querys.Contract):
+class ProspectWriter(Writer):
     def __init__(self, *args, status, **kwargs):
         assert isinstance(status, Variables.Status)
         super().__init__(*args, **kwargs)
@@ -206,7 +200,7 @@ class ProspectWriter(Writer, query=Querys.Contract):
         self.logger.info(string)
 
     def write(self, prospects, *args, **kwargs):
-        for parameters, content in self.separate(prospects, *args, fields=self.fields, **kwargs):
+        for parameters, content in self.segregate(prospects, *args, **kwargs):
             if self.empty(content): continue
             query = self.query(parameters)
             content["status"] = self.status

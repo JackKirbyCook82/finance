@@ -16,7 +16,7 @@ from functools import reduce
 from collections import namedtuple as ntuple
 
 from finance.variables import Variables, Categories, Querys
-from support.mixins import Emptying, Sizing, Logging, Separating
+from support.mixins import Emptying, Sizing, Logging, Segregating
 from support.calculations import Calculation, Equation, Variable
 from support.meta import RegistryMeta
 
@@ -95,7 +95,7 @@ class CollarLongCalculation(CollarCalculation, equation=CollarLongEquation, regi
 class CollarShortCalculation(CollarCalculation, equation=CollarShortEquation, register=Categories.Strategies.Collars.Short): pass
 
 
-class StrategyCalculator(Separating, Sizing, Emptying, Logging):
+class StrategyCalculator(Segregating, Sizing, Emptying, Logging):
     def __init__(self, *args, strategies=[], **kwargs):
         assert all([strategy in list(Categories.Strategies) for strategy in list(strategies)])
         super().__init__(*args, **kwargs)
@@ -103,17 +103,15 @@ class StrategyCalculator(Separating, Sizing, Emptying, Logging):
         calculations = dict(StrategyCalculation).items()
         calculations = {strategy: calculation(*args, **kwargs) for strategy, calculation in calculations if strategy in strategies}
         self.__calculations = calculations
-        self.__query = Querys.Contract
 
     def execute(self, options, *args, **kwargs):
         assert isinstance(options, pd.DataFrame)
         if self.empty(options): return
-        for parameters, dataframe in self.separate(options, *args, fields=self.fields, **kwargs):
-            contract = self.query(parameters)
+        for query, dataframe in self.segregate(options, *args, **kwargs):
             contents = dict(self.options(dataframe, *args, **kwargs))
             for strategy, strategies in self.calculate(contents, *args, **kwargs):
                 size = self.size(strategies, "size")
-                string = f"Calculated: {repr(self)}|{str(contract)}|{str(strategy)}[{size:.0f}]"
+                string = f"Calculated: {repr(self)}|{str(query)}|{str(strategy)}[{size:.0f}]"
                 self.logger.info(string)
                 if self.empty(strategies, "size"): continue
                 yield strategies
@@ -147,10 +145,7 @@ class StrategyCalculator(Separating, Sizing, Emptying, Logging):
             yield strategy, strategies
 
     @property
-    def fields(self): return list(self.__query)
-    @property
     def calculations(self): return self.__calculations
-    @property
-    def query(self): return self.__query
+
 
 

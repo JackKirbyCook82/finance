@@ -13,8 +13,8 @@ import xarray as xr
 from abc import ABC
 from collections import namedtuple as ntuple
 
-from finance.variables import Variables, Querys
-from support.mixins import Emptying, Sizing, Logging, Separating
+from finance.variables import Variables
+from support.mixins import Emptying, Sizing, Logging, Segregating
 from support.calculations import Calculation, Equation, Variable
 from support.meta import RegistryMeta
 
@@ -63,7 +63,7 @@ class MinimumArbitrageCalculation(ArbitrageCalculation, equation=MinimumArbitrag
 class MaximumArbitrageCalculation(ArbitrageCalculation, equation=MaximumArbitrageEquation, register=(Variables.Valuations.ARBITRAGE, Variables.Scenarios.MAXIMUM)): pass
 
 
-class ValuationCalculator(Separating, Sizing, Emptying, Logging):
+class ValuationCalculator(Segregating, Sizing, Emptying, Logging):
     def __init__(self, *args, valuation, **kwargs):
         super().__init__(*args, **kwargs)
         Identity = ntuple("Identity", "valuation scenario")
@@ -71,17 +71,15 @@ class ValuationCalculator(Separating, Sizing, Emptying, Logging):
         calculations = {identity.scenario: calculation for identity, calculation in calculations.items() if identity.valuation == valuation}
         self.__calculations = {scenario: calculation(*args, **kwargs) for scenario, calculation in calculations.items()}
         self.__valuation = valuation
-        self.__query = Querys.Contract
 
     def execute(self, strategies, *args, **kwargs):
         assert isinstance(strategies, (list, xr.Dataset))
         if self.empty(strategies, "size"): return
-        for parameters, dataset in self.separate(strategies, *args, fields=self.fields, **kwargs):
+        for query, dataset in self.segregate(strategies, *args, **kwargs):
             if self.empty(dataset, "size"): continue
-            contract = self.query(parameters)
             valuations = self.calculate(dataset, *args, **kwargs)
             size = self.size(valuations)
-            string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
+            string = f"Calculated: {repr(self)}|{str(query)}[{size:.0f}]"
             self.logger.info(string)
             if self.empty(valuations): continue
             yield valuations
@@ -114,13 +112,9 @@ class ValuationCalculator(Separating, Sizing, Emptying, Logging):
             yield scenario, dataframe
 
     @property
-    def fields(self): return list(self.__query)
-    @property
     def calculations(self): return self.__calculations
     @property
     def valuation(self): return self.__valuation
-    @property
-    def query(self): return self.__query
 
 
 

@@ -12,16 +12,17 @@ import pandas as pd
 from abc import ABC
 from numbers import Number
 from scipy.stats import norm
+from collections import namedtuple as ntuple
 
-from finance.variables import Variables, Querys
-from support.mixins import Emptying, Sizing, Logging, Separating
+from finance.variables import Variables
+from support.mixins import Emptying, Sizing, Logging, Segregating
 from support.calculations import Calculation, Equation, Variable
 from support.meta import RegistryMeta, MappingMeta
 from support.files import File
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["OptionCalculator", "OptionFile"]
+__all__ = ["OptionCalculator", "OptionBasis", "OptionFile"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
@@ -29,8 +30,8 @@ __license__ = "MIT License"
 class SecurityParameters(metaclass=MappingMeta):
     formatters = {"instrument": int, "option": int, "position": int, "strike": lambda strike: round(strike, 2), "underlying": lambda underlying: round(underlying, 2)}
     parsers = {"instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}
-    order = ["ticker", "expire", "strike", "price", "underlying", "volume", "size", "interest", "instrument", "option", "position", "current"]
-    types = {"ticker": str, "strike": np.float32, "price": np.float32, "underlying": np.float32, "size": np.float32, "volume": np.float32, "interest": np.float32}
+    order = ["ticker", "expire", "strike", "price", "underlying", "size", "instrument", "option", "position", "current"]
+    types = {"ticker": str, "strike": np.float32, "price": np.float32, "underlying": np.float32, "size": np.float32}
     dates = {"current": "%Y%m%d-%H%M", "expire": "%Y%m%d"}
 
 class SecurityFile(File, ABC, **dict(SecurityParameters)): pass
@@ -47,9 +48,10 @@ class PricingEquation(Equation, ABC):
     j = Variable("j", "position", Variables.Positions, pd.Series, locator="position")
     k = Variable("k", "strike", np.float32, pd.Series, locator="strike")
 
+    tτ = Variable("tτ", "expire", np.datetime64, pd.Series, locator="expire")
     xo = Variable("xo", "underlying", np.float32, pd.Series, locator="underlying")
     to = Variable("to", "current", np.datetime64, pd.Series, locator="current")
-    tτ = Variable("tτ", "expire", np.datetime64, pd.Series, locator="expire")
+    qo = Variable("qo", "size", np.int32, pd.Series, locator="size")
 
     δ = Variable("δ", "volatility", np.float32, pd.Series, locator="volatility")
     ρ = Variable("ρ", "discount", np.float32, types.NoneType, locator="discount")
@@ -85,36 +87,38 @@ class BlackScholesCalculation(PricingCalculation, equation=BlackScholesEquation,
             yield exposures["strike"]
             yield exposures["underlying"]
             yield exposures["current"]
+            yield exposures["size"]
             yield equation.yo()
 
 
-class OptionCalculator(Separating, Sizing, Emptying, Logging):
-    def __init__(self, *args, assumptions, **kwargs):
+class OptionBasis(ntuple("Basis", "pricing sizing timing")): pass
+class OptionCalculator(Segregating, Sizing, Emptying, Logging):
+    def __init__(self, *args, basis, **kwargs):
+        assert isinstance(basis, OptionBasis)
         super().__init__(*args, **kwargs)
-        self.__calculation = PricingCalculation[assumptions.pricing](*args, **kwargs)
-        self.__sizing = lambda cols: dict(assumptions.sizing)
-        self.__current = assumptions.timing.current
-        self.__pricing = assumptions.pricing
-        self.__query = Querys.Contract
+        pricing, sizing, current = list(basis)
+        self.__calculation = PricingCalculation[pricing](*args, **kwargs)
+        self.__current = current
+        self.__pricing = pricing
+        self.__sizing = sizing
 
     def execute(self, exposures, statistics, *args, **kwargs):
         assert isinstance(exposures, pd.DataFrame) and isinstance(statistics, pd.DataFrame)
         if self.empty(exposures): return
         exposures = self.exposures(exposures, statistics, *args, **kwargs)
-        for parameters, dataframe in self.separate(exposures, *args, fields=self.fields, **kwargs):
-            contract = self.query(parameters)
+        for query, dataframe in self.segregate(exposures, *args, **kwargs):
             options = self.calculate(dataframe, *args, **kwargs)
             size = self.size(options)
-            string = f"Calculated: {repr(self)}|{str(contract)}[{int(size):.0f}]"
+            string = f"Calculated: {repr(self)}|{str(query)}[{int(size):.0f}]"
             self.logger.info(string)
             if self.empty(options): continue
             yield options
 
     def calculate(self, exposures, *args, **kwargs):
         assert isinstance(exposures, pd.DataFrame)
-        pricings = self.calculation(exposures, *args, **kwargs)
-        sizings = pricings.apply(self.sizing, axis=1, result_type="expand")
-        options = pd.concat([pricings, sizings], axis=1)
+        exposures["current"] = pd.to_datetime(self.current)
+        exposures["size"] = np.int32(self.sizing)
+        options = self.calculation(exposures, *args, **kwargs)
         return options
 
     def exposures(self, exposures, statistics, *args, **kwargs):
@@ -122,11 +126,8 @@ class OptionCalculator(Separating, Sizing, Emptying, Logging):
         statistics = statistics.where(statistics["date"] == pd.to_datetime(self.current.date()))
         exposures = pd.merge(exposures, statistics, how="inner", on="ticker")
         exposures = exposures.rename(columns={"price": "underlying"}, inplace=False)
-        exposures["current"] = pd.to_datetime(self.current)
         return exposures
 
-    @property
-    def fields(self): return list(self.__query)
     @property
     def calculation(self): return self.__calculation
     @property
@@ -135,8 +136,6 @@ class OptionCalculator(Separating, Sizing, Emptying, Logging):
     def pricing(self): return self.__pricing
     @property
     def sizing(self): return self.__sizing
-    @property
-    def query(self): return self.__query
 
 
 

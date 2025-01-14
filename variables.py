@@ -19,16 +19,6 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-Ticker = Field("ticker", str)
-Date = Field("date", datetime.date, format="%Y%m%d")
-Expire = Field("expire", datetime.date, format="%Y%m%d")
-Strike = Field("strike", numbers.Number, digits=2)
-
-Symbol = Query("Symbol", [Ticker], delimiter="|")
-History = Query("History", [Ticker, Date], delimiter="|")
-Contract = Query("Contract", [Ticker, Expire], delimiter="|")
-Product = Query("Product", [Ticker, Expire, Strike], delimiter="|")
-
 Theta = Variable("Theta", ["PUT", "NEUTRAL", "CALL"], start=-1)
 Phi = Variable("Phi", ["SHORT", "NEUTRAL", "LONG"], start=-1)
 Omega = Variable("Omega", ["BEAR", "NEUTRAL", "BULL"], start=-1)
@@ -50,6 +40,17 @@ Spreads = Variable("Spreads", ["STRANGLE", "COLLAR", "VERTICAL"], start=1)
 
 Security = Variables("Security", ["instrument", "option", "position"])
 Strategy = Variables("Strategy", ["spread", "option", "position"], {"stocks", "options"})
+
+Ticker = Field("ticker", str)
+Option = Field("option", Options)
+Date = Field("date", datetime.date, format="%Y%m%d")
+Expire = Field("expire", datetime.date, format="%Y%m%d")
+Strike = Field("strike", numbers.Number, digits=2)
+
+Symbol = Query("Symbol", [Ticker], delimiter="|")
+History = Query("History", [Ticker, Date], delimiter="|")
+Contract = Query("Contract", [Ticker, Expire], delimiter="|")
+Product = Query("Product", [Ticker, Expire, Strike, Option], delimiter="|")
 
 StockLong = Security("StockLong", [Instruments.STOCK, Options.EMPTY, Positions.LONG])
 StockShort = Security("StockShort", [Instruments.STOCK, Options.EMPTY, Positions.SHORT])

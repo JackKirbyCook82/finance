@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 
 from finance.variables import Variables, Categories, Querys
-from support.mixins import Emptying, Sizing, Logging, Separating
+from support.mixins import Emptying, Sizing, Logging, Segregating
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -21,21 +21,19 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-class OrderCalculator(Separating, Sizing, Emptying, Logging):
+class OrderCalculator(Segregating, Sizing, Emptying, Logging):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.__header = ["ticker", "expire", "strike", "instrument", "option", "position", "quantity", "order"]
-        self.__query = Querys.Contract
 
     def execute(self, prospects, *args, **kwargs):
         assert isinstance(prospects, pd.DataFrame)
         if self.empty(prospects): return
-        for parameters, dataframe in self.separate(prospects, *args, fields=self.fields, **kwargs):
-            contract = self.query(parameters)
+        for query, dataframe in self.segregate(prospects, *args, **kwargs):
             orders = self.calculate(dataframe, *args, **kwargs)
             orders = orders[self.header]
             size = self.size(orders)
-            string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
+            string = f"Calculated: {repr(self)}|{str(query)}[{size:.0f}]"
             self.logger.info(string)
             if self.empty(orders): continue
             yield orders
@@ -103,9 +101,6 @@ class OrderCalculator(Separating, Sizing, Emptying, Logging):
         return virtuals
 
     @property
-    def fields(self): return list(self.__query)
-    @property
     def header(self): return self.__header
-    @property
-    def query(self): return self.__query
+
 

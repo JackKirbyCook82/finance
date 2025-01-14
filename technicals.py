@@ -11,8 +11,8 @@ import numpy as np
 import pandas as pd
 from abc import ABC
 
-from finance.variables import Querys, Variables
-from support.mixins import Emptying, Sizing, Logging, Separating
+from finance.variables import Variables
+from support.mixins import Emptying, Sizing, Logging, Segregating
 from support.calculations import Calculation, Equation, Variable
 from support.meta import RegistryMeta, MappingMeta
 from support.files import File
@@ -72,23 +72,20 @@ class StochasticCalculation(TechnicalCalculation, equation=StochasticEquation, r
             yield equation.xk()
 
 
-class TechnicalCalculator(Separating, Sizing, Emptying, Logging):
+class TechnicalCalculator(Segregating, Sizing, Emptying, Logging):
     def __init__(self, *args, technical, **kwargs):
         assert technical in list(Variables.Technicals)
         super().__init__(*args, **kwargs)
         self.__calculation = TechnicalCalculation[technical](*args, **kwargs)
         self.__technical = technical
-        self.__query = Querys.Symbol
 
     def execute(self, history, *args, **kwargs):
         assert isinstance(history, pd.DataFrame)
         if self.empty(history): return
-        for parameters, dataframe in self.separate(history, *args, fields=self.fields, **kwargs):
-            symbol = self.query(parameters)
-            parameters = dict(ticker=symbol.ticker)
-            technicals = self.calculate(dataframe, *args, **parameters, **kwargs)
+        for query, dataframe in self.segregate(history, *args, **kwargs):
+            technicals = self.calculate(dataframe, *args, **kwargs)
             size = self.size(technicals)
-            string = f"Calculated: {repr(self)}|{str(symbol)}[{int(size):.0f}]"
+            string = f"Calculated: {repr(self)}|{str(query)}[{int(size):.0f}]"
             self.logger.info(string)
             if self.empty(technicals): continue
             yield technicals
@@ -100,11 +97,9 @@ class TechnicalCalculator(Separating, Sizing, Emptying, Logging):
         return technicals
 
     @property
-    def fields(self): return list(self.__query)
-    @property
     def calculation(self): return self.__calculation
     @property
-    def query(self): return self.__query
+    def technical(self): return self.__technical
 
 
 class StatisticCalculator(TechnicalCalculator):

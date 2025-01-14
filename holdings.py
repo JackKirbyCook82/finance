@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 
 from finance.variables import Variables, Categories, Querys
-from support.mixins import Emptying, Sizing, Logging, Separating
+from support.mixins import Emptying, Sizing, Logging, Segregating
 from support.meta import MappingMeta
 from support.files import File
 
@@ -35,19 +35,14 @@ class HoldingFile(File, variable="holdings", **dict(HoldingParameters)):
     pass
 
 
-class HoldingCalculator(Separating, Sizing, Emptying, Logging):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.__query = Querys.Contract
-
+class HoldingCalculator(Segregating, Sizing, Emptying, Logging):
     def execute(self, prospects, *args, **kwargs):
         assert isinstance(prospects, pd.DataFrame)
         if self.empty(prospects): return
-        for parameters, dataframe in self.separate(prospects, *args, fields=self.fields, **kwargs):
-            contract = self.query(parameters)
+        for query, dataframe in self.segregate(prospects, *args, **kwargs):
             holdings = self.calculate(dataframe, *args, **kwargs)
             size = self.size(holdings)
-            string = f"Calculated: {repr(self)}|{str(contract)}[{size:.0f}]"
+            string = f"Calculated: {repr(self)}|{str(query)}[{size:.0f}]"
             self.logger.info(string)
             if self.empty(holdings): continue
             yield holdings
@@ -81,9 +76,4 @@ class HoldingCalculator(Separating, Sizing, Emptying, Logging):
         function = lambda cols: {stock: cols["underlying"] if stock in strategy(cols) else np.NaN for stock in list(map(str, Categories.Securities.Stocks))}
         stocks = valuations.apply(function, axis=1, result_type="expand")
         return stocks
-
-    @property
-    def fields(self): return list(self.__query)
-    @property
-    def query(self): return self.__query
 
