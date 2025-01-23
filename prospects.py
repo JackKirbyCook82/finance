@@ -12,8 +12,9 @@ from functools import reduce
 from itertools import product, count
 
 from finance.variables import Variables, Categories, Querys
-from support.mixins import Emptying, Sizing, Logging, Segregating
+from support.mixins import Emptying, Sizing, Logging, Partition
 from support.tables import Reader, Routine, Writer, Table
+from support.decorators import Decorator
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -31,7 +32,7 @@ class ProspectParameters(object):
     context = ["valuation", "strategy"]
     options = list(map(str, Categories.Securities.Options))
     stocks = list(map(str, Categories.Securities.Stocks))
-    contract = list(map(str, Querys.Contract))
+    contract = list(map(str, Querys.Settlement))
 
 
 class ProspectHeader(ProspectParameters):
@@ -74,7 +75,7 @@ class ProspectLayout(ProspectParameters):
         return instance
 
 
-class ProspectCalculator(Segregating, Sizing, Emptying, Logging):
+class ProspectCalculator(Partition, Sizing, Emptying, Logging):
     def __init__(self, *args, priority, header, **kwargs):
         assert callable(priority)
         super().__init__(*args, **kwargs)
@@ -159,19 +160,22 @@ class ProspectDiscarding(Routine):
     def status(self): return self.__status
 
 
+class ProspectProtocol(Decorator):
+    def decorator(self, instance, table):
+        mask = self.function(instance, table)
+        table.modify(mask, "status", self.status)
+
 class ProspectProtocols(Routine):
-    def __init__(self, *args, protocols={}, **kwargs):
-        assert isinstance(protocols, dict)
-        assert all([callable(protocol) for protocol in protocols.keys()])
-        assert all([status in Variables.Status for status in protocols.values()])
+    def __init__(self, *args, protocols=[], **kwargs):
+        assert isinstance(protocols, list)
+        assert all([callable(protocol) for protocol in protocols])
         super().__init__(*args, **kwargs)
-        self.__protocols = dict(protocols)
+        self.__protocols = list(protocols)
 
     def invoke(self, *args, **kwargs):
         if not bool(self.table): return
-        for protocol, status in self.protocols.items():
-            mask = protocol(self.table)
-            self.table.modify(mask, "status", status)
+        for protocol in self.protocols:
+            protocol(self.table)
 
     @property
     def protocols(self): return self.__protocols
@@ -200,9 +204,8 @@ class ProspectWriter(Writer):
         self.logger.info(string)
 
     def write(self, prospects, *args, **kwargs):
-        for parameters, content in self.segregate(prospects, *args, **kwargs):
+        for query, content in self.segregate(prospects, *args, **kwargs):
             if self.empty(content): continue
-            query = self.query(parameters)
             content["status"] = self.status
             self.detach(query)
             self.attach(content)

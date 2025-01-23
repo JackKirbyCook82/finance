@@ -7,33 +7,21 @@ Created on Fri Apr 19 2024
 """
 
 import types
+import logging
 import numpy as np
 import pandas as pd
 from abc import ABC
 
-from finance.variables import Variables
-from support.mixins import Emptying, Sizing, Logging, Segregating
 from support.calculations import Calculation, Equation, Variable
-from support.meta import RegistryMeta, MappingMeta
-from support.files import File
+from support.mixins import Emptying, Sizing, Partition
+from support.meta import RegistryMeta
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["StatisticCalculator", "StochasticCalculator", "HistoryFile", "StatisticFile", "StochasticFile"]
+__all__ = []
 __copyright__ = "Copyright 2024, Jack Kirby Cook"
 __license__ = "MIT License"
-
-
-class TechnicalParameters(metaclass=MappingMeta):
-    order = ["ticker", "date", "price", "open", "close", "high", "low", "trend", "volatility", "oscillator"]
-    types = {"ticker": str, "volume": np.int64} | {column: np.float32 for column in ("price", "open", "close", "high", "low")}
-    types.update({"trend": np.float32, "volatility": np.float32, "oscillator": np.float32})
-    dates = {"date": "%Y%m%d"}
-
-class TechnicalFile(File, ABC, **dict(TechnicalParameters)): pass
-class HistoryFile(TechnicalFile, variable=Variables.Technicals.HISTORY): pass
-class StatisticFile(TechnicalFile, variable=Variables.Technicals.STATISTIC): pass
-class StochasticFile(TechnicalFile, variable=Variables.Technicals.STOCHASTIC): pass
+__logger__ = logging.getLogger(__name__)
 
 
 class TechnicalEquation(Equation, ABC):
@@ -51,67 +39,48 @@ class StochasticEquation(TechnicalEquation):
 
 
 class TechnicalCalculation(Calculation, ABC, metaclass=RegistryMeta): pass
-class StatisticCalculation(TechnicalCalculation, equation=StatisticEquation, register=Variables.Technicals.STATISTIC):
-    def execute(self, history, *args, period, **kwargs):
-        assert (history["ticker"].to_numpy()[0] == history["ticker"]).all()
-        with self.equation(history, period=period) as equation:
-            yield history["ticker"]
-            yield history["date"]
-            yield history["price"]
+class StatisticCalculation(TechnicalCalculation, equation=StatisticEquation):
+    def execute(self, bars, *args, period, **kwargs):
+        assert (bars["ticker"].to_numpy()[0] == bars["ticker"]).all()
+        with self.equation(bars, period=period) as equation:
+            yield bars["ticker"]
+            yield bars["date"]
+            yield bars["price"]
             yield equation.m()
             yield equation.δ()
 
-class StochasticCalculation(TechnicalCalculation, equation=StochasticEquation, register=Variables.Technicals.STOCHASTIC):
-    def execute(self, history, *args, period, **kwargs):
-        assert (history["ticker"].to_numpy()[0] == history["ticker"]).all()
-        history = history.sort_values("date", ascending=True, inplace=False)
-        with self.equation(history, period=period) as equation:
-            yield history["ticker"]
-            yield history["date"]
-            yield history["price"]
+class StochasticCalculation(TechnicalCalculation, equation=StochasticEquation):
+    def execute(self, bars, *args, period, **kwargs):
+        assert (bars["ticker"].to_numpy()[0] == bars["ticker"]).all()
+        bars = bars.sort_values("date", ascending=True, inplace=False)
+        with self.equation(bars, period=period) as equation:
+            yield bars["ticker"]
+            yield bars["date"]
+            yield bars["price"]
             yield equation.xk()
 
 
-class TechnicalCalculator(Segregating, Sizing, Emptying, Logging):
-    def __init__(self, *args, technical, **kwargs):
-        assert technical in list(Variables.Technicals)
+class TechnicalCalculator(Sizing, Emptying, Partition):
+    def __init__(self, *args, technicals, **kwargs):
+        assert all([technical in list(Technicals) for technical in technicals])
         super().__init__(*args, **kwargs)
-        self.__calculation = TechnicalCalculation[technical](*args, **kwargs)
-        self.__technical = technical
+        technicals = list(dict(TechnicalCalculation).keys()) if not bool(technicals) else list(technicals)
+        calculations = dict(TechnicalCalculation).items()
+        calculations = {(STOCK, technical): calculation(*args, **kwargs) for technical, calculation in calculations if technical in technicals}
+        self.calculations = calculations
 
-    def execute(self, history, *args, **kwargs):
-        assert isinstance(history, pd.DataFrame)
-        if self.empty(history): return
-        for query, dataframe in self.segregate(history, *args, **kwargs):
-            technicals = self.calculate(dataframe, *args, **kwargs)
-            size = self.size(technicals)
-            string = f"Calculated: {repr(self)}|{str(query)}[{int(size):.0f}]"
-            self.logger.info(string)
-            if self.empty(technicals): continue
-            yield technicals
-
-    def calculate(self, history, *args, **kwargs):
-        assert isinstance(history, pd.DataFrame)
-        technicals = self.calculation(history, *args, **kwargs)
-        assert isinstance(technicals, pd.DataFrame)
-        return technicals
-
-    @property
-    def calculation(self): return self.__calculation
-    @property
-    def technical(self): return self.__technical
-
-
-class StatisticCalculator(TechnicalCalculator):
-    def __init__(self, *args, **kwargs):
-        parameters = dict(technical=Variables.Technicals.STATISTIC)
-        super().__init__(*args, **parameters, **kwargs)
-
-
-class StochasticCalculator(TechnicalCalculator):
-    def __init__(self, *args, **kwargs):
-        parameters = dict(technical=Variables.Technicals.STOCHASTIC)
-        super().__init__(*args, **parameters, **kwargs)
+    def execute(self, bars, *args, **kwargs):
+        assert isinstance(bars, pd.DataFrame)
+        if self.empty(bars): return
+        for partition, dataframe in self.partition(bars, by=Symbol):
+            contents = {dataset: self.calculation(dataframe, *args, **kwargs) for dataset, calculation in self.calculations.items()}
+            for dataset, content in contents.items():
+                string = "|".join(list(map(str, dataset)))
+                size = self.size(dataframe)
+                string = f"Downloaded: {repr(self)}|{str(string)}|{str(partition)}[{int(size):.0f}]"
+                __logger__.info(string)
+            if self.empty(contents): continue
+            yield contents
 
 
 

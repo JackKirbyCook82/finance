@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 
 from finance.variables import Variables
-from support.mixins import Emptying, Sizing, Logging, Segregating
+from support.mixins import Emptying, Sizing, Logging, Partition
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -19,10 +19,8 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class ExposureCalculator(Segregating, Sizing, Emptying, Logging):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.__header = ["ticker", "expire", "strike", "instrument", "option", "position", "quantity"]
+class ExposureCalculator(Partition, Sizing, Emptying, Logging):
+    header = ["ticker", "expire", "strike", "instrument", "option", "position", "quantity"]
 
     def execute(self, holdings, *args, **kwargs):
         assert isinstance(holdings, pd.DataFrame)
@@ -102,6 +100,6 @@ class ExposureCalculator(Segregating, Sizing, Emptying, Logging):
         exposures = exposures.reset_index(drop=True, inplace=False)
         return exposures
 
-    @property
-    def header(self): return self.__header
+
+
 

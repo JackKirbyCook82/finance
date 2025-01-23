@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 
 from finance.variables import Variables, Categories, Querys
-from support.mixins import Emptying, Sizing, Logging, Segregating
+from support.mixins import Emptying, Sizing, Logging, Partition
 from support.meta import MappingMeta
 from support.files import File
 
@@ -35,7 +35,7 @@ class HoldingFile(File, variable="holdings", **dict(HoldingParameters)):
     pass
 
 
-class HoldingCalculator(Segregating, Sizing, Emptying, Logging):
+class HoldingCalculator(Partition, Sizing, Emptying, Logging):
     def execute(self, prospects, *args, **kwargs):
         assert isinstance(prospects, pd.DataFrame)
         if self.empty(prospects): return
@@ -60,7 +60,7 @@ class HoldingCalculator(Segregating, Sizing, Emptying, Logging):
         header = list(Querys.Product) + list(Variables.Security) + ["quantity"]
         columns = [column for column in list(header) if column in dataframe.columns]
         securities = dataframe[columns + list(map(str, Categories.Securities.Stocks)) + list(map(str, Categories.Securities.Options))]
-        holdings = securities.melt(id_vars=list(Querys.Contract), value_vars=list(map(str, Categories.Securities)), var_name="security", value_name="strike")
+        holdings = securities.melt(id_vars=list(Querys.Settlement), value_vars=list(map(str, Categories.Securities)), var_name="security", value_name="strike")
         holdings = holdings.where(holdings["strike"].notna()).dropna(how="all", inplace=False)
         holdings["security"] = holdings["security"].apply(Categories.Securities)
         holdings["instrument"] = holdings["security"].apply(lambda security: security.instrument)
@@ -76,4 +76,6 @@ class HoldingCalculator(Segregating, Sizing, Emptying, Logging):
         function = lambda cols: {stock: cols["underlying"] if stock in strategy(cols) else np.NaN for stock in list(map(str, Categories.Securities.Stocks))}
         stocks = valuations.apply(function, axis=1, result_type="expand")
         return stocks
+
+
 

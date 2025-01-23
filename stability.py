@@ -14,7 +14,7 @@ from collections import OrderedDict as ODict
 
 from finance.variables import Variables, Querys
 from support.calculations import Calculation, Equation, Variable
-from support.mixins import Emptying, Sizing, Logging, Segregating
+from support.mixins import Emptying, Sizing, Logging, Partition
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -31,8 +31,8 @@ class StabilityEquation(Equation):
     Θ = Variable("Θ", "theta", np.int32, xr.DataArray, vectorize=True, function=lambda i: + int(Variables.Theta(str(i))))
     Φ = Variable("Φ", "phi", np.int32, xr.DataArray, vectorize=True, function=lambda j: + int(Variables.Phi(str(j))))
 
-    Σy = Variable("Σy", "value", np.float32, xr.DataArray, vectorize=False, function=lambda y: y.sum("holdings").drop(list(Querys.Contract)))
-    Σm = Variable("Σm", "value", np.float32, xr.DataArray, vectorize=False, function=lambda m: m.sum("holdings").drop(list(Querys.Contract)))
+    Σy = Variable("Σy", "value", np.float32, xr.DataArray, vectorize=False, function=lambda y: y.sum("holdings").drop(list(Querys.Settlement)))
+    Σm = Variable("Σm", "value", np.float32, xr.DataArray, vectorize=False, function=lambda m: m.sum("holdings").drop(list(Querys.Settlement)))
 
     Σyh = Variable("Σyh", "maximum", np.float32, xr.DataArray, vectorize=False, function=lambda Σy: Σy.max(dim="underlying"))
     Σyl = Variable("Σyl", "minimum", np.float32, xr.DataArray, vectorize=False, function=lambda Σy: Σy.min(dim="underlying"))
@@ -57,7 +57,7 @@ class StabilityCalculation(Calculation, equation=StabilityEquation):
             yield equation.Σml(portfolios)
 
 
-class StabilityCalculator(Segregating, Sizing, Emptying, Logging):
+class StabilityCalculator(Partition, Sizing, Emptying, Logging):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.__calculation = StabilityCalculation(*args, **kwargs)
@@ -106,7 +106,7 @@ class StabilityCalculator(Segregating, Sizing, Emptying, Logging):
             series = dataframe.set_index(index, drop=True, inplace=False).squeeze()
             dataarray = xr.DataArray.from_series(series).fillna(0)
             function = lambda content, axis: content.squeeze(axis)
-            dataarray = reduce(function, list(Querys.Contract), dataarray)
+            dataarray = reduce(function, list(Querys.Settlement), dataarray)
             yield order, dataarray
 
     @staticmethod
@@ -116,7 +116,7 @@ class StabilityCalculator(Segregating, Sizing, Emptying, Logging):
         exposures = exposures.set_index(index, drop=True, inplace=False).squeeze()
         exposures = xr.DataArray.from_series(exposures).fillna(0)
         function = lambda content, axis: content.squeeze(axis)
-        exposures = reduce(function, list(Querys.Contract), exposures)
+        exposures = reduce(function, list(Querys.Settlement), exposures)
         return exposures
 
     @staticmethod
@@ -140,7 +140,7 @@ class StabilityCalculator(Segregating, Sizing, Emptying, Logging):
     def calculation(self): return self.__calculation
 
 
-class StabilityFilter(Segregating, Sizing, Emptying, Logging):
+class StabilityFilter(Partition, Sizing, Emptying, Logging):
     def execute(self, prospects, stabilities, *args, **kwargs):
         assert isinstance(prospects, pd.DataFrame) and isinstance(stabilities, pd.DataFrame)
         if self.empty(prospects): return

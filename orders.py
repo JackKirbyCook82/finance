@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 
 from finance.variables import Variables, Categories, Querys
-from support.mixins import Emptying, Sizing, Logging, Segregating
+from support.mixins import Emptying, Sizing, Logging, Partition
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -21,10 +21,8 @@ __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
 
 
-class OrderCalculator(Segregating, Sizing, Emptying, Logging):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.__header = ["ticker", "expire", "strike", "instrument", "option", "position", "quantity", "order"]
+class OrderCalculator(Partition, Sizing, Emptying, Logging):
+    header = ["ticker", "expire", "strike", "instrument", "option", "position", "quantity", "order"]
 
     def execute(self, prospects, *args, **kwargs):
         assert isinstance(prospects, pd.DataFrame)
@@ -61,7 +59,7 @@ class OrderCalculator(Segregating, Sizing, Emptying, Logging):
         assert isinstance(prospects, pd.DataFrame)
         strategy = lambda cols: list(map(str, cols["strategy"].stocks))
         function = lambda cols: {stock: cols["underlying"] if stock in strategy(cols) else np.NaN for stock in list(map(str, Categories.Securities.Stocks))}
-        columns = list(Querys.Contract) + list(map(str, Categories.Securities.Options)) + ["order", "valuation", "strategy", "underlying"]
+        columns = list(Querys.Settlement) + list(map(str, Categories.Securities.Options)) + ["order", "valuation", "strategy", "underlying"]
         options = prospects[columns]
         options = options.droplevel("scenario", axis=1)
         stocks = options.apply(function, axis=1, result_type="expand")
@@ -78,7 +76,7 @@ class OrderCalculator(Segregating, Sizing, Emptying, Logging):
         dataframe[security] = dataframe.apply(function, axis=1, result_type="expand")
         columns = [column for column in dataframe.columns if column != "security"]
         dataframe = dataframe[columns]
-        contract = list(Querys.Contract)
+        contract = list(Querys.Settlement)
         contract = {key: value for key, value in prospects[contract].to_dict().items()}
         dataframe = dataframe.assign(**contract, order=prospects["order"])
         return dataframe
@@ -99,8 +97,5 @@ class OrderCalculator(Segregating, Sizing, Emptying, Logging):
         virtuals = pd.concat([putlong, putshort, calllong, callshort], axis=0)
         virtuals["strike"] = virtuals["strike"].apply(lambda strike: np.round(strike, decimals=2))
         return virtuals
-
-    @property
-    def header(self): return self.__header
 
 

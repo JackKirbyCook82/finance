@@ -13,8 +13,7 @@ import xarray as xr
 from abc import ABC
 from collections import namedtuple as ntuple
 
-from finance.variables import Variables
-from support.mixins import Emptying, Sizing, Logging, Segregating
+from support.mixins import Emptying, Sizing, Partition
 from support.calculations import Calculation, Equation, Variable
 from support.meta import RegistryMeta
 
@@ -24,7 +23,7 @@ __all__ = ["ValuationCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
-
+class ValuationIdentity(ntuple("Identity", "valuation scenario")): pass
 class ValuationEquation(Equation, ABC):
     tau = Variable("tau", "tau", np.int32, xr.DataArray, vectorize=True, function=lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
     inc = Variable("inc", "income", np.float32, xr.DataArray, vectorize=True, function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
@@ -59,18 +58,18 @@ class ArbitrageCalculation(ValuationCalculation, ABC):
             yield equation.npv()
             yield equation.apy()
 
-class MinimumArbitrageCalculation(ArbitrageCalculation, equation=MinimumArbitrageEquation, register=(Variables.Valuations.ARBITRAGE, Variables.Scenarios.MINIMUM)): pass
-class MaximumArbitrageCalculation(ArbitrageCalculation, equation=MaximumArbitrageEquation, register=(Variables.Valuations.ARBITRAGE, Variables.Scenarios.MAXIMUM)): pass
+class MinimumArbitrageCalculation(ArbitrageCalculation, equation=MinimumArbitrageEquation, register=(Valuations.ARBITRAGE, Scenarios.MINIMUM)): pass
+class MaximumArbitrageCalculation(ArbitrageCalculation, equation=MaximumArbitrageEquation, register=(Valuations.ARBITRAGE, Scenarios.MAXIMUM)): pass
 
 
-class ValuationCalculator(Segregating, Sizing, Emptying, Logging):
+class ValuationCalculator(Sizing, Emptying, Partition):
     def __init__(self, *args, valuation, **kwargs):
+        assert valuation in Valuations
         super().__init__(*args, **kwargs)
-        Identity = ntuple("Identity", "valuation scenario")
-        calculations = {Identity(*identity): calculation for identity, calculation in dict(ValuationCalculation).items()}
+        calculations = {ValuationIdentity(*identity): calculation for identity, calculation in dict(ValuationCalculation).items()}
         calculations = {identity.scenario: calculation for identity, calculation in calculations.items() if identity.valuation == valuation}
-        self.__calculations = {scenario: calculation(*args, **kwargs) for scenario, calculation in calculations.items()}
-        self.__valuation = valuation
+        self.calculations = {scenario: calculation(*args, **kwargs) for scenario, calculation in calculations.items()}
+        self.valuation = valuation
 
     def execute(self, strategies, *args, **kwargs):
         assert isinstance(strategies, (list, xr.Dataset))
@@ -105,16 +104,10 @@ class ValuationCalculator(Segregating, Sizing, Emptying, Logging):
     def valuations(scenarios, *args, **kwargs):
         assert isinstance(scenarios, dict)
         for scenario, dataset in scenarios.items():
-            dataset = dataset.drop_vars(list(Variables.Security), errors="ignore")
+            dataset = dataset.drop_vars(list(Security), errors="ignore")
             dataset = dataset.expand_dims(list(set(iter(dataset.coords)) - set(iter(dataset.dims))))
             dataframe = dataset.to_dataframe().dropna(how="all", inplace=False)
             dataframe = dataframe.reset_index(drop=False, inplace=False)
             yield scenario, dataframe
-
-    @property
-    def calculations(self): return self.__calculations
-    @property
-    def valuation(self): return self.__valuation
-
 
 
