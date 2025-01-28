@@ -6,44 +6,28 @@ Created on Thurs Jan 31 2024
 
 """
 
-import logging
 import numpy as np
 import pandas as pd
 
-from finance.variables import Variables, Categories, Querys
-from support.mixins import Emptying, Sizing, Logging, Partition
-from support.meta import MappingMeta
-from support.files import File
+from finance.variables import Variables, Querys, Securities
+from support.mixins import Emptying, Sizing, Partition
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["HoldingCalculator", "HoldingFile"]
+__all__ = ["HoldingCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
-__logger__ = logging.getLogger(__name__)
 
 
-class HoldingParameters(metaclass=MappingMeta):
-    formatters = {"instrument": int, "option": int, "position": int, "strike": lambda strike: round(strike, 2)}
-    parsers = {"instrument": Variables.Instruments, "option": Variables.Options, "position": Variables.Positions}
-    order = ["ticker", "expire", "strike", "instrument", "option", "position", "quantity"]
-    types = {"ticker": str, "strike": np.float32, "quantity": np.int32}
-    dates = {"expire": "%Y%m%d"}
-
-
-class HoldingFile(File, variable="holdings", **dict(HoldingParameters)):
-    pass
-
-
-class HoldingCalculator(Partition, Sizing, Emptying, Logging):
+class HoldingCalculator(Sizing, Emptying, Partition, query=Querys.Settlement, title="Calculated"):
     def execute(self, prospects, *args, **kwargs):
         assert isinstance(prospects, pd.DataFrame)
         if self.empty(prospects): return
-        for query, dataframe in self.segregate(prospects, *args, **kwargs):
+        for settlement, dataframe in self.partition(prospects):
             holdings = self.calculate(dataframe, *args, **kwargs)
             size = self.size(holdings)
-            string = f"Calculated: {repr(self)}|{str(query)}[{size:.0f}]"
-            self.logger.info(string)
+            string = f"{str(settlement)}[{int(size):.0f}]"
+            self.console(string)
             if self.empty(holdings): continue
             yield holdings
 
@@ -57,12 +41,12 @@ class HoldingCalculator(Partition, Sizing, Emptying, Logging):
     @staticmethod
     def holdings(dataframe, *args, **kwargs):
         assert isinstance(dataframe, pd.DataFrame)
-        header = list(Querys.Product) + list(Variables.Security) + ["quantity"]
+        header = list(Querys.Settlement) + ["strike"] + list(Variables.Securities.Security) + ["quantity"]
         columns = [column for column in list(header) if column in dataframe.columns]
-        securities = dataframe[columns + list(map(str, Categories.Securities.Stocks)) + list(map(str, Categories.Securities.Options))]
-        holdings = securities.melt(id_vars=list(Querys.Settlement), value_vars=list(map(str, Categories.Securities)), var_name="security", value_name="strike")
+        securities = dataframe[columns + list(map(str, Securities.Stocks)) + list(map(str, Securities.Options))]
+        holdings = securities.melt(id_vars=list(Querys.Settlement), value_vars=list(map(str, Securities)), var_name="security", value_name="strike")
         holdings = holdings.where(holdings["strike"].notna()).dropna(how="all", inplace=False)
-        holdings["security"] = holdings["security"].apply(Categories.Securities)
+        holdings["security"] = holdings["security"].apply(Securities)
         holdings["instrument"] = holdings["security"].apply(lambda security: security.instrument)
         holdings["option"] = holdings["security"].apply(lambda security: security.option)
         holdings["position"] = holdings["security"].apply(lambda security: security.position)
@@ -73,7 +57,7 @@ class HoldingCalculator(Partition, Sizing, Emptying, Logging):
     def stocks(valuations, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame)
         strategy = lambda cols: list(map(str, cols["strategy"].stocks))
-        function = lambda cols: {stock: cols["underlying"] if stock in strategy(cols) else np.NaN for stock in list(map(str, Categories.Securities.Stocks))}
+        function = lambda cols: {stock: cols["underlying"] if stock in strategy(cols) else np.NaN for stock in list(map(str, Securities.Stocks))}
         stocks = valuations.apply(function, axis=1, result_type="expand")
         return stocks
 

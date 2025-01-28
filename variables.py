@@ -20,7 +20,7 @@ from support.files import File
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = []
+__all__ = ["Variables", "Querys", "Files", "Securities", "Strategies"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
@@ -60,23 +60,19 @@ class OSI(ABC):
     def strike(self): pass
 
 
-ThetaVariable = Variable("Theta", ["PUT", "NEUTRAL", "CALL"], start=-1)
-PhiVariable = Variable("Phi", ["SHORT", "NEUTRAL", "LONG"], start=-1)
-OmegaVariable = Variable("Omega", ["BEAR", "NEUTRAL", "BULL"], start=-1)
-
-StatusVariable = Variable("Status", ["PROSPECT", "PENDING", "OBSOLETE", "ABANDONED", "REJECTED", "ACCEPTED"], start=1)
-ScenarioVariable = Variable("Scenario", ["MINIMUM", "MAXIMUM"], start=1)
-ValuationVariable = Variable("Valuation", ["ARBITRAGE"], start=1)
-
-TermsVariable = Variable("Terms", ["MARKET", "LIMIT", "STOP", "STOPLIMIT", "LIMITDEBIT", "LIMITCREDIT"], start=1)
-TechnicalVariable = Variable("Technical", ["STATISTIC", "STOCHASTIC"], start=1)
-ActionVariable = Variable("Action", ["BUY", "SELL"], start=1)
-
-MarketVariable = Variable("Market", ["EMPTY", "BEAR", "BULL"], start=0)
+TechnicalVariable = Variable("Technical", ["TRADE", "QUOTE", "BARS", "STATISTIC", "STOCHASTIC"], start=1)
 InstrumentVariable = Variable("Instrument", ["EMPTY", "STOCK", "OPTION"], start=0)
 OptionVariable = Variable("Option", ["EMPTY", "PUT", "CALL"], start=0)
 PositionVariable = Variable("Position", ["EMPTY", "LONG", "SHORT"], start=0)
 SpreadVariable = Variable("Spread", ["STRANGLE", "COLLAR", "VERTICAL"], start=1)
+ValuationVariable = Variable("Valuation", ["ARBITRAGE"], start=1)
+ScenarioVariable = Variable("Scenario", ["MINIMUM", "MAXIMUM"], start=1)
+StatusVariable = Variable("Status", ["PROSPECT", "PENDING", "OBSOLETE", "ABANDONED", "REJECTED", "ACCEPTED"], start=1)
+TermsVariable = Variable("Terms", ["MARKET", "LIMIT", "STOP", "STOPLIMIT", "LIMITDEBIT", "LIMITCREDIT"], start=1)
+ActionVariable = Variable("Action", ["BUY", "SELL"], start=1)
+ThetaVariable = Variable("Theta", ["PUT", "NEUTRAL", "CALL"], start=-1)
+PhiVariable = Variable("Phi", ["SHORT", "NEUTRAL", "LONG"], start=-1)
+OmegaVariable = Variable("Omega", ["BEAR", "NEUTRAL", "BULL"], start=-1)
 
 SecurityVariables = Variables("Security", ["instrument", "option", "position"])
 StrategyVariables = Variables("Strategy", ["spread", "option", "position"], {"stocks", "options"})
@@ -93,30 +89,43 @@ CollarLongSecurity = SecurityVariables("CollarLong", [SpreadVariable.COLLAR, Opt
 CollarShortSecurity = SecurityVariables("CollarShort", [SpreadVariable.COLLAR, OptionVariable.EMPTY, PositionVariable.SHORT], options=[OptionCallLongSecurity, OptionPutShortSecurity], stocks=[StockShortSecurity])
 
 TickerField = Field("ticker", str)
+DateField = Field("date", datetime.date, format="%Y%m%d")
 ExpireField = Field("expire", datetime.date, format="%Y%m%d")
 StrikeField = Field("strike", numbers.Number, digits=2)
 OptionField = Field("option", Enum, variable=OptionVariable)
 
 SymbolQuery = Query("Symbol", fields=[TickerField], delimiter="|")
+HistoryQuery = Query("History", fields=[TickerField, DateField], delimiter="|")
 SettlementQuery = Query("Future", fields=[TickerField, ExpireField], delimiter="|")
 ContractQuery = Query("Contract", bases=[OSI], fields=[TickerField, ExpireField, OptionField, StrikeField], delimiter="|")
 
 
 class Parameters(metaclass=MappingMeta):
-    types = {key: np.float32 for key in ("strike", "price", "bid", "ask", "demand", "supply", "open", "close", "high", "low", "trend", "volatility", "oscillator")}
+    types = ("strike", "price", "quantity") + ("trend", "volatility", "oscillator") + ("spot", "minimum", "maximum") + ("open", "close", "high", "low") + ("bid", "ask", "demand", "supply")
+    types = {key: np.float32 for key in types.items()}
     types = dict(ticker=str, volume=np.int64) | dict(types)
     formatters = dict(instrument=int, option=int, position=int)
     parsers = dict(instrument=InstrumentVariable, option=OptionVariable, position=PositionVariable)
     dates = dict(date="Y%m%d", expire="Y%m%d", current="%Y%m%d-%H%M")
 
-class StockTradeFile(File, variable=(STOCK, TRADE), **dict(Parameters), order=["ticker", "current", "price"]): pass
-class StockQuoteFile(File, variable=(STOCK, QUOTE), **dict(Parameters), order=["ticker", "current", "bid", "ask", "demand", "supply"]): pass
-class StockBarsFile(File, variable=(STOCK, BARS), **dict(Parameters), order=["ticker", "date", "open", "close", "high", "low", "price"]): pass
-class StockStatisticFile(File, variable=(STOCK, STATISTIC), **dict(Parameters), order=["ticker", "date", "price", "trend", "volatility"]): pass
-class StockStochasticFile(File, variable=(STOCK, STOCHASTIC), **dict(Parameters), order=["ticker", "date", "price", "oscillator"]): pass
-class OptionTradeFile(File, variable=(OPTION, TRADE), **dict(Parameters), order=["ticker", "expire", "strike", "option", "current", "price", "underlying"]): pass
-class OptionQuoteFile(File, variable=(OPTION, QUOTE), **dict(Parameters), order=["ticker", "expire", "strike", "option", "current", "bid", "ask", "demand", "supply", "underlying"]): pass
+class StockTradeFile(File, order=["ticker", "current", "price"], **dict(Parameters)): pass
+class StockQuoteFile(File, order=["ticker", "current", "bid", "ask", "demand", "supply"], **dict(Parameters)): pass
+class StockBarsFile(File, order=["ticker", "date", "open", "close", "high", "low", "price"], **dict(Parameters)): pass
+class StockStatisticFile(File, order=["ticker", "date", "price", "trend", "volatility"], **dict(Parameters)): pass
+class StockStochasticFile(File, order=["ticker", "date", "price", "oscillator"], **dict(Parameters)): pass
+class OptionTradeFile(File, order=["ticker", "expire", "strike", "option", "current", "price", "underlying"], **dict(Parameters)): pass
+class OptionQuoteFile(File, order=["ticker", "expire", "strike", "option", "current", "bid", "ask", "demand", "supply", "underlying"], **dict(Parameters)): pass
+class HoldingsFile(File, order=["ticker", "expire", "strike", "instrument", "option", "position", "quantity"], **dict(Parameters)): pass
 
+
+class Querys(Category): Symbol, History, Settlement, Contract = SymbolQuery, HistoryQuery, SettlementQuery, ContractQuery
+class Variables(Category):
+    class Securities(Category): Security, Instrument, Option, Position = SecurityVariables, InstrumentVariable, OptionVariable, PositionVariable
+    class Strategies(Category): Strategy, Spread = StrategyVariables, SpreadVariable
+    class Valuations(Category): Valuation, Scenario = ValuationVariable, ScenarioVariable
+    class Markets(Category): Status, Terms, Action = StatusVariable, TermsVariable, ActionVariable
+    class Greeks(Category): Theta, Phi, Omega = ThetaVariable, PhiVariable, OmegaVariable
+    class Analysis(Category): Technical = TechnicalVariable
 
 class Files(Category):
     class Stocks(Category): Trade = StockTradeFile, Quote = StockQuoteFile, Bars = StockBarsFile
@@ -131,6 +140,7 @@ class Securities(Category):
 class Strategies(Category):
     class Verticals(Category): Put = VerticalPutSecurity; Call = VerticalCallSecurity
     class Collars(Category): Long = CollarLongSecurity; Short = CollarShortSecurity
+
 
 
 

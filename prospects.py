@@ -11,9 +11,9 @@ import pandas as pd
 from functools import reduce
 from itertools import product, count
 
-from finance.variables import Variables, Categories, Querys
-from support.mixins import Emptying, Sizing, Logging, Partition
+from finance.variables import Variables, Querys, Securities
 from support.tables import Reader, Routine, Writer, Table
+from support.mixins import Emptying, Sizing, Partition
 from support.decorators import Decorator
 
 __version__ = "1.0.0"
@@ -25,20 +25,20 @@ __license__ = "MIT License"
 
 class ProspectTable(Table): pass
 class ProspectParameters(object):
-    scenarios = {Variables.Valuations.ARBITRAGE: [Variables.Scenarios.MINIMUM, Variables.Scenarios.MAXIMUM]}
-    variants = {Variables.Valuations.ARBITRAGE: ["apy", "npv", "cost"]}
+    scenarios = {Variables.Valuations.Valuation.ARBITRAGE: [Variables.Valuations.Scenario.MINIMUM, Variables.Valuations.Scenario.MAXIMUM]}
+    variants = {Variables.Valuations.Valuation.ARBITRAGE: ["apy", "npv", "cost"]}
     invariants = ["underlying", "size", "current"]
     prospect = ["order", "priority", "status"]
     context = ["valuation", "strategy"]
-    options = list(map(str, Categories.Securities.Options))
-    stocks = list(map(str, Categories.Securities.Stocks))
+    options = list(map(str, Securities.Options))
+    stocks = list(map(str, Securities.Stocks))
     contract = list(map(str, Querys.Settlement))
 
 
 class ProspectHeader(ProspectParameters):
     def __iter__(self): return iter(self.index + self.columns)
     def __new__(cls, *args, valuation, **kwargs):
-        assert valuation in Variables.Valuations
+        assert valuation in Variables.Valuations.Valuation
         scenarios = list(cls.scenarios[valuation])
         variants = list(cls.variants[valuation])
         index = list(cls.context + cls.contract + cls.options)
@@ -56,7 +56,7 @@ class ProspectHeader(ProspectParameters):
 
 class ProspectLayout(ProspectParameters):
     def __new__(cls, *args, valuation, **kwargs):
-        assert valuation in Variables.Valuations
+        assert valuation in Variables.Valuations.Valuation
         scenarios = list(cls.scenarios[valuation])
         variants = list(cls.variants[valuation])
         order = list(cls.contract + cls.context + cls.options + variants + ["underlying", "size", "status"])
@@ -75,7 +75,7 @@ class ProspectLayout(ProspectParameters):
         return instance
 
 
-class ProspectCalculator(Partition, Sizing, Emptying, Logging):
+class ProspectCalculator(Sizing, Emptying, Partition, query=Querys.Settlement, title="Calculated"):
     def __init__(self, *args, priority, header, **kwargs):
         assert callable(priority)
         super().__init__(*args, **kwargs)
@@ -86,12 +86,11 @@ class ProspectCalculator(Partition, Sizing, Emptying, Logging):
     def execute(self, valuations, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame)
         if self.empty(valuations): return
-        for query, dataframe in self.segregate(valuations, *args, **kwargs):
+        for settlement, dataframe in self.partition(valuations):
             prospects = self.calculate(dataframe, *args, **kwargs)
-            prospects = prospects.reindex(columns=list(self.header), fill_value=np.NaN)
             size = self.size(prospects)
-            string = f"Calculated: {repr(self)}|{str(query)}[{size:.0f}]"
-            self.logger.info(string)
+            string = f"{str(settlement)}[{int(size):.0f}]"
+            self.console(string)
             if self.empty(prospects): continue
             yield prospects
 
@@ -103,6 +102,7 @@ class ProspectCalculator(Partition, Sizing, Emptying, Logging):
         parameters = dict(ascending=False, inplace=False, ignore_index=False)
         prospects = prospects.sort_values("priority", axis=0, **parameters)
         prospects["status"] = np.NaN
+        prospects = prospects.reindex(columns=list(self.header), fill_value=np.NaN)
         return prospects
 
     @property
@@ -113,51 +113,56 @@ class ProspectCalculator(Partition, Sizing, Emptying, Logging):
     def header(self): return self.__header
 
 
-class ProspectReader(Reader):
-    def __init__(self, *args, status, **kwargs):
-        assert isinstance(status, list) and all([isinstance(value, Variables.Status) for value in status])
-        super().__init__(*args, **kwargs)
-        self.__status = status
-
-    def take(self, status):
-        mask = self.table["status"] == status
+class ProspectWriter(Writer, query=Querys.Settlement):
+    def detach(self, settlement):
+        if not bool(self.table): return
+        mask = [self.table[key] == value for key, value in settlement.items()]
+        mask = reduce(lambda lead, lag: lead & lag, mask)
+        mask = mask & (self.table["status"] == self.status)
         dataframe = self.table.take(mask)
         size = self.size(dataframe)
-        title = str(status.name).lower().title()
-        string = f"{str(title)}: {repr(self)}[{size:.0f}]"
-        self.logger.info(string)
-        return dataframe
+        status = str(Variables.Markets.Status.OBSOLETE).lower().title()
+        string = f"{str(status)}[{int(size):.0f}]"
+        self.console(string, title="Obsolete")
 
+    def attach(self, dataframe):
+        self.table.append(dataframe)
+        size = self.size(dataframe)
+        status = str(Variables.Markets.Status.PROSPECT).lower().title()
+        string = f"{str(status)}[{int(size):.0f}]"
+        self.console(string, title="Prospected")
+
+    def write(self, prospects, *args, **kwargs):
+        for settlement, dataframe in self.partition(prospects):
+            if self.empty(dataframe): continue
+            dataframe["status"] = Variables.Markets.Status.PROSPECT
+            self.detach(settlement)
+            self.attach(dataframe)
+        self.table.sort("priority", reverse=True)
+        self.table.reindex()
+
+
+class ProspectReader(Reader, query=Querys.Settlement):
     def read(self, *args, **kwargs):
         if not bool(self.table): return
-        dataframes = list(map(self.take, self.status))
-        return pd.concat(dataframes, axis=0)
-
-    @property
-    def status(self): return self.__status
+        mask = self.table["status"] == Variables.Markets.Status.ACCEPTED
+        dataframe = self.table.take(mask)
+        size = self.size(dataframe)
+        status = str(Variables.Markets.Status.ACCEPTED).lower().title()
+        string = f"{str(status)}[{int(size):.0f}]"
+        self.console(string, title="Accepted")
+        return dataframe
 
 
 class ProspectDiscarding(Routine):
-    def __init__(self, *args, status, **kwargs):
-        assert isinstance(status, list) and all([isinstance(value, Variables.Status) for value in status])
-        super().__init__(*args, **kwargs)
-        self.__status = status
-
-    def take(self, status):
-        mask = self.table["status"] == status
-        dataframe = self.table.take(mask)
-        size = self.size(dataframe)
-        title = str(status.name).lower().title()
-        string = f"{str(title)}: {repr(self)}[{size:.0f}]"
-        self.logger.info(string)
-
     def invoke(self, *args, **kwargs):
         if not bool(self.table): return
-        for status in self.status:
-            self.take(status)
-
-    @property
-    def status(self): return self.__status
+        for status in (Variables.Markets.Status.OBSOLETE, Variables.Markets.Status.REJECTED, Variables.Markets.Status.ABANDONED):
+            mask = self.table["status"] == status
+            dataframe = self.table.take(mask)
+            size = self.size(dataframe)
+            string = f"{str(status)}[{int(size):.0f}]"
+            self.console(string, title="Discarded")
 
 
 class ProspectProtocol(Decorator):
@@ -179,41 +184,6 @@ class ProspectProtocols(Routine):
 
     @property
     def protocols(self): return self.__protocols
-
-
-class ProspectWriter(Writer):
-    def __init__(self, *args, status, **kwargs):
-        assert isinstance(status, Variables.Status)
-        super().__init__(*args, **kwargs)
-        self.__status = status
-
-    def detach(self, query):
-        if not bool(self.table): return
-        mask = [self.table[key] == value for key, value in query.items()]
-        mask = reduce(lambda lead, lag: lead & lag, mask)
-        mask = mask & (self.table["status"] == self.status)
-        dataframe = self.table.take(mask)
-        size = self.size(dataframe)
-        string = f"Detached: {repr(self)}[{size:.0f}]"
-        self.logger.info(string)
-
-    def attach(self, content):
-        self.table.append(content)
-        size = self.size(content)
-        string = f"Appended: {repr(self)}[{size:.0f}]"
-        self.logger.info(string)
-
-    def write(self, prospects, *args, **kwargs):
-        for query, content in self.segregate(prospects, *args, **kwargs):
-            if self.empty(content): continue
-            content["status"] = self.status
-            self.detach(query)
-            self.attach(content)
-        self.table.sort("priority", reverse=True)
-        self.table.reindex()
-
-    @property
-    def status(self): return self.__status
 
 
 

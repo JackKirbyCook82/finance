@@ -7,21 +7,20 @@ Created on Fri Apr 19 2024
 """
 
 import types
-import logging
 import numpy as np
 import pandas as pd
 from abc import ABC
 
+from finance.variables import Variables, Querys
 from support.calculations import Calculation, Equation, Variable
 from support.mixins import Emptying, Sizing, Partition
 from support.meta import RegistryMeta
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = []
+__all__ = ["TechnicalCalculator"]
 __copyright__ = "Copyright 2024, Jack Kirby Cook"
 __license__ = "MIT License"
-__logger__ = logging.getLogger(__name__)
 
 
 class TechnicalEquation(Equation, ABC):
@@ -60,27 +59,33 @@ class StochasticCalculation(TechnicalCalculation, equation=StochasticEquation):
             yield equation.xk()
 
 
-class TechnicalCalculator(Sizing, Emptying, Partition):
+class TechnicalCalculator(Sizing, Emptying, Partition, query=Querys.Symbol, title="Calculated"):
     def __init__(self, *args, technicals, **kwargs):
-        assert all([technical in list(Technicals) for technical in technicals])
+        assert all([technical in list(Variables.Analysis.Technical) for technical in technicals])
         super().__init__(*args, **kwargs)
         technicals = list(dict(TechnicalCalculation).keys()) if not bool(technicals) else list(technicals)
-        calculations = dict(TechnicalCalculation).items()
-        calculations = {(STOCK, technical): calculation(*args, **kwargs) for technical, calculation in calculations if technical in technicals}
-        self.calculations = calculations
+        calculations = {technical: calculation(*args, **kwargs) for technical, calculation in dict(TechnicalCalculation).items() if technical in technicals}
+        self.__calculations = calculations
 
     def execute(self, bars, *args, **kwargs):
         assert isinstance(bars, pd.DataFrame)
         if self.empty(bars): return
-        for partition, dataframe in self.partition(bars, by=Symbol):
-            contents = {dataset: self.calculation(dataframe, *args, **kwargs) for dataset, calculation in self.calculations.items()}
-            for dataset, content in contents.items():
-                string = "|".join(list(map(str, dataset)))
-                size = self.size(dataframe)
-                string = f"Downloaded: {repr(self)}|{str(string)}|{str(partition)}[{int(size):.0f}]"
-                __logger__.info(string)
-            if self.empty(contents): continue
-            yield contents
+        for symbol, dataframe in self.partition(bars):
+            technicals = self.calculate(dataframe, *args, **kwargs)
+            size = self.size(technicals)
+            string = f"{str(symbol)}[{int(size):.0f}]"
+            self.console(string)
+            if self.empty(technicals): continue
+            yield technicals
+
+    def calculate(self, bars, *args, **kwargs):
+        for technical, calculation in self.calculations.items():
+            technicals = calculation(bars, *args, **kwargs)
+            bars = bars.merge(technicals, how="outer", on=list(Querys.History), sort=False)
+        return bars
+
+    @property
+    def calculations(self): return self.__calculations
 
 
 

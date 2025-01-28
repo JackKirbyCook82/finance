@@ -14,7 +14,7 @@ from collections import OrderedDict as ODict
 
 from finance.variables import Variables, Querys
 from support.calculations import Calculation, Equation, Variable
-from support.mixins import Emptying, Sizing, Logging, Partition
+from support.mixins import Emptying, Sizing, Partition
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -28,8 +28,8 @@ class StabilityEquation(Equation):
     m = Variable("m", "trend", np.float32, xr.DataArray, vectorize=True, function=lambda q, Θ, Φ, Ω: q * Θ * Φ * Ω)
     Ω = Variable("Ω", "omega", np.int32, xr.DataArray, vectorize=True, function=lambda x, k: np.sign(x / k - 1))
     Δ = Variable("Δ", "delta", np.int32, xr.DataArray, vectorize=True, function=lambda x, k: np.subtract(x, k))
-    Θ = Variable("Θ", "theta", np.int32, xr.DataArray, vectorize=True, function=lambda i: + int(Variables.Theta(str(i))))
-    Φ = Variable("Φ", "phi", np.int32, xr.DataArray, vectorize=True, function=lambda j: + int(Variables.Phi(str(j))))
+    Θ = Variable("Θ", "theta", np.int32, xr.DataArray, vectorize=True, function=lambda i: + int(Variables.Greeks.Theta(str(i))))
+    Φ = Variable("Φ", "phi", np.int32, xr.DataArray, vectorize=True, function=lambda j: + int(Variables.Greeks.Phi(str(j))))
 
     Σy = Variable("Σy", "value", np.float32, xr.DataArray, vectorize=False, function=lambda y: y.sum("holdings").drop(list(Querys.Settlement)))
     Σm = Variable("Σm", "value", np.float32, xr.DataArray, vectorize=False, function=lambda m: m.sum("holdings").drop(list(Querys.Settlement)))
@@ -41,23 +41,21 @@ class StabilityEquation(Equation):
 
     x = Variable("x", "underlying", np.float32, xr.DataArray, locator="underlying")
     q = Variable("q", "quantity", np.int32, xr.DataArray, locator="quantity")
-    i = Variable("i", "option", Variables.Options, xr.DataArray, locator="option")
-    j = Variable("j", "position", Variables.Positions, xr.DataArray, locator="position")
+    i = Variable("i", "option", Variables.Securities.Option, xr.DataArray, locator="option")
+    j = Variable("j", "position", Variables.Securities.Position, xr.DataArray, locator="position")
     k = Variable("k", "strike", np.float32, xr.DataArray, locator="strike")
 
 
 class StabilityCalculation(Calculation, equation=StabilityEquation):
     def execute(self, portfolios, *args, **kwargs):
         with self.equation(portfolios) as equation:
-            equation.y(portfolios)
-            equation.m(portfolios)
             yield equation.Σyh(portfolios)
             yield equation.Σyl(portfolios)
             yield equation.Σmh(portfolios)
             yield equation.Σml(portfolios)
 
 
-class StabilityCalculator(Partition, Sizing, Emptying, Logging):
+class StabilityCalculator(Sizing, Emptying, Partition, query=Querys.Settlement, title="Calculated"):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.__calculation = StabilityCalculation(*args, **kwargs)
@@ -65,30 +63,29 @@ class StabilityCalculator(Partition, Sizing, Emptying, Logging):
     def execute(self, orders, exposures, *args, **kwargs):
         assert isinstance(orders, pd.DataFrame) and isinstance(exposures, pd.DataFrame)
         if self.empty(orders): return
-        for query, dataframes in self.segregate(orders, exposures, *args, **kwargs):
-            stabilities = self.calculate(*dataframes, *args, **kwargs)
+        for settlement, (primary, secondary) in self.partition(orders, exposures):
+            primary = ODict(list(self.orders(primary, *args, **kwargs)))
+            stabilities = self.calculate(primary, secondary, *args, **kwargs)
             size = self.size(stabilities)
-            string = f"Calculated: {repr(self)}|{str(query)}[{size:.0f}]"
-            self.logger.info(string)
-            if self.empty(stabilities): continue
-            yield stabilities
+            string = f"{str(settlement)}[{int(size):.0f}]"
+            self.console(string)
+            if self.empty(orders): continue
+            yield orders
 
-    def separate(self, orders, exposures, *args, **kwargs):
+    def partition(self, orders, exposures):
         assert isinstance(orders, pd.DataFrame) and isinstance(exposures, pd.DataFrame)
-        for query, primary in super().separate(orders, *args, **kwargs):
-            mask = [exposures[key] == value for key, value in iter(query)]
+        for partition, primary in super().partition(orders):
+            mask = [exposures[key] == value for key, value in iter(partition)]
             mask = reduce(lambda lead, lag: lead & lag, list(mask))
             secondary = exposures.where(mask)
-            yield query, (primary, secondary)
+            yield partition, (primary, secondary)
 
     def calculate(self, orders, exposures, *args, **kwargs):
         assert isinstance(orders, pd.DataFrame) and isinstance(exposures, pd.DataFrame)
-        orders = ODict(list(self.orders(orders, *args, **kwargs)))
         exposures = self.exposures(exposures, *args, **kwargs)
         portfolios = list(self.portfolios(orders, exposures, *args, **kwargs))
         portfolios = xr.concat(portfolios, join="outer", fill_value=0, dim="order")
-        holdings = list(Variables.Security) + ["strike"]
-        portfolios = portfolios.stack(holdings=holdings).to_dataset()
+        portfolios = portfolios.stack(holdings=list(Variables.Securities.Security) + ["strike"]).to_dataset()
         portfolios = self.underlying(portfolios, *args, **kwargs)
         stabilities = self.calculation(portfolios, *args, **kwargs)
         stabilities = stabilities.to_dataframe()
@@ -102,8 +99,7 @@ class StabilityCalculator(Partition, Sizing, Emptying, Logging):
         assert isinstance(orders, pd.DataFrame)
         for order, dataframe in orders.groupby("order"):
             dataframe = dataframe.drop(columns="order", inplace=False)
-            index = list(Querys.Product) + list(Variables.Security)
-            series = dataframe.set_index(index, drop=True, inplace=False).squeeze()
+            series = dataframe.set_index(list(Querys.Settlement) + ["strike"] + list(Variables.Securities.Security), drop=True, inplace=False).squeeze()
             dataarray = xr.DataArray.from_series(series).fillna(0)
             function = lambda content, axis: content.squeeze(axis)
             dataarray = reduce(function, list(Querys.Settlement), dataarray)
@@ -112,8 +108,7 @@ class StabilityCalculator(Partition, Sizing, Emptying, Logging):
     @staticmethod
     def exposures(exposures, *args, **kwargs):
         assert isinstance(exposures, pd.DataFrame)
-        index = list(Querys.Product) + list(Variables.Security)
-        exposures = exposures.set_index(index, drop=True, inplace=False).squeeze()
+        exposures = exposures.set_index(list(Querys.Settlement) + ["strike"] + list(Variables.Securities.Security), drop=True, inplace=False).squeeze()
         exposures = xr.DataArray.from_series(exposures).fillna(0)
         function = lambda content, axis: content.squeeze(axis)
         exposures = reduce(function, list(Querys.Settlement), exposures)
@@ -140,20 +135,21 @@ class StabilityCalculator(Partition, Sizing, Emptying, Logging):
     def calculation(self): return self.__calculation
 
 
-class StabilityFilter(Partition, Sizing, Emptying, Logging):
+class StabilityFilter(Sizing, Emptying, Partition, query=Querys.Settlement, title="Filtered"):
     def execute(self, prospects, stabilities, *args, **kwargs):
         assert isinstance(prospects, pd.DataFrame) and isinstance(stabilities, pd.DataFrame)
         if self.empty(prospects): return
         header = list(prospects.columns)
-        for query, dataframe in self.segregate(prospects, *args, **kwargs):
+        for settlement, dataframe in self.partition(prospects):
             dataframe = dataframe.merge(stabilities, on="order", how="inner")
             dataframe = dataframe.where(dataframe["stable"])
             dataframe = dataframe[header].reset_index(drop=True, inplace=False)
             size = self.size(dataframe)
-            string = f"Calculated: {repr(self)}|{str(query)}[{size:.0f}]"
-            self.logger.info(string)
+            string = f"{str(settlement)}[{int(size):.0f}]"
+            self.console(string)
             if self.empty(dataframe): continue
             yield dataframe
+
 
 
 
