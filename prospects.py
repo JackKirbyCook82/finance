@@ -75,44 +75,6 @@ class ProspectLayout(ProspectParameters):
         return instance
 
 
-class ProspectCalculator(Sizing, Emptying, Partition, query=Querys.Settlement, title="Calculated"):
-    def __init__(self, *args, priority, header, **kwargs):
-        assert callable(priority)
-        super().__init__(*args, **kwargs)
-        self.__counter = count(start=1, step=1)
-        self.__priority = priority
-        self.__header = header
-
-    def execute(self, valuations, *args, **kwargs):
-        assert isinstance(valuations, pd.DataFrame)
-        if self.empty(valuations): return
-        for settlement, dataframe in self.partition(valuations):
-            prospects = self.calculate(dataframe, *args, **kwargs)
-            size = self.size(prospects)
-            string = f"{str(settlement)}[{int(size):.0f}]"
-            self.console(string)
-            if self.empty(prospects): continue
-            yield prospects
-
-    def calculate(self, valuations, *args, **kwargs):
-        assert isinstance(valuations, pd.DataFrame)
-        prospects = valuations.assign(order=[next(self.counter) for _ in range(len(valuations))])
-        prospects["order"] = prospects["order"].astype(np.int64)
-        prospects["priority"] = prospects.apply(self.priority, axis=1)
-        parameters = dict(ascending=False, inplace=False, ignore_index=False)
-        prospects = prospects.sort_values("priority", axis=0, **parameters)
-        prospects["status"] = np.NaN
-        prospects = prospects.reindex(columns=list(self.header), fill_value=np.NaN)
-        return prospects
-
-    @property
-    def priority(self): return self.__priority
-    @property
-    def counter(self): return self.__counter
-    @property
-    def header(self): return self.__header
-
-
 class ProspectWriter(Writer, query=Querys.Settlement):
     def detach(self, settlement):
         if not bool(self.table): return
@@ -184,6 +146,45 @@ class ProspectProtocols(Routine):
 
     @property
     def protocols(self): return self.__protocols
+
+
+class ProspectCalculator(Sizing, Emptying, Partition, query=Querys.Settlement, title="Calculated"):
+    def __init__(self, *args, priority, header, **kwargs):
+        assert callable(priority)
+        super().__init__(*args, **kwargs)
+        self.__counter = count(start=1, step=1)
+        self.__priority = priority
+        self.__header = header
+
+    def execute(self, valuations, *args, **kwargs):
+        assert isinstance(valuations, pd.DataFrame)
+        if self.empty(valuations): return
+        for settlement, dataframe in self.partition(valuations):
+            prospects = self.calculate(dataframe, *args, **kwargs)
+            size = self.size(prospects)
+            string = f"{str(settlement)}[{int(size):.0f}]"
+            self.console(string)
+            if self.empty(prospects): continue
+            yield prospects
+
+    def calculate(self, valuations, *args, **kwargs):
+        assert isinstance(valuations, pd.DataFrame)
+        prospects = valuations.assign(order=[next(self.counter) for _ in range(len(valuations))])
+        prospects["order"] = prospects["order"].astype(np.int64)
+        prospects["priority"] = prospects.apply(self.priority, axis=1)
+        parameters = dict(ascending=False, inplace=False, ignore_index=False)
+        prospects = prospects.sort_values("priority", axis=0, **parameters)
+        prospects["status"] = np.NaN
+        prospects = prospects.reindex(columns=list(self.header), fill_value=np.NaN)
+        return prospects
+
+    @property
+    def priority(self): return self.__priority
+    @property
+    def counter(self): return self.__counter
+    @property
+    def header(self): return self.__header
+
 
 
 
