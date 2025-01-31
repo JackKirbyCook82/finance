@@ -16,7 +16,7 @@ from support.meta import MappingMeta
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["HoldingCalculator", "HoldingFile"]
+__all__ = ["HoldingCalculator", "HoldingDirectory", "HoldingLoader", "HoldingSaver", "HoldingFile"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
