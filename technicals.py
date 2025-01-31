@@ -27,7 +27,7 @@ __license__ = "MIT License"
 
 class TechnicalParameters(metaclass=MappingMeta):
     types = {"ticker": str, "price underlying strike bid ask open close high low": np.float32, "trend volatility oscillator": np.float32, "volume": np.int64}
-    types = {key: value for keys, value in types.items() for key in keys}
+    types = {key: value for keys, value in types.items() for key in str(key).split(" ")}
     parsers = dict(instrument=Variables.Securities.Instrument, option=Variables.Securities.Option, position=Variables.Securities.Position)
     formatters = dict(instrument=int, option=int, position=int)
     dates = dict(date="Y%m%d", expire="Y%m%d", current="%Y%m%d-%H%M")
