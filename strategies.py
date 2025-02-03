@@ -17,7 +17,7 @@ from collections import namedtuple as ntuple
 
 from finance.variables import Variables, Querys, Strategies, Securities
 from support.calculations import Calculation, Equation, Variable
-from support.mixins import Emptying, Sizing, Partition
+from support.mixins import Emptying, Sizing, Partition, Logging
 from support.meta import RegistryMeta
 
 __version__ = "1.0.0"
@@ -92,7 +92,7 @@ class CollarLongCalculation(CollarCalculation, equation=CollarLongEquation, regi
 class CollarShortCalculation(CollarCalculation, equation=CollarShortEquation, register=Strategies.Collars.Short): pass
 
 
-class StrategyCalculator(Sizing, Emptying, Partition, query=Querys.Settlement, title="Calculated"):
+class StrategyCalculator(Sizing, Emptying, Partition, Logging, query=Querys.Settlement, title="Calculated"):
     def __init__(self, *args, strategies=[], **kwargs):
         assert all([strategy in list(Strategies) for strategy in list(strategies)])
         super().__init__(*args, **kwargs)
@@ -107,8 +107,7 @@ class StrategyCalculator(Sizing, Emptying, Partition, query=Querys.Settlement, t
             contents = dict(self.securities(dataframe, *args, **kwargs))
             for strategy, strategies in self.calculator(contents, *args, **kwargs):
                 size = self.size(strategies)
-                string = f"{str(settlement)}|{str(strategy)}[{int(size):.0f}]"
-                self.console(string)
+                self.console(f"{str(settlement)}|{str(strategy)}[{int(size):.0f}]")
                 if self.empty(strategies, "size"): continue
                 yield strategies
 

@@ -10,13 +10,13 @@ import numpy as np
 import pandas as pd
 
 from finance.variables import Variables, Querys, Securities
-from support.files import Directory, Loader, Saver, File
-from support.mixins import Emptying, Sizing, Partition
+from support.mixins import Emptying, Sizing, Partition, Logging
 from support.meta import MappingMeta
+from support.files import File
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["HoldingCalculator", "HoldingDirectory", "HoldingLoader", "HoldingSaver", "HoldingFile"]
+__all__ = ["HoldingCalculator", "HoldingFile"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
@@ -28,21 +28,18 @@ class HoldingParameters(metaclass=MappingMeta):
     formatters = dict(instrument=int, option=int, position=int)
     dates = dict(expire="Y%m%d")
 
-class HoldingFile(File, **dict(HoldingParameters)): pass
-class HoldingDirectory(Directory, query=Querys.Settlement): pass
-class HoldingLoader(Loader, query=Querys.Settlement): pass
-class HoldingSaver(Saver, query=Querys.Settlement): pass
+class HoldingFile(File, **dict(HoldingParameters)):
+    pass
 
 
-class HoldingCalculator(Sizing, Emptying, Partition, query=Querys.Settlement, title="Calculated"):
+class HoldingCalculator(Sizing, Emptying, Partition, Logging, query=Querys.Settlement, title="Calculated"):
     def execute(self, prospects, *args, **kwargs):
         assert isinstance(prospects, pd.DataFrame)
         if self.empty(prospects): return
         for settlement, dataframe in self.partition(prospects):
             holdings = self.calculate(dataframe, *args, **kwargs)
             size = self.size(holdings)
-            string = f"{str(settlement)}[{int(size):.0f}]"
-            self.console(string)
+            self.console(f"{str(settlement)}[{int(size):.0f}]")
             if self.empty(holdings): continue
             yield holdings
 

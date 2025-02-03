@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 
 from finance.variables import Variables, Querys
-from support.mixins import Emptying, Sizing, Partition
+from support.mixins import Emptying, Sizing, Partition, Logging
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -19,7 +19,7 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class ExposureCalculator(Sizing, Emptying, Partition, query=Querys.Settlement, title="Calculated"):
+class ExposureCalculator(Sizing, Emptying, Partition, Logging, query=Querys.Settlement, title="Calculated"):
     header = ["ticker", "expire", "strike", "instrument", "option", "position", "quantity"]
 
     def execute(self, holdings, *args, **kwargs):
@@ -28,8 +28,7 @@ class ExposureCalculator(Sizing, Emptying, Partition, query=Querys.Settlement, t
         for settlement, dataframe in self.partition(holdings):
             exposures = self.calculate(dataframe, *args, **kwargs)
             size = self.size(exposures)
-            string = f"{str(settlement)}[{int(size):.0f}]"
-            self.console(string)
+            self.console(f"{str(settlement)}[{int(size):.0f}]")
             if self.empty(exposures): continue
             yield exposures
 

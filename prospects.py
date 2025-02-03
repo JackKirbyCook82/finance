@@ -12,8 +12,8 @@ from functools import reduce
 from itertools import product, count
 
 from finance.variables import Variables, Querys, Securities
+from support.mixins import Emptying, Sizing, Partition, Logging
 from support.tables import Reader, Routine, Writer, Table
-from support.mixins import Emptying, Sizing, Partition
 from support.decorators import Decorator
 
 __version__ = "1.0.0"
@@ -84,15 +84,13 @@ class ProspectWriter(Writer, query=Querys.Settlement):
         dataframe = self.table.take(mask)
         size = self.size(dataframe)
         status = str(Variables.Markets.Status.OBSOLETE).lower().title()
-        string = f"{str(status)}[{int(size):.0f}]"
-        self.console(string, title="Obsolete")
+        self.console(f"{str(status)}[{int(size):.0f}]", title="Obsolete")
 
     def attach(self, dataframe):
         self.table.append(dataframe)
         size = self.size(dataframe)
         status = str(Variables.Markets.Status.PROSPECT).lower().title()
-        string = f"{str(status)}[{int(size):.0f}]"
-        self.console(string, title="Prospected")
+        self.console(f"{str(status)}[{int(size):.0f}]", title="Prospected")
 
     def write(self, prospects, *args, **kwargs):
         for settlement, dataframe in self.partition(prospects):
@@ -111,8 +109,7 @@ class ProspectReader(Reader, query=Querys.Settlement):
         dataframe = self.table.take(mask)
         size = self.size(dataframe)
         status = str(Variables.Markets.Status.ACCEPTED).lower().title()
-        string = f"{str(status)}[{int(size):.0f}]"
-        self.console(string, title="Accepted")
+        self.console(f"{str(status)}[{int(size):.0f}]", title="Accepted")
         return dataframe
 
 
@@ -123,8 +120,7 @@ class ProspectDiscarding(Routine):
             mask = self.table["status"] == status
             dataframe = self.table.take(mask)
             size = self.size(dataframe)
-            string = f"{str(status)}[{int(size):.0f}]"
-            self.console(string, title="Discarded")
+            self.console(f"{str(status)}[{int(size):.0f}]", title="Discarded")
 
 
 class ProspectProtocol(Decorator):
@@ -148,7 +144,7 @@ class ProspectProtocols(Routine):
     def protocols(self): return self.__protocols
 
 
-class ProspectCalculator(Sizing, Emptying, Partition, query=Querys.Settlement, title="Calculated"):
+class ProspectCalculator(Sizing, Emptying, Partition, Logging, query=Querys.Settlement, title="Calculated"):
     def __init__(self, *args, priority, header, **kwargs):
         assert callable(priority)
         super().__init__(*args, **kwargs)
@@ -162,8 +158,7 @@ class ProspectCalculator(Sizing, Emptying, Partition, query=Querys.Settlement, t
         for settlement, dataframe in self.partition(valuations):
             prospects = self.calculate(dataframe, *args, **kwargs)
             size = self.size(prospects)
-            string = f"{str(settlement)}[{int(size):.0f}]"
-            self.console(string)
+            self.console(f"{str(settlement)}[{int(size):.0f}]")
             if self.empty(prospects): continue
             yield prospects
 

@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 
 from finance.variables import Variables, Querys, Securities
-from support.mixins import Emptying, Sizing, Partition
+from support.mixins import Emptying, Sizing, Partition, Logging
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -19,7 +19,7 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class OrderCalculator(Sizing, Emptying, Partition, query=Querys.Settlement, title="Calculated"):
+class OrderCalculator(Sizing, Emptying, Partition, Logging, query=Querys.Settlement, title="Calculated"):
     header = ["ticker", "expire", "strike", "instrument", "option", "position", "quantity", "order"]
 
     def execute(self, prospects, *args, **kwargs):
@@ -29,8 +29,7 @@ class OrderCalculator(Sizing, Emptying, Partition, query=Querys.Settlement, titl
             contents = self.prospects(dataframe, *args, **kwargs)
             orders = self.calculate(contents, *args, **kwargs)
             size = self.size(orders)
-            string = f"{str(settlement)}[{int(size):.0f}]"
-            self.console(string)
+            self.console(f"{str(settlement)}[{int(size):.0f}]")
             if self.empty(orders): continue
             yield orders
 

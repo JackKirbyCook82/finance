@@ -13,21 +13,21 @@ from abc import ABC
 
 from finance.variables import Variables, Querys
 from support.calculations import Calculation, Equation, Variable
-from support.files import Directory, Loader, Saver, File
-from support.mixins import Emptying, Sizing, Partition
+from support.mixins import Emptying, Sizing, Partition, Logging
 from support.meta import RegistryMeta, MappingMeta
 from support.variables import Category
+from support.files import File
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["TechnicalCalculator", "TechnicalDirectory", "TechnicalLoader", "TechnicalSaver", "TechnicalFiles"]
+__all__ = ["TechnicalCalculator", "TechnicalFiles"]
 __copyright__ = "Copyright 2024, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
 class TechnicalParameters(metaclass=MappingMeta):
     types = {"ticker": str, "price underlying strike bid ask open close high low": np.float32, "trend volatility oscillator": np.float32, "volume": np.int64}
-    types = {key: value for keys, value in types.items() for key in str(key).split(" ")}
+    types = {key: value for keys, value in types.items() for key in str(keys).split(" ")}
     parsers = dict(instrument=Variables.Securities.Instrument, option=Variables.Securities.Option, position=Variables.Securities.Position)
     formatters = dict(instrument=int, option=int, position=int)
     dates = dict(date="Y%m%d", expire="Y%m%d", current="%Y%m%d-%H%M")
@@ -43,10 +43,6 @@ class OptionQuoteFile(File, order=["ticker", "expire", "strike", "option", "curr
 class TechnicalFiles(Category):
     class Stocks(Category): Trade, Quote, Bars, Statistic, Stochastic = StockTradeFile, StockQuoteFile, StockBarsFile, StockStatisticFile, StockStochasticFile
     class Options(Category): Trade, Quote = OptionTradeFile, OptionQuoteFile
-
-class TechnicalDirectory(Directory, query=Querys.Symbol): pass
-class TechnicalLoader(Loader, query=Querys.Symbol): pass
-class TechnicalSaver(Saver, query=Querys.Symbol): pass
 
 
 class TechnicalEquation(Equation, ABC):
@@ -85,7 +81,7 @@ class StochasticCalculation(TechnicalCalculation, equation=StochasticEquation):
             yield equation.xk()
 
 
-class TechnicalCalculator(Sizing, Emptying, Partition, query=Querys.Symbol, title="Calculated"):
+class TechnicalCalculator(Sizing, Emptying, Partition, Logging, query=Querys.Symbol, title="Calculated"):
     def __init__(self, *args, technicals, **kwargs):
         assert all([technical in list(Variables.Analysis.Technical) for technical in technicals])
         super().__init__(*args, **kwargs)
@@ -93,22 +89,28 @@ class TechnicalCalculator(Sizing, Emptying, Partition, query=Querys.Symbol, titl
         calculations = {technical: calculation(*args, **kwargs) for technical, calculation in dict(TechnicalCalculation).items() if technical in technicals}
         self.__calculations = calculations
 
-    def execute(self, bars, *args, **kwargs):
-        assert isinstance(bars, pd.DataFrame)
-        if self.empty(bars): return
-        for symbol, dataframe in self.partition(bars):
+    def execute(self, technicals, *args, **kwargs):
+        assert isinstance(technicals, pd.DataFrame)
+        if self.empty(technicals): return
+        for symbol, dataframe in self.partition(technicals):
             technicals = self.calculate(dataframe, *args, **kwargs)
             size = self.size(technicals)
-            string = f"{str(symbol)}[{int(size):.0f}]"
-            self.console(string)
+            self.console(f"{str(symbol)}[{int(size):.0f}]")
             if self.empty(technicals): continue
             yield technicals
 
-    def calculate(self, bars, *args, **kwargs):
+    def calculate(self, technicals, *args, **kwargs):
+        dataframes = dict(self.calculator(technicals, *args, **kwargs))
+        for dataframe in dataframes.values():
+            header = list(technicals.columns) + [column for column in dataframe.columns if column not in technicals.columns]
+            technicals = technicals.merge(dataframe, how="outer", on=list(Querys.History), sort=False, suffixes=("", "_"))
+            technicals = technicals[header]
+        return technicals
+
+    def calculator(self, technicals, *args, **kwargs):
         for technical, calculation in self.calculations.items():
-            technicals = calculation(bars, *args, **kwargs)
-            bars = bars.merge(technicals, how="outer", on=list(Querys.History), sort=False)
-        return bars
+            dataframe = calculation(technicals, *args, **kwargs)
+            yield technical, dataframe
 
     @property
     def calculations(self): return self.__calculations

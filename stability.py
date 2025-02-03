@@ -14,7 +14,7 @@ from collections import OrderedDict as ODict
 
 from finance.variables import Variables, Querys
 from support.calculations import Calculation, Equation, Variable
-from support.mixins import Emptying, Sizing, Partition
+from support.mixins import Emptying, Sizing, Partition, Logging
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -55,7 +55,7 @@ class StabilityCalculation(Calculation, equation=StabilityEquation):
             yield equation.Σml(portfolios)
 
 
-class StabilityCalculator(Sizing, Emptying, Partition, query=Querys.Settlement, title="Calculated"):
+class StabilityCalculator(Sizing, Emptying, Partition, Logging, query=Querys.Settlement, title="Calculated"):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.__calculation = StabilityCalculation(*args, **kwargs)
@@ -67,8 +67,7 @@ class StabilityCalculator(Sizing, Emptying, Partition, query=Querys.Settlement, 
             primary = ODict(list(self.orders(primary, *args, **kwargs)))
             stabilities = self.calculate(primary, secondary, *args, **kwargs)
             size = self.size(stabilities)
-            string = f"{str(settlement)}[{int(size):.0f}]"
-            self.console(string)
+            self.console(f"{str(settlement)}[{int(size):.0f}]")
             if self.empty(orders): continue
             yield orders
 
@@ -135,7 +134,7 @@ class StabilityCalculator(Sizing, Emptying, Partition, query=Querys.Settlement, 
     def calculation(self): return self.__calculation
 
 
-class StabilityFilter(Sizing, Emptying, Partition, query=Querys.Settlement, title="Filtered"):
+class StabilityFilter(Sizing, Emptying, Partition, Logging, query=Querys.Settlement, title="Filtered"):
     def execute(self, prospects, stabilities, *args, **kwargs):
         assert isinstance(prospects, pd.DataFrame) and isinstance(stabilities, pd.DataFrame)
         if self.empty(prospects): return

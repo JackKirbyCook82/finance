@@ -14,8 +14,8 @@ from abc import ABC
 from collections import namedtuple as ntuple
 
 from finance.variables import Variables, Querys
-from support.mixins import Emptying, Sizing, Partition
 from support.calculations import Calculation, Equation, Variable
+from support.mixins import Emptying, Sizing, Partition, Logging
 from support.meta import RegistryMeta
 
 __version__ = "1.0.0"
@@ -64,7 +64,7 @@ class MinimumArbitrageCalculation(ArbitrageCalculation, equation=MinimumArbitrag
 class MaximumArbitrageCalculation(ArbitrageCalculation, equation=MaximumArbitrageEquation, register=ValuationLocator(Variables.Valuations.Valuation.ARBITRAGE, Variables.Valuations.Scenario.MAXIMUM)): pass
 
 
-class ValuationCalculator(Sizing, Emptying, Partition, query=Querys.Settlement, title="Calculated"):
+class ValuationCalculator(Sizing, Emptying, Partition, Logging, query=Querys.Settlement, title="Calculated"):
     def __init__(self, *args, valuation, **kwargs):
         assert valuation in Variables.Valuations.Valuation
         super().__init__(*args, **kwargs)
@@ -78,8 +78,7 @@ class ValuationCalculator(Sizing, Emptying, Partition, query=Querys.Settlement, 
         for settlement, dataset in self.partition(strategies):
             valuations = self.calculate(dataset, *args, **kwargs)
             size = self.size(valuations)
-            string = f"{str(settlement)}|{str(self.valuation)}[{int(size):.0f}]"
-            self.console(string)
+            self.console(f"{str(settlement)}|{str(self.valuation)}[{int(size):.0f}]")
             if self.empty(valuations): continue
             yield valuations
 
