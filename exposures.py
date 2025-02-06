@@ -19,13 +19,13 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class ExposureCalculator(Sizing, Emptying, Partition, Logging, query=Querys.Settlement, title="Calculated"):
+class ExposureCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
     header = ["ticker", "expire", "strike", "instrument", "option", "position", "quantity"]
 
     def execute(self, holdings, *args, **kwargs):
         assert isinstance(holdings, pd.DataFrame)
         if self.empty(holdings): return
-        for settlement, dataframe in self.partition(holdings):
+        for settlement, dataframe in self.partition(holdings, by=Querys.Settlement):
             exposures = self.calculate(dataframe, *args, **kwargs)
             size = self.size(exposures)
             self.console(f"{str(settlement)}[{int(size):.0f}]")

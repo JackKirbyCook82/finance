@@ -55,7 +55,7 @@ class StabilityCalculation(Calculation, equation=StabilityEquation):
             yield equation.Σml(portfolios)
 
 
-class StabilityCalculator(Sizing, Emptying, Partition, Logging, query=Querys.Settlement, title="Calculated"):
+class StabilityCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.__calculation = StabilityCalculation(*args, **kwargs)
@@ -63,7 +63,7 @@ class StabilityCalculator(Sizing, Emptying, Partition, Logging, query=Querys.Set
     def execute(self, orders, exposures, *args, **kwargs):
         assert isinstance(orders, pd.DataFrame) and isinstance(exposures, pd.DataFrame)
         if self.empty(orders): return
-        for settlement, (primary, secondary) in self.partition(orders, exposures):
+        for settlement, (primary, secondary) in self.partition(orders, exposures, by=Querys.Settlement):
             primary = ODict(list(self.orders(primary, *args, **kwargs)))
             stabilities = self.calculate(primary, secondary, *args, **kwargs)
             size = self.size(stabilities)
@@ -71,9 +71,9 @@ class StabilityCalculator(Sizing, Emptying, Partition, Logging, query=Querys.Set
             if self.empty(orders): continue
             yield orders
 
-    def partition(self, orders, exposures):
+    def partition(self, orders, exposures, *args, **kwargs):
         assert isinstance(orders, pd.DataFrame) and isinstance(exposures, pd.DataFrame)
-        for partition, primary in super().partition(orders):
+        for partition, primary in super().partition(orders, *args, **kwargs):
             mask = [exposures[key] == value for key, value in iter(partition)]
             mask = reduce(lambda lead, lag: lead & lag, list(mask))
             secondary = exposures.where(mask)
@@ -134,12 +134,12 @@ class StabilityCalculator(Sizing, Emptying, Partition, Logging, query=Querys.Set
     def calculation(self): return self.__calculation
 
 
-class StabilityFilter(Sizing, Emptying, Partition, Logging, query=Querys.Settlement, title="Filtered"):
+class StabilityFilter(Sizing, Emptying, Partition, Logging, title="Filtered"):
     def execute(self, prospects, stabilities, *args, **kwargs):
         assert isinstance(prospects, pd.DataFrame) and isinstance(stabilities, pd.DataFrame)
         if self.empty(prospects): return
         header = list(prospects.columns)
-        for settlement, dataframe in self.partition(prospects):
+        for settlement, dataframe in self.partition(prospects, by=Querys.Settlement):
             dataframe = dataframe.merge(stabilities, on="order", how="inner")
             dataframe = dataframe.where(dataframe["stable"])
             dataframe = dataframe[header].reset_index(drop=True, inplace=False)

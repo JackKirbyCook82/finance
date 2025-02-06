@@ -75,7 +75,7 @@ class ProspectLayout(ProspectParameters):
         return instance
 
 
-class ProspectWriter(Writer, query=Querys.Settlement):
+class ProspectWriter(Writer):
     def detach(self, settlement):
         if not bool(self.table): return
         mask = [self.table[key] == value for key, value in settlement.items()]
@@ -93,7 +93,7 @@ class ProspectWriter(Writer, query=Querys.Settlement):
         self.console(f"{str(status)}[{int(size):.0f}]", title="Prospected")
 
     def write(self, prospects, *args, **kwargs):
-        for settlement, dataframe in self.partition(prospects):
+        for settlement, dataframe in self.partition(prospects, by=Querys.Settlement):
             if self.empty(dataframe): continue
             dataframe["status"] = Variables.Markets.Status.PROSPECT
             self.detach(settlement)
@@ -102,7 +102,7 @@ class ProspectWriter(Writer, query=Querys.Settlement):
         self.table.reindex()
 
 
-class ProspectReader(Reader, query=Querys.Settlement):
+class ProspectReader(Reader):
     def read(self, *args, **kwargs):
         if not bool(self.table): return
         mask = self.table["status"] == Variables.Markets.Status.ACCEPTED
@@ -144,7 +144,7 @@ class ProspectProtocols(Routine):
     def protocols(self): return self.__protocols
 
 
-class ProspectCalculator(Sizing, Emptying, Partition, Logging, query=Querys.Settlement, title="Calculated"):
+class ProspectCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
     def __init__(self, *args, priority, header, **kwargs):
         assert callable(priority)
         super().__init__(*args, **kwargs)
@@ -155,7 +155,7 @@ class ProspectCalculator(Sizing, Emptying, Partition, Logging, query=Querys.Sett
     def execute(self, valuations, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame)
         if self.empty(valuations): return
-        for settlement, dataframe in self.partition(valuations):
+        for settlement, dataframe in self.partition(valuations, by=Querys.Settlement):
             prospects = self.calculate(dataframe, *args, **kwargs)
             size = self.size(prospects)
             self.console(f"{str(settlement)}[{int(size):.0f}]")

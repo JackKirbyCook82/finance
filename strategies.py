@@ -92,7 +92,7 @@ class CollarLongCalculation(CollarCalculation, equation=CollarLongEquation, regi
 class CollarShortCalculation(CollarCalculation, equation=CollarShortEquation, register=Strategies.Collars.Short): pass
 
 
-class StrategyCalculator(Sizing, Emptying, Partition, Logging, query=Querys.Settlement, title="Calculated"):
+class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
     def __init__(self, *args, strategies=[], **kwargs):
         assert all([strategy in list(Strategies) for strategy in list(strategies)])
         super().__init__(*args, **kwargs)
@@ -103,7 +103,7 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, query=Querys.Sett
     def execute(self, securities, *args, **kwargs):
         assert isinstance(securities, pd.DataFrame)
         if self.empty(securities): return
-        for settlement, dataframe in self.partition(securities):
+        for settlement, dataframe in self.partition(securities, by=Querys.Settlement):
             contents = dict(self.securities(dataframe, *args, **kwargs))
             for strategy, strategies in self.calculator(contents, *args, **kwargs):
                 size = self.size(strategies)

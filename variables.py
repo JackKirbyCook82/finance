@@ -15,10 +15,12 @@ from abc import ABC, abstractmethod
 
 from support.variables import Category, Variables, Variable
 from support.querys import Field, Query
+from support.meta import MappingMeta
+from support.files import File
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["Variables", "Querys", "Securities", "Strategies"]
+__all__ = ["Variables", "Querys", "Files", "Securities", "Strategies"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
@@ -37,8 +39,8 @@ class OSI(ABC):
     @classmethod
     def fromOSI(cls, string):
         pattern = "^(?P<ticker>[A-Z]*)(?P<expire>[0-9]*)(?P<option>[PC]{1})(?P<strike>[0-9]*)$"
-        values = re.match(pattern).groupdict()
-        ticker = str(["ticker"]).upper()
+        values = re.search(pattern, string).groupdict()
+        ticker = str(values["ticker"]).upper()
         expire = np.datetime64(datetime.datetime.strptime(str(values["expire"]), "%y%m%d").date(), "D")
         option = {str(option).upper()[0]: option for option in Variables.Options}[str(values["option"])]
         strike = np.float32(".".join([str(values["strike"]), str(values["strike"])]))
@@ -97,6 +99,26 @@ HistoryQuery = Query("History", fields=[TickerField, DateField], delimiter="|")
 SettlementQuery = Query("Future", fields=[TickerField, ExpireField], delimiter="|")
 ContractQuery = Query("Contract", bases=[OSI], fields=[TickerField, ExpireField, OptionField, StrikeField], delimiter="|")
 
+
+class Parameters(metaclass=MappingMeta):
+    types = {"ticker": str, "price underlying strike bid ask open close high low": np.float32, "trend volatility oscillator": np.float32, "volume": np.int64}
+    types = {key: value for keys, value in types.items() for key in str(keys).split(" ")}
+    parsers = dict(instrument=Variables.Securities.Instrument, option=Variables.Securities.Option, position=Variables.Securities.Position)
+    formatters = dict(instrument=int, option=int, position=int)
+    dates = dict(date="%Y%m%d", expire="%Y%m%d", current="%Y%m%d-%H%M")
+
+class StockTradeFile(File, order=["ticker", "current", "price"], **dict(Parameters)): pass
+class StockQuoteFile(File, order=["ticker", "current", "bid", "ask", "demand", "supply"], **dict(Parameters)): pass
+class StockBarsFile(File, order=["ticker", "date", "open", "close", "high", "low", "price"], **dict(Parameters)): pass
+class StockStatisticFile(File, order=["ticker", "date", "price", "trend", "volatility"], **dict(Parameters)): pass
+class StockStochasticFile(File, order=["ticker", "date", "price", "oscillator"], **dict(Parameters)): pass
+class OptionTradeFile(File, order=["ticker", "expire", "strike", "option", "current", "price", "underlying"], **dict(Parameters)): pass
+class OptionQuoteFile(File, order=["ticker", "expire", "strike", "option", "current", "bid", "ask", "demand", "supply", "underlying"], **dict(Parameters)): pass
+
+
+class Files(Category):
+    class Stocks(Category): Trade, Quote, Bars, Statistic, Stochastic = StockTradeFile, StockQuoteFile, StockBarsFile, StockStatisticFile, StockStochasticFile
+    class Options(Category): Trade, Quote = OptionTradeFile, OptionQuoteFile
 
 class Querys(Category): Symbol, History, Settlement, Contract = SymbolQuery, HistoryQuery, SettlementQuery, ContractQuery
 class Variables(Category):

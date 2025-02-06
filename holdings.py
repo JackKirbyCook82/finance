@@ -32,11 +32,11 @@ class HoldingFile(File, **dict(HoldingParameters)):
     pass
 
 
-class HoldingCalculator(Sizing, Emptying, Partition, Logging, query=Querys.Settlement, title="Calculated"):
+class HoldingCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
     def execute(self, prospects, *args, **kwargs):
         assert isinstance(prospects, pd.DataFrame)
         if self.empty(prospects): return
-        for settlement, dataframe in self.partition(prospects):
+        for settlement, dataframe in self.partition(prospects, by=Querys.Settlement):
             holdings = self.calculate(dataframe, *args, **kwargs)
             size = self.size(holdings)
             self.console(f"{str(settlement)}[{int(size):.0f}]")

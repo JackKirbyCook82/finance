@@ -19,13 +19,13 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class OrderCalculator(Sizing, Emptying, Partition, Logging, query=Querys.Settlement, title="Calculated"):
+class OrderCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
     header = ["ticker", "expire", "strike", "instrument", "option", "position", "quantity", "order"]
 
     def execute(self, prospects, *args, **kwargs):
         assert isinstance(prospects, pd.DataFrame)
         if self.empty(prospects): return
-        for settlement, dataframe in self.partition(prospects):
+        for settlement, dataframe in self.partition(prospects, by=Querys.Settlement):
             contents = self.prospects(dataframe, *args, **kwargs)
             orders = self.calculate(contents, *args, **kwargs)
             size = self.size(orders)

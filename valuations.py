@@ -64,7 +64,7 @@ class MinimumArbitrageCalculation(ArbitrageCalculation, equation=MinimumArbitrag
 class MaximumArbitrageCalculation(ArbitrageCalculation, equation=MaximumArbitrageEquation, register=ValuationLocator(Variables.Valuations.Valuation.ARBITRAGE, Variables.Valuations.Scenario.MAXIMUM)): pass
 
 
-class ValuationCalculator(Sizing, Emptying, Partition, Logging, query=Querys.Settlement, title="Calculated"):
+class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
     def __init__(self, *args, valuation, **kwargs):
         assert valuation in Variables.Valuations.Valuation
         super().__init__(*args, **kwargs)
@@ -75,7 +75,7 @@ class ValuationCalculator(Sizing, Emptying, Partition, Logging, query=Querys.Set
     def execute(self, strategies, *args, **kwargs):
         assert isinstance(strategies, (list, xr.Dataset))
         if self.empty(strategies, "size"): return
-        for settlement, dataset in self.partition(strategies):
+        for settlement, dataset in self.partition(strategies, by=Querys.Settlement):
             valuations = self.calculate(dataset, *args, **kwargs)
             size = self.size(valuations)
             self.console(f"{str(settlement)}|{str(self.valuation)}[{int(size):.0f}]")
