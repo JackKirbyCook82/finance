@@ -11,53 +11,19 @@ import datetime
 import regex as re
 import numpy as np
 from enum import Enum
-from abc import ABC, abstractmethod
+from collections import namedtuple as ntuple
 
 from support.variables import Category, Variables, Variable
+from support.decorators import TypeDispatcher
 from support.querys import Field, Query
 from support.meta import MappingMeta
 from support.files import File
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["Variables", "Querys", "Files", "Securities", "Strategies"]
+__all__ = ["Variables", "Querys", "Files", "Securities", "Strategies", "OSI"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
-
-
-class OSI(ABC):
-    def toOSI(self):
-        ticker = str(self.ticker).upper()
-        expire = str(self.expire.strftime("%y%m%d"))
-        option = str(self.option).upper()[0]
-        strike = str(self.strike).split(".")
-        right = lambda value: str(value).rjust(5, "0")
-        left = lambda value: str(value.ljust(3, "0"))
-        strike = [function(value) for function, value in zip([right, left], strike)]
-        return "".join([str(ticker), str(expire), str(option)] + strike)
-
-    @classmethod
-    def fromOSI(cls, string):
-        pattern = "^(?P<ticker>[A-Z]*)(?P<expire>[0-9]*)(?P<option>[PC]{1})(?P<strike>[0-9]*)$"
-        values = re.search(pattern, string).groupdict()
-        ticker = str(values["ticker"]).upper()
-        expire = np.datetime64(datetime.datetime.strptime(str(values["expire"]), "%y%m%d").date(), "D")
-        option = {str(option).upper()[0]: option for option in Variables.Options}[str(values["option"])]
-        strike = np.float32(".".join([str(values["strike"]), str(values["strike"])]))
-        return cls(ticker, expire, option, strike)
-
-    @property
-    @abstractmethod
-    def ticker(self): pass
-    @property
-    @abstractmethod
-    def expire(self): pass
-    @property
-    @abstractmethod
-    def option(self): pass
-    @property
-    @abstractmethod
-    def strike(self): pass
 
 
 TechnicalVariable = Variable("Technical", ["TRADE", "QUOTE", "BARS", "STATISTIC", "STOCHASTIC"], start=1)
@@ -89,21 +55,24 @@ CollarLongSecurity = SecurityVariables("CollarLong", [SpreadVariable.COLLAR, Opt
 CollarShortSecurity = SecurityVariables("CollarShort", [SpreadVariable.COLLAR, OptionVariable.EMPTY, PositionVariable.SHORT], options=[OptionCallLongSecurity, OptionPutShortSecurity], stocks=[StockShortSecurity])
 
 TickerField = Field("ticker", str)
-DateField = Field("date", datetime.date, format="%Y%m%d")
-ExpireField = Field("expire", datetime.date, format="%Y%m%d")
+DateField = Field("date", datetime.date, formatting="%Y%m%d")
+ExpireField = Field("expire", datetime.date, formatting="%Y%m%d")
 StrikeField = Field("strike", numbers.Number, digits=2)
+PriceField = Field("price", numbers.Number, digits=2)
 OptionField = Field("option", Enum, variable=OptionVariable)
 
 SymbolQuery = Query("Symbol", fields=[TickerField], delimiter="|")
+TradeField = Query("Trade", fields=[TickerField, PriceField], delimiter="|")
+ProductQuery = Query("Anchor", fields=[TickerField, ExpireField, PriceField], delimiter="|")
 HistoryQuery = Query("History", fields=[TickerField, DateField], delimiter="|")
 SettlementQuery = Query("Future", fields=[TickerField, ExpireField], delimiter="|")
-ContractQuery = Query("Contract", bases=[OSI], fields=[TickerField, ExpireField, OptionField, StrikeField], delimiter="|")
+ContractQuery = Query("Contract", fields=[TickerField, ExpireField, OptionField, StrikeField], delimiter="|")
 
 
 class Parameters(metaclass=MappingMeta):
     types = {"ticker": str, "price underlying strike bid ask open close high low": np.float32, "trend volatility oscillator": np.float32, "volume": np.int64}
     types = {key: value for keys, value in types.items() for key in str(keys).split(" ")}
-    parsers = dict(instrument=Variables.Securities.Instrument, option=Variables.Securities.Option, position=Variables.Securities.Position)
+    parsers = dict(instrument=InstrumentVariable, option=OptionVariable, position=PositionVariable)
     formatters = dict(instrument=int, option=int, position=int)
     dates = dict(date="%Y%m%d", expire="%Y%m%d", current="%Y%m%d-%H%M")
 
@@ -120,7 +89,7 @@ class Files(Category):
     class Stocks(Category): Trade, Quote, Bars, Statistic, Stochastic = StockTradeFile, StockQuoteFile, StockBarsFile, StockStatisticFile, StockStochasticFile
     class Options(Category): Trade, Quote = OptionTradeFile, OptionQuoteFile
 
-class Querys(Category): Symbol, History, Settlement, Contract = SymbolQuery, HistoryQuery, SettlementQuery, ContractQuery
+class Querys(Category): Symbol, Trade, Product, History, Settlement, Contract = SymbolQuery, TradeField, ProductQuery, HistoryQuery, SettlementQuery, ContractQuery
 class Variables(Category):
     class Securities(Category): Security, Instrument, Option, Position = SecurityVariables, InstrumentVariable, OptionVariable, PositionVariable
     class Strategies(Category): Strategy, Spread = StrategyVariables, SpreadVariable
@@ -140,13 +109,39 @@ class Strategies(Category):
     class Collars(Category): Long = CollarLongSecurity; Short = CollarShortSecurity
 
 
+class OSIMeta(type):
+    def __call__(cls, content):
+        content = cls.parse(content)
+        assert isinstance(content, list) and len(content) == 4
+        instance = super(OSIMeta, cls).__call__(*content)
+        return instance
 
+    @TypeDispatcher(locator=0)
+    def parse(cls, content): raise TypeDispatcher(type(content))
+    @parse.register(dict)
+    def __mapping(cls, content): return [content[field] for field in cls._fields]
+    @parse.register(list)
+    def __collection(cls, content): return content
+    @parse.register(str)
+    def __string(cls, content):
+        pattern = "^(?P<ticker>[A-Z]*)(?P<expire>[0-9]*)(?P<option>[PC]{1})(?P<strike>[0-9]*)$"
+        values = re.search(pattern, content).groupdict()
+        ticker = str(values["ticker"]).upper()
+        expire = datetime.datetime.strptime(str(values["expire"]), "%y%m%d")
+        option = {str(option).upper()[0]: option for option in OptionVariable}[str(values["option"])]
+        strike = float(".".join([str(values["strike"])[:5], str(values["strike"])[5:]]))
+        return [ticker, expire, option, strike]
 
-
-
-
-
-
+class OSI(ntuple("OSI", "ticker expire option strike"), metaclass=OSIMeta):
+    def __str__(self):
+        ticker = str(self.ticker).upper()
+        expire = str(self.expire.strftime("%y%m%d"))
+        option = str(self.option).upper()[0]
+        strike = str(self.strike).split(".")
+        right = lambda value: str(value).rjust(5, "0")
+        left = lambda value: str(value.ljust(3, "0"))
+        strike = [function(value) for function, value in zip([right, left], strike)]
+        return "".join([str(ticker), str(expire), str(option)] + strike)
 
 
 
