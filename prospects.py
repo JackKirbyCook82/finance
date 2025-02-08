@@ -47,7 +47,8 @@ class ProspectHeader(ProspectParameters):
         instance.name = cls.__name__
         instance.index = list(product(index, [""]))
         instance.columns = list(product(variants, scenarios)) + list(product(columns, [""]))
-        instance.transform = ("scenario", variants)
+        instance.pivot = ("scenario", variants)
+        instance.unpivot = ("scenario", variants)
         instance.scenarios = scenarios
         instance.variants = variants
         instance.valuation = valuation
