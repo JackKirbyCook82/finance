@@ -10,6 +10,7 @@ import types
 import numpy as np
 import pandas as pd
 from abc import ABC
+from itertools import chain
 
 from finance.variables import Variables, Querys
 from support.calculations import Calculation, Equation, Variable
@@ -42,20 +43,13 @@ class StatisticCalculation(TechnicalCalculation, equation=StatisticEquation, reg
     def execute(self, bars, *args, period, **kwargs):
         assert (bars["ticker"].to_numpy()[0] == bars["ticker"]).all()
         with self.equation(bars, period=period) as equation:
-            yield bars["ticker"]
-            yield bars["date"]
-            yield bars["price"]
             yield equation.m()
             yield equation.δ()
 
 class StochasticCalculation(TechnicalCalculation, equation=StochasticEquation, register=Variables.Analysis.Technical.STATISTIC):
     def execute(self, bars, *args, period, **kwargs):
         assert (bars["ticker"].to_numpy()[0] == bars["ticker"]).all()
-        bars = bars.sort_values("date", ascending=True, inplace=False)
         with self.equation(bars, period=period) as equation:
-            yield bars["ticker"]
-            yield bars["date"]
-            yield bars["price"]
             yield equation.xk()
 
 
@@ -67,28 +61,26 @@ class TechnicalCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
         calculations = {technical: calculation(*args, **kwargs) for technical, calculation in dict(TechnicalCalculation).items() if technical in technicals}
         self.__calculations = calculations
 
-    def execute(self, technicals, *args, **kwargs):
-        assert isinstance(technicals, pd.DataFrame)
-        if self.empty(technicals): return
-        for symbol, dataframe in self.partition(technicals, by=Querys.Symbol):
+    def execute(self, bars, *args, **kwargs):
+        assert isinstance(bars, pd.DataFrame)
+        if self.empty(bars): return
+        for symbol, dataframe in self.partition(bars, by=Querys.Symbol):
             technicals = self.calculate(dataframe, *args, **kwargs)
             size = self.size(technicals)
             self.console(f"{str(symbol)}[{int(size):.0f}]")
             if self.empty(technicals): continue
             yield technicals
 
-    def calculate(self, technicals, *args, **kwargs):
-        dataframes = dict(self.calculator(technicals, *args, **kwargs))
-        for dataframe in dataframes.values():
-            header = list(technicals.columns) + [column for column in dataframe.columns if column not in technicals.columns]
-            technicals = technicals.merge(dataframe, how="outer", on=list(Querys.History), sort=False, suffixes=("", "_"))
-            technicals = technicals[header]
+    def calculate(self, bars, *args, **kwargs):
+        bars = bars.sort_values("date", ascending=True, inplace=False)
+        technicals = dict(self.calculator(bars, *args, **kwargs))
+        technicals = pd.concat([bars] + list(technicals.values()), axis=1)
         return technicals
 
-    def calculator(self, technicals, *args, **kwargs):
+    def calculator(self, bars, *args, **kwargs):
         for technical, calculation in self.calculations.items():
-            dataframe = calculation(technicals, *args, **kwargs)
-            yield technical, dataframe
+            technicals = calculation(bars, *args, **kwargs)
+            yield technical, technicals
 
     @property
     def calculations(self): return self.__calculations

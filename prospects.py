@@ -81,7 +81,7 @@ class ProspectWriter(Writer):
         if not bool(self.table): return
         mask = [self.table[key] == value for key, value in settlement.items()]
         mask = reduce(lambda lead, lag: lead & lag, mask)
-        mask = mask & (self.table["status"] == self.status)
+        mask = mask & (self.table["status"] == Variables.Markets.Status.OBSOLETE)
         dataframe = self.table.take(mask)
         size = self.size(dataframe)
         status = str(Variables.Markets.Status.OBSOLETE).lower().title()

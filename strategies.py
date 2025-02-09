@@ -12,7 +12,6 @@ import pandas as pd
 import xarray as xr
 from abc import ABC
 from functools import reduce
-from itertools import product
 from collections import namedtuple as ntuple
 
 from finance.variables import Variables, Querys, Strategies, Securities
@@ -38,13 +37,13 @@ class StrategyEquation(Equation, ABC):
 
     tα = Variable("tα", "current", np.datetime64, xr.DataArray, locator=StrategyLocator("current", Variables.Securities.Position.LONG))
     xα = Variable("xα", "underlying", np.float32, xr.DataArray, locator=StrategyLocator("underlying", Variables.Securities.Position.LONG))
-    yα = Variable("yα", "ask", np.float32, xr.DataArray, locator=StrategyLocator("ask", Variables.Securities.Position.LONG))
-    qα = Variable("qα", "supply", np.float32, xr.DataArray, locator=StrategyLocator("supply", Variables.Securities.Position.LONG))
+    yα = Variable("yα", "price", np.float32, xr.DataArray, locator=StrategyLocator("price", Variables.Securities.Position.LONG))
+    qα = Variable("qα", "size", np.float32, xr.DataArray, locator=StrategyLocator("size", Variables.Securities.Position.LONG))
     kα = Variable("kα", "strike", np.float32, xr.DataArray, locator=StrategyLocator("strike", Variables.Securities.Position.LONG))
     tβ = Variable("tβ", "current", np.datetime64, xr.DataArray, locator=StrategyLocator("current", Variables.Securities.Position.SHORT))
     xβ = Variable("xβ", "underlying", np.float32, xr.DataArray, locator=StrategyLocator("underlying", Variables.Securities.Position.SHORT))
-    yβ = Variable("yβ", "bid", np.float32, xr.DataArray, locator=StrategyLocator("bid", Variables.Securities.Position.SHORT))
-    qβ = Variable("qβ", "demand", np.float32, xr.DataArray, locator=StrategyLocator("demand", Variables.Securities.Position.SHORT))
+    yβ = Variable("yβ", "price", np.float32, xr.DataArray, locator=StrategyLocator("price", Variables.Securities.Position.SHORT))
+    qβ = Variable("qβ", "size", np.float32, xr.DataArray, locator=StrategyLocator("size", Variables.Securities.Position.SHORT))
     kβ = Variable("kβ", "strike", np.float32, xr.DataArray, locator=StrategyLocator("strike", Variables.Securities.Position.SHORT))
     ε = Variable("ε", "fees", np.float32, types.NoneType, locator="fees")
 
@@ -106,7 +105,7 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
         for settlement, dataframe in self.partition(securities, by=Querys.Settlement):
             contents = dict(self.securities(dataframe, *args, **kwargs))
             for strategy, strategies in self.calculator(contents, *args, **kwargs):
-                size = self.size(strategies)
+                size = self.size(strategies, "size")
                 self.console(f"{str(settlement)}|{str(strategy)}[{int(size):.0f}]")
                 if self.empty(strategies, "size"): continue
                 yield strategies
@@ -121,12 +120,11 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
             for field in list(Querys.Settlement): strategies = strategies.expand_dims(field)
             yield strategy, strategies
 
-    def securities(self, options, *args, **kwargs):
-        options, positions = options.groupby("option", sort=False), list(Variables.Securities.Position)
-        for position, (option, dataframe) in product(options, positions):
+    def securities(self, securities, *args, **kwargs):
+        for security, dataframe in securities.groupby(list(Variables.Securities.Security), sort=False):
             if self.empty(dataframe): continue
-            security = Securities([Variables.Securities.Instrument.OPTION, option, position])
-            dataframe = dataframe.dropna("option", axis=1)
+            security = Securities(security)
+            dataframe = dataframe.drop(columns=list(Variables.Securities.Security))
             dataframe = dataframe.set_index(list(Querys.Settlement) + ["strike"], drop=True, inplace=False)
             dataset = xr.Dataset.from_dataframe(dataframe)
             dataset = reduce(lambda content, axis: content.squeeze(axis), list(Querys.Settlement), dataset)
