@@ -24,7 +24,7 @@ __license__ = "MIT License"
 
 
 class PricingEquation(Equation, ABC):
-    j = Variable("j", "position", Variables.Positions, types.NoneType, locator="position")
+    j = Variable("j", "position", Variables.Securities.Position, types.NoneType, locator="position")
     x = Variable("x", "underlying", np.float32, pd.Series, locator="underlying")
     t = Variable("t", "current", np.datetime64, pd.Series, locator="current")
 
@@ -38,8 +38,12 @@ class MarketEquation(PricingEquation):
     q = Variable("q", "size", np.float32, pd.Series, vectorize=False, function=lambda qα, qβ, j: {Variables.Securities.Position.LONG: qα, Variables.Securities.Position.SHORT: qβ}[j])
 
 class LimitEquation(PricingEquation):
-    y = Variable("y", "price", np.float32, pd.Series, vectorize=False, function=lambda yα, yβ, jαβ: {Variables.Securities.Position.LONG: yβ, Variables.Securities.Position.SHORT: yα}[jαβ])
-    q = Variable("q", "size", np.float32, pd.Series, vectorize=False, function=lambda qα, qβ, jαβ: {Variables.Securities.Position.LONG: qα, Variables.Securities.Position.SHORT: qβ}[jαβ])
+    y = Variable("y", "price", np.float32, pd.Series, vectorize=False, function=lambda yα, yβ, j: {Variables.Securities.Position.LONG: yβ, Variables.Securities.Position.SHORT: yα}[j])
+    q = Variable("q", "size", np.float32, pd.Series, vectorize=False, function=lambda qα, qβ, j: {Variables.Securities.Position.LONG: qα, Variables.Securities.Position.SHORT: qβ}[j])
+
+class CenteredEquation(PricingEquation):
+    y = Variable("y", "price", np.float32, pd.Series, vectorize=False, function=lambda yα, yβ: (yα + yβ) / 2)
+    q = Variable("q", "size", np.float32, pd.Series, vectorize=False, function=lambda qα, qβ, j: {Variables.Securities.Position.LONG: qα, Variables.Securities.Position.SHORT: qβ}[j])
 
 
 class PricingCalculation(Calculation, ABC, metaclass=RegistryMeta):
@@ -52,11 +56,13 @@ class PricingCalculation(Calculation, ABC, metaclass=RegistryMeta):
 
 class MarketCalculation(PricingCalculation, equation=MarketEquation, register=Variables.Markets.Pricing.MARKET): pass
 class LimitCalculation(PricingCalculation, equation=LimitEquation, register=Variables.Markets.Pricing.LIMIT): pass
+class CenteredCalculation(PricingCalculation, equation=CenteredEquation, register=Variables.Markets.Pricing.CENTERED): pass
 
 
 class SecurityCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
     def __init__(self, *args, pricing, **kwargs):
-        self.__calculation = dict(PricingCalculation)[pricing]
+        super().__init__(*args, **kwargs)
+        self.__calculation = dict(PricingCalculation)[pricing](*args, **kwargs)
         self.__pricing = pricing
 
     def execute(self, options, *args, **kwargs):
@@ -77,8 +83,8 @@ class SecurityCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
     def calculator(self, options, *args, **kwargs):
         assert isinstance(options, pd.DataFrame)
         for position in list(Variables.Securities.Position):
-            securities = list(self.calculation(options, *args, position=position, **kwargs))
-            securities = options[list(Querys.Contract)] + pd.concat(securities, axis=1)
+            securities = self.calculation(options, *args, position=position, **kwargs)
+            securities = pd.concat([options[list(Querys.Contract)], securities], axis=1)
             securities["instrument"] = Variables.Securities.Instrument.OPTION
             securities["position"] = position
             securities = securities.reset_index(drop=True, inplace=False)
