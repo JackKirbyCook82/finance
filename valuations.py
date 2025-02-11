@@ -92,7 +92,7 @@ class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
         for scenario, calculation in self.calculations.items():
             valuations = calculation(strategies, *args, **kwargs)
             assert isinstance(valuations, xr.Dataset)
-            valuations = valuations.assign_coords({"valuations": xr.Variable("valuations", [self.valuation]).squeeze("valuations")})
+            valuations = valuations.assign_coords({"valuation": xr.Variable("valuation", [self.valuation]).squeeze("valuation")})
             valuations = valuations.assign_coords({"scenario": xr.Variable("scenario", [scenario]).squeeze("scenario")}).expand_dims("scenario")
             valuations = valuations.drop_vars(list(Variables.Securities.Security), errors="ignore")
             valuations = valuations.expand_dims(list(set(iter(valuations.coords)) - set(iter(valuations.dims))))

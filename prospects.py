@@ -13,12 +13,11 @@ from itertools import product, count
 
 from finance.variables import Variables, Querys, Securities
 from support.mixins import Emptying, Sizing, Partition, Logging
-from support.tables import Reader, Routine, Writer, Table
-from support.decorators import Decorator
+from support.tables import Reader, Writer, Routine, Table
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["ProspectCalculator", "ProspectReader", "ProspectDiscarding", "ProspectProtocols", "ProspectWriter", "ProspectTable", "ProspectHeader", "ProspectLayout"]
+__all__ = ["ProspectCalculator", "ProspectRoutine", "ProspectReader", "ProspectWriter", "ProspectTable", "ProspectHeader", "ProspectLayout"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
@@ -76,73 +75,67 @@ class ProspectLayout(ProspectParameters):
         return instance
 
 
-class ProspectWriter(Writer):
-    def detach(self, settlement):
-        if not bool(self.table): return
-        mask = [self.table[key] == value for key, value in settlement.items()]
-        mask = reduce(lambda lead, lag: lead & lag, mask)
-        mask = mask & (self.table["status"] == Variables.Markets.Status.OBSOLETE)
-        dataframe = self.table.take(mask)
-        size = self.size(dataframe)
-        status = str(Variables.Markets.Status.OBSOLETE).lower().title()
-        self.console(f"{str(status)}[{int(size):.0f}]", title="Obsolete")
-
-    def attach(self, dataframe):
-        self.table.append(dataframe)
-        size = self.size(dataframe)
-        status = str(Variables.Markets.Status.PROSPECT).lower().title()
-        self.console(f"{str(status)}[{int(size):.0f}]", title="Prospected")
-
-    def write(self, prospects, *args, **kwargs):
-        for settlement, dataframe in self.partition(prospects, by=Querys.Settlement):
-            if self.empty(dataframe): continue
-            dataframe["status"] = Variables.Markets.Status.PROSPECT
-            self.detach(settlement)
-            self.attach(dataframe)
-        self.table.sort("priority", reverse=True)
-        self.table.reindex()
+class ProspectRoutine(Routine):
+    def routine(self, *args, **kwargs):
+        pass
 
 
 class ProspectReader(Reader):
+    def __init__(self, *args, status, **kwargs):
+        assert isinstance(status, (Variables.Markets.Status, list))
+        assert all([isinstance(value, Variables.Markets.Status) for value in status]) if isinstance(status, list) else True
+        super().__init__(*args, **kwargs)
+        self.__status = [status] if not isinstance(status, list) else list(status)
+
     def read(self, *args, **kwargs):
         if not bool(self.table): return
-        mask = self.table["status"] == Variables.Markets.Status.ACCEPTED
-        dataframe = self.table.take(mask)
-        size = self.size(dataframe)
-        status = str(Variables.Markets.Status.ACCEPTED).lower().title()
-        self.console(f"{str(status)}[{int(size):.0f}]", title="Accepted")
+        mask = [self.table["status"] == value for value in self.status]
+        dataframes = self.table.take(mask)
+        if self.empty(dataframes): return
+        for settlement, dataframes in self.partition(dataframes, by=Querys.Settlement):
+            for status, dataframe in dataframes.groupby("status", sort=False):
+                if self.empty(dataframe): continue
+                size = self.size(dataframe)
+                status = str(status).lower()
+                self.console(f"{str(status)}[{int(size):.0f}]", title="Detached")
         return dataframe
 
-
-class ProspectDiscarding(Routine):
-    def invoke(self, *args, **kwargs):
-        if not bool(self.table): return
-        for status in (Variables.Markets.Status.OBSOLETE, Variables.Markets.Status.REJECTED, Variables.Markets.Status.ABANDONED):
-            mask = self.table["status"] == status
-            dataframe = self.table.take(mask)
-            size = self.size(dataframe)
-            self.console(f"{str(status)}[{int(size):.0f}]", title="Discarded")
-
-
-class ProspectProtocol(Decorator):
-    def decorator(self, instance, table):
-        mask = self.function(instance, table)
-        table.modify(mask, "status", self.status)
-
-class ProspectProtocols(Routine):
-    def __init__(self, *args, protocols=[], **kwargs):
-        assert isinstance(protocols, list)
-        assert all([callable(protocol) for protocol in protocols])
-        super().__init__(*args, **kwargs)
-        self.__protocols = list(protocols)
-
-    def invoke(self, *args, **kwargs):
-        if not bool(self.table): return
-        for protocol in self.protocols:
-            protocol(self.table)
-
     @property
-    def protocols(self): return self.__protocols
+    def status(self): return self.__status
+
+
+class ProspectWriter(Writer):
+    def write(self, dataframes, *args, **kwargs):
+        if self.empty(dataframes): return
+        self.obsolete(dataframes, *args, **kwargs)
+        self.prospect(dataframes, *args, **kwargs)
+        columns = list(Querys.Settlement) + list(map(str, Securities.Options))
+        self.table.unique(columns=columns, reverse=True)
+        self.table.sort("priority", reverse=True)
+        self.table.reindex()
+
+    def prospect(self, dataframes, *args, **kwargs):
+        if self.empty(dataframes): return
+        for settlement, dataframe in self.partition(dataframes, by=Querys.Settlement):
+            if self.empty(dataframe): continue
+            dataframe["status"] = Variables.Markets.Status.PROSPECT
+            self.table.append(dataframe)
+            size = self.size(dataframe)
+            status = str(Variables.Markets.Status.PROSPECT).lower()
+            self.console(f"{str(settlement)}|{str(status)}[{int(size):.0f}]", title="Attached")
+
+    def obsolete(self, dataframes, *args, **kwargs):
+        if not bool(self.table): return
+        if self.empty(dataframes): return
+        for settlement in self.groups(dataframes, by=Querys.Settlement):
+            mask = [self.table[key] == value for key, value in settlement.items()]
+            mask = reduce(lambda lead, lag: lead & lag, mask)
+            mask = mask & (self.table["status"] != Variables.Markets.Status.OBSOLETE)
+            self.table.modify(mask, "status", Variables.Markets.Status.OBSOLETE)
+            dataframe = self.table.image(mask)
+            size = self.size(dataframe)
+            status = str(Variables.Markets.Status.OBSOLETE).lower()
+            self.console(f"{str(settlement)}|{str(status)}[{int(size):.0f}]", title="Modified")
 
 
 class ProspectCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):

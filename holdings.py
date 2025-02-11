@@ -11,28 +11,15 @@ import pandas as pd
 
 from finance.variables import Variables, Querys, Securities
 from support.mixins import Emptying, Sizing, Partition, Logging
-from support.meta import MappingMeta
-from support.files import File
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["HoldingCalculator", "HoldingFile"]
+__all__ = ["HoldingsCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class HoldingParameters(metaclass=MappingMeta):
-    order = ["ticker", "expire", "strike", "instrument", "option", "position", "quantity"]
-    types = {"ticker": str, "strike": np.float32, "quantity": np.float32}
-    parsers = dict(instrument=Variables.Securities.Instrument, option=Variables.Securities.Option, position=Variables.Securities.Position)
-    formatters = dict(instrument=int, option=int, position=int)
-    dates = dict(expire="Y%m%d")
-
-class HoldingFile(File, **dict(HoldingParameters)):
-    pass
-
-
-class HoldingCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
+class HoldingsCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
     def execute(self, prospects, *args, **kwargs):
         assert isinstance(prospects, pd.DataFrame)
         if self.empty(prospects): return

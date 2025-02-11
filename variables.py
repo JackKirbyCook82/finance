@@ -72,7 +72,7 @@ ContractQuery = Query("Contract", fields=[TickerField, ExpireField, OptionField,
 
 
 class Parameters(metaclass=MappingMeta):
-    types = {"ticker": str, "strike price underlying bid ask size supply demand open close high low": np.float32, "trend volatility oscillator": np.float32, "volume": np.int64}
+    types = {"ticker": str, "strike price underlying bid ask size quantity supply demand open close high low": np.float32, "trend volatility oscillator": np.float32, "volume": np.int64}
     types = {key: value for keys, value in types.items() for key in str(keys).split(" ")}
     parsers = dict(instrument=InstrumentVariable, option=OptionVariable, position=PositionVariable)
     formatters = dict(instrument=int, option=int, position=int)
@@ -87,11 +87,12 @@ class StockStochasticFile(File, order=["ticker", "date", "price", "oscillator"],
 class OptionTradeFile(File, order=["ticker", "expire", "strike", "option", "current", "price", "underlying"], **dict(Parameters)): pass
 class OptionQuoteFile(File, order=["ticker", "expire", "strike", "option", "current", "bid", "ask", "demand", "supply"], **dict(Parameters)): pass
 class OptionSecurityFile(File, order=["ticker", "expire", "strike", "instrument", "option", "position", "current", "price", "underlying", "size"], **dict(Parameters)): pass
+class OptionHoldingsFile(File, order=["ticker", "expire", "strike", "instrument", "option", "position", "quantity"], **dict(Parameters)): pass
 
 
 class Files(Category):
     class Stocks(Category): Trade, Quote, Bars, Statistic, Stochastic = StockTradeFile, StockQuoteFile, StockBarsFile, StockStatisticFile, StockStochasticFile
-    class Options(Category): Trade, Quote, Security = OptionTradeFile, OptionQuoteFile, OptionSecurityFile
+    class Options(Category): Trade, Quote, Security, Holdings = OptionTradeFile, OptionQuoteFile, OptionSecurityFile, OptionHoldingsFile
 
 class Querys(Category): Symbol, Trade, Product, History, Settlement, Contract = SymbolQuery, TradeField, ProductQuery, HistoryQuery, SettlementQuery, ContractQuery
 class Variables(Category):
