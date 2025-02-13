@@ -6,6 +6,7 @@ Created on Thurs Nov 21 2024
 
 """
 
+import inspect
 import numpy as np
 import pandas as pd
 from functools import reduce
@@ -14,6 +15,7 @@ from itertools import product, count
 from finance.variables import Variables, Querys, Securities
 from support.mixins import Emptying, Sizing, Partition, Logging
 from support.tables import Reader, Writer, Routine, Table
+from support.decorators import Decorator
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -76,8 +78,19 @@ class ProspectLayout(ProspectParameters):
 
 
 class ProspectRoutine(Routine):
+    def __init__(self, *args, protocol, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.__protocol = protocol
+
     def routine(self, *args, **kwargs):
-        pass
+        if not self.table: return
+        predicate = lambda value: isinstance(value, Decorator) and "status" in value
+        for name, protocol in inspect.getmembers(self.protocol, predicate=predicate):
+            mask = protocol(self.table)
+            self.table.modify(mask, "status", protocol["status"])
+
+    @property
+    def protocol(self): return self.__protocol
 
 
 class ProspectReader(Reader):
@@ -90,6 +103,7 @@ class ProspectReader(Reader):
     def read(self, *args, **kwargs):
         if not bool(self.table): return
         mask = [self.table["status"] == value for value in self.status]
+        mask = reduce(lambda lead, lag: lead | lag, mask)
         dataframes = self.table.take(mask)
         if self.empty(dataframes): return
         for settlement, dataframes in self.partition(dataframes, by=Querys.Settlement):
