@@ -10,7 +10,6 @@ import types
 import numpy as np
 import pandas as pd
 from abc import ABC
-from itertools import chain
 
 from finance.variables import Variables, Querys
 from support.calculations import Calculation, Equation, Variable
