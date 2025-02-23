@@ -11,12 +11,12 @@ import datetime
 import regex as re
 import numpy as np
 from enum import Enum
-from collections import namedtuple as ntuple
 
 from support.variables import Category, Variables, Variable
 from support.decorators import TypeDispatcher
 from support.querys import Field, Query
 from support.meta import MappingMeta
+from support.mixins import Naming
 from support.files import File
 
 __version__ = "1.0.0"
@@ -117,17 +117,14 @@ class Strategies(Category):
     class Collars(Category): Long = CollarLongStrategy; Short = CollarShortStrategy
 
 
-class OSIMeta(type):
-    def __getitem__(cls, string):
-        pattern = "^(?P<ticker>[A-Z]*)(?P<expire>[0-9]*)(?P<option>[PC]{1})(?P<strike>[0-9]*)$"
-        values = re.search(pattern, string).groupdict()
-        ticker = str(values["ticker"]).upper()
-        expire = datetime.datetime.strptime(str(values["expire"]), "%y%m%d")
-        option = {str(option).upper()[0]: option for option in OptionVariable}[str(values["option"])]
-        strike = float(".".join([str(values["strike"])[:5], str(values["strike"])[5:]]))
-        return cls(ticker, expire, option, strike)
+class OSI(Naming, fields=["ticker", "expire", "option", "strike"]):
+    def __new__(cls, contents):
+        if isinstance(contents, list): mapping = {field: content for field, content in zip(cls.fields, contents)}
+        elif isinstance(contents, dict): mapping = {field: contents[field] for field in cls.fields}
+        elif isinstance(contents, str): mapping = cls.parse(contents)
+        else: raise TypeError(type(contents))
+        return super().__new__(cls, **mapping)
 
-class OSI(ntuple("OSI", "ticker expire option strike"), metaclass=OSIMeta):
     def __str__(self):
         ticker = str(self.ticker).upper()
         expire = str(self.expire.strftime("%y%m%d"))
@@ -137,4 +134,15 @@ class OSI(ntuple("OSI", "ticker expire option strike"), metaclass=OSIMeta):
         left = lambda value: str(value.ljust(3, "0"))
         strike = [function(value) for function, value in zip([right, left], strike)]
         return "".join([str(ticker), str(expire), str(option)] + strike)
+
+    @classmethod
+    def parse(cls, string):
+        pattern = "^(?P<ticker>[A-Z]*)(?P<expire>[0-9]*)(?P<option>[PC]{1})(?P<strike>[0-9]*)$"
+        values = re.search(pattern, string).groupdict()
+        ticker = str(values["ticker"]).upper()
+        expire = datetime.datetime.strptime(str(values["expire"]), "%y%m%d")
+        option = {str(option).upper()[0]: option for option in OptionVariable}[str(values["option"])]
+        strike = float(".".join([str(values["strike"])[:5], str(values["strike"])[5:]]))
+        return dict(ticker=ticker, expire=expire, option=option, strike=strike)
+
 

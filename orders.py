@@ -26,5 +26,8 @@ class OrderCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
     def execute(self, prospects, *args, **kwargs):
         assert isinstance(prospects, pd.DataFrame)
         if self.empty(prospects): return
+
+        print(prospects)
+
         for settlement, dataframe in self.partition(prospects, by=Querys.Settlement):
             pass
