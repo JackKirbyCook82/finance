@@ -65,11 +65,14 @@ class SecurityCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
         self.__calculation = dict(PricingCalculation)[pricing](*args, **kwargs)
         self.__pricing = pricing
 
-    def execute(self, options, *args, **kwargs):
-        assert isinstance(options, pd.DataFrame)
-        if self.empty(options): return
+    def execute(self, stocks, options, *args, **kwargs):
+        assert isinstance(stocks, pd.DataFrame) and isinstance(options, pd.DataFrame)
+        if self.empty(stocks) and self.empty(options): return
         for settlement, dataframe in self.partition(options, by=Querys.Settlement):
+            mask = stocks["ticker"] == settlement.ticker
+            underlying = stocks.where(mask).dropna(how="all", inplace=False).squeeze().price
             securities = self.calculate(dataframe, *args, **kwargs)
+            securities["underlying"] = underlying
             size = self.size(securities)
             self.console(f"{str(settlement)}[{int(size):.0f}]")
             if self.empty(securities): continue

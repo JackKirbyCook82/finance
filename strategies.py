@@ -104,11 +104,15 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
         if self.empty(securities): return
         for settlement, dataframe in self.partition(securities, by=Querys.Settlement):
             contents = dict(self.securities(dataframe, *args, **kwargs))
-            for strategy, strategies in self.calculator(contents, *args, **kwargs):
-                size = self.size(strategies, "size")
-                self.console(f"{str(settlement)}|{str(strategy)}[{int(size):.0f}]")
-                if self.empty(strategies, "size"): continue
-                yield strategies
+            strategies = self.calculate(contents, *args, **kwargs)
+            size = self.size(strategies, "size")
+            self.console(f"{str(settlement)}[{int(size):.0f}]")
+            if self.empty(strategies, "size"): continue
+            yield strategies
+
+    def calculate(self, securities, *args, **kwargs):
+        strategies = dict(self.calculator(securities, *args, **kwargs))
+        return strategies
 
     def calculator(self, securities, *args, **kwargs):
         for strategy, calculation in self.calculations.items():
