@@ -132,7 +132,6 @@ class ProspectWriter(Writer):
         if self.empty(dataframes): return
         for settlement, dataframe in self.partition(dataframes, by=Querys.Settlement):
             if self.empty(dataframe): continue
-            dataframe["status"] = Variables.Markets.Status.PROSPECT
             self.table.append(dataframe)
             size = self.size(dataframe)
             status = str(Variables.Markets.Status.PROSPECT).lower()
@@ -179,6 +178,7 @@ class ProspectCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
         prospects = prospects.sort_values("priority", axis=0, **parameters)
         prospects["status"] = np.NaN
         prospects = prospects.reindex(columns=list(self.header), fill_value=np.NaN)
+        prospects["status"] = Variables.Markets.Status.PROSPECT
         return prospects
 
     @property

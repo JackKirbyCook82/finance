@@ -105,10 +105,11 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
         for settlement, dataframe in self.partition(securities, by=Querys.Settlement):
             contents = dict(self.securities(dataframe, *args, **kwargs))
             strategies = self.calculate(contents, *args, **kwargs)
-            size = self.size(strategies, "size")
-            self.console(f"{str(settlement)}[{int(size):.0f}]")
-            if self.empty(strategies, "size"): continue
-            yield strategies
+            for strategy, dataset in strategies.items():
+                size = self.size(dataset, "size")
+                self.console(f"{str(settlement)}|{str(strategy)}[{int(size):.0f}]")
+                if self.empty(dataset, "size"): continue
+                yield dataset
 
     def calculate(self, securities, *args, **kwargs):
         strategies = dict(self.calculator(securities, *args, **kwargs))
@@ -116,9 +117,9 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
 
     def calculator(self, securities, *args, **kwargs):
         for strategy, calculation in self.calculations.items():
-            if not all([security in securities.keys() for security in list(strategy.options)]): continue
-            securities = {security: securities[security] for security in list(strategy.options)}
-            strategies = calculation(securities, *args, **kwargs)
+            if not all([option in securities.keys() for option in list(strategy.options)]): continue
+            options = {security: securities[security] for security in list(strategy.options)}
+            strategies = calculation(options, *args, **kwargs)
             assert isinstance(strategies, xr.Dataset)
             strategies = strategies.assign_coords({"strategy": xr.Variable("strategy", [strategy]).squeeze("strategy")})
             for field in list(Querys.Settlement): strategies = strategies.expand_dims(field)

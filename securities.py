@@ -25,7 +25,6 @@ __license__ = "MIT License"
 
 class PricingEquation(Equation, ABC):
     j = Variable("j", "position", Variables.Securities.Position, types.NoneType, locator="position")
-    x = Variable("x", "underlying", np.float32, pd.Series, locator="underlying")
     t = Variable("t", "current", np.datetime64, pd.Series, locator="current")
 
     qα = Variable("qα", "supply", np.float32, pd.Series, locator="supply")
@@ -47,10 +46,9 @@ class CenteredEquation(PricingEquation):
 
 
 class PricingCalculation(Calculation, ABC, metaclass=RegistryMeta):
-    def execute(self, securities, *args, position, **kwargs):
-        with self.equation(securities, position=position) as equation:
+    def execute(self, securities, *args, position, underlying, **kwargs):
+        with self.equation(securities, position=position, underlying=underlying) as equation:
             yield equation.y()
-            yield equation.x()
             yield equation.q()
             yield equation.t()
 
@@ -71,7 +69,8 @@ class SecurityCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
         for settlement, dataframe in self.partition(options, by=Querys.Settlement):
             mask = stocks["ticker"] == settlement.ticker
             underlying = stocks.where(mask).dropna(how="all", inplace=False).squeeze().price
-            securities = self.calculate(dataframe, *args, **kwargs)
+            underlying = np.round(float(underlying), 2).astype(np.float32)
+            securities = self.calculate(dataframe, *args, underlying=underlying, **kwargs)
             securities["underlying"] = underlying
             size = self.size(securities)
             self.console(f"{str(settlement)}[{int(size):.0f}]")

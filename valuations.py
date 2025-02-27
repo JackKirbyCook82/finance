@@ -73,7 +73,7 @@ class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
         self.__valuation = valuation
 
     def execute(self, strategies, *args, **kwargs):
-        assert isinstance(strategies, (list, xr.Dataset))
+        assert isinstance(strategies, xr.Dataset)
         if self.empty(strategies, "size"): return
         for settlement, dataset in self.partition(strategies, by=Querys.Settlement):
             valuations = self.calculate(dataset, *args, **kwargs)

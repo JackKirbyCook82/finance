@@ -28,6 +28,7 @@ class OrderCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
         if self.empty(prospects): return
 
         print(prospects)
+        raise Exception()
 
         for settlement, dataframe in self.partition(prospects, by=Querys.Settlement):
             pass
