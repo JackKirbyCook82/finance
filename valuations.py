@@ -56,6 +56,7 @@ class ArbitrageCalculation(ValuationCalculation, ABC):
             yield strategies["size"]
             yield strategies["underlying"]
             yield strategies["current"]
+            yield strategies["spot"]
             yield equation.exp()
             yield equation.npv()
             yield equation.apy()

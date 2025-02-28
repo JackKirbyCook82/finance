@@ -35,6 +35,7 @@ ValuationVariable = Variable("Valuation", ["ARBITRAGE"], start=1)
 ScenarioVariable = Variable("Scenario", ["MINIMUM", "MAXIMUM"], start=1)
 StatusVariable = Variable("Status", ["PROSPECT", "PENDING", "OBSOLETE", "ABANDONED", "REJECTED", "ACCEPTED"], start=1)
 TermsVariable = Variable("Terms", ["MARKET", "LIMIT", "STOP", "STOPLIMIT", "LIMITDEBIT", "LIMITCREDIT"], start=1)
+TenureVariable = Variable("Tenure", ["DAY", "STANDING", "OPENING", "CLOSING", "IMMEDIATE", "FILLKILL"], start=1)
 ActionVariable = Variable("Action", ["BUY", "SELL"], start=1)
 PricingVariable = Variable("Pricing", ["MARKET", "LIMIT", "CENTERED"], start=1)
 ThetaVariable = Variable("Theta", ["PUT", "NEUTRAL", "CALL"], start=-1)
@@ -70,7 +71,7 @@ TradeQuery = Query("Trade", fields=[TickerField, PriceField], delimiter="|")
 QuoteQuery = Query("Quote", fields=[TickerField, BidField, AskField], delimiter="|")
 ProductQuery = Query("Anchor", fields=[TickerField, ExpireField, PriceField], delimiter="|")
 HistoryQuery = Query("History", fields=[TickerField, DateField], delimiter="|")
-SettlementQuery = Query("Future", fields=[TickerField, ExpireField], delimiter="|")
+SettlementQuery = Query("Settlement", fields=[TickerField, ExpireField], delimiter="|")
 ContractQuery = Query("Contract", fields=[TickerField, ExpireField, OptionField, StrikeField], delimiter="|")
 
 
@@ -102,7 +103,7 @@ class Variables(Category):
     class Securities(Category): Security, Instrument, Option, Position = SecurityVariables, InstrumentVariable, OptionVariable, PositionVariable
     class Strategies(Category): Strategy, Spread = StrategyVariables, SpreadVariable
     class Valuations(Category): Valuation, Scenario = ValuationVariable, ScenarioVariable
-    class Markets(Category): Status, Terms, Action, Pricing = StatusVariable, TermsVariable, ActionVariable, PricingVariable
+    class Markets(Category): Status, Terms, Tenure, Action, Pricing = StatusVariable, TermsVariable, TenureVariable, ActionVariable, PricingVariable
     class Greeks(Category): Theta, Phi, Omega = ThetaVariable, PhiVariable, OmegaVariable
     class Analysis(Category): Technical = TechnicalVariable
 
