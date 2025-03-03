@@ -144,6 +144,7 @@ class OSI(Naming, fields=["ticker", "expire", "option", "strike"]):
         expire = datetime.datetime.strptime(str(values["expire"]), "%y%m%d")
         option = {str(option).upper()[0]: option for option in OptionVariable}[str(values["option"])]
         strike = float(".".join([str(values["strike"])[:5], str(values["strike"])[5:]]))
+        strike = np.round(float(strike), 3)
         return dict(ticker=ticker, expire=expire, option=option, strike=strike)
 
 
