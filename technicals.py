@@ -14,13 +14,30 @@ from abc import ABC
 from finance.variables import Variables, Querys
 from support.calculations import Calculation, Equation, Variable
 from support.mixins import Emptying, Sizing, Partition, Logging
-from support.meta import RegistryMeta
+from support.meta import RegistryMeta, MappingMeta
+from support.variables import Category
+from support.files import File
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["TechnicalCalculator"]
+__all__ = ["TechnicalCalculator", "TechnicalFiles"]
 __copyright__ = "Copyright 2024, Jack Kirby Cook"
 __license__ = "MIT License"
+
+
+class TechnicalParameters(metaclass=MappingMeta):
+    types = {"ticker": str, "open close high low": np.float32, "price trend volatility": np.float32}
+    types = {key: value for keys, value in types.items() for key in str(keys).split(" ")}
+    parsers = dict(instrument=Variables.Securities.Instrument, option=Variables.Securities.Option, position=Variables.Securities.Position)
+    formatters = dict(instrument=int, option=int, position=int)
+    dates = dict(date="%Y%m%d", expire="%Y%m%d", current="%Y%m%d-%H%M")
+
+class StockBarsFile(File, order=["ticker", "date", "open", "close", "high", "low", "price"], **dict(TechnicalParameters)): pass
+class StockStatisticFile(File, order=["ticker", "date", "price", "trend", "volatility"], **dict(TechnicalParameters)): pass
+class StockStochasticFile(File, order=["ticker", "date", "price", "oscillator"], **dict(TechnicalParameters)): pass
+
+class TechnicalFiles(Category):
+    class Stocks(Category): Bars, Statistic, Statistic = StockBarsFile, StockStatisticFile, StockStochasticFile
 
 
 class TechnicalEquation(Equation, ABC):

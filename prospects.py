@@ -28,7 +28,7 @@ class ProspectTable(Table): pass
 class ProspectParameters(object):
     scenarios = {Variables.Valuations.Valuation.ARBITRAGE: [Variables.Valuations.Scenario.MINIMUM, Variables.Valuations.Scenario.MAXIMUM]}
     variants = {Variables.Valuations.Valuation.ARBITRAGE: ["apy", "npv", "cost"]}
-    invariants = ["underlying", "size", "spot", "current"]
+    invariants = ["spot", "underlying", "size", "current"]
     prospect = ["order", "priority", "status"]
     context = ["valuation", "strategy"]
     options = list(map(str, Securities.Options))

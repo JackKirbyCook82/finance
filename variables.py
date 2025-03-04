@@ -13,15 +13,12 @@ import numpy as np
 from enum import Enum
 
 from support.variables import Category, Variables, Variable
-from support.decorators import TypeDispatcher
 from support.querys import Field, Query
-from support.meta import MappingMeta
 from support.mixins import Naming
-from support.files import File
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["Variables", "Querys", "Files", "Securities", "Strategies", "OSI"]
+__all__ = ["Variables", "Querys", "Securities", "Strategies", "OSI"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
@@ -74,29 +71,6 @@ HistoryQuery = Query("History", fields=[TickerField, DateField], delimiter="|")
 SettlementQuery = Query("Settlement", fields=[TickerField, ExpireField], delimiter="|")
 ContractQuery = Query("Contract", fields=[TickerField, ExpireField, OptionField, StrikeField], delimiter="|")
 
-
-class Parameters(metaclass=MappingMeta):
-    types = {"ticker": str, "strike price underlying bid ask size quantity supply demand open close high low": np.float32, "trend volatility oscillator": np.float32, "volume": np.int64}
-    types = {key: value for keys, value in types.items() for key in str(keys).split(" ")}
-    parsers = dict(instrument=InstrumentVariable, option=OptionVariable, position=PositionVariable)
-    formatters = dict(instrument=int, option=int, position=int)
-    dates = dict(date="%Y%m%d", expire="%Y%m%d", current="%Y%m%d-%H%M")
-
-class StockTradeFile(File, order=["ticker", "current", "price"], **dict(Parameters)): pass
-class StockQuoteFile(File, order=["ticker", "current", "bid", "ask", "demand", "supply"], **dict(Parameters)): pass
-class StockSecurityFile(File, order=["ticker", "position", "current", "price", "size"], **dict(Parameters)): pass
-class StockBarsFile(File, order=["ticker", "date", "open", "close", "high", "low", "price"], **dict(Parameters)): pass
-class StockStatisticFile(File, order=["ticker", "date", "price", "trend", "volatility"], **dict(Parameters)): pass
-class StockStochasticFile(File, order=["ticker", "date", "price", "oscillator"], **dict(Parameters)): pass
-class OptionTradeFile(File, order=["ticker", "expire", "strike", "option", "current", "price"], **dict(Parameters)): pass
-class OptionQuoteFile(File, order=["ticker", "expire", "strike", "option", "current", "bid", "ask", "demand", "supply"], **dict(Parameters)): pass
-class OptionSecurityFile(File, order=["ticker", "expire", "strike", "instrument", "option", "position", "current", "price", "underlying", "size"], **dict(Parameters)): pass
-class OptionHoldingsFile(File, order=["ticker", "expire", "strike", "instrument", "option", "position", "quantity"], **dict(Parameters)): pass
-
-
-class Files(Category):
-    class Stocks(Category): Trade, Quote, Bars, Statistic, Stochastic = StockTradeFile, StockQuoteFile, StockBarsFile, StockStatisticFile, StockStochasticFile
-    class Options(Category): Trade, Quote, Security, Holdings = OptionTradeFile, OptionQuoteFile, OptionSecurityFile, OptionHoldingsFile
 
 class Querys(Category): Symbol, Trade, Quote, Product, History, Settlement, Contract = SymbolQuery, TradeQuery, QuoteQuery, ProductQuery, HistoryQuery, SettlementQuery, ContractQuery
 class Variables(Category):
