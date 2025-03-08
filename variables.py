@@ -53,7 +53,6 @@ VerticalCallStrategy = StrategyVariables("VerticalCall", [SpreadVariable.VERTICA
 CollarLongStrategy = StrategyVariables("CollarLong", [SpreadVariable.COLLAR, OptionVariable.EMPTY, PositionVariable.LONG], options=[OptionPutLongSecurity, OptionCallShortSecurity], stocks=[StockLongSecurity])
 CollarShortStrategy = StrategyVariables("CollarShort", [SpreadVariable.COLLAR, OptionVariable.EMPTY, PositionVariable.SHORT], options=[OptionCallLongSecurity, OptionPutShortSecurity], stocks=[StockShortSecurity])
 
-
 TickerField = Field("ticker", str)
 DateField = Field("date", datetime.date, formatting="%Y%m%d")
 ExpireField = Field("expire", datetime.date, formatting="%Y%m%d")

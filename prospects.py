@@ -27,7 +27,7 @@ __license__ = "MIT License"
 class ProspectTable(Table): pass
 class ProspectParameters(object):
     scenarios = {Variables.Valuations.Valuation.ARBITRAGE: [Variables.Valuations.Scenario.MINIMUM, Variables.Valuations.Scenario.MAXIMUM]}
-    variants = {Variables.Valuations.Valuation.ARBITRAGE: ["apy", "npv", "cost"]}
+    variants = {Variables.Valuations.Valuation.ARBITRAGE: ["apy", "npv", "rev", "exp"]}
     invariants = ["spot", "underlying", "size", "current"]
     prospect = ["order", "priority", "status"]
     context = ["valuation", "strategy"]
@@ -163,22 +163,22 @@ class ProspectCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
         assert isinstance(valuations, pd.DataFrame)
         if self.empty(valuations): return
         for settlement, dataframe in self.partition(valuations, by=Querys.Settlement):
-            prospects = self.calculate(dataframe, *args, **kwargs)
-            size = self.size(prospects)
+            dataframe = self.calculate(dataframe, *args, **kwargs)
+            size = self.size(dataframe)
             self.console(f"{str(settlement)}[{int(size):.0f}]")
-            if self.empty(prospects): continue
-            yield prospects
+            if self.empty(dataframe): continue
+            yield dataframe
 
     def calculate(self, valuations, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame)
         prospects = valuations.assign(order=[next(self.counter) for _ in range(len(valuations))])
-        prospects["order"] = prospects["order"].astype(np.int64)
+        prospects["status"] = Variables.Markets.Status.PROSPECT
         prospects["priority"] = prospects.apply(self.priority, axis=1)
+        prospects["order"] = prospects["order"].astype(np.int32)
+        prospects["size"] = prospects["size"].astype(np.int32)
         parameters = dict(ascending=False, inplace=False, ignore_index=False)
         prospects = prospects.sort_values("priority", axis=0, **parameters)
-        prospects["status"] = np.NaN
         prospects = prospects.reindex(columns=list(self.header), fill_value=np.NaN)
-        prospects["status"] = Variables.Markets.Status.PROSPECT
         return prospects
 
     @property
@@ -187,6 +187,9 @@ class ProspectCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
     def counter(self): return self.__counter
     @property
     def header(self): return self.__header
+
+
+
 
 
 

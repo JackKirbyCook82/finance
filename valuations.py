@@ -28,8 +28,8 @@ __license__ = "MIT License"
 class ValuationLocator(ntuple("Locator", "valuation scenario")): pass
 class ValuationEquation(Equation, ABC):
     tau = Variable("tau", "tau", np.int32, xr.DataArray, vectorize=True, function=lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
-    inc = Variable("inc", "income", np.float32, xr.DataArray, vectorize=True, function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
-    exp = Variable("exp", "cost", np.float32, xr.DataArray, vectorize=True, function=lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0))
+    rev = Variable("rev", "rev", np.float32, xr.DataArray, vectorize=True, function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
+    exp = Variable("exp", "exp", np.float32, xr.DataArray, vectorize=True, function=lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0))
 
     xo = Variable("xo", "underlying", np.float32, xr.DataArray, locator="underlying")
     tτ = Variable("tτ", "expire", np.datetime64, xr.DataArray, locator="expire")
@@ -38,8 +38,8 @@ class ValuationEquation(Equation, ABC):
     ρ = Variable("ρ", "discount", np.float32, types.NoneType, locator="discount")
 
 class ArbitrageEquation(ValuationEquation, ABC):
-    irr = Variable("irr", "irr", np.float32, xr.DataArray, vectorize=True, function=lambda inc, exp, tau: np.power(np.divide(inc, exp), np.power(tau, -1)) - 1)
-    npv = Variable("npv", "npv", np.float32, xr.DataArray, vectorize=True, function=lambda inc, exp, tau, ρ: np.divide(inc, np.power(1 + ρ, tau / 365)) - exp)
+    irr = Variable("irr", "irr", np.float32, xr.DataArray, vectorize=True, function=lambda rev, exp, tau: np.power(np.divide(rev, exp), np.power(tau, -1)) - 1)
+    npv = Variable("npv", "npv", np.float32, xr.DataArray, vectorize=True, function=lambda rev, exp, tau, ρ: np.divide(rev, np.power(1 + ρ, tau / 365)) - exp)
     apy = Variable("apy", "apy", np.float32, xr.DataArray, vectorize=True, function=lambda irr, tau: np.power(irr + 1, np.power(tau / 365, -1)) - 1)
 
 class MinimumArbitrageEquation(ArbitrageEquation):
@@ -57,6 +57,7 @@ class ArbitrageCalculation(ValuationCalculation, ABC):
             yield strategies["underlying"]
             yield strategies["current"]
             yield strategies["spot"]
+            yield equation.rev()
             yield equation.exp()
             yield equation.npv()
             yield equation.apy()
