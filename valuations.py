@@ -13,7 +13,7 @@ import xarray as xr
 from abc import ABC
 from collections import namedtuple as ntuple
 
-from finance.variables import Variables, Querys
+from finance.variables import Variables, Querys, Securities
 from support.calculations import Calculation, Equation, Variable
 from support.mixins import Emptying, Sizing, Partition, Logging
 from support.meta import RegistryMeta
@@ -87,6 +87,8 @@ class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
     def calculate(self, strategies, *args, **kwargs):
         valuations = dict(self.calculator(strategies, *args, **kwargs))
         valuations = pd.concat(list(valuations.values()), axis=0)
+        columns = [option for option in list(map(str, Securities.Options)) if option not in valuations.columns]
+        for column in columns: valuations[column] = np.NaN
         return valuations
 
     def calculator(self, strategies, *args, **kwargs):

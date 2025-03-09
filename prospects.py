@@ -159,27 +159,76 @@ class ProspectCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
         self.__priority = priority
         self.__header = header
 
-    def execute(self, valuations, *args, **kwargs):
-        assert isinstance(valuations, pd.DataFrame)
+    def execute(self, valuations, securities, *args, **kwargs):
+        assert isinstance(valuations, pd.DataFrame) and isinstance(securities, pd.DataFrame)
         if self.empty(valuations): return
-        for settlement, dataframe in self.partition(valuations, by=Querys.Settlement):
-            dataframe = self.calculate(dataframe, *args, **kwargs)
-            size = self.size(dataframe)
-            self.console(f"{str(settlement)}[{int(size):.0f}]")
-            if self.empty(dataframe): continue
-            yield dataframe
+        for settlement, (primary, secondary) in self.partition(valuations, securities, by=Querys.Settlement):
+            prospects = self.calculate(primary, secondary, *args, **kwargs)
 
-    def calculate(self, valuations, *args, **kwargs):
-        assert isinstance(valuations, pd.DataFrame)
-        prospects = valuations.assign(order=[next(self.counter) for _ in range(len(valuations))])
-        prospects["status"] = Variables.Markets.Status.PROSPECT
-        prospects["priority"] = prospects.apply(self.priority, axis=1)
-        prospects["order"] = prospects["order"].astype(np.int32)
-        prospects["size"] = prospects["size"].astype(np.int32)
-        parameters = dict(ascending=False, inplace=False, ignore_index=False)
-        prospects = prospects.sort_values("priority", axis=0, **parameters)
-        prospects = prospects.reindex(columns=list(self.header), fill_value=np.NaN)
-        return prospects
+            print(prospects)
+            raise Exception()
+
+            size = self.size(prospects)
+            self.console(f"{str(settlement)}[{int(size):.0f}]")
+            if self.empty(prospects): continue
+            yield prospects
+
+    def partition(self, valuations, securities, *args, **kwargs):
+        assert isinstance(valuations, pd.DataFrame) and isinstance(securities, pd.DataFrame)
+        for partition, primary in super().partition(valuations, *args, **kwargs):
+            mask = [securities[key] == value for key, value in iter(partition)]
+            mask = reduce(lambda lead, lag: lead & lag, list(mask))
+            secondary = securities.where(mask)
+            yield partition, (primary, secondary)
+
+    def calculate(self, valuations, securities, *args, **kwargs):
+        valuations["priority"] = valuations.apply(self.priority, axis=1)
+        valuations = valuations.sort_values("priority", axis=0, ascending=False, inplace=False, ignore_index=False)
+        demand = self.demand(valuations, *args, **kwargs)
+        supply = self.supply(securities, *args, **kwargs)
+        supply = supply[supply.index.isin(demand)]
+        header = list(Querys.Settlement) + list(map(str, Securities.Options))
+        valuations["size"] = valuations[header].apply(self.quantify, axis=1, securities=supply)
+        valuations["order"] = [next(self.counter) for _ in range(len(valuations))]
+        valuations["status"] = Variables.Markets.Status.PROSPECT
+        valuations = valuations.reindex(columns=list(self.header), fill_value=np.NaN)
+        return valuations
+
+    @staticmethod
+    def quantify(valuation, *args, securities, **kwargs):
+        parameters = dict(id_vars=list(Querys.Settlement), value_name="strike", var_name="security")
+        valuation = valuation.droplevel(level=1)
+        valuation = valuation.to_frame().transpose()
+        valuation = pd.melt(valuation, **parameters)
+        mask = valuation["strike"].isna()
+        valuation = valuation.where(~mask).dropna(how="all", inplace=False)
+        index = pd.MultiIndex.from_frame(valuation)
+        quantity = securities.loc[index]
+        quantity["size"] = quantity["size"].min()
+        quantity = quantity.reindex(securities.index).fillna(0).astype(np.int32)
+        securities["size"] = securities["size"] - quantity["size"]
+        return quantity.loc[index, "size"].min().astype(np.int32)
+
+    @staticmethod
+    def demand(valuations, *args, **kwargs):
+        parameters = dict(id_vars=list(Querys.Settlement), value_name="strike", var_name="security")
+        header = list(Querys.Settlement) + list(map(str, Securities.Options))
+        demand = valuations[header].droplevel(level=1, axis=1)
+        demand = pd.melt(demand, **parameters)
+        mask = demand["strike"].isna()
+        demand = demand.where(~mask).dropna(how="all", inplace=False)
+        demand = pd.MultiIndex.from_frame(demand)
+        return demand
+
+    @staticmethod
+    def supply(securities, *args, **kwargs):
+        security = lambda cols: str(Securities([cols["instrument"], cols["option"], cols["position"]]))
+        header = list(Querys.Settlement) + list(Variables.Securities.Security) + ["strike", "size"]
+        supply = securities[header]
+        supply["security"] = supply.apply(security, axis=1)
+        index = list(Querys.Settlement) + ["security", "strike"]
+        supply = supply[index + ["size"]].set_index(index, drop=True, inplace=False)
+        return supply
 
     @property
     def priority(self): return self.__priority
