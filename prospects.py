@@ -10,71 +10,29 @@ import inspect
 import numpy as np
 import pandas as pd
 from functools import reduce
-from itertools import product, count
+from itertools import count
 
 from finance.variables import Variables, Querys, Securities
 from support.mixins import Emptying, Sizing, Partition, Logging
-from support.tables import Reader, Writer, Routine, Table
+from support.tables import Reader, Writer, Routine, Table, Renderer, Formatting
 from support.decorators import Decorator
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["ProspectCalculator", "ProspectRoutine", "ProspectReader", "ProspectWriter", "ProspectTable", "ProspectHeader", "ProspectLayout"]
+__all__ = ["ProspectCalculator", "ProspectRoutine", "ProspectReader", "ProspectWriter", "ProspectTable", "ProspectRenderer"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
 class ProspectTable(Table): pass
-class ProspectParameters(object):
-    scenarios = {Variables.Valuations.Valuation.ARBITRAGE: [Variables.Valuations.Scenario.MINIMUM, Variables.Valuations.Scenario.MAXIMUM]}
-    variants = {Variables.Valuations.Valuation.ARBITRAGE: ["apy", "npv", "rev", "exp"]}
-    invariants = ["spot", "underlying", "size", "current"]
-    prospect = ["order", "priority", "status"]
-    context = ["valuation", "strategy"]
-    options = list(map(str, Securities.Options))
-    stocks = list(map(str, Securities.Stocks))
-    contract = list(map(str, Querys.Settlement))
-
-
-class ProspectHeader(ProspectParameters):
-    def __iter__(self): return iter(self.index + self.columns)
-    def __new__(cls, *args, valuation, **kwargs):
-        assert valuation in Variables.Valuations.Valuation
-        scenarios = list(cls.scenarios[valuation])
-        variants = list(cls.variants[valuation])
-        index = list(cls.context + cls.contract + cls.options)
-        columns = list(cls.invariants + cls.prospect)
-        instance = super().__new__(cls)
-        instance.name = cls.__name__
-        instance.index = list(product(index, [""]))
-        instance.columns = list(product(variants, scenarios)) + list(product(columns, [""]))
-        instance.pivot = ("scenario", variants)
-        instance.unpivot = ("scenario", variants)
-        instance.scenarios = scenarios
-        instance.variants = variants
-        instance.valuation = valuation
-        return instance
-
-
-class ProspectLayout(ProspectParameters):
-    def __new__(cls, *args, valuation, **kwargs):
-        assert valuation in Variables.Valuations.Valuation
-        scenarios = list(cls.scenarios[valuation])
-        variants = list(cls.variants[valuation])
-        order = list(cls.contract + cls.context + cls.options + variants + ["underlying", "size", "status"])
-        formats = dict(status=lambda status: str(status), size=lambda size: f"{size:.0f}")
-        formats["apy"] = lambda value: (f"{value * 100:.02f}%" if value < 10 else "EsV") if np.isfinite(value) else "InF"
-        generator = lambda key: product([key], scenarios) if key in variants else product([key], [""])
-        instance = super().__new__(cls)
-        instance.name = cls.__name__
-        instance.formats = {column: function for key, function in formats.items() for column in generator(key)}
-        instance.order = [column for key in order for column in generator(key)]
-        instance.numbers = lambda value: f"{value:.02f}"
-        instance.width = kwargs.get("width", 250)
-        instance.columns = kwargs.get("columns", 30)
-        instance.rows = kwargs.get("rows", 30)
-        instance.valuation = valuation
-        return instance
+class ProspectRenderer(Renderer):
+    order = ["valuation", "strategy"] + list(Querys.Settlement) + list(map(str, Securities.Options) + ["apy", "rev", "exp", "spot", "share", "size", "status"])
+    layout = dict(width=250, columns=30, rows=30)
+    percent = Formatting(function=lambda value: (f"{value * 100:.2f}%" if value < 10 else "EsV") if np.isfinite(value) else "InF", variables="apy")
+    financial = Formatting(function=lambda value: f"$ {value:.2f}", variables=["npv", "rev", "exp", "spot", "share"])
+    floating = Formatting(function=lambda value: f"{value:.2f}", variables=list(map(str, Securities.Options)))
+    integer = Formatting(function=lambda value: f"{value:.0f}", variables="size")
+    string = Formatting(function=lambda value: str(value), variables="status")
 
 
 class ProspectRoutine(Routine):
@@ -152,10 +110,11 @@ class ProspectWriter(Writer):
 
 
 class ProspectCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
-    def __init__(self, *args, priority, header, **kwargs):
-        assert callable(priority)
+    def __init__(self, *args, priority, liquidity, header, **kwargs):
+        assert callable(priority) and callable(liquidity)
         super().__init__(*args, **kwargs)
         self.__counter = count(start=1, step=1)
+        self.__liquidity = liquidity
         self.__priority = priority
         self.__header = header
 
@@ -164,10 +123,6 @@ class ProspectCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
         if self.empty(valuations): return
         for settlement, (primary, secondary) in self.partition(valuations, securities, by=Querys.Settlement):
             prospects = self.calculate(primary, secondary, *args, **kwargs)
-
-            print(prospects)
-            raise Exception()
-
             size = self.size(prospects)
             self.console(f"{str(settlement)}[{int(size):.0f}]")
             if self.empty(prospects): continue
@@ -183,15 +138,20 @@ class ProspectCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
 
     def calculate(self, valuations, securities, *args, **kwargs):
         valuations["priority"] = valuations.apply(self.priority, axis=1)
+        valuations["size"] = valuations.apply(self.liquidity, axis=1)
+        securities["size"] = securities.apply(self.liquidity, axis=1)
         valuations = valuations.sort_values("priority", axis=0, ascending=False, inplace=False, ignore_index=False)
         demand = self.demand(valuations, *args, **kwargs)
         supply = self.supply(securities, *args, **kwargs)
         supply = supply[supply.index.isin(demand)]
         header = list(Querys.Settlement) + list(map(str, Securities.Options))
         valuations["size"] = valuations[header].apply(self.quantify, axis=1, securities=supply)
+        mask = valuations[("size", "")] > 0
+        valuations = valuations.where(mask).dropna(how="all", inplace=False)
         valuations["order"] = [next(self.counter) for _ in range(len(valuations))]
         valuations["status"] = Variables.Markets.Status.PROSPECT
         valuations = valuations.reindex(columns=list(self.header), fill_value=np.NaN)
+        valuations = valuations.reset_index(drop=True, inplace=False)
         return valuations
 
     @staticmethod
@@ -230,6 +190,8 @@ class ProspectCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
         supply = supply[index + ["size"]].set_index(index, drop=True, inplace=False)
         return supply
 
+    @property
+    def liquidity(self): return self.__liquidity
     @property
     def priority(self): return self.__priority
     @property

@@ -31,7 +31,7 @@ class ValuationEquation(Equation, ABC):
     rev = Variable("rev", "rev", np.float32, xr.DataArray, vectorize=True, function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
     exp = Variable("exp", "exp", np.float32, xr.DataArray, vectorize=True, function=lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0))
 
-    xo = Variable("xo", "underlying", np.float32, xr.DataArray, locator="underlying")
+    xo = Variable("xo", "share", np.float32, xr.DataArray, locator="underlying")
     tτ = Variable("tτ", "expire", np.datetime64, xr.DataArray, locator="expire")
     to = Variable("to", "current", np.datetime64, xr.DataArray, locator="current")
     vo = Variable("vo", "spot", np.float32, xr.DataArray, locator="spot")
@@ -54,7 +54,7 @@ class ArbitrageCalculation(ValuationCalculation, ABC):
     def execute(self, strategies, *args, discount, **kwargs):
         with self.equation(strategies, discount=discount) as equation:
             yield strategies["size"]
-            yield strategies["underlying"]
+            yield strategies["share"]
             yield strategies["current"]
             yield strategies["spot"]
             yield equation.rev()

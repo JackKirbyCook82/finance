@@ -14,8 +14,8 @@ from abc import ABC
 from finance.variables import Variables, Querys
 from support.calculations import Calculation, Equation, Variable
 from support.mixins import Emptying, Sizing, Partition, Logging
-from support.meta import RegistryMeta, MappingMeta
 from support.variables import Category
+from support.meta import RegistryMeta
 from support.files import File
 
 __version__ = "1.0.0"
@@ -25,19 +25,18 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class SecurityParameters(metaclass=MappingMeta):
+class SecurityFile(File):
     types = {"ticker": str, "price bid ask": np.float32, "size supply demand": np.float32, "strike underlying": np.float32}
-    types = {key: value for keys, value in types.items() for key in str(keys).split(" ")}
     parsers = dict(instrument=Variables.Securities.Instrument, option=Variables.Securities.Option, position=Variables.Securities.Position)
     formatters = dict(instrument=int, option=int, position=int)
     dates = dict(date="%Y%m%d", expire="%Y%m%d", current="%Y%m%d-%H%M")
 
-class StockTradeFile(File, order=["ticker", "current", "price"], **dict(SecurityParameters)): pass
-class StockQuoteFile(File, order=["ticker", "current", "bid", "ask", "demand", "supply"], **dict(SecurityParameters)): pass
-class StockSecurityFile(File, order=["ticker", "position", "current", "price", "size"], **dict(SecurityParameters)): pass
-class OptionTradeFile(File, order=["ticker", "expire", "strike", "option", "current", "price"], **dict(SecurityParameters)): pass
-class OptionQuoteFile(File, order=["ticker", "expire", "strike", "option", "current", "bid", "ask", "demand", "supply"], **dict(SecurityParameters)): pass
-class OptionSecurityFile(File, order=["ticker", "expire", "strike", "instrument", "option", "position", "current", "price", "underlying", "size"], **dict(SecurityParameters)): pass
+class StockTradeFile(SecurityFile, order=["ticker", "current", "price"]): pass
+class StockQuoteFile(SecurityFile, order=["ticker", "current", "bid", "ask", "demand", "supply"]): pass
+class StockSecurityFile(SecurityFile, order=["ticker", "position", "current", "price", "size"]): pass
+class OptionTradeFile(SecurityFile, order=["ticker", "expire", "strike", "option", "current", "price"]): pass
+class OptionQuoteFile(SecurityFile, order=["ticker", "expire", "strike", "option", "current", "bid", "ask", "demand", "supply"]): pass
+class OptionSecurityFile(SecurityFile, order=["ticker", "expire", "strike", "instrument", "option", "position", "current", "price", "underlying", "size"]): pass
 
 class SecurityFiles(Category):
     class Stocks(Category): Trade, Quote, Security = StockTradeFile, StockQuoteFile, StockSecurityFile
