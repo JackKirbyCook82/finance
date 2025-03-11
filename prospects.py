@@ -10,29 +10,33 @@ import inspect
 import numpy as np
 import pandas as pd
 from functools import reduce
-from itertools import count
+from itertools import count, chain
 
 from finance.variables import Variables, Querys, Securities
 from support.mixins import Emptying, Sizing, Partition, Logging
-from support.tables import Reader, Writer, Routine, Table, Renderer, Formatting
+from support.tables import Reader, Writer, Routine, Table, Header, Renderer, Stacking
 from support.decorators import Decorator
+from support.meta import MappingMeta
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["ProspectCalculator", "ProspectRoutine", "ProspectReader", "ProspectWriter", "ProspectTable", "ProspectRenderer"]
+__all__ = ["ProspectCalculator", "ProspectRoutine", "ProspectReader", "ProspectWriter", "ProspectTable"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class ProspectTable(Table): pass
-class ProspectRenderer(Renderer):
-    order = ["valuation", "strategy"] + list(Querys.Settlement) + list(map(str, Securities.Options) + ["apy", "rev", "exp", "spot", "share", "size", "status"])
+class ProspectParameters(metaclass=MappingMeta):
+    order = list(Querys.Settlement) + list(map(str, Securities.Options) + ["apy", "npv", "rev", "exp", "spot", "share", "size", "status"])
+    columns = ["apy", "npv", "rev", "exp", "spot", "share", "size", "current", "priority", "status"]
+    index = ["order", "valuation", "strategy"] + list(map(str, chain(Querys.Settlement, Securities.Options)))
+    percent = lambda value: (f"{value * 100:.2f}%" if value < 10 else "EsV") if np.isfinite(value) else "InF"
+    financial, floating, integer = lambda value: f"$ {value:.2f}", lambda value: f"{value:.2f}", lambda value: f"{value:.0f}"
+    formatting = {"apy": percent, "npv rev exp": financial, "size": integer, "status": str, tuple(map(str, Securities.Options)): floating}
+    stacking = Stacking("scenario", "apy npv rev exp", list(Variables.Valuations.Scenario))
     layout = dict(width=250, columns=30, rows=30)
-    percent = Formatting(function=lambda value: (f"{value * 100:.2f}%" if value < 10 else "EsV") if np.isfinite(value) else "InF", variables="apy")
-    financial = Formatting(function=lambda value: f"$ {value:.2f}", variables=["npv", "rev", "exp", "spot", "share"])
-    floating = Formatting(function=lambda value: f"{value:.2f}", variables=list(map(str, Securities.Options)))
-    integer = Formatting(function=lambda value: f"{value:.0f}", variables="size")
-    string = Formatting(function=lambda value: str(value), variables="status")
+
+class ProspectTable(Table, header=Header(**dict(ProspectParameters)), renderer=Renderer(**dict(ProspectParameters))):
+    pass
 
 
 class ProspectRoutine(Routine):
@@ -110,7 +114,7 @@ class ProspectWriter(Writer):
 
 
 class ProspectCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
-    def __init__(self, *args, priority, liquidity, header, **kwargs):
+    def __init__(self, *args, priority, liquidity, **kwargs):
         assert callable(priority) and callable(liquidity)
         super().__init__(*args, **kwargs)
         self.__counter = count(start=1, step=1)

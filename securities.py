@@ -14,8 +14,8 @@ from abc import ABC
 from finance.variables import Variables, Querys
 from support.calculations import Calculation, Equation, Variable
 from support.mixins import Emptying, Sizing, Partition, Logging
+from support.meta import RegistryMeta, MappingMeta
 from support.variables import Category
-from support.meta import RegistryMeta
 from support.files import File
 
 __version__ = "1.0.0"
@@ -25,12 +25,13 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class SecurityFile(File):
+class SecurityParameters(metaclass=MappingMeta):
     types = {"ticker": str, "price bid ask": np.float32, "size supply demand": np.float32, "strike underlying": np.float32}
     parsers = dict(instrument=Variables.Securities.Instrument, option=Variables.Securities.Option, position=Variables.Securities.Position)
     formatters = dict(instrument=int, option=int, position=int)
     dates = dict(date="%Y%m%d", expire="%Y%m%d", current="%Y%m%d-%H%M")
 
+class SecurityFile(File, **dict(SecurityParameters)): pass
 class StockTradeFile(SecurityFile, order=["ticker", "current", "price"]): pass
 class StockQuoteFile(SecurityFile, order=["ticker", "current", "bid", "ask", "demand", "supply"]): pass
 class StockSecurityFile(SecurityFile, order=["ticker", "position", "current", "price", "size"]): pass
