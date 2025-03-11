@@ -14,13 +14,13 @@ from itertools import count, chain
 
 from finance.variables import Variables, Querys, Securities
 from support.mixins import Emptying, Sizing, Partition, Logging
-from support.tables import Reader, Writer, Routine, Table, Header, Renderer, Stacking
+from support.tables import Reader, Writer, Routine, Stacking, Layout
 from support.decorators import Decorator
 from support.meta import MappingMeta
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["ProspectCalculator", "ProspectRoutine", "ProspectReader", "ProspectWriter", "ProspectTable"]
+__all__ = ["ProspectCalculator", "ProspectRoutine", "ProspectReader", "ProspectWriter", "ProspectParameters"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
@@ -32,11 +32,8 @@ class ProspectParameters(metaclass=MappingMeta):
     percent = lambda value: (f"{value * 100:.2f}%" if value < 10 else "EsV") if np.isfinite(value) else "InF"
     financial, floating, integer = lambda value: f"$ {value:.2f}", lambda value: f"{value:.2f}", lambda value: f"{value:.0f}"
     formatting = {"apy": percent, "npv rev exp": financial, "size": integer, "status": str, tuple(map(str, Securities.Options)): floating}
-    stacking = Stacking("scenario", "apy npv rev exp", list(Variables.Valuations.Scenario))
-    layout = dict(width=250, columns=30, rows=30)
-
-class ProspectTable(Table, header=Header(**dict(ProspectParameters)), renderer=Renderer(**dict(ProspectParameters))):
-    pass
+    stacking = Stacking(name="scenario", columns="apy npv rev exp", layers=list(Variables.Valuations.Scenario))
+    layout = Layout(width=250, columns=30, rows=30)
 
 
 class ProspectRoutine(Routine):
@@ -114,7 +111,7 @@ class ProspectWriter(Writer):
 
 
 class ProspectCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
-    def __init__(self, *args, priority, liquidity, **kwargs):
+    def __init__(self, *args, priority, liquidity, header, **kwargs):
         assert callable(priority) and callable(liquidity)
         super().__init__(*args, **kwargs)
         self.__counter = count(start=1, step=1)
