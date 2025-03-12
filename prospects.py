@@ -14,7 +14,7 @@ from itertools import count, chain
 
 from finance.variables import Variables, Querys, Securities
 from support.mixins import Emptying, Sizing, Partition, Logging
-from support.tables import Reader, Writer, Routine, Stack, Layout
+from support.tables import Reader, Writer, Routine, Stacking, Layout
 from support.decorators import Decorator
 from support.meta import MappingMeta
 
@@ -32,7 +32,7 @@ class ProspectParameters(metaclass=MappingMeta):
     percent = lambda value: (f"{value * 100:.2f}%" if value < 10 else "EsV") if np.isfinite(value) else "InF"
     financial, floating, integer = lambda value: f"$ {value:.2f}", lambda value: f"{value:.2f}", lambda value: f"{value:.0f}"
     formatting = {"apy": percent, "npv rev exp": financial, "size": integer, "status": str, tuple(map(str, Securities.Options)): floating}
-    stack = Stack(axis="scenario", primary=["apy", "npv", "rev", "exp"], secondary=list(Variables.Valuations.Scenario))
+    stacking = Stacking(axis="scenario", columns=["apy", "npv", "rev", "exp"], layers=list(Variables.Valuations.Scenario))
     layout = Layout(width=250, columns=30, rows=30)
 
 
@@ -80,34 +80,16 @@ class ProspectReader(Reader):
 class ProspectWriter(Writer):
     def write(self, dataframes, *args, **kwargs):
         if self.empty(dataframes): return
-        self.obsolete(dataframes, *args, **kwargs)
-        self.prospect(dataframes, *args, **kwargs)
-        columns = list(Querys.Settlement) + list(map(str, Securities.Options))
-        self.table.unique(columns=columns, reverse=True)
-        self.table.sort("priority", reverse=True)
-        self.table.reindex()
-
-    def prospect(self, dataframes, *args, **kwargs):
-        if self.empty(dataframes): return
         for settlement, dataframe in self.partition(dataframes, by=Querys.Settlement):
             if self.empty(dataframe): continue
             self.table.append(dataframe)
             size = self.size(dataframe)
             status = str(Variables.Markets.Status.PROSPECT).lower()
             self.console(f"{str(settlement)}|{str(status)}[{int(size):.0f}]", title="Attached")
-
-    def obsolete(self, dataframes, *args, **kwargs):
-        if not bool(self.table): return
-        if self.empty(dataframes): return
-        for settlement in self.groups(dataframes, by=Querys.Settlement):
-            mask = [self.table[key] == value for key, value in settlement.items()]
-            mask = reduce(lambda lead, lag: lead & lag, mask)
-            mask = mask & (self.table["status"] != Variables.Markets.Status.OBSOLETE)
-            self.table.modify(mask, "status", Variables.Markets.Status.OBSOLETE)
-            dataframe = self.table.image(mask)
-            size = self.size(dataframe)
-            status = str(Variables.Markets.Status.OBSOLETE).lower()
-            self.console(f"{str(settlement)}|{str(status)}[{int(size):.0f}]", title="Modified")
+        columns = list(Querys.Settlement) + list(map(str, Securities.Options))
+        self.table.unique(columns=columns, reverse=True)
+        self.table.sort("priority", reverse=True)
+        self.table.reindex()
 
 
 class ProspectCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
@@ -122,20 +104,20 @@ class ProspectCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
     def execute(self, valuations, securities, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame) and isinstance(securities, pd.DataFrame)
         if self.empty(valuations): return
-        for settlement, (primary, secondary) in self.partition(valuations, securities, by=Querys.Settlement):
+        for settlement, primary, secondary in self.alignment(valuations, securities, by=Querys.Settlement):
             prospects = self.calculate(primary, secondary, *args, **kwargs)
             size = self.size(prospects)
             self.console(f"{str(settlement)}[{int(size):.0f}]")
             if self.empty(prospects): continue
             yield prospects
 
-    def partition(self, valuations, securities, *args, **kwargs):
+    def alignment(self, valuations, securities, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame) and isinstance(securities, pd.DataFrame)
-        for partition, primary in super().partition(valuations, *args, **kwargs):
+        for partition, primary in self.partition(valuations, *args, **kwargs):
             mask = [securities[key] == value for key, value in iter(partition)]
             mask = reduce(lambda lead, lag: lead & lag, list(mask))
             secondary = securities.where(mask)
-            yield partition, (primary, secondary)
+            yield partition, primary, secondary
 
     def calculate(self, valuations, securities, *args, **kwargs):
         valuations["priority"] = valuations.apply(self.priority, axis=1)
