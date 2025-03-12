@@ -54,9 +54,9 @@ class ArbitrageCalculation(ValuationCalculation, ABC):
     def execute(self, strategies, *args, discount, **kwargs):
         with self.equation(strategies, discount=discount) as equation:
             yield strategies["size"]
-            yield strategies["share"]
             yield strategies["current"]
             yield strategies["spot"]
+            yield equation.xo()
             yield equation.rev()
             yield equation.exp()
             yield equation.npv()

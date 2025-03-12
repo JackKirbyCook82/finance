@@ -14,7 +14,7 @@ from itertools import count, chain
 
 from finance.variables import Variables, Querys, Securities
 from support.mixins import Emptying, Sizing, Partition, Logging
-from support.tables import Reader, Writer, Routine, Stacking, Layout
+from support.tables import Reader, Writer, Routine, Stack, Layout
 from support.decorators import Decorator
 from support.meta import MappingMeta
 
@@ -26,13 +26,13 @@ __license__ = "MIT License"
 
 
 class ProspectParameters(metaclass=MappingMeta):
-    order = list(Querys.Settlement) + list(map(str, Securities.Options) + ["apy", "npv", "rev", "exp", "spot", "share", "size", "status"])
+    order = list(Querys.Settlement) + list(map(str, Securities.Options)) + ["apy", "npv", "rev", "exp", "spot", "share", "size", "status"]
     columns = ["apy", "npv", "rev", "exp", "spot", "share", "size", "current", "priority", "status"]
     index = ["order", "valuation", "strategy"] + list(map(str, chain(Querys.Settlement, Securities.Options)))
     percent = lambda value: (f"{value * 100:.2f}%" if value < 10 else "EsV") if np.isfinite(value) else "InF"
     financial, floating, integer = lambda value: f"$ {value:.2f}", lambda value: f"{value:.2f}", lambda value: f"{value:.0f}"
     formatting = {"apy": percent, "npv rev exp": financial, "size": integer, "status": str, tuple(map(str, Securities.Options)): floating}
-    stacking = Stacking(name="scenario", columns="apy npv rev exp", layers=list(Variables.Valuations.Scenario))
+    stack = Stack(axis="scenario", primary=["apy", "npv", "rev", "exp"], secondary=list(Variables.Valuations.Scenario))
     layout = Layout(width=250, columns=30, rows=30)
 
 
