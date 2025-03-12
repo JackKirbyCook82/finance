@@ -30,10 +30,10 @@ class ProspectParameters(metaclass=MappingMeta):
     columns = ["apy", "npv", "rev", "exp", "spot", "share", "size", "current", "priority", "status"]
     index = ["order", "valuation", "strategy"] + list(map(str, chain(Querys.Settlement, Securities.Options)))
     percent = lambda value: (f"{value * 100:.2f}%" if value < 10 else "EsV") if np.isfinite(value) else "InF"
-    financial, floating, integer = lambda value: f"$ {value:.2f}", lambda value: f"{value:.2f}", lambda value: f"{value:.0f}"
-    formatting = {"apy": percent, "npv rev exp": financial, "size": integer, "status": str, tuple(map(str, Securities.Options)): floating}
+    financial, floating, integer = lambda value: f"{value:.2f}", lambda value: f"{value:.2f}", lambda value: f"{value:.0f}"
+    formatting = {"apy": percent, "npv rev exp spot share": financial, "size": integer, "status": str, tuple(map(str, Securities.Options)): floating}
     stacking = Stacking(axis="scenario", columns=["apy", "npv", "rev", "exp"], layers=list(Variables.Valuations.Scenario))
-    layout = Layout(width=250, columns=30, rows=30)
+    layout = Layout(width=250, space=10, columns=30, rows=30)
 
 
 class ProspectRoutine(Routine):

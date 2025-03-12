@@ -28,8 +28,8 @@ __license__ = "MIT License"
 class ValuationLocator(ntuple("Locator", "valuation scenario")): pass
 class ValuationEquation(Equation, ABC):
     tau = Variable("tau", "tau", np.int32, xr.DataArray, vectorize=True, function=lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
-    rev = Variable("rev", "rev", np.float32, xr.DataArray, vectorize=True, function=lambda vo, vτ: + np.maximum(vo, 0) + np.maximum(vτ, 0))
-    exp = Variable("exp", "exp", np.float32, xr.DataArray, vectorize=True, function=lambda vo, vτ: - np.minimum(vo, 0) - np.minimum(vτ, 0))
+    rev = Variable("rev", "rev", np.float32, xr.DataArray, vectorize=True, function=lambda vo, vτ: np.abs(+ np.maximum(vo, 0) + np.maximum(vτ, 0)))
+    exp = Variable("exp", "exp", np.float32, xr.DataArray, vectorize=True, function=lambda vo, vτ: np.abs(- np.minimum(vo, 0) - np.minimum(vτ, 0)))
 
     xo = Variable("xo", "share", np.float32, xr.DataArray, locator="underlying")
     tτ = Variable("tτ", "expire", np.datetime64, xr.DataArray, locator="expire")
