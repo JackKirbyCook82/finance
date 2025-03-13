@@ -30,8 +30,8 @@ class StrategyLocator(ntuple("Locator", "axis position")): pass
 class StrategyEquation(Equation, ABC):
     t = Variable("t", "current", np.datetime64, xr.DataArray, vectorize=True, function=lambda tα, tβ: np.minimum(np.datetime64(tα, "ns"), np.datetime64(tβ, "ns")))
     x = Variable("x", "underlying", np.float32, xr.DataArray, vectorize=True, function=lambda xα, xβ: (xα + xβ) / 2)
-    w = Variable("w", "spot", np.float32, xr.DataArray, vectorize=True, function=lambda y, ε: y * 100 - ε)
     q = Variable("q", "size", np.float32, xr.DataArray, vectorize=True, function=lambda qα, qβ: np.minimum(qα, qβ))
+    w = Variable("w", "spot", np.float32, xr.DataArray, vectorize=True, function=lambda y, ε: y * 100 - ε)
     wh = Variable("wh", "maximum", np.float32, xr.DataArray, vectorize=True, function=lambda yh, ε: yh * 100 - ε)
     wl = Variable("wl", "minimum", np.float32, xr.DataArray, vectorize=True, function=lambda yl, ε: yl * 100 - ε)
 
@@ -51,23 +51,23 @@ class VerticalEquation(StrategyEquation):
     y = Variable("y", "spot", np.float32, xr.DataArray, vectorize=True, function=lambda yα, yβ: - yα + yβ)
 
 class CollarEquation(StrategyEquation):
-    y = Variable("y", "spot", np.float32, xr.DataArray, vectorize=True, function=lambda x, yα, yβ: - yα + yβ - x)
+    y = Variable("y", "spot", np.float32, xr.DataArray, vectorize=True, function=lambda x, yα, yβ: - yα + yβ - (x / 100))
 
 class VerticalPutEquation(VerticalEquation):
-    yh = Variable("yh", "maximum", np.float32, xr.DataArray, vectorize=True, function=lambda kα, kβ: np.maximum(kα - kβ, 0))
-    yl = Variable("yl", "minimum", np.float32, xr.DataArray, vectorize=True, function=lambda kα, kβ: np.minimum(kα - kβ, 0))
+    yh = Variable("wh", "maximum", np.float32, xr.DataArray, vectorize=True, function=lambda kα, kβ: np.maximum(kα - kβ, 0))
+    yl = Variable("wl", "minimum", np.float32, xr.DataArray, vectorize=True, function=lambda kα, kβ: np.minimum(kα - kβ, 0))
 
 class VerticalCallEquation(VerticalEquation):
-    yh = Variable("yh", "maximum", np.float32, xr.DataArray, vectorize=True, function=lambda kα, kβ: np.maximum(-kα + kβ, 0))
-    yl = Variable("yl", "minimum", np.float32, xr.DataArray, vectorize=True, function=lambda kα, kβ: np.minimum(-kα + kβ, 0))
+    yh = Variable("wh", "maximum", np.float32, xr.DataArray, vectorize=True, function=lambda kα, kβ: np.maximum(-kα + kβ, 0))
+    yl = Variable("wl", "minimum", np.float32, xr.DataArray, vectorize=True, function=lambda kα, kβ: np.minimum(-kα + kβ, 0))
 
 class CollarLongEquation(CollarEquation):
-    yh = Variable("yh", "maximum", np.float32, xr.DataArray, vectorize=True, function=lambda kα, kβ: np.maximum(kα, kβ))
-    yl = Variable("yl", "minimum", np.float32, xr.DataArray, vectorize=True, function=lambda kα, kβ: np.minimum(kα, kβ))
+    yh = Variable("wh", "maximum", np.float32, xr.DataArray, vectorize=True, function=lambda kα, kβ: np.maximum(kα, kβ))
+    yl = Variable("wl", "minimum", np.float32, xr.DataArray, vectorize=True, function=lambda kα, kβ: np.minimum(kα, kβ))
 
 class CollarShortEquation(CollarEquation):
-    yh = Variable("yh", "maximum", np.float32, xr.DataArray, vectorize=True, function=lambda kα, kβ: np.maximum(-kα, -kβ))
-    yl = Variable("yl", "minimum", np.float32, xr.DataArray, vectorize=True, function=lambda kα, kβ: np.minimum(-kα, -kβ))
+    yh = Variable("wh", "maximum", np.float32, xr.DataArray, vectorize=True, function=lambda kα, kβ: np.maximum(-kα, -kβ))
+    yl = Variable("wl", "minimum", np.float32, xr.DataArray, vectorize=True, function=lambda kα, kβ: np.minimum(-kα, -kβ))
 
 
 class StrategyCalculation(Calculation, ABC, metaclass=RegistryMeta):
@@ -79,9 +79,9 @@ class StrategyCalculation(Calculation, ABC, metaclass=RegistryMeta):
             yield equation.t()
             yield equation.q()
             yield equation.x()
-            yield equation.y()
-            yield equation.yl()
-            yield equation.yh()
+            yield equation.w()
+            yield equation.wl()
+            yield equation.wh()
 
 class VerticalCalculation(StrategyCalculation, ABC): pass
 class CollarCalculation(StrategyCalculation, ABC): pass

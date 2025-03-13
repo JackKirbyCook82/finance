@@ -26,7 +26,7 @@ __license__ = "MIT License"
 
 
 class ProspectParameters(metaclass=MappingMeta):
-    order = list(Querys.Settlement) + list(map(str, Securities.Options)) + ["apy", "npv", "rev", "exp", "spot", "share", "size", "status"]
+    order = list(Querys.Settlement) + list(map(str, Securities.Options)) + ["apy", "npv", "spot", "size"]
     columns = ["apy", "npv", "rev", "exp", "spot", "share", "size", "current", "priority", "status"]
     index = ["order", "valuation", "strategy"] + list(map(str, chain(Querys.Settlement, Securities.Options)))
     percent = lambda value: (f"{value * 100:.2f}%" if value < 10 else "EsV") if np.isfinite(value) else "InF"
