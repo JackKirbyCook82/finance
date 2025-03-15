@@ -14,7 +14,7 @@ from abc import ABC
 from finance.variables import Variables, Querys
 from support.calculations import Calculation, Equation, Variable
 from support.mixins import Emptying, Sizing, Partition, Logging
-from support.meta import RegistryMeta, MappingMeta
+from support.meta import RegistryMeta, ParameterMeta
 from support.variables import Category
 from support.files import File
 
@@ -25,7 +25,7 @@ __copyright__ = "Copyright 2024, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class TechnicalParameters(metaclass=MappingMeta):
+class TechnicalParameters(metaclass=ParameterMeta):
     types = {"ticker": str, "open close high low": np.float32, "price trend volatility": np.float32}
     parsers = dict(instrument=Variables.Securities.Instrument, option=Variables.Securities.Option, position=Variables.Securities.Position)
     formatters = dict(instrument=int, option=int, position=int)

@@ -16,7 +16,7 @@ from finance.variables import Variables, Querys, Securities
 from support.mixins import Emptying, Sizing, Partition, Logging
 from support.tables import Reader, Writer, Routine, Stacking, Layout
 from support.decorators import Decorator
-from support.meta import MappingMeta
+from support.meta import ParameterMeta
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -25,13 +25,13 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class ProspectParameters(metaclass=MappingMeta):
+class ProspectParameters(metaclass=ParameterMeta):
     order = list(Querys.Settlement) + list(map(str, Securities.Options)) + ["apy", "npv", "spot", "size"]
     columns = ["apy", "npv", "rev", "exp", "spot", "share", "size", "current", "priority", "status"]
     index = ["order", "valuation", "strategy"] + list(map(str, chain(Querys.Settlement, Securities.Options)))
     percent = lambda value: (f"{value * 100:.2f}%" if value < 10 else "EsV") if np.isfinite(value) else "InF"
     floating, integer = lambda value: f"{value:.2f}", lambda value: f"{value:.0f}"
-    formatting = {"apy": percent, "npv rev exp spot share": floating, "size": integer, "status": str, tuple(map(str, Securities.Options)): floating}
+    formatters = {"apy": percent, "npv rev exp spot share": floating, "size": integer, tuple(map(str, Securities.Options)): floating}
     stacking = Stacking(axis="scenario", columns=["apy", "npv", "rev", "exp"], layers=list(Variables.Valuations.Scenario))
     layout = Layout(width=250, space=10, columns=30, rows=30)
 
@@ -93,13 +93,12 @@ class ProspectWriter(Writer):
 
 
 class ProspectCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
-    def __init__(self, *args, priority, liquidity, header, **kwargs):
+    def __init__(self, *args, priority, liquidity, **kwargs):
         assert callable(priority) and callable(liquidity)
         super().__init__(*args, **kwargs)
         self.__counter = count(start=1, step=1)
         self.__liquidity = liquidity
         self.__priority = priority
-        self.__header = header
 
     def execute(self, valuations, securities, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame) and isinstance(securities, pd.DataFrame)
@@ -133,7 +132,6 @@ class ProspectCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
         valuations = valuations.where(mask).dropna(how="all", inplace=False)
         valuations["order"] = [next(self.counter) for _ in range(len(valuations))]
         valuations["status"] = Variables.Markets.Status.PROSPECT
-        valuations = valuations.reindex(columns=list(self.header), fill_value=np.NaN)
         valuations = valuations.reset_index(drop=True, inplace=False)
         return valuations
 
@@ -179,8 +177,6 @@ class ProspectCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
     def priority(self): return self.__priority
     @property
     def counter(self): return self.__counter
-    @property
-    def header(self): return self.__header
 
 
 

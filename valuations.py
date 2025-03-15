@@ -66,12 +66,30 @@ class MinimumArbitrageCalculation(ArbitrageCalculation, equation=MinimumArbitrag
 class MaximumArbitrageCalculation(ArbitrageCalculation, equation=MaximumArbitrageEquation, register=ValuationLocator(Variables.Valuations.Valuation.ARBITRAGE, Variables.Valuations.Scenario.MAXIMUM)): pass
 
 
+class ValuationStacking(ABC, metaclass=RegistryMeta):
+    def __init_subclass__(cls, *args, header=[], **kwargs): cls.__header__ = header
+    def __init__(self, *args, **kwargs): pass
+    def __call__(self, valuations, *args, **kwargs):
+        assert isinstance(valuations, pd.DataFrame)
+        index = set(valuations.columns) - ({"scenario"} | set(self.header))
+        valuations = valuations.pivot(index=index, columns=["scenario"])
+        valuations = valuations.reset_index(drop=False, inplace=False)
+        return valuations
+
+    @property
+    def header(self): return type(self).__header__
+
+class ArbitrageStacking(ValuationStacking, header=["apy", "npv", "rev", "exp"], register=Variables.Valuations.Valuation.ARBITRAGE):
+    pass
+
+
 class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
     def __init__(self, *args, valuation, **kwargs):
         assert valuation in Variables.Valuations.Valuation
         super().__init__(*args, **kwargs)
         calculations = {locator.scenario: calculation for locator, calculation in dict(ValuationCalculation).items() if locator.valuation == valuation}
         self.__calculations = {scenario: calculation(*args, **kwargs) for scenario, calculation in calculations.items()}
+        self.__stacking = dict(ValuationStacking)[valuation](*args, **kwargs)
         self.__valuation = valuation
 
     def execute(self, strategies, *args, **kwargs):
@@ -79,6 +97,7 @@ class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
         if self.empty(strategies, "size"): return
         for settlement, dataset in self.partition(strategies, by=Querys.Settlement):
             valuations = self.calculate(dataset, *args, **kwargs)
+            valuations = self.stacking(valuations, *args, **kwargs)
             size = self.size(valuations)
             self.console(f"{str(settlement)}|{str(self.valuation)}[{int(size):.0f}]")
             if self.empty(valuations): continue
@@ -106,6 +125,8 @@ class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
 
     @property
     def calculations(self): return self.__calculations
+    @property
+    def stacking(self): return self.__stacking
     @property
     def valuation(self): return self.__valuation
 
