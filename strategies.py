@@ -94,34 +94,34 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
         calculations = {strategy: calculation(*args, **kwargs) for strategy, calculation in dict(StrategyCalculation).items() if strategy in strategies}
         self.__calculations = calculations
 
-    def execute(self, securities, *args, **kwargs):
-        assert isinstance(securities, pd.DataFrame)
-        if self.empty(securities): return
-        for settlement, dataframe in self.partition(securities, by=Querys.Settlement):
-            contents = dict(self.securities(dataframe, *args, **kwargs))
-            strategies = self.calculate(contents, *args, **kwargs)
+    def execute(self, options, *args, **kwargs):
+        assert isinstance(options, pd.DataFrame)
+        if self.empty(options): return
+        for settlement, dataframe in self.partition(options, by=Querys.Settlement):
+            mapping = dict(self.options(dataframe, *args, **kwargs))
+            strategies = self.calculate(mapping, *args, **kwargs)
             for strategy, dataset in strategies.items():
                 size = self.size(dataset, "size")
                 self.console(f"{str(settlement)}|{str(strategy)}[{int(size):.0f}]")
                 if self.empty(dataset, "size"): continue
                 yield dataset
 
-    def calculate(self, securities, *args, **kwargs):
-        strategies = dict(self.calculator(securities, *args, **kwargs))
+    def calculate(self, options, *args, **kwargs):
+        strategies = dict(self.calculator(options, *args, **kwargs))
         return strategies
 
-    def calculator(self, securities, *args, **kwargs):
+    def calculator(self, options, *args, **kwargs):
         for strategy, calculation in self.calculations.items():
-            if not all([option in securities.keys() for option in list(strategy.options)]): continue
-            options = {security: securities[security] for security in list(strategy.options)}
-            strategies = calculation(options, *args, **kwargs)
+            if not all([option in options.keys() for option in list(strategy.options)]): continue
+            securities = {security: options[security] for security in list(strategy.options)}
+            strategies = calculation(securities, *args, **kwargs)
             assert isinstance(strategies, xr.Dataset)
             strategies = strategies.assign_coords({"strategy": xr.Variable("strategy", [strategy]).squeeze("strategy")})
             for field in list(Querys.Settlement): strategies = strategies.expand_dims(field)
             yield strategy, strategies
 
-    def securities(self, securities, *args, **kwargs):
-        for security, dataframe in securities.groupby(list(Variables.Securities.Security), sort=False):
+    def options(self, options, *args, **kwargs):
+        for security, dataframe in options.groupby(list(Variables.Securities.Security), sort=False):
             if self.empty(dataframe): continue
             security = Securities(security)
             dataframe = dataframe.drop(columns=list(Variables.Securities.Security))

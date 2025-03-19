@@ -123,19 +123,11 @@ class ProspectCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
         valuations["size"] = valuations.apply(self.liquidity, axis=1)
         securities["size"] = securities.apply(self.liquidity, axis=1)
         valuations = valuations.sort_values("priority", axis=0, ascending=False, inplace=False, ignore_index=False)
-
-        print(valuations)
-        print(securities)
-        raise Exception()
-
         demand = self.demand(valuations, *args, **kwargs)
         supply = self.supply(securities, *args, **kwargs)
         supply = supply[supply.index.isin(demand)]
         header = list(Querys.Settlement) + list(map(str, Securities.Options))
         valuations["size"] = valuations[header].apply(self.quantify, axis=1, securities=supply)
-
-
-
         mask = valuations[("size", "")] > 0
         valuations = valuations.where(mask).dropna(how="all", inplace=False)
         valuations["order"] = [next(self.counter) for _ in range(len(valuations))]

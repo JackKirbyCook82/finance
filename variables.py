@@ -71,7 +71,7 @@ SettlementQuery = Query("Settlement", fields=[TickerField, ExpireField], delimit
 ContractQuery = Query("Contract", fields=[TickerField, ExpireField, OptionField, StrikeField], delimiter="|")
 
 
-class Querys(Category): Symbol, Trade, Quote, Product, History, Settlement, Contract = SymbolQuery, TradeQuery, QuoteQuery, ProductQuery, HistoryQuery, SettlementQuery, ContractQuery
+class Querys(Category): Symbol, Settlement, Contract = SymbolQuery, SettlementQuery, ContractQuery
 class Variables(Category):
     class Securities(Category): Security, Instrument, Option, Position = SecurityVariables, InstrumentVariable, OptionVariable, PositionVariable
     class Strategies(Category): Strategy, Spread = StrategyVariables, SpreadVariable
