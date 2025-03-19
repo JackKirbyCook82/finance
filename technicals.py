@@ -29,7 +29,7 @@ class TechnicalParameters(metaclass=ParameterMeta):
     types = {"ticker": str, "open close high low": np.float32, "price trend volatility": np.float32}
     parsers = dict(instrument=Variables.Securities.Instrument, option=Variables.Securities.Option, position=Variables.Securities.Position)
     formatters = dict(instrument=int, option=int, position=int)
-    dates = dict(date="%Y%m%d", expire="%Y%m%d", current="%Y%m%d-%H%M")
+    dates = dict(date="%Y%m%d", expire="%Y%m%d")
 
 class TechnicalFile(File, **dict(TechnicalParameters)): pass
 class StockBarsFile(TechnicalFile, order=["ticker", "date", "open", "close", "high", "low", "price"]): pass

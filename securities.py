@@ -10,6 +10,7 @@ import types
 import numpy as np
 import pandas as pd
 from abc import ABC
+from functools import reduce
 
 from finance.variables import Variables, Querys
 from support.calculations import Calculation, Equation, Variable
@@ -25,6 +26,10 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
+enumerical = lambda integer: Variables.Securities.Position.LONG if integer > 0 else Variables.Securities.Position.SHORT
+numerical = lambda position: 2 * int(bool(position is Variables.Securities.Position.LONG)) - 1
+
+
 class SecurityParameters(metaclass=ParameterMeta):
     types = {"ticker": str, "price bid ask": np.float32, "size supply demand": np.float32, "strike underlying": np.float32}
     parsers = dict(instrument=Variables.Securities.Instrument, option=Variables.Securities.Option, position=Variables.Securities.Position)
@@ -32,12 +37,12 @@ class SecurityParameters(metaclass=ParameterMeta):
     dates = dict(date="%Y%m%d", expire="%Y%m%d", current="%Y%m%d-%H%M")
 
 class SecurityFile(File, **dict(SecurityParameters)): pass
-class StockTradeFile(SecurityFile, order=["ticker", "current", "price"]): pass
-class StockQuoteFile(SecurityFile, order=["ticker", "current", "bid", "ask", "demand", "supply"]): pass
-class StockSecurityFile(SecurityFile, order=["ticker", "position", "current", "price", "size"]): pass
-class OptionTradeFile(SecurityFile, order=["ticker", "expire", "strike", "option", "current", "price"]): pass
-class OptionQuoteFile(SecurityFile, order=["ticker", "expire", "strike", "option", "current", "bid", "ask", "demand", "supply"]): pass
-class OptionSecurityFile(SecurityFile, order=["ticker", "expire", "strike", "instrument", "option", "position", "current", "price", "underlying", "size"]): pass
+class StockTradeFile(SecurityFile, order=["ticker", "price"]): pass
+class StockQuoteFile(SecurityFile, order=["ticker", "bid", "ask", "demand", "supply"]): pass
+class StockSecurityFile(SecurityFile, order=["ticker", "position", "price", "size"]): pass
+class OptionTradeFile(SecurityFile, order=["ticker", "expire", "strike", "option", "price"]): pass
+class OptionQuoteFile(SecurityFile, order=["ticker", "expire", "strike", "option", "bid", "ask", "demand", "supply"]): pass
+class OptionSecurityFile(SecurityFile, order=["ticker", "expire", "strike", "instrument", "option", "position", "price", "underlying", "size"]): pass
 
 class SecurityFiles(Category):
     class Stocks(Category): Trade, Quote, Security = StockTradeFile, StockQuoteFile, StockSecurityFile
@@ -46,7 +51,6 @@ class SecurityFiles(Category):
 
 class PricingEquation(Equation, ABC):
     j = Variable("j", "position", Variables.Securities.Position, types.NoneType, locator="position")
-    t = Variable("t", "current", np.datetime64, pd.Series, locator="current")
 
     qα = Variable("qα", "supply", np.float32, pd.Series, locator="supply")
     qβ = Variable("qβ", "demand", np.float32, pd.Series, locator="demand")
@@ -67,15 +71,14 @@ class CenteredEquation(PricingEquation):
 
 
 class PricingCalculation(Calculation, ABC, metaclass=RegistryMeta):
-    def execute(self, securities, *args, position, underlying, **kwargs):
-        with self.equation(securities, position=position, underlying=underlying) as equation:
+    def execute(self, securities, *args, position, **kwargs):
+        with self.equation(securities, position=position) as equation:
             yield equation.y()
             yield equation.q()
-            yield equation.t()
 
-class MarketCalculation(PricingCalculation, equation=MarketEquation, register=Variables.Markets.Pricing.MARKET): pass
-class LimitCalculation(PricingCalculation, equation=LimitEquation, register=Variables.Markets.Pricing.LIMIT): pass
-class CenteredCalculation(PricingCalculation, equation=CenteredEquation, register=Variables.Markets.Pricing.CENTERED): pass
+class AggressiveCalculation(PricingCalculation, equation=MarketEquation, register=Variables.Markets.Pricing.AGGRESSIVE): pass
+class PassiveCalculation(PricingCalculation, equation=LimitEquation, register=Variables.Markets.Pricing.PASSIVE): pass
+class ModerateCalculation(PricingCalculation, equation=CenteredEquation, register=Variables.Markets.Pricing.MODERATE): pass
 
 
 class SecurityCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
@@ -87,20 +90,21 @@ class SecurityCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
     def execute(self, stocks, options, *args, **kwargs):
         assert isinstance(stocks, pd.DataFrame) and isinstance(options, pd.DataFrame)
         if self.empty(stocks) and self.empty(options): return
-        for settlement, dataframe in self.partition(options, by=Querys.Settlement):
-            mask = stocks["ticker"] == settlement.ticker
-            underlying = stocks.where(mask).dropna(how="all", inplace=False).squeeze().price
-            underlying = np.round(float(underlying), 2).astype(np.float32)
-            securities = self.calculate(dataframe, *args, underlying=underlying, **kwargs)
-            securities["underlying"] = underlying
+        for settlement, derivatives in self.partition(options, by=Querys.Settlement):
+            assets = stocks.where(stocks["ticker"] == settlement.ticker).dropna(how="all", inplace=False)
+            securities = self.calculate(derivatives, *args, stocks=assets, **kwargs)
             size = self.size(securities)
             self.console(f"{str(settlement)}[{int(size):.0f}]")
             if self.empty(securities): continue
             yield securities
 
-    def calculate(self, options, *args, **kwargs):
+    def calculate(self, options, *args, stocks, **kwargs):
         securities = dict(self.calculator(options, *args, **kwargs))
         securities = pd.concat(list(securities.values()), axis=0)
+        securities["owned"] = securities.apply(self.derivatives, axis=1, options=options)
+        securities["shares"] = securities.apply(self.assets, axis=1, stocks=stocks)
+        securities["underlying"] = np.round(stocks.squeeze().price, 2)
+        securities = securities.reset_index(drop=True, inplace=False)
         return securities
 
     def calculator(self, options, *args, **kwargs):
@@ -110,8 +114,28 @@ class SecurityCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
             securities = pd.concat([options[list(Querys.Contract)], securities], axis=1)
             securities["instrument"] = Variables.Securities.Instrument.OPTION
             securities["position"] = position
-            securities = securities.reset_index(drop=True, inplace=False)
             yield position, securities
+
+    @staticmethod
+    def derivatives(series, *args, options, **kwargs):
+        if "quantity" not in options.columns: return 0
+        contents = series[list(Querys.Contract)].to_dict().items()
+        mask = [options[key] == value for key, value in contents]
+        mask = reduce(lambda lead, lag: lead & lag, mask)
+        option = options.where(mask).dropna(how="all", inplace=False).squeeze()
+        enumerically = enumerical(np.sign(option.quantity)) == series.position
+        numerically = np.sign(option.quantity) == numerical(series.position)
+        assert enumerically == numerically
+        return option.quantity if (numerically & enumerically) else 0
+
+    @staticmethod
+    def assets(series, *args, stocks, **kwargs):
+        if "quantity" not in stocks.columns: return 0
+        contents = series[list(Querys.Symbol)].to_dict().items()
+        mask = [stocks[key] == value for key, value in contents]
+        mask = reduce(lambda lead, lag: lead & lag, mask)
+        stock = stocks.where(mask).dropna(how="all", inplace=False).squeeze()
+        return stock.quantity
 
     @property
     def calculation(self): return self.__calculation

@@ -27,11 +27,11 @@ __license__ = "MIT License"
 
 class ProspectParameters(metaclass=ParameterMeta):
     order = list(Querys.Settlement) + list(map(str, Securities.Options)) + ["apy", "npv", "spot", "size"]
-    columns = ["apy", "npv", "rev", "exp", "spot", "share", "size", "current", "priority", "status"]
+    columns = ["apy", "npv", "rev", "exp", "spot", "size", "priority", "status"]
     index = ["order", "valuation", "strategy"] + list(map(str, chain(Querys.Settlement, Securities.Options)))
     percent = lambda value: (f"{value * 100:.2f}%" if value < 10 else "EsV") if np.isfinite(value) else "InF"
     floating, integer = lambda value: f"{value:.2f}", lambda value: f"{value:.0f}"
-    formatters = {"apy": percent, "npv rev exp spot share": floating, "size": integer, tuple(map(str, Securities.Options)): floating}
+    formatters = {"apy": percent, "npv rev exp spot": floating, "size": integer, tuple(map(str, Securities.Options)): floating}
     stacking = Stacking(axis="scenario", columns=["apy", "npv", "rev", "exp"], layers=list(Variables.Valuations.Scenario))
     layout = Layout(width=250, space=10, columns=30, rows=30)
 
@@ -123,32 +123,25 @@ class ProspectCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
         valuations["size"] = valuations.apply(self.liquidity, axis=1)
         securities["size"] = securities.apply(self.liquidity, axis=1)
         valuations = valuations.sort_values("priority", axis=0, ascending=False, inplace=False, ignore_index=False)
+
+        print(valuations)
+        print(securities)
+        raise Exception()
+
         demand = self.demand(valuations, *args, **kwargs)
         supply = self.supply(securities, *args, **kwargs)
         supply = supply[supply.index.isin(demand)]
         header = list(Querys.Settlement) + list(map(str, Securities.Options))
         valuations["size"] = valuations[header].apply(self.quantify, axis=1, securities=supply)
+
+
+
         mask = valuations[("size", "")] > 0
         valuations = valuations.where(mask).dropna(how="all", inplace=False)
         valuations["order"] = [next(self.counter) for _ in range(len(valuations))]
         valuations["status"] = Variables.Markets.Status.PROSPECT
         valuations = valuations.reset_index(drop=True, inplace=False)
         return valuations
-
-    @staticmethod
-    def quantify(valuation, *args, securities, **kwargs):
-        parameters = dict(id_vars=list(Querys.Settlement), value_name="strike", var_name="security")
-        valuation = valuation.droplevel(level=1)
-        valuation = valuation.to_frame().transpose()
-        valuation = pd.melt(valuation, **parameters)
-        mask = valuation["strike"].isna()
-        valuation = valuation.where(~mask).dropna(how="all", inplace=False)
-        index = pd.MultiIndex.from_frame(valuation)
-        quantity = securities.loc[index]
-        quantity["size"] = quantity["size"].min()
-        quantity = quantity.reindex(securities.index).fillna(0).astype(np.int32)
-        securities["size"] = securities["size"] - quantity["size"]
-        return quantity.loc[index, "size"].min().astype(np.int32)
 
     @staticmethod
     def demand(valuations, *args, **kwargs):
@@ -170,6 +163,21 @@ class ProspectCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
         index = list(Querys.Settlement) + ["security", "strike"]
         supply = supply[index + ["size"]].set_index(index, drop=True, inplace=False)
         return supply
+
+    @staticmethod
+    def quantify(valuation, *args, securities, **kwargs):
+        parameters = dict(id_vars=list(Querys.Settlement), value_name="strike", var_name="security")
+        valuation = valuation.droplevel(level=1)
+        valuation = valuation.to_frame().transpose()
+        valuation = pd.melt(valuation, **parameters)
+        mask = valuation["strike"].isna()
+        valuation = valuation.where(~mask).dropna(how="all", inplace=False)
+        index = pd.MultiIndex.from_frame(valuation)
+        quantity = securities.loc[index]
+        quantity["size"] = quantity["size"].min()
+        quantity = quantity.reindex(securities.index).fillna(0).astype(np.int32)
+        securities["size"] = securities["size"] - quantity["size"]
+        return quantity.loc[index, "size"].min().astype(np.int32)
 
     @property
     def liquidity(self): return self.__liquidity

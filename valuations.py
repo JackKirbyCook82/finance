@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 from abc import ABC
+from datetime import date as Date
 from collections import namedtuple as ntuple
 
 from finance.variables import Variables, Querys, Securities
@@ -27,20 +28,19 @@ __license__ = "MIT License"
 
 class ValuationLocator(ntuple("Locator", "valuation scenario")): pass
 class ValuationEquation(Equation, ABC):
-    tau = Variable("tau", "tau", np.int32, xr.DataArray, vectorize=True, function=lambda to, tτ: np.timedelta64(np.datetime64(tτ, "ns") - np.datetime64(to, "ns"), "D") / np.timedelta64(1, "D"))
     rev = Variable("rev", "rev", np.float32, xr.DataArray, vectorize=True, function=lambda vo, vτ: np.abs(+ np.maximum(vo, 0) + np.maximum(vτ, 0)))
     exp = Variable("exp", "exp", np.float32, xr.DataArray, vectorize=True, function=lambda vo, vτ: np.abs(- np.minimum(vo, 0) - np.minimum(vτ, 0)))
+    tau = Variable("tau", "tau", np.int32, xr.DataArray, vectorize=True, function=lambda to, tτ: (tτ - to).days)
 
-    xo = Variable("xo", "share", np.float32, xr.DataArray, locator="underlying")
-    tτ = Variable("tτ", "expire", np.datetime64, xr.DataArray, locator="expire")
-    to = Variable("to", "current", np.datetime64, xr.DataArray, locator="current")
     vo = Variable("vo", "spot", np.float32, xr.DataArray, locator="spot")
+    tτ = Variable("tτ", "expire", Date, xr.DataArray, locator="expire")
+    to = Variable("to", "date", Date, types.NoneType, locator="date")
     ρ = Variable("ρ", "discount", np.float32, types.NoneType, locator="discount")
 
 class ArbitrageEquation(ValuationEquation, ABC):
-    irr = Variable("irr", "irr", np.float32, xr.DataArray, vectorize=True, function=lambda rev, exp, tau: np.power(np.divide(rev, exp), np.power(tau, -1)) - 1)
+    irr = Variable("irr", "irr", np.float32, xr.DataArray, vectorize=True, function=lambda rev, exp, tau: np.power(np.divide(rev, exp), np.divide(1, tau)) - 1)
     npv = Variable("npv", "npv", np.float32, xr.DataArray, vectorize=True, function=lambda rev, exp, tau, ρ: np.divide(rev, np.power(1 + ρ, tau / 365)) - exp)
-    apy = Variable("apy", "apy", np.float32, xr.DataArray, vectorize=True, function=lambda irr, tau: np.power(irr + 1, np.power(tau / 365, -1)) - 1)
+    apy = Variable("apy", "apy", np.float32, xr.DataArray, vectorize=True, function=lambda irr, tau: np.power(irr + 1, np.divide(365, tau)) - 1)
 
 class MinimumArbitrageEquation(ArbitrageEquation):
     vτ = Variable("vτ", "minimum", np.float32, xr.DataArray, locator="minimum")
@@ -51,12 +51,9 @@ class MaximumArbitrageEquation(ArbitrageEquation):
 
 class ValuationCalculation(Calculation, ABC, metaclass=RegistryMeta): pass
 class ArbitrageCalculation(ValuationCalculation, ABC):
-    def execute(self, strategies, *args, discount, **kwargs):
-        with self.equation(strategies, discount=discount) as equation:
-            yield strategies["size"]
-            yield strategies["current"]
+    def execute(self, strategies, *args, discount, date, **kwargs):
+        with self.equation(strategies, discount=discount, date=date) as equation:
             yield strategies["spot"]
-            yield equation.xo()
             yield equation.rev()
             yield equation.exp()
             yield equation.npv()

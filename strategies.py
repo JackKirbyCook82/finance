@@ -28,19 +28,16 @@ __license__ = "MIT License"
 
 class StrategyLocator(ntuple("Locator", "axis position")): pass
 class StrategyEquation(Equation, ABC):
-    t = Variable("t", "current", np.datetime64, xr.DataArray, vectorize=True, function=lambda tα, tβ: np.minimum(np.datetime64(tα, "ns"), np.datetime64(tβ, "ns")))
     x = Variable("x", "underlying", np.float32, xr.DataArray, vectorize=True, function=lambda xα, xβ: (xα + xβ) / 2)
     q = Variable("q", "size", np.float32, xr.DataArray, vectorize=True, function=lambda qα, qβ: np.minimum(qα, qβ))
     w = Variable("w", "spot", np.float32, xr.DataArray, vectorize=True, function=lambda y, ε: y * 100 - ε)
     wh = Variable("wh", "maximum", np.float32, xr.DataArray, vectorize=True, function=lambda yh, ε: yh * 100 - ε)
     wl = Variable("wl", "minimum", np.float32, xr.DataArray, vectorize=True, function=lambda yl, ε: yl * 100 - ε)
 
-    tα = Variable("tα", "current", np.datetime64, xr.DataArray, locator=StrategyLocator("current", Variables.Securities.Position.LONG))
     xα = Variable("xα", "underlying", np.float32, xr.DataArray, locator=StrategyLocator("underlying", Variables.Securities.Position.LONG))
     yα = Variable("yα", "price", np.float32, xr.DataArray, locator=StrategyLocator("price", Variables.Securities.Position.LONG))
     qα = Variable("qα", "size", np.float32, xr.DataArray, locator=StrategyLocator("size", Variables.Securities.Position.LONG))
     kα = Variable("kα", "strike", np.float32, xr.DataArray, locator=StrategyLocator("strike", Variables.Securities.Position.LONG))
-    tβ = Variable("tβ", "current", np.datetime64, xr.DataArray, locator=StrategyLocator("current", Variables.Securities.Position.SHORT))
     xβ = Variable("xβ", "underlying", np.float32, xr.DataArray, locator=StrategyLocator("underlying", Variables.Securities.Position.SHORT))
     yβ = Variable("yβ", "price", np.float32, xr.DataArray, locator=StrategyLocator("price", Variables.Securities.Position.SHORT))
     qβ = Variable("qβ", "size", np.float32, xr.DataArray, locator=StrategyLocator("size", Variables.Securities.Position.SHORT))
@@ -71,14 +68,12 @@ class CollarShortEquation(CollarEquation):
 
 
 class StrategyCalculation(Calculation, ABC, metaclass=RegistryMeta):
-    axes = ("price", "underlying", "strike", "size", "current")
+    axes = ("price", "underlying", "strike", "size")
 
     def execute(self, securities, *args, fees, **kwargs):
         securities = {StrategyLocator(axis, security.position): dataset[axis] for security, dataset in securities.items() for axis in type(self).axes}
         with self.equation(securities, fees=fees) as equation:
-            yield equation.t()
             yield equation.q()
-            yield equation.x()
             yield equation.w()
             yield equation.wl()
             yield equation.wh()

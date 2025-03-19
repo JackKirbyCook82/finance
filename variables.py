@@ -34,7 +34,7 @@ StatusVariable = Variable("Status", ["PROSPECT", "PENDING", "OBSOLETE", "ABANDON
 TermsVariable = Variable("Terms", ["MARKET", "LIMIT", "STOP", "STOPLIMIT", "LIMITDEBIT", "LIMITCREDIT"], start=1)
 TenureVariable = Variable("Tenure", ["DAY", "STANDING", "OPENING", "CLOSING", "IMMEDIATE", "FILLKILL"], start=1)
 ActionVariable = Variable("Action", ["BUY", "SELL"], start=1)
-PricingVariable = Variable("Pricing", ["MARKET", "LIMIT", "CENTERED"], start=1)
+PricingVariable = Variable("Pricing", ["AGGRESSIVE", "PASSIVE", "MODERATE"], start=1)
 ThetaVariable = Variable("Theta", ["PUT", "NEUTRAL", "CALL"], start=-1)
 PhiVariable = Variable("Phi", ["SHORT", "NEUTRAL", "LONG"], start=-1)
 OmegaVariable = Variable("Omega", ["BEAR", "NEUTRAL", "BULL"], start=-1)
@@ -95,6 +95,7 @@ class OSI(Naming, fields=["ticker", "expire", "option", "strike"]):
     def __new__(cls, contents):
         if isinstance(contents, list): mapping = {field: content for field, content in zip(cls.fields, contents)}
         elif isinstance(contents, dict): mapping = {field: contents[field] for field in cls.fields}
+        elif isinstance(contents, ContractQuery): mapping = dict(list(contents))
         elif isinstance(contents, str): mapping = cls.parse(contents)
         else: raise TypeError(type(contents))
         return super().__new__(cls, **mapping)
@@ -114,7 +115,7 @@ class OSI(Naming, fields=["ticker", "expire", "option", "strike"]):
         pattern = "^(?P<ticker>[A-Z]*)(?P<expire>[0-9]*)(?P<option>[PC]{1})(?P<strike>[0-9]*)$"
         values = re.search(pattern, string).groupdict()
         ticker = str(values["ticker"]).upper()
-        expire = datetime.datetime.strptime(str(values["expire"]), "%y%m%d")
+        expire = datetime.datetime.strptime(str(values["expire"]), "%y%m%d").date()
         option = {str(option).upper()[0]: option for option in OptionVariable}[str(values["option"])]
         strike = float(".".join([str(values["strike"])[:5], str(values["strike"])[5:]]))
         strike = np.round(float(strike), 3)
