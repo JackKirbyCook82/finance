@@ -60,110 +60,67 @@ class PassiveCalculation(PricingCalculation, equation=LimitEquation, register=Va
 class ModerateCalculation(PricingCalculation, equation=CenteredEquation, register=Variables.Markets.Pricing.MODERATE): pass
 
 
-class VirtualCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
-    pass
-
-
 class SecurityCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calculated"):
+    def __init_subclass__(cls, *args, **kwargs):
+        super().__init_subclass__(*args, **kwargs)
+        cls.__instrument__ = kwargs.get("instrument", getattr(cls, "__instrument__", None))
+        cls.__header__ = kwargs.get("header", getattr(cls, "__header__", None))
+        cls.__query__ = kwargs.get("query", getattr(cls, "__query__", None))
+
     def __init__(self, *args, pricing, **kwargs):
         super().__init__(*args, **kwargs)
         self.__calculation = dict(PricingCalculation)[pricing](*args, **kwargs)
         self.__pricing = pricing
 
-    @staticmethod
-    @abstractmethod
-    def quantity(series, *args, securities, **kwargs): pass
-    @abstractmethod
-    def execute(self, securities, *args, **kwargs): pass
-    @abstractmethod
-    def calculate(self, securities, *args, **kwargs): pass
-    @abstractmethod
-    def calculator(self, securities, *args, **kwargs): pass
+    def execute(self, securities, *args, **kwargs):
+        assert isinstance(securities, pd.DataFrame)
+        if self.empty(securities): return
+        for query, dataframe in self.partition(securities, by=self.query):
+            results = self.calculate(dataframe, *args, **kwargs)
+            size = self.size(results)
+            self.console(f"{str(query)}[{int(size):.0f}]")
+            if self.empty(results): continue
+            yield results
 
+    def calculate(self, securities, *args, **kwargs):
+        mapping = dict(self.calculator(securities, *args, **kwargs))
+        dataframe = pd.concat(list(mapping.values()), axis=0)
+        dataframe["quantity"] = dataframe.apply(self.quantify, axis=1, securities=securities, **kwargs)
+        dataframe = dataframe.reset_index(drop=True, inplace=False)
+        return dataframe
+
+    def calculator(self, securities, *args, **kwargs):
+        assert isinstance(securities, pd.DataFrame)
+        for position in list(Variables.Securities.Position):
+            pricing = self.calculation(securities, *args, position=position, **kwargs)
+            dataframe = pd.concat([securities[self.header], pricing], axis=1)
+            dataframe["instrument"] = self.instrument
+            dataframe["position"] = position
+            yield position, dataframe
+
+    def quantify(self, series, *args, securities, **kwargs):
+        if "quantity" not in securities.columns: return 0
+        contents = series[self.header].to_dict().items()
+        mask = [securities[key] == value for key, value in contents]
+        mask = reduce(lambda lead, lag: lead & lag, mask)
+        security = securities.where(mask).dropna(how="all", inplace=False).squeeze()
+        enumerically = enumerical(np.sign(security.quantity)) == series.position
+        numerically = np.sign(security.quantity) == numerical(series.position)
+        assert enumerically == numerically
+        return np.abs(security.quantity) if (numerically & enumerically) else 0
+
+    @property
+    def instrument(self): return type(self).__instrument__
+    @property
+    def header(self): return type(self).__header__
+    @property
+    def query(self): return type(self).__query__
     @property
     def calculation(self): return self.__calculation
     @property
     def pricing(self): return self.__pricing
 
 
-class StockCalculator(SecurityCalculator, title="Calculated"):
-    def execute(self, stocks, *args, **kwargs):
-        assert isinstance(stocks, pd.DataFrame)
-        if self.empty(stocks): return
-        for symbol, primary in self.partition(stocks, by=Querys.Symbol):
-            results = self.calculate(primary, *args, **kwargs)
-            size = self.size(results)
-            self.console(f"{str(symbol)}[{int(size):.0f}]")
-            if self.empty(results): continue
-            yield results
-
-    def calculate(self, stocks, *args, **kwargs):
-        securities = dict(self.calculator(stocks, *args, **kwargs))
-        securities = pd.concat(list(securities.values()), axis=0)
-        securities["quantity"] = securities.apply(self.quantity, axis=1, stocks=stocks)
-        securities = securities.reset_index(drop=True, inplace=False)
-        return securities
-
-    def calculator(self, stocks, *args, **kwargs):
-        assert isinstance(stocks, pd.DataFrame)
-        for position in list(Variables.Securities.Position):
-            pricing = self.calculation(stocks, *args, position=position, **kwargs)
-            securities = pd.concat([stocks[list(Querys.Symbol)], pricing], axis=1)
-            securities["instrument"] = Variables.Securities.Instrument.STOCK
-            securities["position"] = position
-            yield position, securities
-
-    @staticmethod
-    def quantity(series, *args, stocks, **kwargs):
-        if "quantity" not in stocks.columns: return 0
-        contents = series[list(Querys.Symbol)].to_dict().items()
-        mask = [stocks[key] == value for key, value in contents]
-        mask = reduce(lambda lead, lag: lead & lag, mask)
-        stock = stocks.where(mask).dropna(how="all", inplace=False).squeeze()
-        enumerically = enumerical(np.sign(stock.quantity)) == series.position
-        numerically = np.sign(stock.quantity) == numerical(series.position)
-        assert enumerically == numerically
-        return stock.quantity if (numerically & enumerically) else 0
-
-
-class OptionCalculator(SecurityCalculator, title="Calculated"):
-    def execute(self, stocks, options, *args, **kwargs):
-        assert isinstance(stocks, pd.DataFrame) and isinstance(options, pd.DataFrame)
-        if self.empty(stocks) and self.empty(options): return
-        for settlement, primary in self.partition(options, by=Querys.Settlement):
-            secondary = stocks.where(stocks["ticker"] == settlement.ticker).dropna(how="all", inplace=False)
-            results = self.calculate(primary, *args, stocks=secondary, **kwargs)
-            size = self.size(results)
-            self.console(f"{str(settlement)}[{int(size):.0f}]")
-            if self.empty(results): continue
-            yield results
-
-    def calculate(self, options, *args, stocks, **kwargs):
-        securities = dict(self.calculator(options, *args, **kwargs))
-        securities = pd.concat(list(securities.values()), axis=0)
-        securities["quantity"] = securities.apply(self.quantity, axis=1, options=options)
-        securities["underlying"] = np.round(stocks.squeeze().price, 2)
-        securities = securities.reset_index(drop=True, inplace=False)
-        return securities
-
-    def calculator(self, options, *args, **kwargs):
-        assert isinstance(options, pd.DataFrame)
-        for position in list(Variables.Securities.Position):
-            pricing = self.calculation(options, *args, position=position, **kwargs)
-            securities = pd.concat([options[list(Querys.Contract)], pricing], axis=1)
-            securities["instrument"] = Variables.Securities.Instrument.OPTION
-            securities["position"] = position
-            yield position, securities
-
-    @staticmethod
-    def quantity(series, *args, options, **kwargs):
-        if "quantity" not in options.columns: return 0
-        contents = series[list(Querys.Contract)].to_dict().items()
-        mask = [options[key] == value for key, value in contents]
-        mask = reduce(lambda lead, lag: lead & lag, mask)
-        option = options.where(mask).dropna(how="all", inplace=False).squeeze()
-        enumerically = enumerical(np.sign(option.quantity)) == series.position
-        numerically = np.sign(option.quantity) == numerical(series.position)
-        assert enumerically == numerically
-        return option.quantity if (numerically & enumerically) else 0
+class StockCalculator(SecurityCalculator, query=Querys.Symbol, instrument=Variables.Securities.Instrument.STOCK, header=list(Querys.Symbol)): pass
+class OptionCalculator(SecurityCalculator, query=Querys.Settlement, instrument=Variables.Securities.Instrument.OPTION, header=list(Querys.Contract)): pass
 

@@ -9,6 +9,7 @@ Created on Thurs Nov 21 2024
 import inspect
 import numpy as np
 import pandas as pd
+from numbers import Number
 from functools import reduce
 from itertools import count, chain
 
@@ -25,12 +26,21 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
+def floating(number): return f"{number:.2f}"
+def integer(number): return f"{number:.0f}"
+def percent(number):
+    assert isinstance(number, Number)
+    if (100 * number) < 10**3: return f"{number * 100:.2f}%"
+    elif (100 * number) < 10**6: return f"{number * 100:.2f}K%"
+    elif (100 * number) < 10**9: return f"{number * 100:.2f}M%"
+    elif not np.isfinite(percent): return "EsV"
+    else: return "InF"
+
+
 class ProspectParameters(metaclass=ParameterMeta):
     order = list(Querys.Settlement) + list(map(str, Securities.Options)) + ["apy", "npv", "spot", "size"]
     columns = ["apy", "npv", "rev", "exp", "spot", "size", "priority", "status"]
     index = ["order", "valuation", "strategy"] + list(map(str, chain(Querys.Settlement, Securities.Options)))
-    percent = lambda value: (f"{value * 100:.2f}%" if value < 10 else "EsV") if np.isfinite(value) else "InF"
-    floating, integer = lambda value: f"{value:.2f}", lambda value: f"{value:.0f}"
     formatters = {"apy": percent, "npv rev exp spot": floating, "size": integer, tuple(map(str, Securities.Options)): floating}
     stacking = Stacking(axis="scenario", columns=["apy", "npv", "rev", "exp"], layers=list(Variables.Valuations.Scenario))
     layout = Layout(width=250, space=10, columns=30, rows=30)
@@ -93,88 +103,26 @@ class ProspectWriter(Writer):
 
 
 class ProspectCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
-    def __init__(self, *args, priority, liquidity, **kwargs):
-        assert callable(priority) and callable(liquidity)
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.__counter = count(start=1, step=1)
-        self.__liquidity = liquidity
-        self.__priority = priority
 
-    def execute(self, valuations, securities, *args, **kwargs):
-        assert isinstance(valuations, pd.DataFrame) and isinstance(securities, pd.DataFrame)
+    def execute(self, valuations, *args, **kwargs):
+        assert isinstance(valuations, pd.DataFrame)
         if self.empty(valuations): return
-        for settlement, primary, secondary in self.alignment(valuations, securities, by=Querys.Settlement):
-            prospects = self.calculate(primary, secondary, *args, **kwargs)
+        for settlement, dataframe in self.partition(valuations, by=Querys.Settlement):
+            prospects = self.calculate(dataframe, *args, **kwargs)
             size = self.size(prospects)
             self.console(f"{str(settlement)}[{int(size):.0f}]")
             if self.empty(prospects): continue
             yield prospects
 
-    def alignment(self, valuations, securities, *args, **kwargs):
-        assert isinstance(valuations, pd.DataFrame) and isinstance(securities, pd.DataFrame)
-        for partition, primary in self.partition(valuations, *args, **kwargs):
-            mask = [securities[key] == value for key, value in iter(partition)]
-            mask = reduce(lambda lead, lag: lead & lag, list(mask))
-            secondary = securities.where(mask)
-            yield partition, primary, secondary
-
-    def calculate(self, valuations, securities, *args, **kwargs):
-        valuations["priority"] = valuations.apply(self.priority, axis=1)
-        valuations["size"] = valuations.apply(self.liquidity, axis=1)
-        securities["size"] = securities.apply(self.liquidity, axis=1)
-        valuations = valuations.sort_values("priority", axis=0, ascending=False, inplace=False, ignore_index=False)
-        demand = self.demand(valuations, *args, **kwargs)
-        supply = self.supply(securities, *args, **kwargs)
-        supply = supply[supply.index.isin(demand)]
-        header = list(Querys.Settlement) + list(map(str, Securities.Options))
-        valuations["size"] = valuations[header].apply(self.quantify, axis=1, securities=supply)
-        mask = valuations[("size", "")] > 0
-        valuations = valuations.where(mask).dropna(how="all", inplace=False)
+    def calculate(self, valuations, *args, **kwargs):
         valuations["order"] = [next(self.counter) for _ in range(len(valuations))]
         valuations["status"] = Variables.Markets.Status.PROSPECT
         valuations = valuations.reset_index(drop=True, inplace=False)
         return valuations
 
-    @staticmethod
-    def demand(valuations, *args, **kwargs):
-        parameters = dict(id_vars=list(Querys.Settlement), value_name="strike", var_name="security")
-        header = list(Querys.Settlement) + list(map(str, Securities.Options))
-        demand = valuations[header].droplevel(level=1, axis=1)
-        demand = pd.melt(demand, **parameters)
-        mask = demand["strike"].isna()
-        demand = demand.where(~mask).dropna(how="all", inplace=False)
-        demand = pd.MultiIndex.from_frame(demand)
-        return demand
-
-    @staticmethod
-    def supply(securities, *args, **kwargs):
-        security = lambda cols: str(Securities([cols["instrument"], cols["option"], cols["position"]]))
-        header = list(Querys.Settlement) + list(Variables.Securities.Security) + ["strike", "size"]
-        supply = securities[header]
-        supply["security"] = supply.apply(security, axis=1)
-        index = list(Querys.Settlement) + ["security", "strike"]
-        supply = supply[index + ["size"]].set_index(index, drop=True, inplace=False)
-        return supply
-
-    @staticmethod
-    def quantify(valuation, *args, securities, **kwargs):
-        parameters = dict(id_vars=list(Querys.Settlement), value_name="strike", var_name="security")
-        valuation = valuation.droplevel(level=1)
-        valuation = valuation.to_frame().transpose()
-        valuation = pd.melt(valuation, **parameters)
-        mask = valuation["strike"].isna()
-        valuation = valuation.where(~mask).dropna(how="all", inplace=False)
-        index = pd.MultiIndex.from_frame(valuation)
-        quantity = securities.loc[index]
-        quantity["size"] = quantity["size"].min()
-        quantity = quantity.reindex(securities.index).fillna(0).astype(np.int32)
-        securities["size"] = securities["size"] - quantity["size"]
-        return quantity.loc[index, "size"].min().astype(np.int32)
-
-    @property
-    def liquidity(self): return self.__liquidity
-    @property
-    def priority(self): return self.__priority
     @property
     def counter(self): return self.__counter
 

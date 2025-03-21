@@ -38,24 +38,25 @@ class ValuationEquation(Equation, ABC):
     ρ = Variable("ρ", "discount", np.float32, types.NoneType, locator="discount")
 
 class ArbitrageEquation(ValuationEquation, ABC):
-    irr = Variable("irr", "irr", np.float32, xr.DataArray, vectorize=True, function=lambda rev, exp, tau: np.power(np.divide(rev, exp), np.divide(1, tau)) - 1)
-    npv = Variable("npv", "npv", np.float32, xr.DataArray, vectorize=True, function=lambda rev, exp, tau, ρ: np.divide(rev, np.power(1 + ρ, tau / 365)) - exp)
-    apy = Variable("apy", "apy", np.float32, xr.DataArray, vectorize=True, function=lambda irr, tau: np.power(irr + 1, np.divide(365, tau)) - 1)
+    npv = Variable("npv", "npv", np.float32, xr.DataArray, vectorize=True, function=lambda vτ, vo, tau, ρ: np.divide(vτ, np.power(ρ + 1, np.divide(tau, 365))) + vo)
+    roi = Variable("roi", "roi", np.float32, xr.DataArray, vectorize=True, function=lambda exp, rev, tau: np.divide(rev - exp, tau) / exp)
+    apy = Variable("apy", "apy", np.float32, xr.DataArray, vectorize=True, function=lambda roi, tau: np.power((roi + 1), 365))
 
 class MinimumArbitrageEquation(ArbitrageEquation):
-    vτ = Variable("vτ", "minimum", np.float32, xr.DataArray, locator="minimum")
+    vτ = Variable("vτ", "future", np.float32, xr.DataArray, locator="minimum")
 
 class MaximumArbitrageEquation(ArbitrageEquation):
-    vτ = Variable("vτ", "maximum", np.float32, xr.DataArray, locator="maximum")
+    vτ = Variable("vτ", "future", np.float32, xr.DataArray, locator="maximum")
 
 
 class ValuationCalculation(Calculation, ABC, metaclass=RegistryMeta): pass
 class ArbitrageCalculation(ValuationCalculation, ABC):
     def execute(self, strategies, *args, discount, date, **kwargs):
         with self.equation(strategies, discount=discount, date=date) as equation:
-            yield strategies["spot"]
-            yield equation.rev()
+            yield equation.vo()
+            yield equation.vτ()
             yield equation.exp()
+            yield equation.rev()
             yield equation.npv()
             yield equation.apy()
 
@@ -76,7 +77,7 @@ class ValuationStacking(ABC, metaclass=RegistryMeta):
     @property
     def header(self): return type(self).__header__
 
-class ArbitrageStacking(ValuationStacking, header=["apy", "npv", "rev", "exp"], register=Variables.Valuations.Valuation.ARBITRAGE):
+class ArbitrageStacking(ValuationStacking, header=["future", "exp", "rev", "npv", "apy"], register=Variables.Valuations.Valuation.ARBITRAGE):
     pass
 
 

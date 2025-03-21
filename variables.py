@@ -31,7 +31,7 @@ SpreadVariable = Variable("Spread", ["STRANGLE", "COLLAR", "VERTICAL"], start=1)
 ValuationVariable = Variable("Valuation", ["ARBITRAGE"], start=1)
 ScenarioVariable = Variable("Scenario", ["MINIMUM", "MAXIMUM"], start=1)
 StatusVariable = Variable("Status", ["PROSPECT", "PENDING", "OBSOLETE", "ABANDONED", "REJECTED", "ACCEPTED"], start=1)
-TermsVariable = Variable("Terms", ["MARKET", "LIMIT", "STOP", "STOPLIMIT", "LIMITDEBIT", "LIMITCREDIT"], start=1)
+TermVariable = Variable("Terms", ["MARKET", "LIMIT", "STOP", "STOPLIMIT", "LIMITDEBIT", "LIMITCREDIT"], start=1)
 TenureVariable = Variable("Tenure", ["DAY", "STANDING", "OPENING", "CLOSING", "IMMEDIATE", "FILLKILL"], start=1)
 ActionVariable = Variable("Action", ["BUY", "SELL"], start=1)
 PricingVariable = Variable("Pricing", ["AGGRESSIVE", "PASSIVE", "MODERATE"], start=1)
@@ -76,7 +76,7 @@ class Variables(Category):
     class Securities(Category): Security, Instrument, Option, Position = SecurityVariables, InstrumentVariable, OptionVariable, PositionVariable
     class Strategies(Category): Strategy, Spread = StrategyVariables, SpreadVariable
     class Valuations(Category): Valuation, Scenario = ValuationVariable, ScenarioVariable
-    class Markets(Category): Status, Terms, Tenure, Action, Pricing = StatusVariable, TermsVariable, TenureVariable, ActionVariable, PricingVariable
+    class Markets(Category): Status, Term, Tenure, Action, Pricing = StatusVariable, TermVariable, TenureVariable, ActionVariable, PricingVariable
     class Greeks(Category): Theta, Phi, Omega = ThetaVariable, PhiVariable, OmegaVariable
     class Analysis(Category): Technical = TechnicalVariable
 
