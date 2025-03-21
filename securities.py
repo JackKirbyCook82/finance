@@ -85,7 +85,8 @@ class SecurityCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcu
     def calculate(self, securities, *args, **kwargs):
         mapping = dict(self.calculator(securities, *args, **kwargs))
         dataframe = pd.concat(list(mapping.values()), axis=0)
-        dataframe["quantity"] = dataframe.apply(self.quantify, axis=1, securities=securities, **kwargs)
+        if "quantity" in securities.columns:
+            dataframe["quantity"] = dataframe.apply(self.quantify, axis=1, securities=securities, **kwargs)
         dataframe = dataframe.reset_index(drop=True, inplace=False)
         return dataframe
 
@@ -99,7 +100,7 @@ class SecurityCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcu
             yield position, dataframe
 
     def quantify(self, series, *args, securities, **kwargs):
-        if "quantity" not in securities.columns: return 0
+        assert "quantity" in securities.columns
         contents = series[self.header].to_dict().items()
         mask = [securities[key] == value for key, value in contents]
         mask = reduce(lambda lead, lag: lead & lag, mask)
