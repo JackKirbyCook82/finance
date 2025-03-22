@@ -31,20 +31,13 @@ class MarketCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcula
     def execute(self, valuations, options, *args, **kwargs):
         assert isinstance(options, pd.DataFrame) and isinstance(valuations, pd.DataFrame)
         if self.empty(valuations): return
-        for settlement, primary, secondary in self.alignment(valuations, options, by=Querys.Settlement):
+        for settlement, primary in self.partition(valuations, options, by=Querys.Settlement):
+            secondary = self.alignment(options, by=settlement)
             results = self.calculate(primary, secondary, *args, **kwargs)
             size = self.size(results)
             self.console(f"{str(settlement)}[{int(size):.0f}]")
             if self.empty(results): continue
             yield results
-
-    def alignment(self, valuations, securities, *args, **kwargs):
-        assert isinstance(valuations, pd.DataFrame) and isinstance(securities, pd.DataFrame)
-        for partition, primary in self.partition(valuations, *args, **kwargs):
-            mask = [securities[key] == value for key, value in iter(partition)]
-            mask = reduce(lambda lead, lag: lead & lag, list(mask))
-            secondary = securities.where(mask)
-            yield partition, primary, secondary
 
     def calculate(self, valuations, options, *args, **kwargs):
         valuations["priority"] = valuations.apply(self.priority, axis=1)
@@ -53,12 +46,6 @@ class MarketCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcula
         demand = self.demand(valuations, *args, **kwargs)
         supply = self.supply(options, *args, **kwargs)
         supply = supply[supply.index.isin(demand)]
-
-        print("\n", valuations, "\n")
-        print(options, "\n")
-        print(supply, "\n")
-        raise Exception()
-
         header = list(Querys.Settlement) + list(map(str, Securities.Options))
         valuations["size"] = valuations[header].apply(self.equilibrium, axis=1, available=supply)
         mask = valuations[("size", "")] > 0
@@ -82,35 +69,52 @@ class MarketCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcula
         security = lambda cols: str(Securities([cols["instrument"], cols["option"], cols["position"]]))
         header = list(Querys.Settlement) + list(Variables.Securities.Security) + ["strike"]
         index = list(Querys.Settlement) + ["security", "strike"]
-        columns = ["size", "quantity"] if "quantity" in securities.columns else ["size"]
+        columns = [column for column in ("size", "exposure", "closure") if column in securities.columns]
         supply = securities[header + columns]
         supply["security"] = supply.apply(security, axis=1)
         supply = supply[index + columns].set_index(index, drop=True, inplace=False)
         return supply
 
     @staticmethod
-    def equilibrium(valuation, *args, available, **kwargs):
-        pass
-
-    # @staticmethod
-    # def equilibrium(valuation, *args, available, **kwargs):
-    #     parameters = dict(id_vars=list(Querys.Settlement), value_name="strike", var_name="security")
-    #     valuation = valuation.droplevel(level=1)
-    #     valuation = valuation.to_frame().transpose()
-    #     valuation = pd.melt(valuation, **parameters)
-    #     mask = valuation["strike"].isna()
-    #     valuation = valuation.where(~mask).dropna(how="all", inplace=False)
-    #     index = pd.MultiIndex.from_frame(valuation)
-    #     quantity = available.loc[index]
-    #     quantity["size"] = quantity["size"].min()
-    #     quantity = quantity.reindex(available.index).fillna(0).astype(np.int32)
-    #     available["size"] = available["size"] - quantity["size"]
-    #     return quantity.loc[index, "size"].min().astype(np.int32)
+    @abstractmethod
+    def equilibrium(self, valuation, *args, available): pass
 
     @property
     def liquidity(self): return self.__liquidity
     @property
     def priority(self): return self.__priority
+
+
+class AcquisitionCalculator(MarketCalculator):
+    @staticmethod
+    def equilibrium(valuation, *arg, available, **kwargs):
+        parameters = dict(id_vars=list(Querys.Settlement), value_name="strike", var_name="security")
+        valuation = valuation.droplevel(level=1)
+        valuation = valuation.to_frame().transpose()
+        valuation = pd.melt(valuation, **parameters)
+        mask = valuation["strike"].isna()
+        valuation = valuation.where(~mask).dropna(how="all", inplace=False)
+        index = pd.MultiIndex.from_frame(valuation)
+        quantity = available.loc[index]
+        quantity["size"] = quantity["size"].min()
+        available["size"] = available["size"] - quantity["size"]
+        return quantity.loc[index, "size"].min().astype(np.int32)
+
+
+class DivestitureCalculator(MarketCalculator):
+    @staticmethod
+    def equilibrium(valuation, *arg, available, **kwargs):
+        parameters = dict(id_vars=list(Querys.Settlement), value_name="strike", var_name="security")
+        valuation = valuation.droplevel(level=1)
+        valuation = valuation.to_frame().transpose()
+        valuation = pd.melt(valuation, **parameters)
+        mask = valuation["strike"].isna()
+        valuation = valuation.where(~mask).dropna(how="all", inplace=False)
+        index = pd.MultiIndex.from_frame(valuation)
+        quantity = available.loc[pd.MultiIndex.from_frame(valuation)]
+        quantity["size"] = quantity[["size", "closure"]].min(axis=1).min()
+        available["size"] = available["size"] - quantity["size"]
+        return quantity.loc[index, "size"].min().astype(np.int32)
 
 
 

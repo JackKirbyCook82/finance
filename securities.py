@@ -9,8 +9,8 @@ Created on Weds Jul 19 2023
 import types
 import numpy as np
 import pandas as pd
+from abc import ABC
 from functools import reduce
-from abc import ABC, abstractmethod
 
 from finance.variables import Variables, Querys
 from support.calculations import Calculation, Equation, Variable
@@ -22,10 +22,6 @@ __author__ = "Jack Kirby Cook"
 __all__ = ["StockCalculator", "OptionCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
-
-
-enumerical = lambda integer: Variables.Securities.Position.LONG if integer > 0 else Variables.Securities.Position.SHORT
-numerical = lambda position: 2 * int(bool(position is Variables.Securities.Position.LONG)) - 1
 
 
 class PricingEquation(Equation, ABC):
@@ -85,8 +81,13 @@ class SecurityCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcu
     def calculate(self, securities, *args, **kwargs):
         mapping = dict(self.calculator(securities, *args, **kwargs))
         dataframe = pd.concat(list(mapping.values()), axis=0)
+
+        securities["quantity"] = np.random.randint(-5, +5, securities.shape[0])
+        print("\n", securities, "\n")
+
         if "quantity" in securities.columns:
-            dataframe["quantity"] = dataframe.apply(self.quantify, axis=1, securities=securities, **kwargs)
+            dataframe["exposure"] = dataframe.apply(self.exposure, axis=1, securities=securities, **kwargs)
+            dataframe["closure"] = dataframe.apply(self.closure, axis=1, securities=securities, **kwargs)
         dataframe = dataframe.reset_index(drop=True, inplace=False)
         return dataframe
 
@@ -99,16 +100,23 @@ class SecurityCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcu
             dataframe["position"] = position
             yield position, dataframe
 
-    def quantify(self, series, *args, securities, **kwargs):
+    def exposure(self, series, *args, securities, **kwargs):
         assert "quantity" in securities.columns
         contents = series[self.header].to_dict().items()
         mask = [securities[key] == value for key, value in contents]
         mask = reduce(lambda lead, lag: lead & lag, mask)
         security = securities.where(mask).dropna(how="all", inplace=False).squeeze()
-        enumerically = enumerical(np.sign(security.quantity)) == series.position
-        numerically = np.sign(security.quantity) == numerical(series.position)
-        assert enumerically == numerically
-        return np.abs(security.quantity) if (numerically & enumerically) else 0
+        acquired = int(series.position) == np.sign(security.quantity)
+        return np.abs(security.quantity) if acquired else 0
+
+    def closure(self, series, *args, securities, **kwargs):
+        assert "quantity" in securities.columns
+        contents = series[self.header].to_dict().items()
+        mask = [securities[key] == value for key, value in contents]
+        mask = reduce(lambda lead, lag: lead & lag, mask)
+        security = securities.where(mask).dropna(how="all", inplace=False).squeeze()
+        divestible = - int(series.position) == np.sign(security.quantity)
+        return np.abs(security.quantity) if divestible else 0
 
     @property
     def instrument(self): return type(self).__instrument__
