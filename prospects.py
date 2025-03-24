@@ -103,10 +103,6 @@ class ProspectWriter(Writer):
 
 
 class ProspectCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.__counter = count(start=1, step=1)
-
     def execute(self, valuations, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame)
         if self.empty(valuations): return
@@ -117,14 +113,12 @@ class ProspectCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
             if self.empty(prospects): continue
             yield prospects
 
-    def calculate(self, valuations, *args, **kwargs):
-        valuations["order"] = [next(self.counter) for _ in range(len(valuations))]
+    @staticmethod
+    def calculate(valuations, *args, **kwargs):
         valuations["status"] = Variables.Markets.Status.PROSPECT
         valuations = valuations.reset_index(drop=True, inplace=False)
         return valuations
 
-    @property
-    def counter(self): return self.__counter
 
 
 

@@ -8,20 +8,18 @@ Created on Tues Mar 18 2025
 
 import numpy as np
 import pandas as pd
-from functools import reduce
-from abc import ABC, abstractmethod
 
 from finance.variables import Variables, Querys, Securities
 from support.mixins import Emptying, Sizing, Partition, Logging
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["AcquisitionCalculator", "DivestitureCalculator"]
+__all__ = ["MarketCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class MarketCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calculated"):
+class MarketCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
     def __init__(self, *args, liquidity, priority, **kwargs):
         super().__init__(*args, **kwargs)
         assert callable(liquidity) and callable(priority)
@@ -76,17 +74,6 @@ class MarketCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcula
         return supply
 
     @staticmethod
-    @abstractmethod
-    def equilibrium(self, valuation, *args, available): pass
-
-    @property
-    def liquidity(self): return self.__liquidity
-    @property
-    def priority(self): return self.__priority
-
-
-class AcquisitionCalculator(MarketCalculator):
-    @staticmethod
     def equilibrium(valuation, *arg, available, **kwargs):
         parameters = dict(id_vars=list(Querys.Settlement), value_name="strike", var_name="security")
         valuation = valuation.droplevel(level=1)
@@ -100,21 +87,8 @@ class AcquisitionCalculator(MarketCalculator):
         available["size"] = available["size"] - quantity["size"]
         return quantity.loc[index, "size"].min().astype(np.int32)
 
-
-class DivestitureCalculator(MarketCalculator):
-    @staticmethod
-    def equilibrium(valuation, *arg, available, **kwargs):
-        parameters = dict(id_vars=list(Querys.Settlement), value_name="strike", var_name="security")
-        valuation = valuation.droplevel(level=1)
-        valuation = valuation.to_frame().transpose()
-        valuation = pd.melt(valuation, **parameters)
-        mask = valuation["strike"].isna()
-        valuation = valuation.where(~mask).dropna(how="all", inplace=False)
-        index = pd.MultiIndex.from_frame(valuation)
-        quantity = available.loc[pd.MultiIndex.from_frame(valuation)]
-        quantity["size"] = quantity[["size", "closure"]].min(axis=1).min()
-        available["size"] = available["size"] - quantity["size"]
-        return quantity.loc[index, "size"].min().astype(np.int32)
-
-
+    @property
+    def liquidity(self): return self.__liquidity
+    @property
+    def priority(self): return self.__priority
 

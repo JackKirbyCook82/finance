@@ -79,12 +79,9 @@ class SecurityCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcu
             yield results
 
     def calculate(self, securities, *args, **kwargs):
+        assert isinstance(securities, pd.DataFrame)
         mapping = dict(self.calculator(securities, *args, **kwargs))
         dataframe = pd.concat(list(mapping.values()), axis=0)
-
-        securities["quantity"] = np.random.randint(-5, +5, securities.shape[0])
-        print("\n", securities, "\n")
-
         if "quantity" in securities.columns:
             dataframe["exposure"] = dataframe.apply(self.exposure, axis=1, securities=securities, **kwargs)
             dataframe["closure"] = dataframe.apply(self.closure, axis=1, securities=securities, **kwargs)
@@ -115,7 +112,7 @@ class SecurityCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcu
         mask = [securities[key] == value for key, value in contents]
         mask = reduce(lambda lead, lag: lead & lag, mask)
         security = securities.where(mask).dropna(how="all", inplace=False).squeeze()
-        divestible = - int(series.position) == np.sign(security.quantity)
+        divestible = int(series.position) == - np.sign(security.quantity)
         return np.abs(security.quantity) if divestible else 0
 
     @property
