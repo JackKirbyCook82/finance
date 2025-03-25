@@ -30,19 +30,19 @@ def floating(number): return f"{number:.2f}"
 def integer(number): return f"{number:.0f}"
 def percent(number):
     assert isinstance(number, Number)
-    if (100 * number) < 10**3: return f"{number * 100:.2f}%"
-    elif (100 * number) < 10**6: return f"{number * 100:.2f}K%"
-    elif (100 * number) < 10**9: return f"{number * 100:.2f}M%"
+    if number * 100 < 10 ** 3: return f"{number * 100 / (10 ** 3):.2f}%"
+    elif number * 100 < 10 ** 6: return f"{number * 100 / (10 ** 6):.2f}K%"
+    elif number * 100 < 10 ** 9: return f"{number * 100 / (10 ** 9):.2f}M%"
     elif not np.isfinite(percent): return "EsV"
     else: return "InF"
 
 
 class ProspectParameters(metaclass=ParameterMeta):
-    order = list(Querys.Settlement) + list(map(str, Securities.Options)) + ["apy", "npv", "spot", "size"]
-    columns = ["apy", "npv", "rev", "exp", "spot", "size", "priority", "status"]
+    order = list(Querys.Settlement) + list(map(str, Securities.Options)) + ["apy", "npv", "future", "spot", "size"]
+    columns = ["apy", "npv", "future", "spot", "size", "priority", "status"]
     index = ["order", "valuation", "strategy"] + list(map(str, chain(Querys.Settlement, Securities.Options)))
-    formatters = {"apy": percent, "npv rev exp spot": floating, "size": integer, tuple(map(str, Securities.Options)): floating}
-    stacking = Stacking(axis="scenario", columns=["apy", "npv", "rev", "exp"], layers=list(Variables.Valuations.Scenario))
+    formatters = {"apy": percent, "npv spot future": floating, "size": integer, tuple(map(str, Securities.Options)): floating}
+    stacking = Stacking(axis="scenario", columns=["apy", "npv", "future"], layers=list(Variables.Valuations.Scenario))
     layout = Layout(width=250, space=10, columns=30, rows=30)
 
 

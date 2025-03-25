@@ -77,7 +77,7 @@ class ValuationStacking(ABC, metaclass=RegistryMeta):
     @property
     def header(self): return type(self).__header__
 
-class ArbitrageStacking(ValuationStacking, header=["future", "exp", "rev", "npv", "apy"], register=Variables.Valuations.Valuation.ARBITRAGE):
+class ArbitrageStacking(ValuationStacking, header=["apy", "npv", "future"], register=Variables.Valuations.Valuation.ARBITRAGE):
     pass
 
 
@@ -109,7 +109,6 @@ class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
         return valuations
 
     def calculator(self, strategies, *args, **kwargs):
-        assert isinstance(strategies, xr.Dataset)
         for scenario, calculation in self.calculations.items():
             valuations = calculation(strategies, *args, **kwargs)
             assert isinstance(valuations, xr.Dataset)

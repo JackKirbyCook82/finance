@@ -8,18 +8,19 @@ Created on Tues Mar 18 2025
 
 import numpy as np
 import pandas as pd
+from abc import ABC, abstractmethod
 
 from finance.variables import Variables, Querys, Securities
 from support.mixins import Emptying, Sizing, Partition, Logging
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["MarketCalculator"]
+__all__ = ["AcquisitionCalculator", "DivestitureCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class MarketCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
+class MarketCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calculated"):
     def __init__(self, *args, liquidity, priority, **kwargs):
         super().__init__(*args, **kwargs)
         assert callable(liquidity) and callable(priority)
@@ -41,40 +42,29 @@ class MarketCalculator(Sizing, Emptying, Partition, Logging, title="Calculated")
         valuations["priority"] = valuations.apply(self.priority, axis=1)
         options["size"] = options.apply(self.liquidity, axis=1)
         valuations = valuations.sort_values("priority", axis=0, ascending=False, inplace=False, ignore_index=False)
-        demand = self.demand(valuations, *args, **kwargs)
-        supply = self.supply(options, *args, **kwargs)
-        supply = supply[supply.index.isin(demand)]
+        interest = self.interest(valuations, *args, **kwargs)
+        available = self.available(options, *args, **kwargs)
+        available = available[available.index.isin(interest)]
         header = list(Querys.Settlement) + list(map(str, Securities.Options))
-        valuations["size"] = valuations[header].apply(self.equilibrium, axis=1, available=supply)
+        valuations["size"] = valuations[header].apply(self.selection, axis=1, available=available)
         mask = valuations[("size", "")] > 0
         valuations = valuations.where(mask).dropna(how="all", inplace=False)
         valuations = valuations.reset_index(drop=True, inplace=False)
         return valuations
 
     @staticmethod
-    def demand(valuations, *args, **kwargs):
+    def interest(valuations, *args, **kwargs):
         parameters = dict(id_vars=list(Querys.Settlement), value_name="strike", var_name="security")
         header = list(Querys.Settlement) + list(map(str, Securities.Options))
-        demand = valuations[header].droplevel(level=1, axis=1)
-        demand = pd.melt(demand, **parameters)
-        mask = demand["strike"].isna()
-        demand = demand.where(~mask).dropna(how="all", inplace=False)
-        demand = pd.MultiIndex.from_frame(demand)
-        return demand
+        valuations = valuations[header].droplevel(level=1, axis=1)
+        interest = pd.melt(valuations, **parameters)
+        mask = interest["strike"].isna()
+        interest = interest.where(~mask).dropna(how="all", inplace=False)
+        interest = pd.MultiIndex.from_frame(interest)
+        return interest
 
     @staticmethod
-    def supply(securities, *args, **kwargs):
-        security = lambda cols: str(Securities([cols["instrument"], cols["option"], cols["position"]]))
-        header = list(Querys.Settlement) + list(Variables.Securities.Security) + ["strike"]
-        index = list(Querys.Settlement) + ["security", "strike"]
-        columns = [column for column in ("size", "exposure", "closure") if column in securities.columns]
-        supply = securities[header + columns]
-        supply["security"] = supply.apply(security, axis=1)
-        supply = supply[index + columns].set_index(index, drop=True, inplace=False)
-        return supply
-
-    @staticmethod
-    def equilibrium(valuation, *arg, available, **kwargs):
+    def selection(valuation, *arg, available, **kwargs):
         parameters = dict(id_vars=list(Querys.Settlement), value_name="strike", var_name="security")
         valuation = valuation.droplevel(level=1)
         valuation = valuation.to_frame().transpose()
@@ -87,8 +77,38 @@ class MarketCalculator(Sizing, Emptying, Partition, Logging, title="Calculated")
         available["size"] = available["size"] - quantity["size"]
         return quantity.loc[index, "size"].min().astype(np.int32)
 
+    @staticmethod
+    @abstractmethod
+    def available(options, *args, **kwargs): pass
+
     @property
     def liquidity(self): return self.__liquidity
     @property
     def priority(self): return self.__priority
+
+
+class AcquisitionCalculator(MarketCalculator):
+    @staticmethod
+    def available(options, *args, **kwargs):
+        function = lambda cols: str(Securities([cols["instrument"], cols["option"], cols["position"]]))
+        header = list(Querys.Settlement) + list(Variables.Securities.Security) + ["strike"]
+        options = options[header + ["size"]].apply(function, axis=1)
+        index = list(Querys.Settlement) + ["security", "strike"]
+        options = options[index + ["size"]].set_index(index, drop=True, inplace=False)
+        return options
+
+
+class DivestitureCalculator(MarketCalculator):
+    @staticmethod
+    def available(options, *args, **kwargs):
+        function = lambda cols: str(Securities([cols["instrument"], cols["option"], cols["position"]]))
+        header = list(Querys.Settlement) + list(Variables.Securities.Security) + ["strike"]
+        options = options[header + ["size", "closure"]]
+        options["security"] = options.apply(function, axis=1)
+        options["size"] = options[["size", "closure"]].min(axis=1)
+        index = list(Querys.Settlement) + ["security", "strike"]
+        options = options[index + ["size"]].set_index(index, drop=True, inplace=False)
+        return options
+
+
 

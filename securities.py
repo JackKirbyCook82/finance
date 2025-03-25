@@ -10,7 +10,6 @@ import types
 import numpy as np
 import pandas as pd
 from abc import ABC
-from functools import reduce
 
 from finance.variables import Variables, Querys
 from support.calculations import Calculation, Equation, Variable
@@ -19,7 +18,7 @@ from support.meta import RegistryMeta
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["StockCalculator", "OptionCalculator"]
+__all__ = ["StockCalculator", "OptionCalculator", "ExposureCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
@@ -71,49 +70,29 @@ class SecurityCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcu
     def execute(self, securities, *args, **kwargs):
         assert isinstance(securities, pd.DataFrame)
         if self.empty(securities): return
-        for query, dataframe in self.partition(securities, by=self.query):
+        for settlement, dataframe in self.partition(securities, by=self.query):
             results = self.calculate(dataframe, *args, **kwargs)
             size = self.size(results)
-            self.console(f"{str(query)}[{int(size):.0f}]")
+            self.console(f"{str(settlement)}[{int(size):.0f}]")
             if self.empty(results): continue
             yield results
 
     def calculate(self, securities, *args, **kwargs):
-        assert isinstance(securities, pd.DataFrame)
-        mapping = dict(self.calculator(securities, *args, **kwargs))
-        dataframe = pd.concat(list(mapping.values()), axis=0)
-        if "quantity" in securities.columns:
-            dataframe["exposure"] = dataframe.apply(self.exposure, axis=1, securities=securities, **kwargs)
-            dataframe["closure"] = dataframe.apply(self.closure, axis=1, securities=securities, **kwargs)
-        dataframe = dataframe.reset_index(drop=True, inplace=False)
-        return dataframe
+        generator = self.calculator(securities, *args, **kwargs)
+        results = pd.concat(list(generator), axis=0)
+        results = results.reset_index(drop=True, inplace=False)
+        return results
 
     def calculator(self, securities, *args, **kwargs):
-        assert isinstance(securities, pd.DataFrame)
         for position in list(Variables.Securities.Position):
+            contract = securities[self.header]
             pricing = self.calculation(securities, *args, position=position, **kwargs)
-            dataframe = pd.concat([securities[self.header], pricing], axis=1)
-            dataframe["instrument"] = self.instrument
-            dataframe["position"] = position
-            yield position, dataframe
-
-    def exposure(self, series, *args, securities, **kwargs):
-        assert "quantity" in securities.columns
-        contents = series[self.header].to_dict().items()
-        mask = [securities[key] == value for key, value in contents]
-        mask = reduce(lambda lead, lag: lead & lag, mask)
-        security = securities.where(mask).dropna(how="all", inplace=False).squeeze()
-        acquired = int(series.position) == np.sign(security.quantity)
-        return np.abs(security.quantity) if acquired else 0
-
-    def closure(self, series, *args, securities, **kwargs):
-        assert "quantity" in securities.columns
-        contents = series[self.header].to_dict().items()
-        mask = [securities[key] == value for key, value in contents]
-        mask = reduce(lambda lead, lag: lead & lag, mask)
-        security = securities.where(mask).dropna(how="all", inplace=False).squeeze()
-        divestible = int(series.position) == - np.sign(security.quantity)
-        return np.abs(security.quantity) if divestible else 0
+            quantity = securities[["quantity"]]
+            results = pd.concat([contract, pricing, quantity], axis=1)
+            results["quantity"] = results["quantity"] * np.sign(int(position))
+            results["instrument"] = self.instrument
+            results["position"] = position
+            yield results
 
     @property
     def instrument(self): return type(self).__instrument__
@@ -121,12 +100,43 @@ class SecurityCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcu
     def header(self): return type(self).__header__
     @property
     def query(self): return type(self).__query__
+
     @property
     def calculation(self): return self.__calculation
     @property
     def pricing(self): return self.__pricing
 
 
-class StockCalculator(SecurityCalculator, query=Querys.Symbol, instrument=Variables.Securities.Instrument.STOCK, header=list(Querys.Symbol)): pass
-class OptionCalculator(SecurityCalculator, query=Querys.Settlement, instrument=Variables.Securities.Instrument.OPTION, header=list(Querys.Contract)): pass
+class StockCalculator(SecurityCalculator, instrument=Variables.Securities.Instrument.STOCK, query=Querys.Symbol, header=list(Querys.Symbol)): pass
+class OptionCalculator(SecurityCalculator, instrument=Variables.Securities.Instrument.OPTION, query=Querys.Settlement, header=list(Querys.Contract)): pass
+
+
+class ExposureCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
+    def execute(self, options, *args, **kwargs):
+        assert isinstance(options, pd.DataFrame)
+        if self.empty(options): return
+        for settlement, dataframe in self.partition(options, by=Querys.Settlement):
+            results = self.calculate(dataframe, *args, **kwargs)
+            size = self.size(results)
+            self.console(f"{str(settlement)}[{int(size):.0f}]")
+            if self.empty(results): continue
+            yield results
+
+    def calculate(self, options, *args, **kwargs):
+        assert isinstance(options, pd.DataFrame)
+        assert "quantity" in options.columns
+        options["exposure"] = options.apply(self.exposure, axis=1)
+        options["closure"] = options.apply(self.closure, axis=1)
+        return options
+
+    @staticmethod
+    def exposure(option, *args, **kwargs):
+        included = int(option.position) == np.sign(option.quantity)
+        return np.abs(option.quantity) * int(included)
+
+    @staticmethod
+    def closure(option, *args, **kwargs):
+        included = int(option.position) == - np.sign(option.quantity)
+        return np.abs(option.quantity) * int(included)
+
 
