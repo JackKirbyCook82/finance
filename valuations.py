@@ -28,9 +28,9 @@ __license__ = "MIT License"
 
 class ValuationLocator(ntuple("Locator", "valuation scenario")): pass
 class ValuationEquation(Equation, ABC):
-    rev = Variable("rev", "rev", np.float32, xr.DataArray, vectorize=True, function=lambda vo, vτ: np.abs(+ np.maximum(vo, 0) + np.maximum(vτ, 0)))
-    exp = Variable("exp", "exp", np.float32, xr.DataArray, vectorize=True, function=lambda vo, vτ: np.abs(- np.minimum(vo, 0) - np.minimum(vτ, 0)))
-    tau = Variable("tau", "tau", np.int32, xr.DataArray, vectorize=True, function=lambda to, tτ: (tτ - to).days)
+    rev = Variable("rev", "revenue", np.float32, xr.DataArray, vectorize=True, function=lambda vo, vτ: np.abs(+ np.maximum(vo, 0) + np.maximum(vτ, 0)))
+    exp = Variable("exp", "expense", np.float32, xr.DataArray, vectorize=True, function=lambda vo, vτ: np.abs(- np.minimum(vo, 0) - np.minimum(vτ, 0)))
+    tau = Variable("tau", "days", np.int32, xr.DataArray, vectorize=True, function=lambda to, tτ: (tτ - to).days)
 
     vo = Variable("vo", "spot", np.float32, xr.DataArray, locator="spot")
     tτ = Variable("tτ", "expire", Date, xr.DataArray, locator="expire")
