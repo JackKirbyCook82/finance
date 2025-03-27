@@ -80,23 +80,31 @@ class TechnicalCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
     def execute(self, bars, *args, **kwargs):
         assert isinstance(bars, pd.DataFrame)
         if self.empty(bars): return
-        for symbol, dataframe in self.partition(bars, by=Querys.Symbol):
-            technicals = self.calculate(dataframe, *args, **kwargs)
-            size = self.size(technicals)
-            self.console(f"{str(symbol)}[{int(size):.0f}]")
-            if self.empty(technicals): continue
-            yield technicals
+        technicals = self.calculate(bars, *args, **kwargs)
+        symbols = self.groups(technicals, by=Querys.Symbol)
+        symbols = ",".join(list(map(str, symbols)))
+        size = self.size(technicals)
+        self.console(f"{str(symbols)}[{int(size):.0f}]")
+        if self.empty(technicals): return
+        yield technicals
 
     def calculate(self, bars, *args, **kwargs):
-        bars = bars.sort_values("date", ascending=True, inplace=False)
-        technicals = dict(self.calculator(bars, *args, **kwargs))
-        technicals = pd.concat([bars] + list(technicals.values()), axis=1)
+        technicals = list(self.calculator(bars, *args, **kwargs))
+        technicals = pd.concat(technicals, axis=0)
         return technicals
 
     def calculator(self, bars, *args, **kwargs):
+        for symbol, dataframe in self.partition(bars, by=Querys.Symbol):
+            technicals = list(self.technicals(dataframe, *args, **kwargs))
+            technicals = pd.concat([bars] + technicals, axis=1)
+            yield technicals
+
+    def technicals(self, bars, *args, **kwargs):
+        assert (bars["ticker"].to_numpy()[0] == bars["ticker"]).all()
+        bars = bars.sort_values("date", ascending=True, inplace=False)
         for technical, calculation in self.calculations.items():
             technicals = calculation(bars, *args, **kwargs)
-            yield technical, technicals
+            yield technicals
 
     @property
     def calculations(self): return self.__calculations

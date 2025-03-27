@@ -25,7 +25,7 @@ __license__ = "MIT License"
 
 TechnicalVariable = Variable("Technical", ["SECURITY", "TRADE", "QUOTE", "BARS", "STATISTIC", "STOCHASTIC"], start=1)
 InstrumentVariable = Variable("Instrument", ["EMPTY", "STOCK", "OPTION"], start=0)
-OptionVariable = Variable("Option", ["EMPTY", "PUT", "CALL"], start=0)
+OptionVariable = Variable("Option", ["PUT", "EMPTY", "CALL"], start=-1)
 PositionVariable = Variable("Position", ["SHORT", "EMPTY", "LONG"], start=-1)
 SpreadVariable = Variable("Spread", ["STRANGLE", "COLLAR", "VERTICAL"], start=1)
 ValuationVariable = Variable("Valuation", ["ARBITRAGE"], start=1)

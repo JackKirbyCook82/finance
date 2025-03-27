@@ -28,15 +28,15 @@ class MarketCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcula
         self.__priority = priority
 
     def execute(self, valuations, options, *args, **kwargs):
-        assert isinstance(options, pd.DataFrame) and isinstance(valuations, pd.DataFrame)
+        assert isinstance(valuations, pd.DataFrame) and isinstance(options, pd.DataFrame)
         if self.empty(valuations): return
-        for settlement, primary in self.partition(valuations, options, by=Querys.Settlement):
-            secondary = self.alignment(options, by=settlement)
-            results = self.calculate(primary, secondary, *args, **kwargs)
-            size = self.size(results)
-            self.console(f"{str(settlement)}[{int(size):.0f}]")
-            if self.empty(results): continue
-            yield results
+        dataframe = self.calculate(valuations, options, *args, **kwargs)
+        settlements = self.groups(valuations, by=Querys.Settlement)
+        settlements = ",".join(list(map(str, settlements)))
+        size = self.size(dataframe)
+        self.console(f"{str(settlements)}[{int(size):.0f}]")
+        if self.empty(dataframe): return
+        yield dataframe
 
     def calculate(self, valuations, options, *args, **kwargs):
         valuations["priority"] = valuations.apply(self.priority, axis=1)
@@ -92,7 +92,8 @@ class AcquisitionCalculator(MarketCalculator):
     def available(options, *args, **kwargs):
         function = lambda cols: str(Securities([cols["instrument"], cols["option"], cols["position"]]))
         header = list(Querys.Settlement) + list(Variables.Securities.Security) + ["strike"]
-        options = options[header + ["size"]].apply(function, axis=1)
+        options = options[header + ["size"]]
+        options["security"] = options.apply(function, axis=1)
         index = list(Querys.Settlement) + ["security", "strike"]
         options = options[index + ["size"]].set_index(index, drop=True, inplace=False)
         return options

@@ -18,7 +18,7 @@ from support.meta import RegistryMeta
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["StockCalculator", "OptionCalculator", "ExposureCalculator"]
+__all__ = ["StockCalculator", "OptionCalculator", "ExposureCalculator", "VirtualCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
@@ -70,12 +70,13 @@ class SecurityCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcu
     def execute(self, securities, *args, **kwargs):
         assert isinstance(securities, pd.DataFrame)
         if self.empty(securities): return
-        for settlement, dataframe in self.partition(securities, by=self.query):
-            results = self.calculate(dataframe, *args, **kwargs)
-            size = self.size(results)
-            self.console(f"{str(settlement)}[{int(size):.0f}]")
-            if self.empty(results): continue
-            yield results
+        securities = self.calculate(securities, *args, **kwargs)
+        querys = self.groups(securities, by=self.query)
+        querys = ",".join(list(map(str, querys)))
+        size = self.size(securities)
+        self.console(f"{str(querys)}[{int(size):.0f}]")
+        if self.empty(securities): return
+        yield securities
 
     def calculate(self, securities, *args, **kwargs):
         generator = self.calculator(securities, *args, **kwargs)
@@ -87,12 +88,12 @@ class SecurityCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcu
         for position in list(Variables.Securities.Position):
             contract = securities[self.header]
             pricing = self.calculation(securities, *args, position=position, **kwargs)
-            quantity = securities[["quantity"]]
-            results = pd.concat([contract, pricing, quantity], axis=1)
-            results["quantity"] = results["quantity"] * np.sign(int(position))
-            results["instrument"] = self.instrument
-            results["position"] = position
-            yield results
+            dataframe = pd.concat([contract, pricing], axis=1)
+            if "quantity" in securities.columns:
+                dataframe["quantity"] = securities["quantity"] * np.sign(int(position))
+            dataframe["instrument"] = self.instrument
+            dataframe["position"] = position
+            yield dataframe
 
     @property
     def instrument(self): return type(self).__instrument__
@@ -115,12 +116,13 @@ class ExposureCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
     def execute(self, options, *args, **kwargs):
         assert isinstance(options, pd.DataFrame)
         if self.empty(options): return
-        for settlement, dataframe in self.partition(options, by=Querys.Settlement):
-            results = self.calculate(dataframe, *args, **kwargs)
-            size = self.size(results)
-            self.console(f"{str(settlement)}[{int(size):.0f}]")
-            if self.empty(results): continue
-            yield results
+        options = self.calculate(options, *args, **kwargs)
+        settlements = self.groups(options, by=Querys.Settlement)
+        settlements = ",".join(list(map(str, settlements)))
+        size = self.size(options)
+        self.console(f"{str(settlements)}[{int(size):.0f}]")
+        if self.empty(options): return
+        yield options
 
     def calculate(self, options, *args, **kwargs):
         assert isinstance(options, pd.DataFrame)
@@ -139,4 +141,7 @@ class ExposureCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
         included = int(option.position) == - np.sign(option.quantity)
         return np.abs(option.quantity) * int(included)
 
+
+class VirtualCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
+    pass
 

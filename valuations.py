@@ -55,8 +55,6 @@ class ArbitrageCalculation(ValuationCalculation, ABC):
         with self.equation(strategies, discount=discount, date=date) as equation:
             yield equation.vo()
             yield equation.vτ()
-            yield equation.exp()
-            yield equation.rev()
             yield equation.npv()
             yield equation.apy()
 
@@ -93,13 +91,14 @@ class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
     def execute(self, strategies, *args, **kwargs):
         assert isinstance(strategies, xr.Dataset)
         if self.empty(strategies, "size"): return
-        for settlement, dataset in self.partition(strategies, by=Querys.Settlement):
-            valuations = self.calculate(dataset, *args, **kwargs)
-            valuations = self.stacking(valuations, *args, **kwargs)
-            size = self.size(valuations)
-            self.console(f"{str(settlement)}|{str(self.valuation)}[{int(size):.0f}]")
-            if self.empty(valuations): continue
-            yield valuations
+        valuations = self.calculate(strategies, *args, **kwargs)
+        valuations = self.stacking(valuations, *args, **kwargs)
+        settlements = self.groups(valuations, by=Querys.Settlement)
+        settlements = ",".join(list(map(str, settlements)))
+        size = self.size(valuations)
+        self.console(f"{str(settlements)}|{str(self.valuation)}[{int(size):.0f}]")
+        if self.empty(valuations): return
+        yield valuations
 
     def calculate(self, strategies, *args, **kwargs):
         valuations = dict(self.calculator(strategies, *args, **kwargs))

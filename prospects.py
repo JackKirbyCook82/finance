@@ -73,14 +73,8 @@ class ProspectReader(Reader):
         if not bool(self.table): return
         mask = [self.table["status"] == value for value in self.status]
         mask = reduce(lambda lead, lag: lead | lag, mask)
-        dataframes = self.table.take(mask)
-        if self.empty(dataframes): return
-        for settlement, dataframes in self.partition(dataframes, by=Querys.Settlement):
-            for status, dataframe in dataframes.groupby("status", sort=False):
-                if self.empty(dataframe): continue
-                size = self.size(dataframe)
-                status = str(status).lower()
-                self.console(f"{str(status)}[{int(size):.0f}]", title="Detached")
+        dataframe = self.table.take(mask)
+        if self.empty(dataframe): return
         return dataframe
 
     @property
@@ -88,14 +82,8 @@ class ProspectReader(Reader):
 
 
 class ProspectWriter(Writer):
-    def write(self, dataframes, *args, **kwargs):
-        if self.empty(dataframes): return
-        for settlement, dataframe in self.partition(dataframes, by=Querys.Settlement):
-            if self.empty(dataframe): continue
-            self.table.append(dataframe)
-            size = self.size(dataframe)
-            status = str(Variables.Markets.Status.PROSPECT).lower()
-            self.console(f"{str(settlement)}|{str(status)}[{int(size):.0f}]", title="Attached")
+    def write(self, dataframe, *args, **kwargs):
+        if self.empty(dataframe): return
         columns = list(Querys.Settlement) + list(map(str, Securities.Options))
         self.table.unique(columns=columns, reverse=True)
         self.table.sort("priority", reverse=True)
@@ -106,12 +94,13 @@ class ProspectCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
     def execute(self, valuations, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame)
         if self.empty(valuations): return
-        for settlement, dataframe in self.partition(valuations, by=Querys.Settlement):
-            prospects = self.calculate(dataframe, *args, **kwargs)
-            size = self.size(prospects)
-            self.console(f"{str(settlement)}[{int(size):.0f}]")
-            if self.empty(prospects): continue
-            yield prospects
+        prospects = self.calculate(valuations, *args, **kwargs)
+        settlements = self.groups(prospects, by=Querys.Settlement)
+        settlements = ",".join(list(map(str, settlements)))
+        size = self.size(prospects)
+        self.console(f"{str(settlements)}[{int(size):.0f}]")
+        if self.empty(prospects): return
+        yield prospects
 
     @staticmethod
     def calculate(valuations, *args, **kwargs):
