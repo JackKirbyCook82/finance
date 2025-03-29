@@ -9,9 +9,8 @@ Created on Thurs Nov 21 2024
 import inspect
 import numpy as np
 import pandas as pd
-from numbers import Number
+from itertools import chain
 from functools import reduce
-from itertools import count, chain
 
 from finance.variables import Variables, Querys, Securities
 from support.mixins import Emptying, Sizing, Partition, Logging
@@ -29,12 +28,12 @@ __license__ = "MIT License"
 def floating(number): return f"{number:.2f}"
 def integer(number): return f"{number:.0f}"
 def percent(number):
-    assert isinstance(number, Number)
-    if number * 100 < 10 ** 3: return f"{number * 100 / (10 ** 3):.2f}%"
-    elif number * 100 < 10 ** 6: return f"{number * 100 / (10 ** 6):.2f}K%"
-    elif number * 100 < 10 ** 9: return f"{number * 100 / (10 ** 9):.2f}M%"
-    elif not np.isfinite(percent): return "EsV"
-    else: return "InF"
+    if not np.isfinite(number): return "InF"
+    elif number > 10 ** 12: return "EsV"
+    elif number > 10 ** 9: return f"{number / (10 ** 9):.2f}B%"
+    elif number > 10 ** 6: return f"{number / (10 ** 6):.2f}M%"
+    elif number > 10 ** 3: return f"{number / (10 ** 3):.2f}K%"
+    else: return f"{number:.0f}%"
 
 
 class ProspectParameters(metaclass=ParameterMeta):
