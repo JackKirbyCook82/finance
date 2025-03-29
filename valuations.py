@@ -39,8 +39,8 @@ class ValuationEquation(Equation, ABC):
 
 class ArbitrageEquation(ValuationEquation, ABC):
     npv = Variable("npv", "npv", np.float32, xr.DataArray, vectorize=True, function=lambda vτ, vo, tau, ρ: np.divide(vτ, np.power(ρ + 1, np.divide(tau, 365))) + vo)
-    roi = Variable("roi", "roi", np.float32, xr.DataArray, vectorize=True, function=lambda exp, rev, tau: np.divide(rev - exp, tau) / exp)
-    apy = Variable("apy", "apy", np.float32, xr.DataArray, vectorize=True, function=lambda roi, tau: np.power((roi + 1), 365))
+    roi = Variable("roi", "roi", np.float32, xr.DataArray, vectorize=True, function=lambda rev, exp: np.divide(rev - exp, exp))
+    apy = Variable("apy", "apy", np.float32, xr.DataArray, vectorize=True, function=lambda roi, tau: np.power((roi + 1), np.divide(tau, 365)))
 
 class MinimumArbitrageEquation(ArbitrageEquation):
     vτ = Variable("vτ", "future", np.float32, xr.DataArray, locator="minimum")
