@@ -57,6 +57,12 @@ class StrategyCalculation(Calculation, ABC, metaclass=RegistryMeta):
     def execute(self, securities, *args, fees, **kwargs):
         axes = ("price", "strike", "size")
         securities = {StrategyLocator(axis, security.position): dataset[axis] for security, dataset in securities.items() for axis in axes}
+
+        for key, value in securities.items():
+            print(key)
+            print(value)
+        raise Exception()
+
         with self.equation(securities, fees=fees) as equation:
             yield equation.q()
             yield equation.w()
