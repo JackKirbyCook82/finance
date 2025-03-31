@@ -89,8 +89,6 @@ class SecurityCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcu
             contract = securities[self.header]
             pricing = self.calculation(securities, *args, position=position, **kwargs)
             dataframe = pd.concat([contract, pricing], axis=1)
-            if "quantity" in securities.columns:
-                dataframe["quantity"] = securities["quantity"] * np.sign(int(position))
             dataframe["instrument"] = self.instrument
             dataframe["position"] = position
             yield dataframe
@@ -111,37 +109,4 @@ class SecurityCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcu
 class StockCalculator(SecurityCalculator, instrument=Variables.Securities.Instrument.STOCK, query=Querys.Symbol, header=list(Querys.Symbol)): pass
 class OptionCalculator(SecurityCalculator, instrument=Variables.Securities.Instrument.OPTION, query=Querys.Settlement, header=list(Querys.Contract)): pass
 
-
-class ExposureCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
-    def execute(self, options, *args, **kwargs):
-        assert isinstance(options, pd.DataFrame)
-        if self.empty(options): return
-        options = self.calculate(options, *args, **kwargs)
-        settlements = self.groups(options, by=Querys.Settlement)
-        settlements = ",".join(list(map(str, settlements)))
-        size = self.size(options)
-        self.console(f"{str(settlements)}[{int(size):.0f}]")
-        if self.empty(options): return
-        yield options
-
-    def calculate(self, options, *args, **kwargs):
-        assert isinstance(options, pd.DataFrame)
-        assert "quantity" in options.columns
-        options["exposure"] = options.apply(self.exposure, axis=1)
-        options["closure"] = options.apply(self.closure, axis=1)
-        return options
-
-    @staticmethod
-    def exposure(option, *args, **kwargs):
-        included = int(option.position) == np.sign(option.quantity)
-        return np.abs(option.quantity) * int(included)
-
-    @staticmethod
-    def closure(option, *args, **kwargs):
-        included = int(option.position) == - np.sign(option.quantity)
-        return np.abs(option.quantity) * int(included)
-
-
-class VirtualCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
-    pass
 

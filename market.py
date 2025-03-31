@@ -15,7 +15,7 @@ from support.mixins import Emptying, Sizing, Partition, Logging
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["AcquisitionCalculator", "DivestitureCalculator"]
+__all__ = ["MarketCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
@@ -46,7 +46,7 @@ class MarketCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcula
         available = self.available(options, *args, **kwargs)
         available = available[available.index.isin(interest)]
         header = list(Querys.Settlement) + list(map(str, Securities.Options))
-        valuations["size"] = valuations[header].apply(self.selection, axis=1, available=available)
+        valuations["size"] = valuations[header].apply(self.converge, axis=1, available=available)
         mask = valuations[("size", "")] > 0
         valuations = valuations.where(mask).dropna(how="all", inplace=False)
         valuations = valuations.reset_index(drop=True, inplace=False)
@@ -64,7 +64,17 @@ class MarketCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcula
         return interest
 
     @staticmethod
-    def selection(valuation, *arg, available, **kwargs):
+    def available(options, *args, **kwargs):
+        function = lambda cols: str(Securities([cols["instrument"], cols["option"], cols["position"]]))
+        header = list(Querys.Settlement) + list(Variables.Securities.Security) + ["strike"]
+        options = options[header + ["size"]]
+        options["security"] = options.apply(function, axis=1)
+        index = list(Querys.Settlement) + ["security", "strike"]
+        options = options[index + ["size"]].set_index(index, drop=True, inplace=False)
+        return options
+
+    @staticmethod
+    def converge(valuation, *arg, available, **kwargs):
         parameters = dict(id_vars=list(Querys.Settlement), value_name="strike", var_name="security")
         valuation = valuation.droplevel(level=1)
         valuation = valuation.to_frame().transpose()
@@ -85,31 +95,6 @@ class MarketCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcula
     def liquidity(self): return self.__liquidity
     @property
     def priority(self): return self.__priority
-
-
-class AcquisitionCalculator(MarketCalculator):
-    @staticmethod
-    def available(options, *args, **kwargs):
-        function = lambda cols: str(Securities([cols["instrument"], cols["option"], cols["position"]]))
-        header = list(Querys.Settlement) + list(Variables.Securities.Security) + ["strike"]
-        options = options[header + ["size"]]
-        options["security"] = options.apply(function, axis=1)
-        index = list(Querys.Settlement) + ["security", "strike"]
-        options = options[index + ["size"]].set_index(index, drop=True, inplace=False)
-        return options
-
-
-class DivestitureCalculator(MarketCalculator):
-    @staticmethod
-    def available(options, *args, **kwargs):
-        function = lambda cols: str(Securities([cols["instrument"], cols["option"], cols["position"]]))
-        header = list(Querys.Settlement) + list(Variables.Securities.Security) + ["strike"]
-        options = options[header + ["size", "closure"]]
-        options["security"] = options.apply(function, axis=1)
-        options["size"] = options[["size", "closure"]].min(axis=1)
-        index = list(Querys.Settlement) + ["security", "strike"]
-        options = options[index + ["size"]].set_index(index, drop=True, inplace=False)
-        return options
 
 
 
