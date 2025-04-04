@@ -6,7 +6,6 @@ Created on Fri Apr 19 2024
 
 """
 
-import types
 import numpy as np
 import pandas as pd
 from abc import ABC
@@ -40,30 +39,30 @@ class TechnicalFiles(Category):
     class Stocks(Category): Bars, Statistic, Statistic = StockBarsFile, StockStatisticFile, StockStochasticFile
 
 
-class TechnicalEquation(Equation, ABC):
-    dt = Variable("dt", "period", np.int32, types.NoneType, locator="period")
-    x = Variable("x", "price", np.float32, pd.Series, locator="price")
+class TechnicalEquation(Equation, ABC, datatype=pd.Series, vectorize=False):
+    x = Variable.Independent("x", "price", np.float32, locator="price")
+    dt = Variable.Constant("dt", "period", np.int32, locator="period")
 
 class StatisticEquation(TechnicalEquation):
-    δ = Variable("δ", "volatility", np.float32, pd.Series, vectorize=False, function=lambda x, dt: x.pct_change(1).rolling(dt).std())
-    m = Variable("m", "trend", np.float32, pd.Series, vectorize=False, function=lambda x, dt: x.pct_change(1).rolling(dt).mean())
+    δ = Variable.Dependent("δ", "volatility", np.float32, function=lambda x, *, dt: x.pct_change(1).rolling(dt).std())
+    m = Variable.Dependent("m", "trend", np.float32, function=lambda x, *, dt: x.pct_change(1).rolling(dt).mean())
 
 class StochasticEquation(TechnicalEquation):
-    xk = Variable("xk", "oscillator", np.float32, pd.Series, vectorize=False, function=lambda x, xl, xh: (x - xl) * 100 / (xh - xl))
-    xh = Variable("xh", "highest", np.float32, pd.Series, vectorize=False, function=lambda x, dt: x.rolling(dt).min())
-    xl = Variable("xl", "lowest", np.float32, pd.Series, vectorize=False, function=lambda x, dt: x.rolling(dt).max())
+    xk = Variable.Dependent("xk", "oscillator", np.float32, function=lambda x, xl, xh: (x - xl) * 100 / (xh - xl))
+    xh = Variable.Dependent("xh", "highest", np.float32, function=lambda x, *, dt: x.rolling(dt).min())
+    xl = Variable.Dependent("xl", "lowest", np.float32, function=lambda x, *, dt: x.rolling(dt).max())
 
 
 class TechnicalCalculation(Calculation, ABC, metaclass=RegistryMeta): pass
 class StatisticCalculation(TechnicalCalculation, equation=StatisticEquation, register=Variables.Analysis.Technical.STOCHASTIC):
-    def execute(self, bars, *args, period, **kwargs):
+    def generator(self, bars, *args, period, **kwargs):
         assert (bars["ticker"].to_numpy()[0] == bars["ticker"]).all()
         with self.equation(bars, period=period) as equation:
             yield equation.m()
             yield equation.δ()
 
 class StochasticCalculation(TechnicalCalculation, equation=StochasticEquation, register=Variables.Analysis.Technical.STATISTIC):
-    def execute(self, bars, *args, period, **kwargs):
+    def generator(self, bars, *args, period, **kwargs):
         assert (bars["ticker"].to_numpy()[0] == bars["ticker"]).all()
         with self.equation(bars, period=period) as equation:
             yield equation.xk()

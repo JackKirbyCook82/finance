@@ -27,31 +27,31 @@ __license__ = "MIT License"
 
 
 class ValuationLocator(ntuple("Locator", "valuation scenario")): pass
-class ValuationEquation(Equation, ABC):
-    rev = Variable("rev", "revenue", np.float32, xr.DataArray, vectorize=True, function=lambda vo, vτ: np.abs(+ np.maximum(vo, 0) + np.maximum(vτ, 0)))
-    exp = Variable("exp", "expense", np.float32, xr.DataArray, vectorize=True, function=lambda vo, vτ: np.abs(- np.minimum(vo, 0) - np.minimum(vτ, 0)))
-    tau = Variable("tau", "days", np.int32, xr.DataArray, vectorize=True, function=lambda to, tτ: (tτ - to).days)
+class ValuationEquation(Equation, ABC, datatype=xr.DataArray, vectorize=True):
+    rev = Variable.Dependent("rev", "revenue", np.float32, function=lambda vτ, vo: np.abs(+ np.maximum(vo, 0) + np.maximum(vτ, 0)))
+    exp = Variable.Dependent("exp", "expense", np.float32, function=lambda vτ, vo: np.abs(- np.minimum(vo, 0) - np.minimum(vτ, 0)))
+    tau = Variable.Dependent("tau", "days", np.int32, function=lambda tτ, *, to: (tτ - to).days)
 
-    vo = Variable("vo", "spot", np.float32, xr.DataArray, locator="spot")
-    tτ = Variable("tτ", "expire", Date, xr.DataArray, locator="expire")
-    to = Variable("to", "date", Date, types.NoneType, locator="date")
-    ρ = Variable("ρ", "discount", np.float32, types.NoneType, locator="discount")
+    ρ = Variable.Independent("ρ", "discount", np.float32, locator="discount")
+    vo = Variable.Independent("vo", "spot", np.float32, locator="spot")
+    tτ = Variable.Independent("tτ", "expire", Date, locator="expire")
+    to = Variable.Constant("to", "date", Date, locator="date")
 
 class ArbitrageEquation(ValuationEquation, ABC):
-    npv = Variable("npv", "npv", np.float32, xr.DataArray, vectorize=True, function=lambda vτ, vo, tau, ρ: np.divide(vτ, np.power(ρ + 1, np.divide(tau, 365))) + vo)
-    roi = Variable("roi", "roi", np.float32, xr.DataArray, vectorize=True, function=lambda rev, exp: np.divide(rev - exp, exp))
-    apy = Variable("apy", "apy", np.float32, xr.DataArray, vectorize=True, function=lambda roi, tau: np.power((roi + 1), np.divide(tau, 365)))
+    npv = Variable.Dependent("npv", "npv", np.float32, function=lambda vτ, vo, tau, *, ρ: np.divide(vτ, np.power(ρ + 1, np.divide(tau, 365))) + vo)
+    apy = Variable.Dependent("apy", "apy", np.float32, function=lambda roi, tau: np.power((roi + 1), np.divide(tau, 365)))
+    roi = Variable.Dependent("roi", "roi", np.float32, function=lambda rev, exp: np.divide(rev - exp, exp))
 
 class MinimumArbitrageEquation(ArbitrageEquation):
-    vτ = Variable("vτ", "future", np.float32, xr.DataArray, locator="minimum")
+    vτ = Variable.Independent("vτ", "future", np.float32, locator="minimum")
 
 class MaximumArbitrageEquation(ArbitrageEquation):
-    vτ = Variable("vτ", "future", np.float32, xr.DataArray, locator="maximum")
+    vτ = Variable.Independent("vτ", "future", np.float32, locator="maximum")
 
 
 class ValuationCalculation(Calculation, ABC, metaclass=RegistryMeta): pass
 class ArbitrageCalculation(ValuationCalculation, ABC):
-    def execute(self, strategies, *args, discount, date, **kwargs):
+    def generator(self, strategies, *args, discount, date, **kwargs):
         with self.equation(strategies, discount=discount, date=date) as equation:
             yield equation.vo()
             yield equation.vτ()

@@ -30,6 +30,11 @@ class MarketCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcula
     def execute(self, valuations, options, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame) and isinstance(options, pd.DataFrame)
         if self.empty(valuations): return
+
+        print(valuations)
+        print(options)
+        raise Exception()
+
         dataframe = self.calculate(valuations, options, *args, **kwargs)
         settlements = self.groups(valuations, by=Querys.Settlement)
         settlements = ",".join(list(map(str, settlements)))
@@ -86,10 +91,6 @@ class MarketCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcula
         quantity["size"] = quantity["size"].min()
         available["size"] = available["size"] - quantity["size"]
         return quantity.loc[index, "size"].min().astype(np.int32)
-
-    @staticmethod
-    @abstractmethod
-    def available(options, *args, **kwargs): pass
 
     @property
     def liquidity(self): return self.__liquidity
