@@ -8,7 +8,7 @@ Created on Tues Mar 18 2025
 
 import numpy as np
 import pandas as pd
-from abc import ABC, abstractmethod
+from abc import ABC
 
 from finance.variables import Variables, Querys, Securities
 from support.mixins import Emptying, Sizing, Partition, Logging
@@ -30,11 +30,6 @@ class MarketCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcula
     def execute(self, valuations, options, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame) and isinstance(options, pd.DataFrame)
         if self.empty(valuations): return
-
-        print(valuations)
-        print(options)
-        raise Exception()
-
         dataframe = self.calculate(valuations, options, *args, **kwargs)
         settlements = self.groups(valuations, by=Querys.Settlement)
         settlements = ",".join(list(map(str, settlements)))
@@ -47,9 +42,17 @@ class MarketCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcula
         valuations["priority"] = valuations.apply(self.priority, axis=1)
         options["size"] = options.apply(self.liquidity, axis=1)
         valuations = valuations.sort_values("priority", axis=0, ascending=False, inplace=False, ignore_index=False)
+
+        print(valuations)
+        print(options)
+
         interest = self.interest(valuations, *args, **kwargs)
         available = self.available(options, *args, **kwargs)
         available = available[available.index.isin(interest)]
+
+        print(available)
+        raise Exception()
+
         header = list(Querys.Settlement) + list(map(str, Securities.Options))
         valuations["size"] = valuations[header].apply(self.converge, axis=1, available=available)
         mask = valuations[("size", "")] > 0

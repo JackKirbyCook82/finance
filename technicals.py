@@ -55,14 +55,14 @@ class StochasticEquation(TechnicalEquation):
 
 class TechnicalCalculation(Calculation, ABC, metaclass=RegistryMeta): pass
 class StatisticCalculation(TechnicalCalculation, equation=StatisticEquation, register=Variables.Analysis.Technical.STOCHASTIC):
-    def generator(self, bars, *args, period, **kwargs):
+    def execute(self, bars, *args, period, **kwargs):
         assert (bars["ticker"].to_numpy()[0] == bars["ticker"]).all()
         with self.equation(bars, period=period) as equation:
             yield equation.m()
             yield equation.δ()
 
 class StochasticCalculation(TechnicalCalculation, equation=StochasticEquation, register=Variables.Analysis.Technical.STATISTIC):
-    def generator(self, bars, *args, period, **kwargs):
+    def execute(self, bars, *args, period, **kwargs):
         assert (bars["ticker"].to_numpy()[0] == bars["ticker"]).all()
         with self.equation(bars, period=period) as equation:
             yield equation.xk()

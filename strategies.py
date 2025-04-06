@@ -6,7 +6,6 @@ Created on Weds Jul 19 2023
 
 """
 
-import types
 import numpy as np
 import pandas as pd
 import xarray as xr
@@ -83,7 +82,7 @@ class CollarShortEquation(StrategyEquation):
 
 
 class StrategyCalculation(Calculation, ABC, metaclass=RegistryMeta):
-    def generator(self, stocks, options, *args, fees, **kwargs):
+    def execute(self, stocks, options, *args, fees, **kwargs):
         options = {StrategyLocator(axis, security): dataset[axis] for security, dataset in options.items() for axis in ("price", "strike", "size")}
         with self.equation(stocks | options, fees=fees) as equation:
             yield equation.q()
@@ -111,9 +110,9 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
         if self.empty(options): return
         for settlement, primary in self.partition(options, by=Querys.Settlement):
             secondary = stocks.where(stocks["ticker"] == settlement.ticker).dropna(how="all", inplace=False)
-            options = dict(self.options(primary, *args, **kwargs))
-            stocks = dict(self.stocks(secondary, *args, **kwargs))
-            strategies = self.calculate(stocks, options, *args, **kwargs)
+            primary = dict(self.options(primary, *args, **kwargs))
+            secondary = dict(self.stocks(secondary, *args, **kwargs))
+            strategies = self.calculate(primary, secondary, *args, **kwargs)
             for strategy, dataset in strategies.items():
                 size = self.size(dataset, "size")
                 self.console(f"{str(settlement)}|{str(strategy)}[{int(size):.0f}]")
@@ -124,7 +123,7 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
         strategies = dict(self.calculator(options, *args, **kwargs))
         return strategies
 
-    def calculator(self, stocks, options, *args, **kwargs):
+    def calculator(self, options, stocks, *args, **kwargs):
         for strategy, calculation in self.calculations.items():
             if not all([stock in stocks.keys() for stock in list(strategy.stocks)]): continue
             if not all([option in options.keys() for option in list(strategy.options)]): continue
@@ -139,7 +138,8 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
         for index, series in stocks.iterrows():
             security = (series.instrument, Variables.Securities.Option.EMPTY, series.position)
             security = Securities(security)
-            yield security, series.price
+            value = np.float32(series.price)
+            yield security, value
 
     @staticmethod
     def options(options, *args, **kwargs):

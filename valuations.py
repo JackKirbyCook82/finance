@@ -32,10 +32,11 @@ class ValuationEquation(Equation, ABC, datatype=xr.DataArray, vectorize=True):
     exp = Variable.Dependent("exp", "expense", np.float32, function=lambda vτ, vo: np.abs(- np.minimum(vo, 0) - np.minimum(vτ, 0)))
     tau = Variable.Dependent("tau", "days", np.int32, function=lambda tτ, *, to: (tτ - to).days)
 
-    ρ = Variable.Independent("ρ", "discount", np.float32, locator="discount")
+    xo = Variable.Independent("xo", "underlying", np.float32, locator="underlying")
     vo = Variable.Independent("vo", "spot", np.float32, locator="spot")
     tτ = Variable.Independent("tτ", "expire", Date, locator="expire")
     to = Variable.Constant("to", "date", Date, locator="date")
+    ρ = Variable.Constant("ρ", "discount", np.float32, locator="discount")
 
 class ArbitrageEquation(ValuationEquation, ABC):
     npv = Variable.Dependent("npv", "npv", np.float32, function=lambda vτ, vo, tau, *, ρ: np.divide(vτ, np.power(ρ + 1, np.divide(tau, 365))) + vo)
@@ -51,12 +52,14 @@ class MaximumArbitrageEquation(ArbitrageEquation):
 
 class ValuationCalculation(Calculation, ABC, metaclass=RegistryMeta): pass
 class ArbitrageCalculation(ValuationCalculation, ABC):
-    def generator(self, strategies, *args, discount, date, **kwargs):
+    def execute(self, strategies, *args, discount, date, **kwargs):
         with self.equation(strategies, discount=discount, date=date) as equation:
+            yield equation.xo()
             yield equation.vo()
             yield equation.vτ()
             yield equation.npv()
             yield equation.apy()
+            yield equation.tau()
 
 class MinimumArbitrageCalculation(ArbitrageCalculation, equation=MinimumArbitrageEquation, register=ValuationLocator(Variables.Valuations.Valuation.ARBITRAGE, Variables.Valuations.Scenario.MINIMUM)): pass
 class MaximumArbitrageCalculation(ArbitrageCalculation, equation=MaximumArbitrageEquation, register=ValuationLocator(Variables.Valuations.Valuation.ARBITRAGE, Variables.Valuations.Scenario.MAXIMUM)): pass
