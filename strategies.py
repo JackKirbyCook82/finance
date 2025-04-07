@@ -31,6 +31,8 @@ class StrategyEquation(Equation, ABC, datatype=xr.DataArray, vectorize=True):
     w = Variable.Dependent("w", "spot", np.float32, function=lambda y, *, ε: y * 100 - ε)
     wh = Variable.Dependent("wh", "maximum", np.float32, function=lambda yh, *, ε: yh * 100 - ε)
     wl = Variable.Dependent("wl", "minimum", np.float32, function=lambda yl, *, ε: yl * 100 - ε)
+    wα = Variable.Dependent("wα", "spent", np.float32, function=lambda yα: yα * 100)
+    wβ = Variable.Dependent("wβ", "paid", np.float32, function=lambda yβ: yβ * 100)
 
     ypα = Variable.Independent("ypα", "price", np.float32, locator=StrategyLocator("price", Securities.Options.Puts.Long))
     qpα = Variable.Independent("qpα", "size", np.float32, locator=StrategyLocator("size", Securities.Options.Puts.Long))
@@ -61,24 +63,32 @@ class VerticalPutEquation(StrategyEquation):
     y = Variable.Dependent("y", "spot", np.float32, function=lambda ypα, ypβ: ypβ - ypα)
     yh = Variable.Dependent("yh", "maximum", np.float32, function=lambda kpα, kpβ: np.maximum(kpα - kpβ, 0))
     yl = Variable.Dependent("yl", "minimum", np.float32, function=lambda kpα, kpβ: np.minimum(kpα - kpβ, 0))
+    yα = Variable.Dependent("yα", "spent", np.float32, function=lambda ypα: ypα)
+    yβ = Variable.Dependent("yβ", "paid", np.float32, function=lambda ypβ: ypβ)
 
 class VerticalCallEquation(StrategyEquation):
     q = Variable.Dependent("q", "size", np.float32, function=lambda qcα, qcβ: np.minimum(qcα, qcβ))
     y = Variable.Dependent("y", "spot", np.float32, function=lambda ycα, ycβ: ycβ - ycα)
     yh = Variable.Dependent("yh", "maximum", np.float32, function=lambda kcα, kcβ: np.maximum(kcβ - kcα, 0))
     yl = Variable.Dependent("yl", "minimum", np.float32, function=lambda kcα, kcβ: np.minimum(kcβ - kcα, 0))
+    yα = Variable.Dependent("yα", "spent", np.float32, function=lambda ycα: ycα)
+    yβ = Variable.Dependent("yβ", "paid", np.float32, function=lambda ycβ: ycβ)
 
 class CollarLongEquation(StrategyEquation):
     q = Variable.Dependent("q", "size", np.float32, function=lambda qcα, qpβ: np.minimum(qcα, qpβ))
     y = Variable.Dependent("y", "spot", np.float32, function=lambda xα, ycα, ypβ: ypβ - ycα - xα)
     yh = Variable.Dependent("yh", "maximum", np.float32, function=lambda kcα, kpβ: + np.maximum(kcα, kpβ))
     yl = Variable.Dependent("yl", "minimum", np.float32, function=lambda kcα, kpβ: + np.minimum(kcα, kpβ))
+    yα = Variable.Dependent("yα", "spent", np.float32, function=lambda ycα: ycα)
+    yβ = Variable.Dependent("yβ", "paid", np.float32, function=lambda ypβ: ypβ)
 
 class CollarShortEquation(StrategyEquation):
     q = Variable.Dependent("q", "size", np.float32, function=lambda kpα, kcβ: np.minimum(kpα, kcβ))
     y = Variable.Dependent("y", "spot", np.float32, function=lambda xβ, ypα, ycβ: ycβ - ypα + xβ)
     yh = Variable.Dependent("yh", "maximum", np.float32, function=lambda kpα, kcβ: - np.maximum(kpα, kcβ))
     yl = Variable.Dependent("yl", "minimum", np.float32, function=lambda kpα, kcβ: - np.minimum(kpα, kcβ))
+    yα = Variable.Dependent("yα", "spent", np.float32, function=lambda ypα: ypα)
+    yβ = Variable.Dependent("yβ", "paid", np.float32, function=lambda ycβ: ycβ)
 
 
 class StrategyCalculation(Calculation, ABC, metaclass=RegistryMeta):
@@ -89,6 +99,8 @@ class StrategyCalculation(Calculation, ABC, metaclass=RegistryMeta):
             yield equation.w()
             yield equation.wl()
             yield equation.wh()
+            yield equation.wα()
+            yield equation.wβ()
             yield equation.x()
 
 class VerticalPutCalculation(StrategyCalculation, equation=VerticalPutEquation, register=Strategies.Verticals.Put): pass

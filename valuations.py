@@ -34,6 +34,8 @@ class ValuationEquation(Equation, ABC, datatype=xr.DataArray, vectorize=True):
 
     xo = Variable.Independent("xo", "underlying", np.float32, locator="underlying")
     vo = Variable.Independent("vo", "spot", np.float32, locator="spot")
+    vα = Variable.Independent("vα", "spent", np.float32, locator="spent")
+    vβ = Variable.Independent("vβ", "paid", np.float32, locator="paid")
     tτ = Variable.Independent("tτ", "expire", Date, locator="expire")
     to = Variable.Constant("to", "date", Date, locator="date")
     ρ = Variable.Constant("ρ", "discount", np.float32, locator="discount")
@@ -56,6 +58,8 @@ class ArbitrageCalculation(ValuationCalculation, ABC):
         with self.equation(strategies, discount=discount, date=date) as equation:
             yield equation.xo()
             yield equation.vo()
+            yield equation.vα()
+            yield equation.vβ()
             yield equation.vτ()
             yield equation.npv()
             yield equation.apy()

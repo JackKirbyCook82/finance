@@ -40,19 +40,12 @@ class MarketCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcula
 
     def calculate(self, valuations, options, *args, **kwargs):
         valuations["priority"] = valuations.apply(self.priority, axis=1)
-        options["size"] = options.apply(self.liquidity, axis=1)
+        options["size"] = options.apply(self.liquidity, axis=1).apply(np.floor).astype(np.int32)
+        options = options.where(options["size"] >= 1).dropna(how="all", inplace=False)
         valuations = valuations.sort_values("priority", axis=0, ascending=False, inplace=False, ignore_index=False)
-
-        print(valuations)
-        print(options)
-
         interest = self.interest(valuations, *args, **kwargs)
         available = self.available(options, *args, **kwargs)
         available = available[available.index.isin(interest)]
-
-        print(available)
-        raise Exception()
-
         header = list(Querys.Settlement) + list(map(str, Securities.Options))
         valuations["size"] = valuations[header].apply(self.converge, axis=1, available=available)
         mask = valuations[("size", "")] > 0
@@ -91,14 +84,16 @@ class MarketCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcula
         valuation = valuation.where(~mask).dropna(how="all", inplace=False)
         index = pd.MultiIndex.from_frame(valuation)
         quantity = available.loc[index]
-        quantity["size"] = quantity["size"].min()
-        available["size"] = available["size"] - quantity["size"]
+        quantity["size"] = np.min(quantity["size"].values).min()
+        available["size"] = available["size"].subtract(quantity["size"], fill_value=0)
         return quantity.loc[index, "size"].min().astype(np.int32)
 
     @property
     def liquidity(self): return self.__liquidity
     @property
     def priority(self): return self.__priority
+    @property
+    def capacity(self): return self.__capacity
 
 
 

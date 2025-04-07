@@ -103,6 +103,7 @@ class ProspectCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
 
     @staticmethod
     def calculate(valuations, *args, **kwargs):
+        valuations = valuations.sort_values("priority", axis=0, ascending=False, inplace=False, ignore_index=False)
         valuations["status"] = Variables.Markets.Status.PROSPECT
         valuations = valuations.reset_index(drop=True, inplace=False)
         return valuations
