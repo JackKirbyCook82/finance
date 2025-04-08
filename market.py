@@ -12,12 +12,21 @@ from abc import ABC
 
 from finance.variables import Variables, Querys, Securities
 from support.mixins import Emptying, Sizing, Partition, Logging
+from support.meta import ParameterMeta
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["MarketCalculator"]
+__all__ = ["AcquisitionCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
+
+
+class MarketParameters(metaclass=ParameterMeta):
+    order = []
+    formatters = {}
+    parsers = {}
+    types = {}
+    dates = {}
 
 
 class MarketCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calculated"):
@@ -43,6 +52,7 @@ class MarketCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcula
         options["size"] = options.apply(self.liquidity, axis=1).apply(np.floor).astype(np.int32)
         options = options.where(options["size"] >= 1).dropna(how="all", inplace=False)
         valuations = valuations.sort_values("priority", axis=0, ascending=False, inplace=False, ignore_index=False)
+        valuations = valuations.reset_index(drop=True, inplace=False)
         interest = self.interest(valuations, *args, **kwargs)
         available = self.available(options, *args, **kwargs)
         available = available[available.index.isin(interest)]
@@ -92,8 +102,10 @@ class MarketCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcula
     def liquidity(self): return self.__liquidity
     @property
     def priority(self): return self.__priority
-    @property
-    def capacity(self): return self.__capacity
+
+
+class AcquisitionCalculator(MarketCalculator):
+    pass
 
 
 
