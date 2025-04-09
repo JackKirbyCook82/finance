@@ -38,8 +38,8 @@ class ValuationEquation(Equation, ABC, datatype=xr.DataArray, vectorize=True):
     vo = Variable.Independent("vo", "spot", np.float32, locator="spot")
     yα = Variable.Independent("yα", "expense", np.float32, locator="expense")
     yβ = Variable.Independent("yβ", "revenue", np.float32, locator="revenue")
-    xα = Variable.Independent("xα", "invest", np.float32, locator="invest")
-    xβ = Variable.Independent("xβ", "divest", np.float32, locator="divest")
+    xα = Variable.Independent("xα", "purchase", np.float32, locator="purchase")
+    xβ = Variable.Independent("xβ", "borrow", np.float32, locator="borrow")
     tτ = Variable.Independent("tτ", "expire", Date, locator="expire")
 
     to = Variable.Constant("to", "date", Date, locator="date")

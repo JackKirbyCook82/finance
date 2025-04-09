@@ -37,12 +37,45 @@ def percent(number):
 
 
 class ProspectParameters(metaclass=ParameterMeta):
-    order = ["strategy"] + list(Querys.Settlement) + list(map(str, Securities.Options)) + ["size", "tau", "revenue", "expense", "invest", "divest", "spot", "future", "npv"]
-    columns = ["revenue", "expense", "invest", "divest", "spot", "future", "npv", "size", "tau", "priority", "status"]
+    order = ["strategy"] + list(Querys.Settlement) + list(map(str, Securities.Options)) + ["size", "tau", "revenue", "expense", "purchase", "borrow", "spot", "future", "npv"]
+    columns = ["revenue", "expense", "purchase", "borrow", "spot", "future", "npv", "size", "tau", "priority", "status"]
     index = ["valuation", "strategy"] + list(map(str, chain(Querys.Settlement, Securities.Options)))
-    formatters = {"revenue expense invest divest spot future npv": floating, "size": integer, tuple(map(str, Securities.Options)): floating}
+    formatters = {"revenue expense purchase borrow spot future npv": floating, "size": integer, tuple(map(str, Securities.Options)): floating}
     stacking = Stacking(axis="scenario", columns=["npv", "future"], layers=list(Variables.Valuations.Scenario))
     layout = Layout(width=250, space=10, columns=30, rows=30)
+
+
+class ProspectCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
+    def __init__(self, *args, liquidity, priority, **kwargs):
+        super().__init__(*args, **kwargs)
+        assert callable(liquidity) and callable(priority)
+        self.__liquidity = liquidity
+        self.__priority = priority
+
+    def execute(self, valuations, *args, **kwargs):
+        assert isinstance(valuations, pd.DataFrame)
+        if self.empty(valuations): return
+        prospects = self.calculate(valuations, *args, **kwargs)
+        settlements = self.groups(valuations, by=Querys.Settlement)
+        settlements = ",".join(list(map(str, settlements)))
+        size = self.size(prospects)
+        self.console(f"{str(settlements)}[{int(size):.0f}]")
+        if self.empty(prospects): return
+        yield prospects
+
+    def calculate(self, valuations, *args, **kwargs):
+        valuations["status"] = Variables.Markets.Status.PROSPECT
+        valuations["priority"] = valuations.apply(self.priority, axis=1)
+        valuations["size"] = valuations.apply(self.liquidity, axis=1).apply(np.floor).astype(np.int32)
+        valuations = valuations.where(valuations["size"] >= 1).dropna(how="all", inplace=False)
+        valuations = valuations.sort_values("priority", axis=0, ascending=False, inplace=False, ignore_index=False)
+        valuations = valuations.reset_index(drop=True, inplace=False)
+        return valuations
+
+    @property
+    def liquidity(self): return self.__liquidity
+    @property
+    def priority(self): return self.__priority
 
 
 class ProspectRoutine(Routine):
@@ -89,38 +122,6 @@ class ProspectWriter(Writer):
         self.table.sort("priority", reverse=True)
         self.table.reindex()
 
-
-class ProspectCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
-    def __init__(self, *args, liquidity, priority, **kwargs):
-        super().__init__(*args, **kwargs)
-        assert callable(liquidity) and callable(priority)
-        self.__liquidity = liquidity
-        self.__priority = priority
-
-    def execute(self, valuations, *args, **kwargs):
-        assert isinstance(valuations, pd.DataFrame)
-        if self.empty(valuations): return
-        prospects = self.calculate(valuations, *args, **kwargs)
-        settlements = self.groups(valuations, by=Querys.Settlement)
-        settlements = ",".join(list(map(str, settlements)))
-        size = self.size(prospects)
-        self.console(f"{str(settlements)}[{int(size):.0f}]")
-        if self.empty(prospects): return
-        yield prospects
-
-    def calculate(self, valuations, *args, **kwargs):
-        valuations["status"] = Variables.Markets.Status.PROSPECT
-        valuations["priority"] = valuations.apply(self.priority, axis=1)
-        valuations["size"] = valuations.apply(self.liquidity, axis=1).apply(np.floor).astype(np.int32)
-        valuations = valuations.where(valuations["size"] >= 1).dropna(how="all", inplace=False)
-        valuations = valuations.sort_values("priority", axis=0, ascending=False, inplace=False, ignore_index=False)
-        valuations = valuations.reset_index(drop=True, inplace=False)
-        return valuations
-
-    @property
-    def liquidity(self): return self.__liquidity
-    @property
-    def priority(self): return self.__priority
 
 
 

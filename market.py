@@ -9,14 +9,16 @@ Created on Tues Mar 18 2025
 import numpy as np
 import pandas as pd
 from abc import ABC
+from datetime import datetime as Datetime
 
 from finance.variables import Variables, Querys, Securities, Strategies
 from support.mixins import Emptying, Sizing, Partition, Logging
 from support.meta import ParameterMeta
+from support.files import Saver
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["AcquisitionCalculator", "AcquisitionParameters"]
+__all__ = ["AcquisitionCalculator", "AcquisitionSaver", "AcquisitionParameters"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
@@ -41,6 +43,7 @@ class MarketCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcula
 
     def calculate(self, valuations, options, *args, **kwargs):
         valuations["priority"] = valuations.apply(self.priority, axis=1)
+        valuations["size"] = valuations.apply(self.liquidity, axis=1).apply(np.floor).astype(np.int32)
         options["size"] = options.apply(self.liquidity, axis=1).apply(np.floor).astype(np.int32)
         options = options.where(options["size"] >= 1).dropna(how="all", inplace=False)
         valuations = valuations.sort_values("priority", axis=0, ascending=False, inplace=False, ignore_index=False)
@@ -71,7 +74,8 @@ class MarketCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcula
         function = lambda cols: str(Securities([cols["instrument"], cols["option"], cols["position"]]))
         header = list(Querys.Settlement) + list(Variables.Securities.Security) + ["strike"]
         options = options[header + ["size"]]
-        options["security"] = options.apply(function, axis=1)
+        try: options["security"] = options.apply(function, axis=1)
+        except ValueError: options = pd.DataFrame(columns=list(options.columns) + ["security"])
         index = list(Querys.Settlement) + ["security", "strike"]
         options = options[index + ["size"]].set_index(index, drop=True, inplace=False)
         return options
@@ -85,7 +89,8 @@ class MarketCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcula
         mask = valuation["strike"].isna()
         valuation = valuation.where(~mask).dropna(how="all", inplace=False)
         index = pd.MultiIndex.from_frame(valuation)
-        quantity = available.loc[index]
+        try: quantity = available.loc[index]
+        except KeyError: return 0
         quantity["size"] = np.min(quantity["size"].values).min()
         available["size"] = available["size"].subtract(quantity["size"], fill_value=0)
         return quantity.loc[index, "size"].min().astype(np.int32)
@@ -96,12 +101,22 @@ class MarketCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcula
     def priority(self): return self.__priority
 
 
-class AcquisitionCalculator(MarketCalculator): pass
 class AcquisitionParameters(metaclass=ParameterMeta):
-    order = ["valuation", "scenario", "strategy"] + list(Querys.Settlement) + list(map(str, Securities.Options)) + ["tau", "size", "revenue", "expense", "invest", "divest", "spot", "future", "npv"]
-    types = {"ticker": str, " ".join(map(str, Securities.Options)): str, "tau size": np.float32, "revenue expense": np.float32, "invest divest": np.float32, "spot future": np.float32, "npv": np.float32}
+    order = ["valuation", "scenario", "strategy"] + list(Querys.Settlement) + list(map(str, Securities.Options)) + ["tau", "size", "revenue", "expense", "purchase", "borrow", "spot", "future", "npv"]
+    types = {"ticker": str, " ".join(map(str, Securities.Options)): str, "tau size": np.float32, "revenue expense": np.float32, "purchase borrow": np.float32, "spot future": np.float32, "npv": np.float32}
     parsers = dict(valuation=Variables.Valuations.Valuation, scenario=Variables.Valuations.Scenario, strategy=Strategies)
     formatters = dict(valuation=str, scenario=str, strategy=str)
     dates = dict(expire="%Y%m%d")
+
+
+class AcquisitionCalculator(MarketCalculator): pass
+class AcquisitionSaver(Saver):
+    def categorize(self, dataframe, *args, **kwargs):
+        headers = {scenario: [column for column in dataframe.columns if not column[-1] or column == scenario] for scenario in list(Variables.Valuations.Scenario)}
+        contents = [dataframe[columns].assign(scenario=scenario) for scenario, columns in headers.items()]
+        dataframe = pd.concat(contents, axis=0).droplevel(level=1, axis=1)
+        dataframe = dataframe.reset_index(drop=True, inplace=False)
+        current = ".".join([Datetime.now().strftime("%Y%m%d"), "csv"])
+        yield current, dataframe
 
 
