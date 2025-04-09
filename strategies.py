@@ -34,8 +34,8 @@ class StrategyEquation(Equation, ABC, datatype=xr.DataArray, vectorize=True):
 
     wyα = Variable.Dependent("wα", "expense", np.float32, function=lambda yα: yα * 100)
     wyβ = Variable.Dependent("wβ", "revenue", np.float32, function=lambda yβ: yβ * 100)
-    wxα = Variable.Dependent("wα", "asset", np.float32, function=lambda xα: xα * 100)
-    wxβ = Variable.Dependent("wβ", "debt", np.float32, function=lambda xβ: xβ * 100)
+    wxα = Variable.Dependent("wα", "invest", np.float32, function=lambda xα, Θ: xα * Θ * 100)
+    wxβ = Variable.Dependent("wβ", "divest", np.float32, function=lambda xβ, Φ: xβ * Φ * 100)
 
     ypα = Variable.Independent("ypα", "price", np.float32, locator=StrategyLocator("price", Securities.Options.Puts.Long))
     ypβ = Variable.Independent("ypβ", "price", np.float32, locator=StrategyLocator("price", Securities.Options.Puts.Short))
@@ -54,6 +54,8 @@ class StrategyEquation(Equation, ABC, datatype=xr.DataArray, vectorize=True):
 
     xα = Variable.Independent("xα", "price", np.float32, locator=Securities.Stocks.Long)
     xβ = Variable.Independent("xβ", "price", np.float32, locator=Securities.Stocks.Short)
+    Θ = Variable.Constant("Θ", "invest", np.int32, locator="invest")
+    Φ = Variable.Constant("Φ", "divest", np.int32, locator="divest")
 
 class VerticalPutEquation(StrategyEquation):
     qo = Variable.Dependent("qo", "size", np.int32, function=lambda qpα, qpβ: np.minimum(qpα, qpβ))
@@ -89,9 +91,15 @@ class CollarShortEquation(StrategyEquation):
 
 
 class StrategyCalculation(Calculation, ABC, metaclass=RegistryMeta):
+    def __init_subclass__(cls, *args, invest=False, divest=False, **kwargs):
+        super().__init_subclass__(*args, **kwargs)
+        cls.__invest__ = invest
+        cls.__divest__ = divest
+
     def execute(self, stocks, options, *args, fees, **kwargs):
         options = {StrategyLocator(axis, security): dataset[axis] for security, dataset in options.items() for axis in ("price", "strike", "size")}
-        with self.equation(stocks | options, fees=fees) as equation:
+        parameters = dict(invest=np.int32(self.invest), divest=np.int32(self.divest), fees=fees)
+        with self.equation(stocks | options, **parameters) as equation:
             yield equation.qo()
             yield equation.wo()
             yield equation.wl()
@@ -101,10 +109,15 @@ class StrategyCalculation(Calculation, ABC, metaclass=RegistryMeta):
             yield equation.wxα()
             yield equation.wxβ()
 
+    @property
+    def invest(self): return type(self).__invest__
+    @property
+    def divest(self): return type(self).__divest__
+
 class VerticalPutCalculation(StrategyCalculation, equation=VerticalPutEquation, register=Strategies.Verticals.Put): pass
 class VerticalCallCalculation(StrategyCalculation, equation=VerticalCallEquation, register=Strategies.Verticals.Call): pass
-class CollarLongCalculation(StrategyCalculation, equation=CollarLongEquation, register=Strategies.Collars.Long): pass
-class CollarShortCalculation(StrategyCalculation, equation=CollarShortEquation, register=Strategies.Collars.Short): pass
+class CollarLongCalculation(StrategyCalculation, equation=CollarLongEquation, register=Strategies.Collars.Long, invest=True): pass
+class CollarShortCalculation(StrategyCalculation, equation=CollarShortEquation, register=Strategies.Collars.Short, divest=True): pass
 
 
 class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):

@@ -10,23 +10,15 @@ import numpy as np
 import pandas as pd
 from abc import ABC
 
-from finance.variables import Variables, Querys, Securities
+from finance.variables import Variables, Querys, Securities, Strategies
 from support.mixins import Emptying, Sizing, Partition, Logging
 from support.meta import ParameterMeta
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["AcquisitionCalculator"]
+__all__ = ["AcquisitionCalculator", "AcquisitionParameters"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
-
-
-class MarketParameters(metaclass=ParameterMeta):
-    order = []
-    formatters = {}
-    parsers = {}
-    types = {}
-    dates = {}
 
 
 class MarketCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calculated"):
@@ -104,8 +96,12 @@ class MarketCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcula
     def priority(self): return self.__priority
 
 
-class AcquisitionCalculator(MarketCalculator):
-    pass
-
+class AcquisitionCalculator(MarketCalculator): pass
+class AcquisitionParameters(metaclass=ParameterMeta):
+    order = ["valuation", "scenario", "strategy"] + list(Querys.Settlement) + list(map(str, Securities.Options)) + ["tau", "size", "revenue", "expense", "invest", "divest", "spot", "future", "npv"]
+    types = {"ticker": str, " ".join(map(str, Securities.Options)): str, "tau size": np.float32, "revenue expense": np.float32, "invest divest": np.float32, "spot future": np.float32, "npv": np.float32}
+    parsers = dict(valuation=Variables.Valuations.Valuation, scenario=Variables.Valuations.Scenario, strategy=Strategies)
+    formatters = dict(valuation=str, scenario=str, strategy=str)
+    dates = dict(expire="%Y%m%d")
 
 
