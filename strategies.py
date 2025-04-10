@@ -83,8 +83,8 @@ class CollarLongEquation(StrategyEquation):
 
 class CollarShortEquation(StrategyEquation):
     qo = Variable.Dependent("qo", "size", np.int32, function=lambda qcα, qpβ: np.minimum(qcα, qpβ))
-    yh = Variable.Dependent("yh", "maximum", np.float32, function=lambda kcα, kpβ: - np.maximum(kcα, kpβ))
-    yl = Variable.Dependent("yl", "minimum", np.float32, function=lambda kcα, kpβ: - np.minimum(kcα, kpβ))
+    yh = Variable.Dependent("yh", "maximum", np.float32, function=lambda kcα, kpβ: - np.minimum(kcα, kpβ))
+    yl = Variable.Dependent("yl", "minimum", np.float32, function=lambda kcα, kpβ: - np.maximum(kcα, kpβ))
     yo = Variable.Dependent("yo", "spot", np.float32, function=lambda xβ, ycα, ypβ: ypβ - ycα + xβ)
     yα = Variable.Dependent("yα", "expense", np.float32, function=lambda ycα: ycα)
     yβ = Variable.Dependent("yβ", "revenue", np.float32, function=lambda ypβ: ypβ)
@@ -116,8 +116,8 @@ class StrategyCalculation(Calculation, ABC, metaclass=RegistryMeta):
 
 class VerticalPutCalculation(StrategyCalculation, equation=VerticalPutEquation, register=Strategies.Verticals.Put): pass
 class VerticalCallCalculation(StrategyCalculation, equation=VerticalCallEquation, register=Strategies.Verticals.Call): pass
-class CollarLongCalculation(StrategyCalculation, equation=CollarLongEquation, register=Strategies.Collars.Long, invest=True): pass
-class CollarShortCalculation(StrategyCalculation, equation=CollarShortEquation, register=Strategies.Collars.Short, divest=True): pass
+class CollarLongCalculation(StrategyCalculation, equation=CollarLongEquation, register=Strategies.Collars.Long, purchase=True): pass
+class CollarShortCalculation(StrategyCalculation, equation=CollarShortEquation, register=Strategies.Collars.Short, borrow=True): pass
 
 
 class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):

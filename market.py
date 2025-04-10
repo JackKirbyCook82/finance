@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 from abc import ABC
 from datetime import datetime as Datetime
+from collections import namedtuple as ntuple
 
 from finance.variables import Variables, Querys, Securities, Strategies
 from support.mixins import Emptying, Sizing, Partition, Logging
@@ -112,10 +113,11 @@ class AcquisitionParameters(metaclass=ParameterMeta):
 class AcquisitionCalculator(MarketCalculator): pass
 class AcquisitionSaver(Saver):
     def categorize(self, dataframe, *args, **kwargs):
-        headers = {scenario: [column for column in dataframe.columns if not column[-1] or column == scenario] for scenario in list(Variables.Valuations.Scenario)}
-        contents = [dataframe[columns].assign(scenario=scenario) for scenario, columns in headers.items()]
-        dataframe = pd.concat(contents, axis=0).droplevel(level=1, axis=1)
-        dataframe = dataframe.reset_index(drop=True, inplace=False)
+        Header = ntuple("Header", "axis scenario")
+        headers = {scenario: [Header(axis, scenario) for (axis, scenario) in dataframe.columns] for scenario in list(Variables.Valuations.Scenario)}
+        headers = {scenario: [header for header in contents if not bool(header.scenario) or header.scenario == scenario] for scenario, contents in headers.items()}
+        dataframes = [dataframe[header].assign(scenario=scenario).droplevel(level=1, axis=1) for scenario, header in headers.items()]
+        dataframe = pd.concat(dataframes, axis=0)
         current = ".".join([Datetime.now().strftime("%Y%m%d"), "csv"])
         yield current, dataframe
 
