@@ -37,10 +37,10 @@ def percent(number):
 
 
 class ProspectParameters(metaclass=ParameterMeta):
-    order = ["strategy"] + list(Querys.Settlement) + list(map(str, Securities.Options)) + ["size", "tau", "revenue", "expense", "purchase", "borrow", "spot", "future", "npv"]
-    columns = ["revenue", "expense", "purchase", "borrow", "spot", "future", "npv", "size", "tau", "priority", "status"]
+    order = ["strategy"] + list(Querys.Settlement) + list(map(str, Securities.Options)) + ["underlying", "size", "tau", "revenue", "expense", "purchase", "borrow", "spot", "future", "npv"]
+    columns = ["revenue", "expense", "purchase", "borrow", "spot", "future", "npv", "underlying", "size", "tau", "priority", "status"]
     index = ["valuation", "strategy"] + list(map(str, chain(Querys.Settlement, Securities.Options)))
-    formatters = {"revenue expense purchase borrow spot future npv": floating, "size": integer, tuple(map(str, Securities.Options)): floating}
+    formatters = {"revenue expense purchase borrow spot future npv": floating, "underlying": floating, "size": integer, tuple(map(str, Securities.Options)): floating}
     stacking = Stacking(axis="scenario", columns=["npv", "future"], layers=list(Variables.Valuations.Scenario))
     layout = Layout(width=250, space=10, columns=30, rows=30)
 

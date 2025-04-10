@@ -27,15 +27,14 @@ __license__ = "MIT License"
 
 class StrategyLocator(ntuple("Locator", "axis security")): pass
 class StrategyEquation(Equation, ABC, datatype=xr.DataArray, vectorize=True):
-    wh = Variable.Dependent("wh", "maximum", np.float32, function=lambda yh, *, ε: yh * 100 - ε)
-    wl = Variable.Dependent("wl", "minimum", np.float32, function=lambda yl, *, ε: yl * 100 - ε)
+    whτ = Variable.Dependent("whτ", "maximum", np.float32, function=lambda yhτ, *, ε: yhτ * 100 - ε)
+    wlτ = Variable.Dependent("wlτ", "minimum", np.float32, function=lambda ylτ, *, ε: ylτ * 100 - ε)
     wo = Variable.Dependent("wo", "spot", np.float32, function=lambda yo, *, ε: yo * 100 - ε)
-    ε = Variable.Constant("ε", "fees", np.float32, locator="fees")
 
-    wyα = Variable.Dependent("wα", "expense", np.float32, function=lambda yα: yα * 100)
-    wyβ = Variable.Dependent("wβ", "revenue", np.float32, function=lambda yβ: yβ * 100)
-    wxα = Variable.Dependent("wα", "purchase", np.float32, function=lambda xα, Θ: xα * Θ * 100)
-    wxβ = Variable.Dependent("wβ", "borrow", np.float32, function=lambda xβ, Φ: xβ * Φ * 100)
+    wxα = Variable.Dependent("wxα", "purchase", np.float32, function=lambda xoα, Θ: xoα * Θ * 100)
+    wxβ = Variable.Dependent("wxβ", "borrow", np.float32, function=lambda xoβ, Φ: xoβ * Φ * 100)
+    wyα = Variable.Dependent("wyα", "expense", np.float32, function=lambda yoα: yoα * 100)
+    wyβ = Variable.Dependent("wyβ", "revenue", np.float32, function=lambda yoβ: yoβ * 100)
 
     ypα = Variable.Independent("ypα", "price", np.float32, locator=StrategyLocator("price", Securities.Options.Puts.Long))
     ypβ = Variable.Independent("ypβ", "price", np.float32, locator=StrategyLocator("price", Securities.Options.Puts.Short))
@@ -52,42 +51,44 @@ class StrategyEquation(Equation, ABC, datatype=xr.DataArray, vectorize=True):
     kcα = Variable.Independent("kcα", "strike", np.float32, locator=StrategyLocator("strike", Securities.Options.Calls.Long))
     kcβ = Variable.Independent("kcβ", "strike", np.float32, locator=StrategyLocator("strike", Securities.Options.Calls.Short))
 
-    xα = Variable.Independent("xα", "price", np.float32, locator=Securities.Stocks.Long)
-    xβ = Variable.Independent("xβ", "price", np.float32, locator=Securities.Stocks.Short)
+    xo = Variable.Dependent("xo", "underlying", np.float32, function=lambda xoα, xoβ: (xoα + xoβ) / 2)
+    xoα = Variable.Independent("xoα", "underlying", np.float32, locator=Securities.Stocks.Long)
+    xoβ = Variable.Independent("xoβ", "underlying", np.float32, locator=Securities.Stocks.Short)
     Θ = Variable.Constant("Θ", "purchase", np.int32, locator="purchase")
     Φ = Variable.Constant("Φ", "borrow", np.int32, locator="borrow")
+    ε = Variable.Constant("ε", "fees", np.float32, locator="fees")
 
 class VerticalPutEquation(StrategyEquation):
+    yhτ = Variable.Dependent("yhτ", "maximum", np.float32, function=lambda kpα, kpβ: np.maximum(kpα - kpβ, 0))
+    ylτ = Variable.Dependent("ylτ", "minimum", np.float32, function=lambda kpα, kpβ: np.minimum(kpα - kpβ, 0))
     qo = Variable.Dependent("qo", "size", np.int32, function=lambda qpα, qpβ: np.minimum(qpα, qpβ))
-    yh = Variable.Dependent("yh", "maximum", np.float32, function=lambda kpα, kpβ: np.maximum(kpα - kpβ, 0))
-    yl = Variable.Dependent("yl", "minimum", np.float32, function=lambda kpα, kpβ: np.minimum(kpα - kpβ, 0))
     yo = Variable.Dependent("yo", "spot", np.float32, function=lambda ypα, ypβ: ypβ - ypα)
-    yα = Variable.Dependent("yα", "expense", np.float32, function=lambda ypα: ypα)
-    yβ = Variable.Dependent("yβ", "revenue", np.float32, function=lambda ypβ: ypβ)
+    yoα = Variable.Dependent("yoα", "expense", np.float32, function=lambda ypα: ypα)
+    yoβ = Variable.Dependent("yoβ", "revenue", np.float32, function=lambda ypβ: ypβ)
 
 class VerticalCallEquation(StrategyEquation):
+    yhτ = Variable.Dependent("yhτ", "maximum", np.float32, function=lambda kcα, kcβ: np.maximum(kcβ - kcα, 0))
+    ylτ = Variable.Dependent("ylτ", "minimum", np.float32, function=lambda kcα, kcβ: np.minimum(kcβ - kcα, 0))
     qo = Variable.Dependent("qo", "size", np.int32, function=lambda qcα, qcβ: np.minimum(qcα, qcβ))
-    yh = Variable.Dependent("yh", "maximum", np.float32, function=lambda kcα, kcβ: np.maximum(kcβ - kcα, 0))
-    yl = Variable.Dependent("yl", "minimum", np.float32, function=lambda kcα, kcβ: np.minimum(kcβ - kcα, 0))
     yo = Variable.Dependent("yo", "spot", np.float32, function=lambda ycα, ycβ: ycβ - ycα)
-    yα = Variable.Dependent("yα", "expense", np.float32, function=lambda ycα: ycα)
-    yβ = Variable.Dependent("yβ", "revenue", np.float32, function=lambda ycβ: ycβ)
+    yoα = Variable.Dependent("yoα", "expense", np.float32, function=lambda ycα: ycα)
+    yoβ = Variable.Dependent("yoβ", "revenue", np.float32, function=lambda ycβ: ycβ)
 
 class CollarLongEquation(StrategyEquation):
+    yhτ = Variable.Dependent("yhτ", "maximum", np.float32, function=lambda kpα, kcβ: + np.maximum(kpα, kcβ))
+    ylτ = Variable.Dependent("ylτ", "minimum", np.float32, function=lambda kpα, kcβ: + np.minimum(kpα, kcβ))
     qo = Variable.Dependent("qo", "size", np.int32, function=lambda qpα, qcβ: np.minimum(qpα, qcβ))
-    yh = Variable.Dependent("yh", "maximum", np.float32, function=lambda kpα, kcβ: + np.maximum(kpα, kcβ))
-    yl = Variable.Dependent("yl", "minimum", np.float32, function=lambda kpα, kcβ: + np.minimum(kpα, kcβ))
-    yo = Variable.Dependent("yo", "spot", np.float32, function=lambda xα, ypα, ycβ: ycβ - ypα - xα)
-    yα = Variable.Dependent("yα", "expense", np.float32, function=lambda ypα: ypα)
-    yβ = Variable.Dependent("yβ", "revenue", np.float32, function=lambda ycβ: ycβ)
+    yo = Variable.Dependent("yo", "spot", np.float32, function=lambda xoα, ypα, ycβ: ycβ - ypα - xoα)
+    yoα = Variable.Dependent("yoα", "expense", np.float32, function=lambda ypα: ypα)
+    yoβ = Variable.Dependent("yoβ", "revenue", np.float32, function=lambda ycβ: ycβ)
 
 class CollarShortEquation(StrategyEquation):
+    yhτ = Variable.Dependent("yhτ", "maximum", np.float32, function=lambda kcα, kpβ: - np.minimum(kcα, kpβ))
+    ylτ = Variable.Dependent("ylτ", "minimum", np.float32, function=lambda kcα, kpβ: - np.maximum(kcα, kpβ))
     qo = Variable.Dependent("qo", "size", np.int32, function=lambda qcα, qpβ: np.minimum(qcα, qpβ))
-    yh = Variable.Dependent("yh", "maximum", np.float32, function=lambda kcα, kpβ: - np.minimum(kcα, kpβ))
-    yl = Variable.Dependent("yl", "minimum", np.float32, function=lambda kcα, kpβ: - np.maximum(kcα, kpβ))
-    yo = Variable.Dependent("yo", "spot", np.float32, function=lambda xβ, ycα, ypβ: ypβ - ycα + xβ)
-    yα = Variable.Dependent("yα", "expense", np.float32, function=lambda ycα: ycα)
-    yβ = Variable.Dependent("yβ", "revenue", np.float32, function=lambda ypβ: ypβ)
+    yo = Variable.Dependent("yo", "spot", np.float32, function=lambda xoβ, ycα, ypβ: ypβ - ycα + xoβ)
+    yoα = Variable.Dependent("yoα", "expense", np.float32, function=lambda ycα: ycα)
+    yoβ = Variable.Dependent("yoβ", "revenue", np.float32, function=lambda ypβ: ypβ)
 
 
 class StrategyCalculation(Calculation, ABC, metaclass=RegistryMeta):
@@ -100,10 +101,11 @@ class StrategyCalculation(Calculation, ABC, metaclass=RegistryMeta):
         options = {StrategyLocator(axis, security): dataset[axis] for security, dataset in options.items() for axis in ("price", "strike", "size")}
         parameters = dict(purchase=np.int32(self.purchase), borrow=np.int32(self.borrow), fees=fees)
         with self.equation(stocks | options, **parameters) as equation:
+            yield equation.xo()
             yield equation.qo()
             yield equation.wo()
-            yield equation.wl()
-            yield equation.wh()
+            yield equation.wlτ()
+            yield equation.whτ()
             yield equation.wyα()
             yield equation.wyβ()
             yield equation.wxα()

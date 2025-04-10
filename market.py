@@ -103,8 +103,8 @@ class MarketCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcula
 
 
 class AcquisitionParameters(metaclass=ParameterMeta):
-    order = ["valuation", "scenario", "strategy"] + list(Querys.Settlement) + list(map(str, Securities.Options)) + ["tau", "size", "revenue", "expense", "purchase", "borrow", "spot", "future", "npv"]
-    types = {"ticker": str, " ".join(map(str, Securities.Options)): str, "tau size": np.float32, "revenue expense": np.float32, "purchase borrow": np.float32, "spot future": np.float32, "npv": np.float32}
+    order = ["valuation", "scenario", "strategy"] + list(Querys.Settlement) + list(map(str, Securities.Options)) + ["underlying", "tau", "size", "revenue", "expense", "purchase", "borrow", "spot", "future", "npv"]
+    types = {"ticker": str, " ".join(map(str, Securities.Options)): str, "underlying": np.float32, "tau size": np.float32, "revenue expense": np.float32, "purchase borrow": np.float32, "spot future": np.float32, "npv": np.float32}
     parsers = dict(valuation=Variables.Valuations.Valuation, scenario=Variables.Valuations.Scenario, strategy=Strategies)
     formatters = dict(valuation=str, scenario=str, strategy=str)
     dates = dict(expire="%Y%m%d")

@@ -6,7 +6,6 @@ Created on Weds Jul 19 2023
 
 """
 
-import types
 import numpy as np
 import pandas as pd
 import xarray as xr
@@ -28,31 +27,33 @@ __license__ = "MIT License"
 
 class ValuationLocator(ntuple("Locator", "valuation scenario")): pass
 class ValuationEquation(Equation, ABC, datatype=xr.DataArray, vectorize=True):
-    rτ = Variable.Dependent("rτ", "asset", np.float32, function=lambda vτ: np.abs(np.maximum(vτ, 0)))
-    eτ = Variable.Dependent("eτ", "debt", np.float32, function=lambda vτ: np.abs(np.minimum(vτ, 0)))
-    ro = Variable.Dependent("ro", "revenue", np.float32, function=lambda vo: np.abs(np.maximum(vo, 0)))
-    eo = Variable.Dependent("eo", "expense", np.float32, function=lambda vo: np.abs(np.minimum(vo, 0)))
+    rτ = Variable.Dependent("rτ", "asset", np.float32, function=lambda wτ: np.abs(np.maximum(wτ, 0)))
+    eτ = Variable.Dependent("eτ", "debt", np.float32, function=lambda wτ: np.abs(np.minimum(wτ, 0)))
+    ro = Variable.Dependent("ro", "revenue", np.float32, function=lambda wo: np.abs(np.maximum(wo, 0)))
+    eo = Variable.Dependent("eo", "expense", np.float32, function=lambda wo: np.abs(np.minimum(wo, 0)))
     τ = Variable.Dependent("τ", "tau", np.int32, function=lambda tτ, *, to: (tτ - to).days)
 
-    qo = Variable.Independent("qo", "size", np.int32, locator="size")
-    vo = Variable.Independent("vo", "spot", np.float32, locator="spot")
-    yα = Variable.Independent("yα", "expense", np.float32, locator="expense")
-    yβ = Variable.Independent("yβ", "revenue", np.float32, locator="revenue")
-    xα = Variable.Independent("xα", "purchase", np.float32, locator="purchase")
-    xβ = Variable.Independent("xβ", "borrow", np.float32, locator="borrow")
-    tτ = Variable.Independent("tτ", "expire", Date, locator="expire")
+    wyα = Variable.Independent("wyα", "expense", np.float32, locator="expense")
+    wyβ = Variable.Independent("wyβ", "revenue", np.float32, locator="revenue")
+    wxα = Variable.Independent("wxα", "purchase", np.float32, locator="purchase")
+    wxβ = Variable.Independent("wxβ", "borrow", np.float32, locator="borrow")
+    wo = Variable.Independent("wo", "spot", np.float32, locator="spot")
 
+    xo = Variable.Independent("xo", "underlying", np.float32, locator="underlying")
+    qo = Variable.Independent("qo", "size", np.int32, locator="size")
+
+    tτ = Variable.Independent("tτ", "expire", Date, locator="expire")
     to = Variable.Constant("to", "date", Date, locator="date")
     ρ = Variable.Constant("ρ", "discount", np.float32, locator="discount")
 
 class ArbitrageEquation(ValuationEquation, ABC):
-    npv = Variable.Dependent("npv", "npv", np.float32, function=lambda vτ, vo, τ, *, ρ: np.divide(vτ, np.power(ρ + 1, np.divide(τ, 365))) + vo)
+    npv = Variable.Dependent("npv", "npv", np.float32, function=lambda wτ, wo, τ, *, ρ: np.divide(wτ, np.power(ρ + 1, np.divide(τ, 365))) + wo)
 
 class MinimumArbitrageEquation(ArbitrageEquation):
-    vτ = Variable.Independent("vτ", "future", np.float32, locator="minimum")
+    wτ = Variable.Independent("vτ", "future", np.float32, locator="minimum")
 
 class MaximumArbitrageEquation(ArbitrageEquation):
-    vτ = Variable.Independent("vτ", "future", np.float32, locator="maximum")
+    wτ = Variable.Independent("vτ", "future", np.float32, locator="maximum")
 
 
 class ValuationCalculation(Calculation, ABC, metaclass=RegistryMeta): pass
@@ -60,13 +61,14 @@ class ArbitrageCalculation(ValuationCalculation, ABC):
     def execute(self, strategies, *args, discount, date, **kwargs):
         with self.equation(strategies, discount=discount, date=date) as equation:
             yield equation.τ()
+            yield equation.xo()
             yield equation.qo()
-            yield equation.vo()
-            yield equation.vτ()
-            yield equation.yα()
-            yield equation.yβ()
-            yield equation.xα()
-            yield equation.xβ()
+            yield equation.wo()
+            yield equation.wτ()
+            yield equation.wyα()
+            yield equation.wyβ()
+            yield equation.wxα()
+            yield equation.wxβ()
             yield equation.npv()
 
 class MinimumArbitrageCalculation(ArbitrageCalculation, equation=MinimumArbitrageEquation, register=ValuationLocator(Variables.Valuations.Valuation.ARBITRAGE, Variables.Valuations.Scenario.MINIMUM)): pass
