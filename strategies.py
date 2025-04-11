@@ -11,6 +11,7 @@ import pandas as pd
 import xarray as xr
 from abc import ABC
 from functools import reduce
+from scipy.stats import norm
 from collections import namedtuple as ntuple
 
 from finance.variables import Variables, Querys, Strategies, Securities
@@ -56,9 +57,12 @@ class StrategyEquation(Equation, ABC, datatype=xr.DataArray, vectorize=True):
     xoβ = Variable.Independent("xoβ", "underlying", np.float32, locator=Securities.Stocks.Short)
     Θ = Variable.Constant("Θ", "purchase", np.int32, locator="purchase")
     Φ = Variable.Constant("Φ", "borrow", np.int32, locator="borrow")
+    μ = Variable.Constant("", "trend", np.float32, locator="trend")
+    σ = Variable.Constant("", "volatility", np.float32, locator="volatility")
     ε = Variable.Constant("ε", "fees", np.float32, locator="fees")
 
 class VerticalPutEquation(StrategyEquation):
+    yeτ = Variable.Dependent("yeτ", "expected", np.float32, function=lambda kpα, kpβ, Φpα, Φpβ, φpα, φpβ, μ, σ: (kpα - kpβ) * Φpβ + (kpα - μ) * (Φpα - Φpβ) - σ * (φpβ - φpα))
     yhτ = Variable.Dependent("yhτ", "maximum", np.float32, function=lambda kpα, kpβ: np.maximum(kpα - kpβ, 0))
     ylτ = Variable.Dependent("ylτ", "minimum", np.float32, function=lambda kpα, kpβ: np.minimum(kpα - kpβ, 0))
     qo = Variable.Dependent("qo", "size", np.int32, function=lambda qpα, qpβ: np.minimum(qpα, qpβ))
@@ -66,7 +70,15 @@ class VerticalPutEquation(StrategyEquation):
     yoα = Variable.Dependent("yoα", "expense", np.float32, function=lambda ypα: ypα)
     yoβ = Variable.Dependent("yoβ", "revenue", np.float32, function=lambda ypβ: ypβ)
 
+    zpα = Variable.Dependent("zpα", "zscore", np.float32, function=lambda kpα, μ, σ: (kpα - μ) / σ)
+    zpβ = Variable.Dependent("zpβ", "zscore", np.float32, function=lambda kpβ, μ, σ: (kpβ - μ) / σ)
+    Φpα = Variable.Dependent("Φpα", "cdf", np.float32, function=lambda zpα: norm.cdf(zpα))
+    Φpβ = Variable.Dependent("Φpβ", "cdf", np.float32, function=lambda zpβ: norm.cdf(zpβ))
+    φpα = Variable.Dependent("φpα", "pdf", np.float32, function=lambda zpα: norm.pdf(zpα))
+    φpβ = Variable.Dependent("φpβ", "pdf", np.float32, function=lambda zpβ: norm.pdf(zpβ))
+
 class VerticalCallEquation(StrategyEquation):
+    yeτ = Variable.Dependent("yeτ", "expected", np.float32, function=lambda kcα, kcβ, Φcα, Φcβ, φcα, φcβ, sgn, μ, σ: ((μ - kcα) * (Φcβ - Φcα) + σ * (φcα - φcβ) + (kcβ - kcα) * (1 - Φcβ)) * sgn)
     yhτ = Variable.Dependent("yhτ", "maximum", np.float32, function=lambda kcα, kcβ: np.maximum(kcβ - kcα, 0))
     ylτ = Variable.Dependent("ylτ", "minimum", np.float32, function=lambda kcα, kcβ: np.minimum(kcβ - kcα, 0))
     qo = Variable.Dependent("qo", "size", np.int32, function=lambda qcα, qcβ: np.minimum(qcα, qcβ))
@@ -74,7 +86,18 @@ class VerticalCallEquation(StrategyEquation):
     yoα = Variable.Dependent("yoα", "expense", np.float32, function=lambda ycα: ycα)
     yoβ = Variable.Dependent("yoβ", "revenue", np.float32, function=lambda ycβ: ycβ)
 
+    kcl = Variable.Dependent("kcl", "strike", np.float32, function=lambda kcα, kcβ: np.minimum(kcα, kcβ))
+    kch = Variable.Dependent("kch", "strike", np.float32, function=lambda kcα, kcβ: np.maximum(kcα, kcβ))
+    zpl = Variable.Dependent("zcl", "zscore", np.float32, function=lambda kcl, μ, σ: (kcl - μ) / σ)
+    zph = Variable.Dependent("zch", "zscore", np.float32, function=lambda kch, μ, σ: (kch - μ) / σ)
+    Φpl = Variable.Dependent("Φcl", "cdf", np.float32, function=lambda zcl: norm.cdf(zcl))
+    Φph = Variable.Dependent("Φch", "cdf", np.float32, function=lambda zch: norm.cdf(zch))
+    φpl = Variable.Dependent("φcl", "pdf", np.float32, function=lambda zcl: norm.pdf(zcl))
+    φph = Variable.Dependent("φch", "pdf", np.float32, function=lambda zch: norm.pdf(zch))
+    sgn = Variable.Dependent("sgn", "sign", np.float32, function=lambda kcα, kcβ: np.sign(kcα - kcβ))
+
 class CollarLongEquation(StrategyEquation):
+    yeτ = Variable.Dependent("yeτ", "expected", np.float32, function=lambda fpα, fcβ, μ: fpα - fcβ + μ)
     yhτ = Variable.Dependent("yhτ", "maximum", np.float32, function=lambda kpα, kcβ: + np.maximum(kpα, kcβ))
     ylτ = Variable.Dependent("ylτ", "minimum", np.float32, function=lambda kpα, kcβ: + np.minimum(kpα, kcβ))
     qo = Variable.Dependent("qo", "size", np.int32, function=lambda qpα, qcβ: np.minimum(qpα, qcβ))
@@ -82,13 +105,30 @@ class CollarLongEquation(StrategyEquation):
     yoα = Variable.Dependent("yoα", "expense", np.float32, function=lambda ypα: ypα)
     yoβ = Variable.Dependent("yoβ", "revenue", np.float32, function=lambda ycβ: ycβ)
 
+    fpα = Variable.Dependent("fpα", "function", np.float32, function=lambda kpα, Φpα, φpα, μ, σ: (kpα - μ) * Φpα + σ * φpα)
+    fcβ = Variable.Dependent("fcβ", "function", np.float32, function=lambda kcβ, Φcβ, φcβ, μ, σ: (μ - kcβ) * (1 - Φcβ) + σ * φcβ)
+    zpα = Variable.Dependent("zpα", "zscore", np.float32, function=lambda kpα, μ, σ: (kpα - μ) / σ)
+    zcβ = Variable.Dependent("zcβ", "zscore", np.float32, function=lambda kcβ, μ, σ: (kcβ - μ) / σ)
+    Φpα = Variable.Dependent("Φpα", "cdf", np.float32, function=lambda zpα: norm.cdf(zpα))
+    Φcβ = Variable.Dependent("Φcβ", "cdf", np.float32, function=lambda zcβ: norm.cdf(zcβ))
+    φpα = Variable.Dependent("φpα", "pdf", np.float32, function=lambda zpα: norm.pdf(zpα))
+    φcβ = Variable.Dependent("φcβ", "pdf", np.float32, function=lambda zcβ: norm.pdf(zcβ))
+
 class CollarShortEquation(StrategyEquation):
+    yeτ = Variable.Dependent("yeτ", "expected", np.float32, function=lambda kcα, kpβ, Φcα, Φpβ, φcα, φpβ, μ, σ: -kcα * (1 - Φcα) - kpβ * Φpβ + σ * (φcα - φpβ) - μ)
     yhτ = Variable.Dependent("yhτ", "maximum", np.float32, function=lambda kcα, kpβ: - np.minimum(kcα, kpβ))
     ylτ = Variable.Dependent("ylτ", "minimum", np.float32, function=lambda kcα, kpβ: - np.maximum(kcα, kpβ))
     qo = Variable.Dependent("qo", "size", np.int32, function=lambda qcα, qpβ: np.minimum(qcα, qpβ))
     yo = Variable.Dependent("yo", "spot", np.float32, function=lambda xoβ, ycα, ypβ: ypβ - ycα + xoβ)
     yoα = Variable.Dependent("yoα", "expense", np.float32, function=lambda ycα: ycα)
     yoβ = Variable.Dependent("yoβ", "revenue", np.float32, function=lambda ypβ: ypβ)
+
+    zcα = Variable.Dependent("zcα", "zscore", np.float32, function=lambda kcα, μ, σ: (kcα - μ) / σ)
+    zpβ = Variable.Dependent("zpβ", "zscore", np.float32, function=lambda kpβ, μ, σ: (kpβ - μ) / σ)
+    Φcα = Variable.Dependent("Φcα", "cdf", np.float32, function=lambda zcα: norm.cdf(zcα))
+    Φpβ = Variable.Dependent("Φpβ", "cdf", np.float32, function=lambda zpβ: norm.cdf(zpβ))
+    φcα = Variable.Dependent("φcα", "pdf", np.float32, function=lambda zcα: norm.pdf(zcα))
+    φpβ = Variable.Dependent("φpβ", "pdf", np.float32, function=lambda zpβ: norm.pdf(zpβ))
 
 
 class StrategyCalculation(Calculation, ABC, metaclass=RegistryMeta):

@@ -52,6 +52,9 @@ class ArbitrageEquation(ValuationEquation, ABC):
 class MinimumArbitrageEquation(ArbitrageEquation):
     wτ = Variable.Independent("vτ", "future", np.float32, locator="minimum")
 
+class ExpectedArbitrageEquation(ArbitrageEquation):
+    wτ = Variable.Independent("vτ", "future", np.float32, locator="expected")
+
 class MaximumArbitrageEquation(ArbitrageEquation):
     wτ = Variable.Independent("vτ", "future", np.float32, locator="maximum")
 
