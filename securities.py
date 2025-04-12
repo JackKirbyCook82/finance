@@ -58,23 +58,11 @@ class SecurityCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcu
         super().__init_subclass__(*args, **kwargs)
         cls.__instrument__ = kwargs.get("instrument", getattr(cls, "__instrument__", None))
         cls.__header__ = kwargs.get("header", getattr(cls, "__header__", None))
-        cls.__query__ = kwargs.get("query", getattr(cls, "__query__", None))
 
     def __init__(self, *args, pricing, **kwargs):
         super().__init__(*args, **kwargs)
         self.__calculation = dict(PricingCalculation)[pricing](*args, **kwargs)
         self.__pricing = pricing
-
-    def execute(self, securities, *args, **kwargs):
-        assert isinstance(securities, pd.DataFrame)
-        if self.empty(securities): return
-        securities = self.calculate(securities, *args, **kwargs)
-        querys = self.groups(securities, by=self.query)
-        querys = ",".join(list(map(str, querys)))
-        size = self.size(securities)
-        self.console(f"{str(querys)}[{int(size):.0f}]")
-        if self.empty(securities): return
-        yield securities
 
     def calculate(self, securities, *args, **kwargs):
         generator = self.calculator(securities, *args, **kwargs)
@@ -95,8 +83,6 @@ class SecurityCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcu
     def instrument(self): return type(self).__instrument__
     @property
     def header(self): return type(self).__header__
-    @property
-    def query(self): return type(self).__query__
 
     @property
     def calculation(self): return self.__calculation
@@ -104,7 +90,50 @@ class SecurityCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcu
     def pricing(self): return self.__pricing
 
 
-class StockCalculator(SecurityCalculator, instrument=Variables.Securities.Instrument.STOCK, query=Querys.Symbol, header=list(Querys.Symbol)): pass
-class OptionCalculator(SecurityCalculator, instrument=Variables.Securities.Instrument.OPTION, query=Querys.Settlement, header=list(Querys.Contract)): pass
+class StockCalculator(SecurityCalculator, instrument=Variables.Securities.Instrument.STOCK, header=list(Querys.Symbol)):
+    def execute(self, stocks, technicals, *args, **kwargs):
+        assert isinstance(stocks, pd.DataFrame)
+        if self.empty(stocks): return
+        stocks = self.calculate(stocks, *args, **kwargs)
+        stocks = self.technicals(stocks, technicals, *args, **kwargs)
+        querys = self.groups(stocks, by=Querys.Symbol)
+        querys = ",".join(list(map(str, querys)))
+        size = self.size(stocks)
+        self.console(f"{str(querys)}[{int(size):.0f}]")
+        if self.empty(stocks): return
+        yield stocks
+
+    @staticmethod
+    def technicals(stocks, technicals, *args, **kwargs):
+        mask = technicals["date"] == technicals["date"].max()
+        technicals = technicals.where(mask).dropna(how="all", inplace=False)
+        columns = list(Querys.Symbol) + ["trend", "volatility"]
+        stocks = stocks.merge(technicals[columns], how="left", on=list(Querys.Symbol), sort=False, suffixes=("", "_"))
+        return stocks
+
+
+class OptionCalculator(SecurityCalculator, instrument=Variables.Securities.Instrument.OPTION, header=list(Querys.Contract)):
+    def execute(self, options, stocks, *args, **kwargs):
+        assert isinstance(options, pd.DataFrame)
+        if self.empty(options): return
+        options = self.calculate(options, *args, **kwargs)
+        options = self.stocks(options, stocks, *args, **kwargs)
+        querys = self.groups(options, by=Querys.Settlement)
+        querys = ",".join(list(map(str, querys)))
+        size = self.size(options)
+        self.console(f"{str(querys)}[{int(size):.0f}]")
+        if self.empty(options): return
+        yield options
+
+    @staticmethod
+    def stocks(options, stocks, *args, **kwargs):
+        print("\n", options, "\n")
+        print(stocks, "\n")
+        raise Exception()
+
+
+
+
+
 
 

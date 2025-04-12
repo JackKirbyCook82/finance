@@ -23,7 +23,7 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-TechnicalVariable = Variable("Technical", ["SECURITY", "TRADE", "QUOTE", "BARS", "STATISTIC", "STOCHASTIC"], start=1)
+TechnicalVariable = Variable("Technical", ["STATISTIC", "STOCHASTIC"], start=1)
 InstrumentVariable = Variable("Instrument", ["EMPTY", "STOCK", "OPTION"], start=0)
 OptionVariable = Variable("Option", ["PUT", "EMPTY", "CALL"], start=-1)
 PositionVariable = Variable("Position", ["SHORT", "EMPTY", "LONG"], start=-1)
