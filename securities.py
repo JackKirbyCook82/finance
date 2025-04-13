@@ -54,11 +54,6 @@ class ModerateCalculation(PricingCalculation, equation=CenteredEquation, registe
 
 
 class SecurityCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calculated"):
-    def __init_subclass__(cls, *args, **kwargs):
-        super().__init_subclass__(*args, **kwargs)
-        cls.__instrument__ = kwargs.get("instrument", getattr(cls, "__instrument__", None))
-        cls.__header__ = kwargs.get("header", getattr(cls, "__header__", None))
-
     def __init__(self, *args, pricing, **kwargs):
         super().__init__(*args, **kwargs)
         self.__calculation = dict(PricingCalculation)[pricing](*args, **kwargs)
@@ -75,14 +70,8 @@ class SecurityCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcu
             contract = securities[self.header]
             pricing = self.calculation(securities, *args, position=position, **kwargs)
             dataframe = pd.concat([contract, pricing], axis=1)
-            dataframe["instrument"] = self.instrument
             dataframe["position"] = position
             yield dataframe
-
-    @property
-    def instrument(self): return type(self).__instrument__
-    @property
-    def header(self): return type(self).__header__
 
     @property
     def calculation(self): return self.__calculation
@@ -90,7 +79,7 @@ class SecurityCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcu
     def pricing(self): return self.__pricing
 
 
-class StockCalculator(SecurityCalculator, instrument=Variables.Securities.Instrument.STOCK, header=list(Querys.Symbol)):
+class StockCalculator(SecurityCalculator):
     def execute(self, stocks, technicals, *args, **kwargs):
         assert isinstance(stocks, pd.DataFrame)
         if self.empty(stocks): return
@@ -103,21 +92,29 @@ class StockCalculator(SecurityCalculator, instrument=Variables.Securities.Instru
         if self.empty(stocks): return
         yield stocks
 
+    def calculator(self, securities, *args, **kwargs):
+        for position in list(Variables.Securities.Position):
+            contract = securities[list(Querys.Symbol)]
+            pricing = self.calculation(securities, *args, position=position, **kwargs)
+            dataframe = pd.concat([contract, pricing], axis=1)
+            dataframe["instrument"] = Variables.Securities.Instrument.STOCK
+            dataframe["option"] = Variables.Securities.Option.EMPTY
+            dataframe["position"] = position
+            yield dataframe
+
     @staticmethod
     def technicals(stocks, technicals, *args, **kwargs):
-        mask = technicals["date"] == technicals["date"].max()
-        technicals = technicals.where(mask).dropna(how="all", inplace=False)
-        columns = list(Querys.Symbol) + ["trend", "volatility"]
-        stocks = stocks.merge(technicals[columns], how="left", on=list(Querys.Symbol), sort=False, suffixes=("", "_"))
+        function = lambda dataframe: dataframe.where(dataframe["date"] == dataframe["date"].max()).dropna(how="all", inplace=False)
+        technicals = pd.concat([function(dataframe) for ticker, dataframe in technicals.groupby("ticker")], axis=0)
+        stocks = stocks.merge(technicals[["ticker", "trend", "volatility"]], how="left", on=list(Querys.Symbol), sort=False, suffixes=("", "_"))
         return stocks
 
 
-class OptionCalculator(SecurityCalculator, instrument=Variables.Securities.Instrument.OPTION, header=list(Querys.Contract)):
-    def execute(self, options, stocks, *args, **kwargs):
+class OptionCalculator(SecurityCalculator):
+    def execute(self, options, *args, **kwargs):
         assert isinstance(options, pd.DataFrame)
         if self.empty(options): return
         options = self.calculate(options, *args, **kwargs)
-        options = self.stocks(options, stocks, *args, **kwargs)
         querys = self.groups(options, by=Querys.Settlement)
         querys = ",".join(list(map(str, querys)))
         size = self.size(options)
@@ -125,15 +122,13 @@ class OptionCalculator(SecurityCalculator, instrument=Variables.Securities.Instr
         if self.empty(options): return
         yield options
 
-    @staticmethod
-    def stocks(options, stocks, *args, **kwargs):
-        print("\n", options, "\n")
-        print(stocks, "\n")
-        raise Exception()
-
-
-
-
-
+    def calculator(self, securities, *args, **kwargs):
+        for position in list(Variables.Securities.Position):
+            contract = securities[list(Querys.Contract)]
+            pricing = self.calculation(securities, *args, position=position, **kwargs)
+            dataframe = pd.concat([contract, pricing], axis=1)
+            dataframe["instrument"] = Variables.Securities.Instrument.OPTION
+            dataframe["position"] = position
+            yield dataframe
 
 

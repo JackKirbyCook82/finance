@@ -32,34 +32,38 @@ class StrategyEquation(Equation, ABC, datatype=xr.DataArray, vectorize=True):
     wlτ = Variable.Dependent("wlτ", "minimum", np.float32, function=lambda ylτ, *, ε: ylτ * 100 - ε)
     wo = Variable.Dependent("wo", "spot", np.float32, function=lambda yo, *, ε: yo * 100 - ε)
 
-    wxα = Variable.Dependent("wxα", "purchase", np.float32, function=lambda xoα, Θ: xoα * Θ * 100)
-    wxβ = Variable.Dependent("wxβ", "borrow", np.float32, function=lambda xoβ, Φ: xoβ * Φ * 100)
-    wyα = Variable.Dependent("wyα", "expense", np.float32, function=lambda yoα: yoα * 100)
-    wyβ = Variable.Dependent("wyβ", "revenue", np.float32, function=lambda yoβ: yoβ * 100)
-
-    ypα = Variable.Independent("ypα", "price", np.float32, locator=StrategyLocator("price", Securities.Options.Puts.Long))
-    ypβ = Variable.Independent("ypβ", "price", np.float32, locator=StrategyLocator("price", Securities.Options.Puts.Short))
-    ycα = Variable.Independent("ycα", "price", np.float32, locator=StrategyLocator("price", Securities.Options.Calls.Long))
-    ycβ = Variable.Independent("ycβ", "price", np.float32, locator=StrategyLocator("price", Securities.Options.Calls.Short))
-
-    qpα = Variable.Independent("qpα", "size", np.int32, locator=StrategyLocator("size", Securities.Options.Puts.Long))
-    qpβ = Variable.Independent("qpβ", "size", np.int32, locator=StrategyLocator("size", Securities.Options.Puts.Short))
-    qcα = Variable.Independent("qcα", "size", np.int32, locator=StrategyLocator("size", Securities.Options.Calls.Long))
-    qcβ = Variable.Independent("qcβ", "size", np.int32, locator=StrategyLocator("size", Securities.Options.Calls.Short))
-
     kpα = Variable.Independent("kpα", "strike", np.float32, locator=StrategyLocator("strike", Securities.Options.Puts.Long))
     kpβ = Variable.Independent("kpβ", "strike", np.float32, locator=StrategyLocator("strike", Securities.Options.Puts.Short))
     kcα = Variable.Independent("kcα", "strike", np.float32, locator=StrategyLocator("strike", Securities.Options.Calls.Long))
     kcβ = Variable.Independent("kcβ", "strike", np.float32, locator=StrategyLocator("strike", Securities.Options.Calls.Short))
 
-    xo = Variable.Dependent("xo", "underlying", np.float32, function=lambda xoα, xoβ: (xoα + xoβ) / 2)
-    xoα = Variable.Independent("xoα", "underlying", np.float32, locator=Securities.Stocks.Long)
-    xoβ = Variable.Independent("xoβ", "underlying", np.float32, locator=Securities.Stocks.Short)
+    ypα = Variable.Independent("ypα", "price", np.float32, locator=StrategyLocator("price", Securities.Options.Puts.Long))
+    ypβ = Variable.Independent("ypβ", "price", np.float32, locator=StrategyLocator("price", Securities.Options.Puts.Short))
+    ycα = Variable.Independent("ycα", "price", np.float32, locator=StrategyLocator("price", Securities.Options.Calls.Long))
+    ycβ = Variable.Independent("ycβ", "price", np.float32, locator=StrategyLocator("price", Securities.Options.Calls.Short))
+    yxα = Variable.Independent("yxα", "price", np.float32, locator=StrategyLocator("price", Securities.Stocks.Long))
+    yxβ = Variable.Independent("yxβ", "price", np.float32, locator=StrategyLocator("price", Securities.Stocks.Short))
+
+    qpα = Variable.Independent("qpα", "size", np.int32, locator=StrategyLocator("size", Securities.Options.Puts.Long))
+    qpβ = Variable.Independent("qpβ", "size", np.int32, locator=StrategyLocator("size", Securities.Options.Puts.Short))
+    qcα = Variable.Independent("qcα", "size", np.int32, locator=StrategyLocator("size", Securities.Options.Calls.Long))
+    qcβ = Variable.Independent("qcβ", "size", np.int32, locator=StrategyLocator("size", Securities.Options.Calls.Short))
+    qxα = Variable.Independent("qxα", "size", np.int32, locator=StrategyLocator("size", Securities.Stocks.Long))
+    qxβ = Variable.Independent("qxβ", "size", np.int32, locator=StrategyLocator("size", Securities.Stocks.Short))
+
     Θ = Variable.Constant("Θ", "purchase", np.int32, locator="purchase")
     Φ = Variable.Constant("Φ", "borrow", np.int32, locator="borrow")
-    μ = Variable.Constant("", "trend", np.float32, locator="trend")
-    σ = Variable.Constant("", "volatility", np.float32, locator="volatility")
     ε = Variable.Constant("ε", "fees", np.float32, locator="fees")
+
+#    wyα = Variable.Dependent("wyα", "expense", np.float32, function=lambda yoα: yoα * 100)
+#    wyβ = Variable.Dependent("wyβ", "revenue", np.float32, function=lambda yoβ: yoβ * 100)
+#    wxα = Variable.Dependent("wxα", "purchase", np.float32, function=lambda xoα, Θ: xoα * Θ * 100)
+#    wxβ = Variable.Dependent("wxβ", "borrow", np.float32, function=lambda xoβ, Φ: xoβ * Φ * 100)
+#    xo = Variable.Dependent("xo", "underlying", np.float32, function=lambda xoα, xoβ: (xoα + xoβ) / 2)
+#    xoα = Variable.Independent("xoα", "underlying", np.float32, locator=Securities.Stocks.Long)
+#    xoβ = Variable.Independent("xoβ", "underlying", np.float32, locator=Securities.Stocks.Short)
+#    μ = Variable.Constant("", "trend", np.float32, locator="trend")
+#    σ = Variable.Constant("", "volatility", np.float32, locator="volatility")
 
 class VerticalPutEquation(StrategyEquation):
     yeτ = Variable.Dependent("yeτ", "expected", np.float32, function=lambda kpα, kpβ, Φpα, Φpβ, φpα, φpβ, μ, σ: (kpα - kpβ) * Φpβ + (kpα - μ) * (Φpα - Φpβ) - σ * (φpβ - φpα))
@@ -138,6 +142,7 @@ class StrategyCalculation(Calculation, ABC, metaclass=RegistryMeta):
         cls.__borrow__ = borrow
 
     def execute(self, stocks, options, *args, fees, **kwargs):
+        stocks = {StrategyLocator(axis, security): dataset[axis] for security, dataset in stocks.items() for axis in ("price", "trend", "volatility")}
         options = {StrategyLocator(axis, security): dataset[axis] for security, dataset in options.items() for axis in ("price", "strike", "size")}
         parameters = dict(purchase=np.int32(self.purchase), borrow=np.int32(self.borrow), fees=fees)
         with self.equation(stocks | options, **parameters) as equation:
@@ -173,10 +178,10 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
     def execute(self, stocks, options, *args, **kwargs):
         assert isinstance(options, pd.DataFrame)
         if self.empty(options): return
-        for settlement, primary in self.partition(options, by=Querys.Settlement):
-            secondary = stocks.where(stocks["ticker"] == settlement.ticker).dropna(how="all", inplace=False)
-            primary = dict(self.options(primary, *args, **kwargs))
-            secondary = dict(self.stocks(secondary, *args, **kwargs))
+        for settlement, secondary in self.partition(options, by=Querys.Settlement):
+            primary = stocks.where(stocks["ticker"] == settlement.ticker).dropna(how="all", inplace=False)
+            primary = dict(self.stocks(primary, *args, **kwargs))
+            secondary = dict(self.options(secondary, *args, **kwargs))
             strategies = self.calculate(primary, secondary, *args, **kwargs)
             for strategy, dataset in strategies.items():
                 size = self.size(dataset, "size")
@@ -184,11 +189,11 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
                 if self.empty(dataset, "size"): continue
                 yield dataset
 
-    def calculate(self, options, *args, **kwargs):
-        strategies = dict(self.calculator(options, *args, **kwargs))
+    def calculate(self, stocks, options, *args, **kwargs):
+        strategies = dict(self.calculator(stocks, options, *args, **kwargs))
         return strategies
 
-    def calculator(self, options, stocks, *args, **kwargs):
+    def calculator(self, stocks, options, *args, **kwargs):
         for strategy, calculation in self.calculations.items():
             if not all([stock in stocks.keys() for stock in list(strategy.stocks)]): continue
             if not all([option in options.keys() for option in list(strategy.options)]): continue
@@ -200,11 +205,14 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
 
     @staticmethod
     def stocks(stocks, *args, **kwargs):
-        for index, series in stocks.iterrows():
-            security = (series.instrument, Variables.Securities.Option.EMPTY, series.position)
-            security = Securities(security)
-            value = np.float32(series.price)
-            yield security, value
+        stocks = stocks.set_index(list(Querys.Symbol) + list(Variables.Securities.Security), drop=True, inplace=False)
+        stocks = xr.Dataset.from_dataframe(stocks)
+        columns = set(Querys.Symbol) | set(Variables.Securities.Security) - {"position"}
+        stocks = reduce(lambda content, axis: content.squeeze(axis), list(columns), stocks)
+        for position in list(Variables.Securities.Position):
+            security = Securities([Variables.Securities.Instrument.STOCK, Variables.Securities.Option.EMPTY, position])
+            dataset = stocks.sel(position=position).drop_vars(list(Variables.Securities.Security))
+            yield security, dataset
 
     @staticmethod
     def options(options, *args, **kwargs):
