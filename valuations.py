@@ -27,21 +27,16 @@ __license__ = "MIT License"
 
 class ValuationLocator(ntuple("Locator", "valuation scenario")): pass
 class ValuationEquation(Equation, ABC, datatype=xr.DataArray, vectorize=True):
-    rτ = Variable.Dependent("rτ", "asset", np.float32, function=lambda wτ: np.abs(np.maximum(wτ, 0)))
-    eτ = Variable.Dependent("eτ", "debt", np.float32, function=lambda wτ: np.abs(np.minimum(wτ, 0)))
-    ro = Variable.Dependent("ro", "revenue", np.float32, function=lambda wo: np.abs(np.maximum(wo, 0)))
-    eo = Variable.Dependent("eo", "expense", np.float32, function=lambda wo: np.abs(np.minimum(wo, 0)))
     τ = Variable.Dependent("τ", "tau", np.int32, function=lambda tτ, *, to: (tτ - to).days)
 
-    wyα = Variable.Independent("wyα", "expense", np.float32, locator="expense")
-    wyβ = Variable.Independent("wyβ", "revenue", np.float32, locator="revenue")
-    wxα = Variable.Independent("wxα", "purchase", np.float32, locator="purchase")
-    wxβ = Variable.Independent("wxβ", "borrow", np.float32, locator="borrow")
     wo = Variable.Independent("wo", "spot", np.float32, locator="spot")
+    ro = Variable.Independent("ro", "revenue", np.float32, locator="revenue")
+    eo = Variable.Independent("eo", "expense", np.float32, locator="expense")
+    rτ = Variable.Independent("rτ", "purchase", np.float32, locator="purchase")
+    eτ = Variable.Independent("eτ", "borrow", np.float32, locator="borrow")
 
     xo = Variable.Independent("xo", "underlying", np.float32, locator="underlying")
     qo = Variable.Independent("qo", "size", np.int32, locator="size")
-
     tτ = Variable.Independent("tτ", "expire", Date, locator="expire")
     to = Variable.Constant("to", "date", Date, locator="date")
     ρ = Variable.Constant("ρ", "discount", np.float32, locator="discount")
@@ -68,13 +63,14 @@ class ArbitrageCalculation(ValuationCalculation, ABC):
             yield equation.qo()
             yield equation.wo()
             yield equation.wτ()
-            yield equation.wyα()
-            yield equation.wyβ()
-            yield equation.wxα()
-            yield equation.wxβ()
+            yield equation.ro()
+            yield equation.eo()
+            yield equation.rτ()
+            yield equation.eτ()
             yield equation.npv()
 
 class MinimumArbitrageCalculation(ArbitrageCalculation, equation=MinimumArbitrageEquation, register=ValuationLocator(Variables.Valuations.Valuation.ARBITRAGE, Variables.Valuations.Scenario.MINIMUM)): pass
+class ExpectedArbitrageCalculation(ArbitrageCalculation, equation=ExpectedArbitrageEquation, register=ValuationLocator(Variables.Valuations.Valuation.ARBITRAGE, Variables.Valuations.Scenario.EXPECTED)): pass
 class MaximumArbitrageCalculation(ArbitrageCalculation, equation=MaximumArbitrageEquation, register=ValuationLocator(Variables.Valuations.Valuation.ARBITRAGE, Variables.Valuations.Scenario.MAXIMUM)): pass
 
 
@@ -107,6 +103,10 @@ class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
     def execute(self, strategies, *args, **kwargs):
         assert isinstance(strategies, xr.Dataset)
         if self.empty(strategies, "size"): return
+
+        print(strategies)
+        raise Exception()
+
         valuations = self.calculate(strategies, *args, **kwargs)
         valuations = self.stacking(valuations, *args, **kwargs)
         settlements = self.groups(valuations, by=Querys.Settlement)
