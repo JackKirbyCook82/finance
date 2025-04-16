@@ -103,10 +103,6 @@ class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
     def execute(self, strategies, *args, **kwargs):
         assert isinstance(strategies, xr.Dataset)
         if self.empty(strategies, "size"): return
-
-        print(strategies)
-        raise Exception()
-
         valuations = self.calculate(strategies, *args, **kwargs)
         valuations = self.stacking(valuations, *args, **kwargs)
         settlements = self.groups(valuations, by=Querys.Settlement)
