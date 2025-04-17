@@ -44,8 +44,8 @@ class MarketCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcula
 
     def calculate(self, valuations, options, *args, **kwargs):
         valuations["priority"] = valuations.apply(self.priority, axis=1)
-        valuations["size"] = valuations.apply(self.liquidity, axis=1).apply(np.floor).astype(np.int32)
-        options["size"] = options.apply(self.liquidity, axis=1).apply(np.floor).astype(np.int32)
+        valuations["liquidity"] = valuations.apply(self.liquidity, axis=1).apply(np.floor).astype(np.int32)
+        options["liquidity"] = options.apply(self.liquidity, axis=1).apply(np.floor).astype(np.int32)
         options = options.where(options["size"] >= 1).dropna(how="all", inplace=False)
         valuations = valuations.sort_values("priority", axis=0, ascending=False, inplace=False, ignore_index=False)
         valuations = valuations.reset_index(drop=True, inplace=False)
@@ -53,8 +53,8 @@ class MarketCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcula
         available = self.available(options, *args, **kwargs)
         available = available[available.index.isin(interest)]
         header = list(Querys.Settlement) + list(map(str, Securities.Options))
-        valuations["size"] = valuations[header].apply(self.converge, axis=1, available=available)
-        mask = valuations[("size", "")] > 0
+        valuations["quantity"] = valuations[header].apply(self.converge, axis=1, available=available)
+        mask = valuations[("quantity", "")] > 0
         valuations = valuations.where(mask).dropna(how="all", inplace=False)
         valuations = valuations.reset_index(drop=True, inplace=False)
         return valuations
@@ -74,11 +74,11 @@ class MarketCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcula
     def available(options, *args, **kwargs):
         function = lambda cols: str(Securities([cols["instrument"], cols["option"], cols["position"]]))
         header = list(Querys.Settlement) + list(Variables.Securities.Security) + ["strike"]
-        options = options[header + ["size"]]
+        options = options[header + ["liquidity"]]
         try: options["security"] = options.apply(function, axis=1)
         except ValueError: options = pd.DataFrame(columns=list(options.columns) + ["security"])
         index = list(Querys.Settlement) + ["security", "strike"]
-        options = options[index + ["size"]].set_index(index, drop=True, inplace=False)
+        options = options[index + ["liquidity"]].set_index(index, drop=True, inplace=False)
         return options
 
     @staticmethod
@@ -92,9 +92,9 @@ class MarketCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcula
         index = pd.MultiIndex.from_frame(valuation)
         try: quantity = available.loc[index]
         except KeyError: return 0
-        quantity["size"] = np.min(quantity["size"].values).min()
-        available["size"] = available["size"].subtract(quantity["size"], fill_value=0)
-        return quantity.loc[index, "size"].min().astype(np.int32)
+        quantity["liquidity"] = np.min(quantity["liquidity"].values).min()
+        available["liquidity"] = available["liquidity"].subtract(quantity["liquidity"], fill_value=0)
+        return quantity.loc[index, "liquidity"].min().astype(np.int32)
 
     @property
     def liquidity(self): return self.__liquidity
@@ -103,8 +103,10 @@ class MarketCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcula
 
 
 class AcquisitionParameters(metaclass=ParameterMeta):
-    order = ["valuation", "scenario", "strategy"] + list(Querys.Settlement) + list(map(str, Securities.Options)) + ["underlying", "tau", "size", "revenue", "expense", "purchase", "borrow", "spot", "future", "npv"]
-    types = {"ticker": str, " ".join(map(str, Securities.Options)): str, "underlying": np.float32, "tau size": np.float32, "revenue expense": np.float32, "purchase borrow": np.float32, "spot future": np.float32, "npv": np.float32}
+    order = ["valuation", "scenario", "strategy"] + list(Querys.Settlement) + list(map(str, Securities.Options))
+    order = order + ["underlying", "tau", "size", "liquidity", "quantity", "revenue", "expense", "invest", "borrow", "spot", "payoff", "future", "npv"]
+    types = {"ticker": str, " ".join(map(str, Securities.Options)): str, "underlying": np.float32, "tau size liquidity quantity": np.float32}
+    types = types | {"revenue expense invest borrow": np.float32, "spot future payoff npv": np.float32}
     parsers = dict(valuation=Variables.Valuations.Valuation, scenario=Variables.Valuations.Scenario, strategy=Strategies)
     formatters = dict(valuation=str, scenario=str, strategy=str)
     dates = dict(expire="%Y%m%d")

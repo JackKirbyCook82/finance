@@ -37,10 +37,10 @@ def percent(number):
 
 
 class ProspectParameters(metaclass=ParameterMeta):
-    order = ["strategy"] + list(Querys.Settlement) + list(map(str, Securities.Options)) + ["underlying", "size", "tau", "revenue", "expense", "purchase", "borrow", "spot", "future", "npv"]
-    columns = ["revenue", "expense", "purchase", "borrow", "spot", "future", "npv", "underlying", "size", "tau", "priority", "status"]
+    order = ["strategy"] + list(Querys.Settlement) + list(map(str, Securities.Options)) + ["liquidity", "tau", "spot", "future", "npv"]
+    columns = ["tau", "spot", "future", "npv", "liquidity", "priority", "status"]
     index = ["valuation", "strategy"] + list(map(str, chain(Querys.Settlement, Securities.Options)))
-    formatters = {"revenue expense purchase borrow spot future npv": floating, "underlying": floating, "size": integer, tuple(map(str, Securities.Options)): floating}
+    formatters = {"spot future npv": floating, "liquidity": integer, tuple(map(str, Securities.Options)): floating}
     stacking = Stacking(axis="scenario", columns=["npv", "future"], layers=list(Variables.Valuations.Scenario))
     layout = Layout(width=250, space=10, columns=30, rows=30)
 
@@ -64,10 +64,10 @@ class ProspectCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
         yield prospects
 
     def calculate(self, valuations, *args, **kwargs):
+        valuations["liquidity"] = valuations.apply(self.liquidity, axis=1).apply(np.floor).astype(np.int32)
         valuations["status"] = Variables.Markets.Status.PROSPECT
         valuations["priority"] = valuations.apply(self.priority, axis=1)
-        valuations["size"] = valuations.apply(self.liquidity, axis=1).apply(np.floor).astype(np.int32)
-        valuations = valuations.where(valuations["size"] >= 1).dropna(how="all", inplace=False)
+        valuations = valuations.where(valuations["liquidity"] >= 1).dropna(how="all", inplace=False)
         valuations = valuations.sort_values("priority", axis=0, ascending=False, inplace=False, ignore_index=False)
         valuations = valuations.reset_index(drop=True, inplace=False)
         return valuations

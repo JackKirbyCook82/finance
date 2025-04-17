@@ -29,29 +29,29 @@ class ValuationLocator(ntuple("Locator", "valuation scenario")): pass
 class ValuationEquation(Equation, ABC, datatype=xr.DataArray, vectorize=True):
     τ = Variable.Dependent("τ", "tau", np.int32, function=lambda tτ, *, to: (tτ - to).days)
 
+    wio = Variable.Independent("wio", "invest", np.float32, locator="invest")
+    wbo = Variable.Independent("wbo", "borrow", np.float32, locator="borrow")
+    wro = Variable.Independent("wro", "revenue", np.float32, locator="revenue")
+    weo = Variable.Independent("weo", "expense", np.float32, locator="expense")
     wo = Variable.Independent("wo", "spot", np.float32, locator="spot")
-    ro = Variable.Independent("ro", "revenue", np.float32, locator="revenue")
-    eo = Variable.Independent("eo", "expense", np.float32, locator="expense")
-    rτ = Variable.Independent("rτ", "purchase", np.float32, locator="purchase")
-    eτ = Variable.Independent("eτ", "borrow", np.float32, locator="borrow")
 
     xo = Variable.Independent("xo", "underlying", np.float32, locator="underlying")
     qo = Variable.Independent("qo", "size", np.int32, locator="size")
-    tτ = Variable.Independent("tτ", "expire", Date, locator="expire")
     to = Variable.Constant("to", "date", Date, locator="date")
+    tτ = Variable.Independent("tτ", "expire", Date, locator="expire")
     ρ = Variable.Constant("ρ", "discount", np.float32, locator="discount")
 
 class ArbitrageEquation(ValuationEquation, ABC):
     npv = Variable.Dependent("npv", "npv", np.float32, function=lambda wτ, wo, τ, *, ρ: np.divide(wτ, np.power(ρ + 1, np.divide(τ, 365))) + wo)
 
 class MinimumArbitrageEquation(ArbitrageEquation):
-    wτ = Variable.Independent("vτ", "future", np.float32, locator="minimum")
-
-class ExpectedArbitrageEquation(ArbitrageEquation):
-    wτ = Variable.Independent("vτ", "future", np.float32, locator="expected")
+    wτ = Variable.Independent("wτ", "future", np.float32, locator="minimum")
 
 class MaximumArbitrageEquation(ArbitrageEquation):
-    wτ = Variable.Independent("vτ", "future", np.float32, locator="maximum")
+    wτ = Variable.Independent("wτ", "future", np.float32, locator="maximum")
+
+# class ExpectedArbitrageEquation(ArbitrageEquation):
+#     wτ = Variable.Independent("vτ", "future", np.float32, locator="expected")
 
 
 class ValuationCalculation(Calculation, ABC, metaclass=RegistryMeta): pass
@@ -63,15 +63,17 @@ class ArbitrageCalculation(ValuationCalculation, ABC):
             yield equation.qo()
             yield equation.wo()
             yield equation.wτ()
-            yield equation.ro()
-            yield equation.eo()
-            yield equation.rτ()
-            yield equation.eτ()
+            yield equation.wio()
+            yield equation.wbo()
+            yield equation.wro()
+            yield equation.weo()
             yield equation.npv()
 
 class MinimumArbitrageCalculation(ArbitrageCalculation, equation=MinimumArbitrageEquation, register=ValuationLocator(Variables.Valuations.Valuation.ARBITRAGE, Variables.Valuations.Scenario.MINIMUM)): pass
-class ExpectedArbitrageCalculation(ArbitrageCalculation, equation=ExpectedArbitrageEquation, register=ValuationLocator(Variables.Valuations.Valuation.ARBITRAGE, Variables.Valuations.Scenario.EXPECTED)): pass
 class MaximumArbitrageCalculation(ArbitrageCalculation, equation=MaximumArbitrageEquation, register=ValuationLocator(Variables.Valuations.Valuation.ARBITRAGE, Variables.Valuations.Scenario.MAXIMUM)): pass
+
+# class ExpectedArbitrageCalculation(ArbitrageCalculation, equation=ExpectedArbitrageEquation, register=ValuationLocator(Variables.Valuations.Valuation.ARBITRAGE, Variables.Valuations.Scenario.EXPECTED)):
+#     pass
 
 
 class ValuationStacking(ABC, metaclass=RegistryMeta):
