@@ -42,71 +42,41 @@ class ValuationEquation(Equation, ABC, datatype=xr.DataArray, vectorize=True):
     ρ = Variable.Constant("ρ", "discount", np.float32, locator="discount")
 
 class ArbitrageEquation(ValuationEquation, ABC):
-    npv = Variable.Dependent("npv", "npv", np.float32, function=lambda wτ, wo, τ, *, ρ: np.divide(wτ, np.power(ρ + 1, np.divide(τ, 365))) + wo)
-
-class MinimumArbitrageEquation(ArbitrageEquation):
-    wτ = Variable.Independent("wτ", "future", np.float32, locator="minimum")
-
-class MaximumArbitrageEquation(ArbitrageEquation):
-    wτ = Variable.Independent("wτ", "future", np.float32, locator="maximum")
-
-# class ExpectedArbitrageEquation(ArbitrageEquation):
-#     wτ = Variable.Independent("vτ", "future", np.float32, locator="expected")
+    vlo = Variable.Dependent("vlo", ("npv", Variables.Valuations.Scenario.MINIMUM), np.float32, function=lambda wlτ, wo, τ, *, ρ: np.divide(wlτ, np.power(ρ + 1, np.divide(τ, 365))) + wo)
+    vho = Variable.Dependent("vho", ("npv", Variables.Valuations.Scenario.MAXIMUM), np.float32, function=lambda whτ, wo, τ, *, ρ: np.divide(whτ, np.power(ρ + 1, np.divide(τ, 365))) + wo)
+    wlτ = Variable.Independent("wlτ", ("future", Variables.Valuations.Scenario.MINIMUM), np.float32, locator="minimum")
+    whτ = Variable.Independent("whτ", ("future", Variables.Valuations.Scenario.MAXIMUM), np.float32, locator="maximum")
 
 
 class ValuationCalculation(Calculation, ABC, metaclass=RegistryMeta): pass
-class ArbitrageCalculation(ValuationCalculation, ABC):
+class ArbitrageCalculation(ValuationCalculation, ABC, equation=ArbitrageEquation, register=Variables.Valuations.Valuation.ARBITRAGE):
     def execute(self, strategies, *args, discount, date, **kwargs):
         with self.equation(strategies, discount=discount, date=date) as equation:
             yield equation.τ()
             yield equation.xo()
             yield equation.qo()
             yield equation.wo()
-            yield equation.wτ()
             yield equation.wio()
             yield equation.wbo()
             yield equation.wro()
             yield equation.weo()
-            yield equation.npv()
-
-class MinimumArbitrageCalculation(ArbitrageCalculation, equation=MinimumArbitrageEquation, register=ValuationLocator(Variables.Valuations.Valuation.ARBITRAGE, Variables.Valuations.Scenario.MINIMUM)): pass
-class MaximumArbitrageCalculation(ArbitrageCalculation, equation=MaximumArbitrageEquation, register=ValuationLocator(Variables.Valuations.Valuation.ARBITRAGE, Variables.Valuations.Scenario.MAXIMUM)): pass
-
-# class ExpectedArbitrageCalculation(ArbitrageCalculation, equation=ExpectedArbitrageEquation, register=ValuationLocator(Variables.Valuations.Valuation.ARBITRAGE, Variables.Valuations.Scenario.EXPECTED)):
-#     pass
-
-
-class ValuationStacking(ABC, metaclass=RegistryMeta):
-    def __init_subclass__(cls, *args, header=[], **kwargs): cls.__header__ = header
-    def __init__(self, *args, **kwargs): pass
-    def __call__(self, valuations, *args, **kwargs):
-        assert isinstance(valuations, pd.DataFrame)
-        index = set(valuations.columns) - ({"scenario"} | set(self.header))
-        valuations = valuations.pivot(index=index, columns=["scenario"])
-        valuations = valuations.reset_index(drop=False, inplace=False)
-        return valuations
-
-    @property
-    def header(self): return type(self).__header__
-
-class ArbitrageStacking(ValuationStacking, header=["npv", "future"], register=Variables.Valuations.Valuation.ARBITRAGE):
-    pass
+            yield equation.wlτ()
+            yield equation.whτ()
+            yield equation.vlo()
+            yield equation.vho()
 
 
 class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
     def __init__(self, *args, valuation, **kwargs):
         assert valuation in Variables.Valuations.Valuation
         super().__init__(*args, **kwargs)
-        calculations = {locator.scenario: calculation for locator, calculation in dict(ValuationCalculation).items() if locator.valuation == valuation}
-        self.__calculations = {scenario: calculation(*args, **kwargs) for scenario, calculation in calculations.items()}
-        self.__stacking = dict(ValuationStacking)[valuation](*args, **kwargs)
+        self.__calculation = ValuationCalculation[valuation](*args, **kwargs)
         self.__valuation = valuation
 
     def execute(self, strategies, *args, **kwargs):
         assert isinstance(strategies, xr.Dataset)
         if self.empty(strategies, "size"): return
         valuations = self.calculate(strategies, *args, **kwargs)
-        valuations = self.stacking(valuations, *args, **kwargs)
         settlements = self.groups(valuations, by=Querys.Settlement)
         settlements = ",".join(list(map(str, settlements)))
         size = self.size(valuations)
@@ -115,28 +85,21 @@ class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
         yield valuations
 
     def calculate(self, strategies, *args, **kwargs):
-        valuations = dict(self.calculator(strategies, *args, **kwargs))
-        valuations = pd.concat(list(valuations.values()), axis=0)
-        columns = [option for option in list(map(str, Securities.Options)) if option not in valuations.columns]
-        for column in columns: valuations[column] = np.NaN
+        valuations = self.calculation(strategies, *args, **kwargs)
+        valuations = valuations.to_dataframe().dropna(how="all", inplace=False)
+        valuations = valuations.reset_index(drop=False, inplace=False)
+        options = [option for option in list(map(str, Securities.Options)) if option not in valuations.columns]
+        for option in options: valuations[option] = np.NaN
+        valuations["breakeven"] = valuations["spot"] - valuations[("npv", Variables.Valuations.Scenario.MINIMUM)]
+        valuations["valuation"] = self.valuation
+        columns = {column: (column, "") for column in valuations.columns if not isinstance(column, tuple)}
+        valuations = valuations.rename(columns=columns, inplace=False)
+        valuations.columns = pd.MultiIndex.from_tuples(valuations.columns)
+        valuations.columns.names = ["axis", "scenario"]
         return valuations
 
-    def calculator(self, strategies, *args, **kwargs):
-        for scenario, calculation in self.calculations.items():
-            valuations = calculation(strategies, *args, **kwargs)
-            assert isinstance(valuations, xr.Dataset)
-            valuations = valuations.assign_coords({"valuation": xr.Variable("valuation", [self.valuation]).squeeze("valuation")})
-            valuations = valuations.assign_coords({"scenario": xr.Variable("scenario", [scenario]).squeeze("scenario")}).expand_dims("scenario")
-            valuations = valuations.drop_vars(list(Variables.Securities.Security), errors="ignore")
-            valuations = valuations.expand_dims(list(set(iter(valuations.coords)) - set(iter(valuations.dims))))
-            valuations = valuations.to_dataframe().dropna(how="all", inplace=False)
-            valuations = valuations.reset_index(drop=False, inplace=False)
-            yield scenario, valuations
-
     @property
-    def calculations(self): return self.__calculations
-    @property
-    def stacking(self): return self.__stacking
+    def calculation(self): return self.__calculation
     @property
     def valuation(self): return self.__valuation
 

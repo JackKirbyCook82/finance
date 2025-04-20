@@ -57,6 +57,7 @@ class MarketCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcula
         mask = valuations[("quantity", "")] > 0
         valuations = valuations.where(mask).dropna(how="all", inplace=False)
         valuations = valuations.reset_index(drop=True, inplace=False)
+        valuations.columns.names = ["axis", "scenario"]
         return valuations
 
     @staticmethod
@@ -104,9 +105,9 @@ class MarketCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcula
 
 class AcquisitionParameters(metaclass=ParameterMeta):
     order = ["valuation", "scenario", "strategy"] + list(Querys.Settlement) + list(map(str, Securities.Options))
-    order = order + ["underlying", "tau", "size", "liquidity", "quantity", "revenue", "expense", "invest", "borrow", "spot", "payoff", "future", "npv"]
+    order = order + ["underlying", "tau", "size", "liquidity", "quantity", "revenue", "expense", "invest", "borrow", "spot", "breakeven", "payoff", "future", "npv"]
     types = {"ticker": str, " ".join(map(str, Securities.Options)): str, "underlying": np.float32, "tau size liquidity quantity": np.float32}
-    types = types | {"revenue expense invest borrow": np.float32, "spot future payoff npv": np.float32}
+    types = types | {"revenue expense invest borrow": np.float32, "spot breakeven future payoff npv": np.float32}
     parsers = dict(valuation=Variables.Valuations.Valuation, scenario=Variables.Valuations.Scenario, strategy=Strategies)
     formatters = dict(valuation=str, scenario=str, strategy=str)
     dates = dict(expire="%Y%m%d")

@@ -55,9 +55,6 @@ class MinimumArbitrageEquation(ArbitrageEquation):
 class MaximumArbitrageEquation(ArbitrageEquation):
     wτ = Variable.Dependent("wτ", "maximum", np.float32, function=lambda yτn, *, ε: np.max(yτn) * 100 - ε)
 
-# class ExpectedArbitrageEquation(ArbitrageEquation):
-#     wτ = Variable.Dependent("wτ", "expected", np.float32, function=lambda :)
-
 
 class PayoffCalculation(Calculation, ABC, metaclass=RegistryMeta): pass
 class ArbitrageCalculation(PayoffCalculation, ABC):
@@ -68,9 +65,6 @@ class ArbitrageCalculation(PayoffCalculation, ABC):
 
 class MinimumArbitrageCalculation(ArbitrageCalculation, equation=MinimumArbitrageEquation, register=PayoffLocator(Variables.Valuations.Valuation.ARBITRAGE, Variables.Valuations.Scenario.MINIMUM)): pass
 class MaximumArbitrageCalculation(ArbitrageCalculation, equation=MaximumArbitrageEquation, register=PayoffLocator(Variables.Valuations.Valuation.ARBITRAGE, Variables.Valuations.Scenario.MAXIMUM)): pass
-
-# class ExpectedArbitrageCalculation(ArbitrageCalculation, equation=ExpectedArbitrageEquation, register=ValuationLocator(Variables.Valuations.Valuation.ARBITRAGE, Variables.Valuations.Scenario.EXPECTED)):
-#     pass
 
 
 class PayoffCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
@@ -99,8 +93,9 @@ class PayoffCalculator(Sizing, Emptying, Partition, Logging, title="Calculated")
         payoffs = payoffs.rename(columns={str(scenario).lower(): scenario for scenario in Variables.Valuations.Scenario})
         columns = list(product(["payoff"], payoffs.columns))
         payoffs.columns = pd.MultiIndex.from_tuples(columns)
-        valuations = pd.concat([valuations, payoffs], axis=1)
-        return valuations
+        dataframe = pd.concat([valuations, payoffs], axis=1)
+        dataframe.columns.names = valuations.columns.names
+        return dataframe
 
     def calculator(self, options, *args, **kwargs):
         for scenario, calculation in self.calculations.items():
