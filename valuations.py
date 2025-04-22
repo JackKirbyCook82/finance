@@ -43,8 +43,10 @@ class ValuationEquation(Equation, ABC, datatype=xr.DataArray, vectorize=True):
 
 class ArbitrageEquation(ValuationEquation, ABC):
     vlo = Variable.Dependent("vlo", ("npv", Variables.Valuations.Scenario.MINIMUM), np.float32, function=lambda wlτ, wo, τ, *, ρ: np.divide(wlτ, np.power(ρ + 1, np.divide(τ, 365))) + wo)
+    veo = Variable.Dependent("veo", ("npv", Variables.Valuations.Scenario.EXPECTED), np.float32, function=lambda weτ, wo, τ, *, ρ: np.divide(weτ, np.power(ρ + 1, np.divide(τ, 365))) + wo)
     vho = Variable.Dependent("vho", ("npv", Variables.Valuations.Scenario.MAXIMUM), np.float32, function=lambda whτ, wo, τ, *, ρ: np.divide(whτ, np.power(ρ + 1, np.divide(τ, 365))) + wo)
     wlτ = Variable.Independent("wlτ", ("future", Variables.Valuations.Scenario.MINIMUM), np.float32, locator="minimum")
+    weτ = Variable.Independent("weτ", ("future", Variables.Valuations.Scenario.EXPECTED), np.float32, locator="expected")
     whτ = Variable.Independent("whτ", ("future", Variables.Valuations.Scenario.MAXIMUM), np.float32, locator="maximum")
 
 
@@ -61,8 +63,10 @@ class ArbitrageCalculation(ValuationCalculation, ABC, equation=ArbitrageEquation
             yield equation.wro()
             yield equation.weo()
             yield equation.wlτ()
+            yield equation.weτ()
             yield equation.whτ()
             yield equation.vlo()
+            yield equation.veo()
             yield equation.vho()
 
 
