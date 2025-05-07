@@ -182,9 +182,10 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
         calculations = {strategy: calculation(*args, **kwargs) for strategy, calculation in dict(StrategyCalculation).items() if strategy in strategies}
         self.__calculations = calculations
 
-    def execute(self, stocks, options, *args, **kwargs):
-        assert isinstance(options, pd.DataFrame)
+    def execute(self, stocks, options, technicals, *args, **kwargs):
+        assert isinstance(stocks, pd.DataFrame) and isinstance(options, pd.DataFrame) and isinstance(technicals, pd.DataFrame)
         if self.empty(options): return
+        stocks = self.technicals(stocks, technicals, *args, **kwargs)
         for settlement, secondary in self.partition(options, by=Querys.Settlement):
             primary = stocks.where(stocks["ticker"] == settlement.ticker).dropna(how="all", inplace=False)
             primary = dict(self.stocks(primary, *args, **kwargs))
@@ -234,8 +235,16 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
             dataset["strike"] = dataset[str(security)]
             yield security, dataset
 
+    @staticmethod
+    def technicals(stocks, technicals, *args, **kwargs):
+        function = lambda dataframe: dataframe.where(dataframe["date"] == dataframe["date"].max()).dropna(how="all", inplace=False)
+        technicals = pd.concat([function(dataframe) for ticker, dataframe in technicals.groupby("ticker")], axis=0)
+        stocks = stocks.merge(technicals[["ticker", "trend", "volatility"]], how="left", on=list(Querys.Symbol), sort=False, suffixes=("", "_"))
+        return stocks
+
     @property
     def calculations(self): return self.__calculations
+
 
 
 
