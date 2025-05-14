@@ -60,26 +60,25 @@ class ValuationCalculation(Calculation, ABC, metaclass=RegistryMeta): pass
 class ArbitrageCalculation(ValuationCalculation, ABC, equation=ArbitrageEquation, register=Variables.Valuations.Valuation.ARBITRAGE):
     def execute(self, strategies, *args, discount, date, **kwargs):
         with self.equation(strategies, discount=discount, date=date) as equation:
-            yield equation.τ()
-            yield equation.qo()
-            yield equation.wo()
-            yield equation.xo()
-            yield equation.Δo()
-            yield equation.Γo()
-            yield equation.Θo()
-            yield equation.Vo()
-            yield equation.Po()
-            yield equation.wio()
-            yield equation.wbo()
-            yield equation.wro()
-            yield equation.weo()
-            yield equation.wlτ()
-            yield equation.weτ()
-            yield equation.whτ()
             yield equation.vlo()
             yield equation.veo()
             yield equation.vho()
-
+            yield equation.wlτ()
+            yield equation.weτ()
+            yield equation.whτ()
+            yield equation.wro()
+            yield equation.weo()
+            yield equation.wio()
+            yield equation.wbo()
+            yield equation.wo()
+            yield equation.xo()
+            yield equation.qo()
+            yield equation.τ()
+#            yield equation.Δo()
+#            yield equation.Γo()
+#            yield equation.Θo()
+#            yield equation.Vo()
+#            yield equation.Po()
 
 class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
     def __init__(self, *args, valuation, **kwargs):

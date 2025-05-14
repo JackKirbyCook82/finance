@@ -23,23 +23,23 @@ __license__ = "MIT License"
 
 
 class PricingEquation(Equation, ABC, datatype=pd.Series, vectorize=True):
-    Θ = Variable.Constant("Θ", "position", Variables.Securities.Position, locator="position")
+    j = Variable.Constant("j", "position", Variables.Securities.Position, locator="position")
     qα = Variable.Independent("qα", "supply", np.float32, locator="supply")
     qβ = Variable.Independent("qβ", "demand", np.float32, locator="demand")
     yα = Variable.Independent("yα", "ask", np.float32, locator="ask")
     yβ = Variable.Independent("yβ", "bid", np.float32, locator="bid")
 
 class MarketEquation(PricingEquation):
-    y = Variable.Dependent("y", "price", np.float32, function=lambda yα, yβ, *, Θ: {Variables.Securities.Position.LONG: yα, Variables.Securities.Position.SHORT: yβ}[Θ])
-    q = Variable.Dependent("q", "size", np.float32, function=lambda qα, qβ, *, Θ: {Variables.Securities.Position.LONG: qα, Variables.Securities.Position.SHORT: qβ}[Θ])
+    y = Variable.Dependent("y", "price", np.float32, function=lambda yα, yβ, *, j: {Variables.Securities.Position.LONG: yα, Variables.Securities.Position.SHORT: yβ}[j])
+    q = Variable.Dependent("q", "size", np.float32, function=lambda qα, qβ, *, j: {Variables.Securities.Position.LONG: qα, Variables.Securities.Position.SHORT: qβ}[j])
 
 class LimitEquation(PricingEquation):
-    y = Variable.Dependent("y", "price", np.float32, function=lambda yα, yβ, *, Θ: {Variables.Securities.Position.LONG: yβ, Variables.Securities.Position.SHORT: yα}[Θ])
-    q = Variable.Dependent("q", "size", np.float32, function=lambda qα, qβ, *, Θ: {Variables.Securities.Position.LONG: qα, Variables.Securities.Position.SHORT: qβ}[Θ])
+    y = Variable.Dependent("y", "price", np.float32, function=lambda yα, yβ, *, j: {Variables.Securities.Position.LONG: yβ, Variables.Securities.Position.SHORT: yα}[j])
+    q = Variable.Dependent("q", "size", np.float32, function=lambda qα, qβ, *, j: {Variables.Securities.Position.LONG: qα, Variables.Securities.Position.SHORT: qβ}[j])
 
 class CenteredEquation(PricingEquation):
     y = Variable.Dependent("y", "price", np.float32, function=lambda yα, yβ: (yα + yβ) / 2)
-    q = Variable.Dependent("q", "size", np.float32, function=lambda qα, qβ, *, Θ: {Variables.Securities.Position.LONG: qα, Variables.Securities.Position.SHORT: qβ}[Θ])
+    q = Variable.Dependent("q", "size", np.float32, function=lambda qα, qβ, *, j: {Variables.Securities.Position.LONG: qα, Variables.Securities.Position.SHORT: qβ}[j])
 
 
 class PricingCalculation(Calculation, ABC, metaclass=RegistryMeta):
@@ -54,25 +54,19 @@ class ModerateCalculation(PricingCalculation, equation=CenteredEquation, registe
 
 
 class PricingCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calculated"):
-    def __init_subclass__(cls, *args, **kwargs):
-        super().__init_subclass__(*args, **kwargs)
-        cls.__instrument__ = kwargs.get("instrument", getattr(cls, "__instrument__", None))
-
     def __init__(self, *args, pricing, **kwargs):
         super().__init__(*args, **kwargs)
-        instrument = getattr(type(self), "__instrument__", None)
-        instrument if bool(instrument) else kwargs["instrument"]
-        self.__header = {Variables.Securities.Instrument.STOCK: list(Querys.Symbol), Variables.Securities.Instrument.OPTION: list(Querys.Contract)}[instrument]
-        self.__query = {Variables.Securities.Instrument.STOCK: Querys.Symbol, Variables.Securities.Instrument.OPTION: Querys.Settlement}[instrument]
         self.__calculation = dict(PricingCalculation)[pricing](*args, **kwargs)
-        self.__instrument = instrument
         self.__pricing = pricing
 
     def execute(self, securities, *args, **kwargs):
         assert isinstance(securities, pd.DataFrame)
         if self.empty(securities): return
-        securities = self.calculate(securities, *args, **kwargs)
-        querys = self.groups(securities, by=self.query)
+        criteria = all([column in securities.columns for column in ("expire", "strike")])
+        instrument = Variables.Securities.Instrument.OPTION if criteria else Variables.Securities.Instrument.STOCK
+        query = {Variables.Securities.Instrument.STOCK: Querys.Symbol, Variables.Securities.Instrument.OPTION: Querys.Settlement}[instrument]
+        securities = self.calculate(securities, *args, instrument=instrument, **kwargs)
+        querys = self.groups(securities, by=query)
         querys = ",".join(list(map(str, querys)))
         size = self.size(securities)
         self.console(f"{str(querys)}[{int(size):.0f}]")
@@ -85,26 +79,21 @@ class PricingCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcul
         results = results.reset_index(drop=True, inplace=False)
         return results
 
-    def calculator(self, securities, *args, **kwargs):
+    def calculator(self, securities, *args, instrument, **kwargs):
         for position in list(Variables.Securities.Position):
             pricing = self.calculation(securities, *args, position=position, **kwargs)
-            dataframe = pd.concat([securities[self.header], pricing], axis=1)
-            if self.instrument == Variables.Securities.Instrument.STOCK:
+            header = {Variables.Securities.Instrument.STOCK: list(Querys.Symbol), Variables.Securities.Instrument.OPTION: list(Querys.Contract)}[instrument]
+            dataframe = pd.concat([securities[header], pricing], axis=1)
+            if instrument == Variables.Securities.Instrument.STOCK:
                 dataframe["option"] = Variables.Securities.Option.EMPTY
-            dataframe["instrument"] = self.instrument
+            dataframe["instrument"] = instrument
             dataframe["position"] = position
             yield dataframe
 
     @property
     def calculation(self): return self.__calculation
     @property
-    def instrument(self): return self.__instrument
-    @property
     def pricing(self): return self.__pricing
-    @property
-    def header(self): return self.__header
-    @property
-    def query(self): return self.__query
 
 
 
