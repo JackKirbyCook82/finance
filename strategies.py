@@ -12,7 +12,6 @@ import xarray as xr
 from abc import ABC
 from functools import reduce
 from scipy.stats import norm
-from datetime import date as Date
 from collections import namedtuple as ntuple
 
 from finance.variables import Variables, Querys, Strategies, Securities
@@ -79,6 +78,11 @@ class StrategyEquation(Equation, ABC, datatype=xr.DataArray, vectorize=True):
     qcα = Variable.Independent("qcα", "size", np.int32, locator=StrategyLocator("size", Securities.Options.Calls.Long))
     qcβ = Variable.Independent("qcβ", "size", np.int32, locator=StrategyLocator("size", Securities.Options.Calls.Short))
 
+    vpα = Variable.Independent("vpα", "valuation", np.float32, locator=StrategyLocator("valuation", Securities.Options.Puts.Long))
+    vpβ = Variable.Independent("vpβ", "valuation", np.float32, locator=StrategyLocator("valuation", Securities.Options.Puts.Short))
+    vcα = Variable.Independent("vcα", "valuation", np.float32, locator=StrategyLocator("valuation", Securities.Options.Calls.Long))
+    vcβ = Variable.Independent("vcβ", "valuation", np.float32, locator=StrategyLocator("valuation", Securities.Options.Calls.Short))
+
     Δpα = Variable.Independent("Δpα", "delta", np.float32, locator=StrategyLocator("delta", Securities.Options.Puts.Long))
     Δpβ = Variable.Independent("Δpβ", "delta", np.float32, locator=StrategyLocator("delta", Securities.Options.Puts.Short))
     Δcα = Variable.Independent("Δcα", "delta", np.float32, locator=StrategyLocator("delta", Securities.Options.Calls.Long))
@@ -111,6 +115,7 @@ class VerticalPutEquation(StrategyEquation):
     σo = Variable.Dependent("σo", "volatility", np.float32, function=lambda σpα, σpβ: np.divide(σpα + σpβ, 2))
     qo = Variable.Dependent("qo", "size", np.int32, function=lambda qpα, qpβ: np.minimum(qpα, qpβ))
 
+    vo = Variable.Dependent("vo", "valuation", np.float32, function=lambda vpα, vpβ: vpα + vpβ)
     Δo = Variable.Dependent("Δo", "delta", np.float32, function=lambda Δpα, Δpβ: Δpα + Δpβ)
     Γo = Variable.Dependent("Γo", "gamma", np.float32, function=lambda Γpα, Γpβ: Γpα + Γpβ)
     Θo = Variable.Dependent("Θo", "theta", np.float32, function=lambda Θpα, Θpβ: Θpα + Θpβ)
@@ -136,6 +141,7 @@ class VerticalCallEquation(StrategyEquation):
     σo = Variable.Dependent("σo", "volatility", np.float32, function=lambda σcα, σcβ: np.divide(σcα + σcβ, 2))
     qo = Variable.Dependent("qo", "size", np.int32, function=lambda qcα, qcβ: np.minimum(qcα, qcβ))
 
+    vo = Variable.Dependent("vo", "valuation", np.float32, function=lambda vcα, vcβ: vcα + vcβ)
     Δo = Variable.Dependent("Δo", "delta", np.float32, function=lambda Δcα, Δcβ: Δcα + Δcβ)
     Γo = Variable.Dependent("Γo", "gamma", np.float32, function=lambda Γcα, Γcβ: Γcα + Γcβ)
     Θo = Variable.Dependent("Θo", "theta", np.float32, function=lambda Θcα, Θcβ: Θcα + Θcβ)
@@ -161,6 +167,7 @@ class CollarLongEquation(StrategyEquation):
     σo = Variable.Dependent("σo", "volatility", np.float32, function=lambda σpα, σcβ: np.divide(σpα + σcβ, 2))
     qo = Variable.Dependent("qo", "size", np.int32, function=lambda qpα, qcβ: np.minimum(qpα, qcβ))
 
+    vo = Variable.Dependent("vo", "valuation", np.float32, function=lambda vpα, vcβ: vpα + vcβ)
     Δo = Variable.Dependent("Δo", "delta", np.float32, function=lambda Δpα, Δcβ: Δpα + Δcβ)
     Γo = Variable.Dependent("Γo", "gamma", np.float32, function=lambda Γpα, Γcβ: Γpα + Γcβ)
     Θo = Variable.Dependent("Θo", "theta", np.float32, function=lambda Θpα, Θcβ: Θpα + Θcβ)
@@ -186,6 +193,7 @@ class CollarShortEquation(StrategyEquation):
     σo = Variable.Dependent("σo", "volatility", np.float32, function=lambda σcα, σpβ: np.divide(σcα + σpβ, 2))
     qo = Variable.Dependent("qo", "size", np.int32, function=lambda qcα, qpβ: np.minimum(qcα, qpβ))
 
+    vo = Variable.Dependent("vo", "valuation", np.float32, function=lambda vcα, vpβ: vcα + vpβ)
     Δo = Variable.Dependent("Δo", "delta", np.float32, function=lambda Δcα, Δpβ: Δcα + Δpβ)
     Γo = Variable.Dependent("Γo", "gamma", np.float32, function=lambda Γcα, Γpβ: Γcα + Γpβ)
     Θo = Variable.Dependent("Θo", "theta", np.float32, function=lambda Θcα, Θpβ: Θcα + Θpβ)
@@ -224,11 +232,12 @@ class StrategyCalculation(Calculation, ABC, metaclass=RegistryMeta):
             yield equation.wo()
             yield equation.xo()
             yield equation.qo()
-#            yield equation.Δo()
-#            yield equation.Γo()
-#            yield equation.Θo()
-#            yield equation.Vo()
-#            yield equation.Po()
+            yield equation.vo()
+            yield equation.Δo()
+            yield equation.Γo()
+            yield equation.Θo()
+            yield equation.Vo()
+            yield equation.Po()
 
     @property
     def strategy(self): return type(self).__strategy__

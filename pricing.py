@@ -23,23 +23,23 @@ __license__ = "MIT License"
 
 
 class PricingEquation(Equation, ABC, datatype=pd.Series, vectorize=True):
-    j = Variable.Constant("j", "position", Variables.Securities.Position, locator="position")
     qα = Variable.Independent("qα", "supply", np.float32, locator="supply")
     qβ = Variable.Independent("qβ", "demand", np.float32, locator="demand")
     yα = Variable.Independent("yα", "ask", np.float32, locator="ask")
     yβ = Variable.Independent("yβ", "bid", np.float32, locator="bid")
+    jo = Variable.Constant("jo", "position", Variables.Securities.Position, locator="position")
 
 class MarketEquation(PricingEquation):
-    y = Variable.Dependent("y", "price", np.float32, function=lambda yα, yβ, *, j: {Variables.Securities.Position.LONG: yα, Variables.Securities.Position.SHORT: yβ}[j])
-    q = Variable.Dependent("q", "size", np.float32, function=lambda qα, qβ, *, j: {Variables.Securities.Position.LONG: qα, Variables.Securities.Position.SHORT: qβ}[j])
+    q = Variable.Dependent("q", "size", np.float32, function=lambda qα, qβ, *, jo: {Variables.Securities.Position.LONG: qα, Variables.Securities.Position.SHORT: qβ}[jo])
+    y = Variable.Dependent("y", "price", np.float32, function=lambda yα, yβ, *, jo: {Variables.Securities.Position.LONG: yα, Variables.Securities.Position.SHORT: yβ}[jo])
 
 class LimitEquation(PricingEquation):
-    y = Variable.Dependent("y", "price", np.float32, function=lambda yα, yβ, *, j: {Variables.Securities.Position.LONG: yβ, Variables.Securities.Position.SHORT: yα}[j])
-    q = Variable.Dependent("q", "size", np.float32, function=lambda qα, qβ, *, j: {Variables.Securities.Position.LONG: qα, Variables.Securities.Position.SHORT: qβ}[j])
+    q = Variable.Dependent("q", "size", np.float32, function=lambda qα, qβ, *, jo: {Variables.Securities.Position.LONG: qα, Variables.Securities.Position.SHORT: qβ}[jo])
+    y = Variable.Dependent("y", "price", np.float32, function=lambda yα, yβ, *, jo: {Variables.Securities.Position.LONG: yβ, Variables.Securities.Position.SHORT: yα}[jo])
 
 class CenteredEquation(PricingEquation):
+    q = Variable.Dependent("q", "size", np.float32, function=lambda qα, qβ, *, jo: {Variables.Securities.Position.LONG: qα, Variables.Securities.Position.SHORT: qβ}[jo])
     y = Variable.Dependent("y", "price", np.float32, function=lambda yα, yβ: (yα + yβ) / 2)
-    q = Variable.Dependent("q", "size", np.float32, function=lambda qα, qβ, *, j: {Variables.Securities.Position.LONG: qα, Variables.Securities.Position.SHORT: qβ}[j])
 
 
 class PricingCalculation(Calculation, ABC, metaclass=RegistryMeta):

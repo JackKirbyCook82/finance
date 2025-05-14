@@ -43,7 +43,7 @@ class ValuationEquation(Equation, ABC, datatype=xr.DataArray, vectorize=True):
 
     xo = Variable.Independent("xo", "underlying", np.float32, locator="underlying")
     qo = Variable.Independent("qo", "size", np.int32, locator="size")
-    to = Variable.Constant("to", "date", Date, locator="date")
+    to = Variable.Constant("to", "current", Date, locator="current")
     tτ = Variable.Independent("tτ", "expire", Date, locator="expire")
     ρ = Variable.Constant("ρ", "discount", np.float32, locator="discount")
 
@@ -58,8 +58,8 @@ class ArbitrageEquation(ValuationEquation, ABC):
 
 class ValuationCalculation(Calculation, ABC, metaclass=RegistryMeta): pass
 class ArbitrageCalculation(ValuationCalculation, ABC, equation=ArbitrageEquation, register=Variables.Valuations.Valuation.ARBITRAGE):
-    def execute(self, strategies, *args, discount, date, **kwargs):
-        with self.equation(strategies, discount=discount, date=date) as equation:
+    def execute(self, strategies, *args, discount, current, **kwargs):
+        with self.equation(strategies, discount=discount, current=current) as equation:
             yield equation.vlo()
             yield equation.veo()
             yield equation.vho()
