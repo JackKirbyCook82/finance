@@ -35,6 +35,12 @@ class ValuationEquation(Equation, ABC, datatype=xr.DataArray, vectorize=True):
     weo = Variable.Independent("weo", "expense", np.float32, locator="expense")
     wo = Variable.Independent("wo", "spot", np.float32, locator="spot")
 
+    Δo = Variable.Independent("Δo", "delta", np.float32, locator="delta")
+    Γo = Variable.Independent("Γo", "gamma", np.float32, locator="gamma")
+    Θo = Variable.Independent("Θo", "theta", np.float32, locator="theta")
+    Vo = Variable.Independent("Vo", "vega", np.float32, locator="vega")
+    Po = Variable.Independent("Po", "rho", np.float32, locator="rho")
+
     xo = Variable.Independent("xo", "underlying", np.float32, locator="underlying")
     qo = Variable.Independent("qo", "size", np.int32, locator="size")
     to = Variable.Constant("to", "date", Date, locator="date")
@@ -55,9 +61,14 @@ class ArbitrageCalculation(ValuationCalculation, ABC, equation=ArbitrageEquation
     def execute(self, strategies, *args, discount, date, **kwargs):
         with self.equation(strategies, discount=discount, date=date) as equation:
             yield equation.τ()
-            yield equation.xo()
             yield equation.qo()
             yield equation.wo()
+            yield equation.xo()
+            yield equation.Δo()
+            yield equation.Γo()
+            yield equation.Θo()
+            yield equation.Vo()
+            yield equation.Po()
             yield equation.wio()
             yield equation.wbo()
             yield equation.wro()

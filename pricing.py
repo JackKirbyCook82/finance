@@ -55,14 +55,15 @@ class ModerateCalculation(PricingCalculation, equation=CenteredEquation, registe
 
 class PricingCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calculated"):
     def __init_subclass__(cls, *args, **kwargs):
+        super().__init_subclass__(*args, **kwargs)
         cls.__instrument__ = kwargs.get("instrument", getattr(cls, "__instrument__", None))
 
     def __init__(self, *args, pricing, **kwargs):
         super().__init__(*args, **kwargs)
         instrument = getattr(type(self), "__instrument__", None)
         instrument if bool(instrument) else kwargs["instrument"]
-        self.__header = {Variables.Securities.Instrument.STOCK: list(Querys.Symbol), Variables.Securities.Instrument.OPTION: list(Querys.Contract)}
-        self.__query = {Variables.Securities.Instrument.STOCK: Querys.Symbol, Variables.Securities.Instrument.OPTION: Querys.Settlement}
+        self.__header = {Variables.Securities.Instrument.STOCK: list(Querys.Symbol), Variables.Securities.Instrument.OPTION: list(Querys.Contract)}[instrument]
+        self.__query = {Variables.Securities.Instrument.STOCK: Querys.Symbol, Variables.Securities.Instrument.OPTION: Querys.Settlement}[instrument]
         self.__calculation = dict(PricingCalculation)[pricing](*args, **kwargs)
         self.__instrument = instrument
         self.__pricing = pricing
@@ -96,6 +97,8 @@ class PricingCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcul
 
     @property
     def calculation(self): return self.__calculation
+    @property
+    def instrument(self): return self.__instrument
     @property
     def pricing(self): return self.__pricing
     @property
