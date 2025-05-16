@@ -22,7 +22,7 @@ __copyright__ = "Copyright 2025, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class OptionEquation(Equation, ABC, datatype=pd.Series, vectorize=True):
+class GreeksOptionEquation(Equation, ABC, datatype=pd.Series, vectorize=True):
     Θ = Variable.Dependent("Θ", "theta", np.float32, function=lambda vx, vk, zx, σ, q, r, τ, i, j: (vx * int(i) * q - vk * int(i) * r - norm.pdf(zx) * σ / np.exp(q * τ) / np.sqrt(τ) / 2) * int(j) / 364)
     Δ = Variable.Dependent("Δ", "delta", np.float32, function=lambda zx, q, τ, i, j: + norm.cdf(zx * int(i)) * int(i) * int(j) / np.exp(q * τ))
     Γ = Variable.Dependent("Γ", "gamma", np.float32, function=lambda zx, x, σ, q, τ, j: norm.pdf(zx) * int(j) / np.exp(q * τ) / np.sqrt(τ) / x / σ)
@@ -30,9 +30,9 @@ class OptionEquation(Equation, ABC, datatype=pd.Series, vectorize=True):
     V = Variable.Dependent("V", "vega", np.float32, function=lambda zx, x, σ, q, τ, j: norm.pdf(zx) * np.sqrt(τ) * x * int(j) / np.exp(q * τ))
 
     τ = Variable.Dependent("τ", "tau", np.float32, function=lambda to, tτ: (np.datetime64(tτ, "ns") - np.datetime64(to, "ns")) / np.timedelta64(364, 'D'))
-    v = Variable.Dependent("y", "valuation", np.float32, function=lambda vx, vk, j: (vx - vk) * int(j))
-    vx = Variable.Dependent("yx", "underlying", np.float32, function=lambda x, z, τ, q, i: x * int(i) * norm.cdf(z * int(i)) / np.exp(q * τ))
-    vk = Variable.Dependent("yk", "strike", np.float32, function=lambda k, z, τ, r, i: k * int(i) * norm.cdf(z * int(i)) / np.exp(r * τ))
+    v = Variable.Dependent("v", "value", np.float32, function=lambda vx, vk, j: (vx - vk) * int(j))
+    vx = Variable.Dependent("yx", "underlying", np.float32, function=lambda zx, x, τ, q, i: x * int(i) * norm.cdf(zx * int(i)) / np.exp(q * τ))
+    vk = Variable.Dependent("yk", "strike", np.float32, function=lambda zk, k, τ, r, i: k * int(i) * norm.cdf(zk * int(i)) / np.exp(r * τ))
 
     zx = Variable.Dependent("zx", "underlying", np.float32, function=lambda zxk, zvt, zrt, zqt: zxk + zvt + zrt + zqt)
     zk = Variable.Dependent("zx", "strike", np.float32, function=lambda zxk, zvt, zrt, zqt: zxk - zvt + zrt + zqt)
@@ -54,46 +54,39 @@ class OptionEquation(Equation, ABC, datatype=pd.Series, vectorize=True):
     r = Variable.Constant("r", "interest", np.float32, locator="interest")
     q = Variable.Constant("q", "dividend", np.float32, locator="dividend")
 
-
-class OptionCalculation(Calculation, ABC):
-    def execute(self, options, *args, **kwargs):
-        with self.equation(*args, **kwargs) as equation:
-            yield equation.y()
-            yield equation.Δ()
-            yield equation.Γ()
-            yield equation.Θ()
-            yield equation.P()
-            yield equation.V()
+    def execute(self, *args, **kwargs):
+        yield self.v(*args, **kwargs)
+        yield self.Δ(*args, **kwargs)
+        yield self.Γ(*args, **kwargs)
+        yield self.Θ(*args, **kwargs)
+        yield self.P(*args, **kwargs)
+        yield self.V(*args, **kwargs)
 
 
 class OptionCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.__calculation = OptionCalculation(*args, **kwargs)
+        self.__calculation = Calculation[pd.Series](*args, equation=GreeksOptionEquation, **kwargs)
 
     def execute(self, options, *args, **kwargs):
         assert isinstance(options, pd.DataFrame)
         if self.empty(options): return
-
-        print(options)
-
-        option = self.calculate(options, *args, **kwargs)
-        settlements = self.groups(option, by=Querys.Settlement)
+        valuations = self.calculate(options, *args, **kwargs)
+        options = pd.concat([options, valuations], axis=1)
+        settlements = self.groups(options, by=Querys.Settlement)
         settlements = ",".join(list(map(str, settlements)))
-        size = self.size(option)
+        size = self.size(options)
         self.console(f"{str(settlements)}[{int(size):.0f}]")
-
-        print(options)
-        raise Exception()
-
-        if self.empty(option): return
-        yield option
+        if self.empty(options): return
+        yield options
 
     def calculate(self, options, *args, **kwargs):
         options = self.calculation(options, *args, **kwargs)
         assert isinstance(options, pd.DataFrame)
+        options = options.reset_index(drop=True, inplace=False)
         return options
 
     @property
     def calculation(self): return self.__calculation
+
 

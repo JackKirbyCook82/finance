@@ -24,17 +24,17 @@ __license__ = "MIT License"
 
 
 TechnicalVariable = Variable("Technical", ["STATISTIC", "STOCHASTIC"], start=1)
+AnalysisVariable = Variable("Dataset", ["PAYOFF", "CASHFLOW", "GREEKS"], start=1)
 InstrumentVariable = Variable("Instrument", ["EMPTY", "STOCK", "OPTION"], start=0)
 OptionVariable = Variable("Option", ["PUT", "EMPTY", "CALL"], start=-1)
 PositionVariable = Variable("Position", ["SHORT", "EMPTY", "LONG"], start=-1)
 SpreadVariable = Variable("Spread", ["STRANGLE", "COLLAR", "VERTICAL"], start=1)
-ValuationVariable = Variable("Valuation", ["ARBITRAGE"], start=1)
 ScenarioVariable = Variable("Scenario", ["MINIMUM", "EXPECTED", "MAXIMUM"], start=1)
 StatusVariable = Variable("Status", ["PROSPECT", "PENDING", "OBSOLETE", "ABANDONED", "REJECTED", "ACCEPTED"], start=1)
 TermVariable = Variable("Terms", ["MARKET", "LIMIT", "STOP", "STOPLIMIT", "LIMITDEBIT", "LIMITCREDIT"], start=1)
 TenureVariable = Variable("Tenure", ["DAY", "STANDING", "OPENING", "CLOSING", "IMMEDIATE", "FILLKILL"], start=1)
-ActionVariable = Variable("Action", ["BUY", "SELL"], start=1)
 PricingVariable = Variable("Pricing", ["AGGRESSIVE", "PASSIVE", "MODERATE"], start=1)
+ActionVariable = Variable("Action", ["BUY", "SELL"], start=1)
 
 SecurityVariables = Variables("Security", ["instrument", "option", "position"])
 StrategyVariables = Variables("Strategy", ["spread", "option", "position"], {"stocks", "options"})
@@ -72,9 +72,10 @@ class Querys(Category): Symbol, Settlement, Contract = SymbolQuery, SettlementQu
 class Variables(Category):
     class Securities(Category): Security, Instrument, Option, Position = SecurityVariables, InstrumentVariable, OptionVariable, PositionVariable
     class Strategies(Category): Strategy, Spread = StrategyVariables, SpreadVariable
-    class Valuations(Category): Valuation, Scenario = ValuationVariable, ScenarioVariable
     class Markets(Category): Status, Term, Tenure, Action, Pricing = StatusVariable, TermVariable, TenureVariable, ActionVariable, PricingVariable
-    class Analysis(Category): Technical = TechnicalVariable
+    Scenarios = ScenarioVariable
+    Technical = TechnicalVariable
+    Analysis = AnalysisVariable
 
 class Securities(Category):
     class Stocks(Category): Long = StockLongSecurity; Short = StockShortSecurity

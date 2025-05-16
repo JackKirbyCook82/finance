@@ -13,7 +13,6 @@ from abc import ABC
 from finance.variables import Variables, Querys
 from support.calculations import Calculation, Equation, Variable
 from support.mixins import Emptying, Sizing, Partition, Logging
-from support.meta import RegistryMeta
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -26,38 +25,38 @@ class TechnicalEquation(Equation, ABC, datatype=pd.Series, vectorize=False):
     x = Variable.Independent("x", "price", np.float32, locator="price")
     dt = Variable.Constant("dt", "period", np.int32, locator="period")
 
-class StatisticEquation(TechnicalEquation):
+
+class StatisticEquation(TechnicalEquation, register=Variables.Technical.STATISTIC):
     δ = Variable.Dependent("δ", "volatility", np.float32, function=lambda x, *, dt: x.pct_change(1).rolling(dt).std())
     m = Variable.Dependent("m", "trend", np.float32, function=lambda x, *, dt: x.pct_change(1).rolling(dt).mean())
 
-class StochasticEquation(TechnicalEquation):
+    def execute(self, *args, **kwargs):
+        yield self.m(*args, **kwargs)
+        yield self.δ(*args, **kwargs)
+
+
+class StochasticEquation(TechnicalEquation, register=Variables.Technical.STOCHASTIC):
     xk = Variable.Dependent("xk", "oscillator", np.float32, function=lambda x, xl, xh: (x - xl) * 100 / (xh - xl))
     xh = Variable.Dependent("xh", "highest", np.float32, function=lambda x, *, dt: x.rolling(dt).min())
     xl = Variable.Dependent("xl", "lowest", np.float32, function=lambda x, *, dt: x.rolling(dt).max())
 
-
-class TechnicalCalculation(Calculation, ABC, metaclass=RegistryMeta): pass
-class StatisticCalculation(TechnicalCalculation, equation=StatisticEquation, register=Variables.Analysis.Technical.STATISTIC):
-    def execute(self, bars, *args, period, **kwargs):
-        assert (bars["ticker"].to_numpy()[0] == bars["ticker"]).all()
-        with self.equation(bars, period=period) as equation:
-            yield equation.m()
-            yield equation.δ()
-
-class StochasticCalculation(TechnicalCalculation, equation=StochasticEquation, register=Variables.Analysis.Technical.STOCHASTIC):
-    def execute(self, bars, *args, period, **kwargs):
-        assert (bars["ticker"].to_numpy()[0] == bars["ticker"]).all()
-        with self.equation(bars, period=period) as equation:
-            yield equation.xk()
+    def execute(self, *args, **kwargs):
+        yield self.xk(*args, **kwargs)
 
 
 class TechnicalCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
     def __init__(self, *args, technicals, **kwargs):
-        assert all([technical in list(Variables.Analysis.Technical) for technical in technicals])
+        assert isinstance(technicals, list) and all([value in list(Variables.Technical) for value in list(technicals)])
         super().__init__(*args, **kwargs)
-        technicals = list(dict(TechnicalCalculation).keys()) if not bool(technicals) else list(technicals)
-        calculations = {technical: calculation(*args, **kwargs) for technical, calculation in dict(TechnicalCalculation).items() if technical in technicals}
-        self.__calculations = calculations
+        equations = [TechnicalEquation[technical] for technical in technicals]
+        self.__calculation = Calculation[pd.Series](*args, equations=equations, **kwargs)
+
+    def __init__(self, *args, technicals, **kwargs):
+        assert all([technical in list(Variables.Technical) for technical in technicals])
+        super().__init__(*args, **kwargs)
+        equations = {equation.techncial: equation for equation in iter(TechnicalEquation) if bool(equation.technical)}
+        equations = [equation for technical, equation in equations.items() if technical in technicals]
+        self.__calculation = Calculation[pd.Series](*args, equations=equations, **kwargs)
 
     def execute(self, bars, *args, **kwargs):
         assert isinstance(bars, pd.DataFrame)
@@ -73,23 +72,19 @@ class TechnicalCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
     def calculate(self, bars, *args, **kwargs):
         technicals = list(self.calculator(bars, *args, **kwargs))
         technicals = pd.concat(technicals, axis=0)
+        technicals = technicals.reset_index(drop=True, inplace=False)
         return technicals
 
     def calculator(self, bars, *args, **kwargs):
         for symbol, dataframe in self.partition(bars, by=Querys.Symbol):
-            technicals = list(self.technicals(dataframe, *args, **kwargs))
-            technicals = pd.concat([bars] + technicals, axis=1)
-            yield technicals
-
-    def technicals(self, bars, *args, **kwargs):
-        assert (bars["ticker"].to_numpy()[0] == bars["ticker"]).all()
-        bars = bars.sort_values("date", ascending=True, inplace=False)
-        for technical, calculation in self.calculations.items():
-            technicals = calculation(bars, *args, **kwargs)
+            assert (dataframe["ticker"].to_numpy()[0] == dataframe["ticker"]).all()
+            dataframe = dataframe.sort_values("date", ascending=True, inplace=False)
+            technicals = self.calculation(dataframe, *args, **kwargs)
+            assert isinstance(technicals, pd.DataFrame)
             yield technicals
 
     @property
-    def calculations(self): return self.__calculations
+    def calculation(self): return self.__calculation
 
 
 

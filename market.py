@@ -104,12 +104,12 @@ class MarketCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcula
 
 
 class AcquisitionParameters(metaclass=ParameterMeta):
-    order = ["valuation", "scenario", "strategy"] + list(Querys.Settlement) + list(map(str, Securities.Options))
+    order = ["scenario", "strategy"] + list(Querys.Settlement) + list(map(str, Securities.Options))
     order = order + ["underlying", "tau", "size", "liquidity", "quantity", "revenue", "expense", "invest", "borrow", "spot", "breakeven", "payoff", "future", "npv"]
     types = {"ticker": str, " ".join(map(str, Securities.Options)): str, "underlying": np.float32, "tau size liquidity quantity": np.float32}
     types = types | {"revenue expense invest borrow": np.float32, "spot breakeven future payoff npv": np.float32}
-    parsers = dict(valuation=Variables.Valuations.Valuation, scenario=Variables.Valuations.Scenario, strategy=Strategies)
-    formatters = dict(valuation=str, scenario=str, strategy=str)
+    parsers = dict(scenario=Variables.Valuations.Scenario, strategy=Strategies)
+    formatters = dict(scenario=str, strategy=str)
     dates = dict(expire="%Y%m%d")
 
 
@@ -117,7 +117,7 @@ class AcquisitionCalculator(MarketCalculator): pass
 class AcquisitionSaver(Saver):
     def categorize(self, dataframe, *args, **kwargs):
         Header = ntuple("Header", "axis scenario")
-        headers = {scenario: [Header(axis, scenario) for (axis, scenario) in dataframe.columns] for scenario in list(Variables.Valuations.Scenario)}
+        headers = {scenario: [Header(axis, scenario) for (axis, scenario) in dataframe.columns] for scenario in list(Variables.Scenarios)}
         headers = {scenario: [header for header in contents if not bool(header.scenario) or header.scenario == scenario] for scenario, contents in headers.items()}
         dataframes = [dataframe[header].assign(scenario=scenario).droplevel(level=1, axis=1) for scenario, header in headers.items()]
         dataframe = pd.concat(dataframes, axis=0)

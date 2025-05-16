@@ -13,7 +13,6 @@ from abc import ABC
 from finance.variables import Variables, Querys
 from support.calculations import Calculation, Equation, Variable
 from support.mixins import Emptying, Sizing, Partition, Logging
-from support.meta import RegistryMeta
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -29,34 +28,29 @@ class PricingEquation(Equation, ABC, datatype=pd.Series, vectorize=True):
     yβ = Variable.Independent("yβ", "bid", np.float32, locator="bid")
     jo = Variable.Constant("jo", "position", Variables.Securities.Position, locator="position")
 
-class MarketEquation(PricingEquation):
+    def execute(self, *args, **kwargs):
+        yield self.q(*args, **kwargs)
+        yield self.y(*args, **kwargs)
+
+
+class AggressiveEquation(PricingEquation, register=Variables.Markets.Pricing.AGGRESSIVE):
     q = Variable.Dependent("q", "size", np.float32, function=lambda qα, qβ, *, jo: {Variables.Securities.Position.LONG: qα, Variables.Securities.Position.SHORT: qβ}[jo])
     y = Variable.Dependent("y", "price", np.float32, function=lambda yα, yβ, *, jo: {Variables.Securities.Position.LONG: yα, Variables.Securities.Position.SHORT: yβ}[jo])
 
-class LimitEquation(PricingEquation):
+class PassiveEquation(PricingEquation, register=Variables.Markets.Pricing.PASSIVE):
     q = Variable.Dependent("q", "size", np.float32, function=lambda qα, qβ, *, jo: {Variables.Securities.Position.LONG: qα, Variables.Securities.Position.SHORT: qβ}[jo])
     y = Variable.Dependent("y", "price", np.float32, function=lambda yα, yβ, *, jo: {Variables.Securities.Position.LONG: yβ, Variables.Securities.Position.SHORT: yα}[jo])
 
-class CenteredEquation(PricingEquation):
+class ModerateEquation(PricingEquation, register=Variables.Markets.Pricing.MODERATE):
     q = Variable.Dependent("q", "size", np.float32, function=lambda qα, qβ, *, jo: {Variables.Securities.Position.LONG: qα, Variables.Securities.Position.SHORT: qβ}[jo])
     y = Variable.Dependent("y", "price", np.float32, function=lambda yα, yβ: (yα + yβ) / 2)
 
 
-class PricingCalculation(Calculation, ABC, metaclass=RegistryMeta):
-    def execute(self, securities, *args, position, **kwargs):
-        with self.equation(securities, position=position) as equation:
-            yield equation.q()
-            yield equation.y()
-
-class AggressiveCalculation(PricingCalculation, equation=MarketEquation, register=Variables.Markets.Pricing.AGGRESSIVE): pass
-class PassiveCalculation(PricingCalculation, equation=LimitEquation, register=Variables.Markets.Pricing.PASSIVE): pass
-class ModerateCalculation(PricingCalculation, equation=CenteredEquation, register=Variables.Markets.Pricing.MODERATE): pass
-
-
 class PricingCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calculated"):
     def __init__(self, *args, pricing, **kwargs):
+        assert pricing in list(Variables.Markets.Pricing)
         super().__init__(*args, **kwargs)
-        self.__calculation = dict(PricingCalculation)[pricing](*args, **kwargs)
+        self.__calculation = Calculation[pricing](*args, equation=PricingEquation[pricing], **kwargs)
         self.__pricing = pricing
 
     def execute(self, securities, *args, **kwargs):
@@ -74,14 +68,15 @@ class PricingCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcul
         yield securities
 
     def calculate(self, securities, *args, **kwargs):
-        generator = self.calculator(securities, *args, **kwargs)
-        results = pd.concat(list(generator), axis=0)
-        results = results.reset_index(drop=True, inplace=False)
-        return results
+        generator = list(self.calculator(securities, *args, **kwargs))
+        securities = pd.concat(list(generator), axis=0)
+        securities = securities.reset_index(drop=True, inplace=False)
+        return securities
 
     def calculator(self, securities, *args, instrument, **kwargs):
         for position in list(Variables.Securities.Position):
             pricing = self.calculation(securities, *args, position=position, **kwargs)
+            assert isinstance(pricing, pd.DataFrame)
             header = {Variables.Securities.Instrument.STOCK: list(Querys.Symbol), Variables.Securities.Instrument.OPTION: list(Querys.Contract)}[instrument]
             dataframe = pd.concat([securities[header], pricing], axis=1)
             if instrument == Variables.Securities.Instrument.STOCK:
