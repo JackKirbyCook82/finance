@@ -29,7 +29,7 @@ class StrategyLocator(ntuple("Locator", "axis security")): pass
 class StrategyBasis(ntuple("Basis", "strategy analysis")): pass
 
 
-class StrategyEquation(Equation, ABC, datatype=xr.DataArray, vectorize=True):
+class StrategyEquation(Equation, ABC, datatype=xr.DataArray, vectorize=True, axes=["strike", "price", "underlying", "trend", "volatility", "size"]):
     ε = Variable.Constant("ε", "fees", np.float32, locator="fees")
 
     kpα = Variable.Independent("kpα", "strike", np.float32, locator=StrategyLocator("strike", Securities.Options.Puts.Long))
@@ -101,7 +101,7 @@ class CashflowEquation(StrategyEquation):
         yield self.wbo()
 
 
-class GreeksEquation(StrategyEquation):
+class GreeksEquation(StrategyEquation, axes=["value", "delta", "gamma", "theta", "vega", "rho"]):
     vpα = Variable.Independent("vpα", "value", np.float32, locator=StrategyLocator("value", Securities.Options.Puts.Long))
     vpβ = Variable.Independent("vpβ", "value", np.float32, locator=StrategyLocator("value", Securities.Options.Puts.Short))
     vcα = Variable.Independent("vcα", "value", np.float32, locator=StrategyLocator("value", Securities.Options.Calls.Long))
@@ -268,7 +268,7 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
         super().__init__(*args, **kwargs)
         equations = {strategy: [StrategyEquation[StrategyBasis(strategy, analysis)] for analysis in analyzing] for strategy in strategies}
         self.__calculations = {strategy: Calculation[xr.DataArray](*args, equations=contents, **kwargs) for strategy, contents in equations.items()}
-        self.__axes = ["expire", "strike", "price", "underlying", "trend", "volatility", "size", "value", "delta", "gamma", "theta", "vega", "rho"]
+        self.__axes = {strategy: reduce(lambda lead, lag: lead | lag, [equation.axes for equation in equations], set()) for strategy, equations in equations.items()}
 
     def execute(self, options, *args, **kwargs):
         assert isinstance(options, pd.DataFrame)
@@ -289,7 +289,7 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
     def calculator(self, options, *args, **kwargs):
         for strategy, calculation in self.calculations.items():
             if not all([option in options.keys() for option in list(strategy.options)]): continue
-            sources = {StrategyLocator(axis, security): dataset[axis] for security, dataset in options.items() for axis in self.axes}
+            sources = {StrategyLocator(axis, security): dataset[axis] for security, dataset in options.items() for axis in self.axes[strategy]}
             strategies = calculation(sources, *args, **kwargs)
             assert isinstance(strategies, xr.Dataset)
             strategies = strategies.assign_coords({"strategy": xr.Variable("strategy", [strategy]).squeeze("strategy")})
