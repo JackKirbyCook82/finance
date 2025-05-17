@@ -73,7 +73,7 @@ class Variables(Category):
     class Securities(Category): Security, Instrument, Option, Position = SecurityVariables, InstrumentVariable, OptionVariable, PositionVariable
     class Strategies(Category): Strategy, Spread = StrategyVariables, SpreadVariable
     class Markets(Category): Status, Term, Tenure, Action, Pricing = StatusVariable, TermVariable, TenureVariable, ActionVariable, PricingVariable
-    Scenarios = ScenarioVariable
+    Scenario = ScenarioVariable
     Technical = TechnicalVariable
     Analysis = AnalysisVariable
 

@@ -34,25 +34,25 @@ class ValuationEquation(Equation, ABC, datatype=xr.DataArray, vectorize=True):
 
 
 class PayoffEquation(ValuationEquation, register=Variables.Analysis.PAYOFF):
-    vlo = Variable.Dependent("vlo", ("npv", Variables.Valuations.Scenario.MINIMUM), np.float32, function=lambda wlτ, wo, τ, *, ρ: np.divide(wlτ, np.power(ρ + 1, np.divide(τ, 365))) + wo)
-    veo = Variable.Dependent("veo", ("npv", Variables.Valuations.Scenario.EXPECTED), np.float32, function=lambda weτ, wo, τ, *, ρ: np.divide(weτ, np.power(ρ + 1, np.divide(τ, 365))) + wo)
-    vho = Variable.Dependent("vho", ("npv", Variables.Valuations.Scenario.MAXIMUM), np.float32, function=lambda whτ, wo, τ, *, ρ: np.divide(whτ, np.power(ρ + 1, np.divide(τ, 365))) + wo)
-    wlτ = Variable.Independent("wlτ", ("future", Variables.Valuations.Scenario.MINIMUM), np.float32, locator="minimum")
-    weτ = Variable.Independent("weτ", ("future", Variables.Valuations.Scenario.EXPECTED), np.float32, locator="expected")
-    whτ = Variable.Independent("whτ", ("future", Variables.Valuations.Scenario.MAXIMUM), np.float32, locator="maximum")
+    vlo = Variable.Dependent("vlo", ("npv", Variables.Scenario.MINIMUM), np.float32, function=lambda wlτ, wo, τ, *, ρ: np.divide(wlτ, np.power(ρ + 1, np.divide(τ, 365))) + wo)
+    veo = Variable.Dependent("veo", ("npv", Variables.Scenario.EXPECTED), np.float32, function=lambda weτ, wo, τ, *, ρ: np.divide(weτ, np.power(ρ + 1, np.divide(τ, 365))) + wo)
+    vho = Variable.Dependent("vho", ("npv", Variables.Scenario.MAXIMUM), np.float32, function=lambda whτ, wo, τ, *, ρ: np.divide(whτ, np.power(ρ + 1, np.divide(τ, 365))) + wo)
+    wlτ = Variable.Independent("wlτ", ("future", Variables.Scenario.MINIMUM), np.float32, locator="minimum")
+    weτ = Variable.Independent("weτ", ("future", Variables.Scenario.EXPECTED), np.float32, locator="expected")
+    whτ = Variable.Independent("whτ", ("future", Variables.Scenario.MAXIMUM), np.float32, locator="maximum")
     wo = Variable.Independent("wo", "spot", np.float32, locator="spot")
 
     def execute(self, *args, **kwargs):
-        yield self.vlo(*args, **kwargs)
-        yield self.veo(*args, **kwargs)
-        yield self.vho(*args, **kwargs)
-        yield self.wlτ(*args, **kwargs)
-        yield self.weτ(*args, **kwargs)
-        yield self.whτ(*args, **kwargs)
-        yield self.wo(*args, **kwargs)
-        yield self.xo(*args, **kwargs)
-        yield self.qo(*args, **kwargs)
-        yield self.τ(*args, **kwargs)
+        yield self.vlo()
+        yield self.veo()
+        yield self.vho()
+        yield self.wlτ()
+        yield self.weτ()
+        yield self.whτ()
+        yield self.wo()
+        yield self.xo()
+        yield self.qo()
+        yield self.τ()
 
 
 class CashflowEquation(ValuationEquation, register=Variables.Analysis.CASHFLOW):
@@ -62,10 +62,10 @@ class CashflowEquation(ValuationEquation, register=Variables.Analysis.CASHFLOW):
     weo = Variable.Independent("weo", "expense", np.float32, locator="expense")
 
     def execute(self, *args, **kwargs):
-        yield self.wro(*args, **kwargs)
-        yield self.weo(*args, **kwargs)
-        yield self.wio(*args, **kwargs)
-        yield self.wbo(*args, **kwargs)
+        yield self.wro()
+        yield self.weo()
+        yield self.wio()
+        yield self.wbo()
 
 
 class GreeksEquation(ValuationEquation, register=Variables.Analysis.GREEKS):
@@ -77,12 +77,12 @@ class GreeksEquation(ValuationEquation, register=Variables.Analysis.GREEKS):
     Po = Variable.Independent("Po", "rho", np.float32, locator="rho")
 
     def execute(self, *args, **kwargs):
-        yield self.vo(*args, **kwargs)
-        yield self.Δo(*args, **kwargs)
-        yield self.Γo(*args, **kwargs)
-        yield self.Θo(*args, **kwargs)
-        yield self.Vo(*args, **kwargs)
-        yield self.Po(*args, **kwargs)
+        yield self.vo()
+        yield self.Δo()
+        yield self.Γo()
+        yield self.Θo()
+        yield self.Vo()
+        yield self.Po()
 
 
 class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
@@ -109,7 +109,7 @@ class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
         valuations = valuations.reset_index(drop=False, inplace=False)
         options = [option for option in list(map(str, Securities.Options)) if option not in valuations.columns]
         for option in options: valuations[option] = np.NaN
-        valuations["breakeven"] = valuations["spot"] - valuations[("npv", Variables.Valuations.Scenario.MINIMUM)]
+        valuations["breakeven"] = valuations["spot"] - valuations[("npv", Variables.Scenario.MINIMUM)]
         columns = {column: (column, "") for column in valuations.columns if not isinstance(column, tuple)}
         valuations = valuations.rename(columns=columns, inplace=False)
         valuations.columns = pd.MultiIndex.from_tuples(valuations.columns)

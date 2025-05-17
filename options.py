@@ -55,12 +55,12 @@ class GreeksOptionEquation(Equation, ABC, datatype=pd.Series, vectorize=True):
     q = Variable.Constant("q", "dividend", np.float32, locator="dividend")
 
     def execute(self, *args, **kwargs):
-        yield self.v(*args, **kwargs)
-        yield self.Δ(*args, **kwargs)
-        yield self.Γ(*args, **kwargs)
-        yield self.Θ(*args, **kwargs)
-        yield self.P(*args, **kwargs)
-        yield self.V(*args, **kwargs)
+        yield self.v()
+        yield self.Δ()
+        yield self.Γ()
+        yield self.Θ()
+        yield self.P()
+        yield self.V()
 
 
 class OptionCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
@@ -71,18 +71,18 @@ class OptionCalculator(Sizing, Emptying, Partition, Logging, title="Calculated")
     def execute(self, options, *args, **kwargs):
         assert isinstance(options, pd.DataFrame)
         if self.empty(options): return
-        valuations = self.calculate(options, *args, **kwargs)
-        options = pd.concat([options, valuations], axis=1)
         settlements = self.groups(options, by=Querys.Settlement)
         settlements = ",".join(list(map(str, settlements)))
+        options = self.calculate(options, *args, **kwargs)
         size = self.size(options)
         self.console(f"{str(settlements)}[{int(size):.0f}]")
         if self.empty(options): return
         yield options
 
     def calculate(self, options, *args, **kwargs):
-        options = self.calculation(options, *args, **kwargs)
-        assert isinstance(options, pd.DataFrame)
+        greeks = self.calculation(options, *args, **kwargs)
+        assert isinstance(greeks, pd.DataFrame)
+        options = pd.concat([options, greeks], axis=1)
         options = options.reset_index(drop=True, inplace=False)
         return options
 

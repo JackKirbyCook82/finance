@@ -108,7 +108,7 @@ class AcquisitionParameters(metaclass=ParameterMeta):
     order = order + ["underlying", "tau", "size", "liquidity", "quantity", "revenue", "expense", "invest", "borrow", "spot", "breakeven", "payoff", "future", "npv"]
     types = {"ticker": str, " ".join(map(str, Securities.Options)): str, "underlying": np.float32, "tau size liquidity quantity": np.float32}
     types = types | {"revenue expense invest borrow": np.float32, "spot breakeven future payoff npv": np.float32}
-    parsers = dict(scenario=Variables.Valuations.Scenario, strategy=Strategies)
+    parsers = dict(scenario=Variables.Scenario, strategy=Strategies)
     formatters = dict(scenario=str, strategy=str)
     dates = dict(expire="%Y%m%d")
 

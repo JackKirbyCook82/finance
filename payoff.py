@@ -48,8 +48,8 @@ class PayoffEquation(Equation, datatype=pd.Series, vectorize=True):
     ε = Variable.Constant("ε", "fees", np.float32, locator="fees")
 
     def execute(self, *args, **kwargs):
-        yield self.wlτ(*args, **kwargs)
-        yield self.whτ(*args, **kwargs)
+        yield self.wlτ()
+        yield self.whτ()
 
 
 class PayoffCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
@@ -60,9 +60,9 @@ class PayoffCalculator(Sizing, Emptying, Partition, Logging, title="Calculated")
     def execute(self, valuations, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame)
         if self.empty(valuations): return
-        valuations = self.calculate(valuations, *args, **kwargs)
         settlements = self.groups(valuations, by=Querys.Settlement)
         settlements = ",".join(list(map(str, settlements)))
+        valuations = self.calculate(valuations, *args, **kwargs)
         size = self.size(valuations)
         self.console(f"{str(settlements)}[{int(size):.0f}]")
         if self.empty(valuations): return
@@ -77,7 +77,7 @@ class PayoffCalculator(Sizing, Emptying, Partition, Logging, title="Calculated")
         options = valuations[columns].droplevel(1, axis=1)
         payoffs = self.calculation(options, *args, **kwargs)
         assert isinstance(payoffs, pd.DataFrame)
-        payoffs = payoffs.rename(columns={str(scenario).lower(): scenario for scenario in Variables.Valuations.Scenario})
+        payoffs = payoffs.rename(columns={str(scenario).lower(): scenario for scenario in Variables.Scenario})
         columns = list(product(["payoff"], payoffs.columns))
         payoffs.columns = pd.MultiIndex.from_tuples(columns)
         dataframe = pd.concat([valuations, payoffs], axis=1)
@@ -85,7 +85,7 @@ class PayoffCalculator(Sizing, Emptying, Partition, Logging, title="Calculated")
         return dataframe
 
     @property
-    def calculations(self): return self.__calculations
+    def calculation(self): return self.__calculation
     @property
     def valuation(self): return self.__valuation
 

@@ -37,6 +37,11 @@ class StrategyEquation(Equation, ABC, datatype=xr.DataArray, vectorize=True):
     kcα = Variable.Independent("kcα", "strike", np.float32, locator=StrategyLocator("strike", Securities.Options.Calls.Long))
     kcβ = Variable.Independent("kcβ", "strike", np.float32, locator=StrategyLocator("strike", Securities.Options.Calls.Short))
 
+    ypα = Variable.Independent("ypα", "price", np.float32, locator=StrategyLocator("price", Securities.Options.Puts.Long))
+    ypβ = Variable.Independent("ypβ", "price", np.float32, locator=StrategyLocator("price", Securities.Options.Puts.Short))
+    ycα = Variable.Independent("ycα", "price", np.float32, locator=StrategyLocator("price", Securities.Options.Calls.Long))
+    ycβ = Variable.Independent("ycβ", "price", np.float32, locator=StrategyLocator("price", Securities.Options.Calls.Short))
+
     xpα = Variable.Independent("xpα", "underlying", np.float32, locator=StrategyLocator("underlying", Securities.Options.Puts.Long))
     xpβ = Variable.Independent("xpβ", "underlying", np.float32, locator=StrategyLocator("underlying", Securities.Options.Puts.Short))
     xcα = Variable.Independent("xcα", "underlying", np.float32, locator=StrategyLocator("underlying", Securities.Options.Calls.Long))
@@ -64,11 +69,6 @@ class PayoffEquation(StrategyEquation):
     wlτ = Variable.Dependent("wlτ", "minimum", np.float32, function=lambda ylτ, *, ε: ylτ * 100 - ε)
     wo = Variable.Dependent("wo", "spot", np.float32, function=lambda yo, *, ε: yo * 100 - ε)
 
-    ypα = Variable.Independent("ypα", "price", np.float32, locator=StrategyLocator("price", Securities.Options.Puts.Long))
-    ypβ = Variable.Independent("ypβ", "price", np.float32, locator=StrategyLocator("price", Securities.Options.Puts.Short))
-    ycα = Variable.Independent("ycα", "price", np.float32, locator=StrategyLocator("price", Securities.Options.Calls.Long))
-    ycβ = Variable.Independent("ycβ", "price", np.float32, locator=StrategyLocator("price", Securities.Options.Calls.Short))
-
     dpα = Variable.Dependent("zpα", "zscore", np.float32, function=lambda kpα, xo: kpα - xo)
     dpβ = Variable.Dependent("zpβ", "zscore", np.float32, function=lambda kpβ, xo: kpβ - xo)
     dcα = Variable.Dependent("zcα", "zscore", np.float32, function=lambda kcα, xo: kcα - xo)
@@ -80,12 +80,12 @@ class PayoffEquation(StrategyEquation):
     zcβ = Variable.Dependent("zcβ", "zscore", np.float32, function=lambda dcβ, σo: dcβ / σo)
 
     def execute(self, *args, **kwargs):
-        yield self.wlτ(*args, **kwargs)
-        yield self.weτ(*args, **kwargs)
-        yield self.whτ(*args, **kwargs)
-        yield self.wo(*args, **kwargs)
-        yield self.xo(*args, **kwargs)
-        yield self.qo(*args, **kwargs)
+        yield self.wlτ()
+        yield self.weτ()
+        yield self.whτ()
+        yield self.wo()
+        yield self.xo()
+        yield self.qo()
 
 
 class CashflowEquation(StrategyEquation):
@@ -95,10 +95,10 @@ class CashflowEquation(StrategyEquation):
     wbo = Variable.Dependent("wbo", "borrow", np.float32, function=lambda ybo, *, ε: ybo * 100 - ε)
 
     def execute(self, *args, **kwargs):
-        yield self.wro(*args, **kwargs)
-        yield self.weo(*args, **kwargs)
-        yield self.wio(*args, **kwargs)
-        yield self.wbo(*args, **kwargs)
+        yield self.wro()
+        yield self.weo()
+        yield self.wio()
+        yield self.wbo()
 
 
 class GreeksEquation(StrategyEquation):
@@ -133,12 +133,12 @@ class GreeksEquation(StrategyEquation):
     Pcβ = Variable.Independent("Pcβ", "rho", np.float32, locator=StrategyLocator("rho", Securities.Options.Calls.Short))
 
     def execute(self, *args, **kwargs):
-        yield self.vo(*args, **kwargs)
-        yield self.Δo(*args, **kwargs)
-        yield self.Γo(*args, **kwargs)
-        yield self.Θo(*args, **kwargs)
-        yield self.Vo(*args, **kwargs)
-        yield self.Po(*args, **kwargs)
+        yield self.vo()
+        yield self.Δo()
+        yield self.Γo()
+        yield self.Θo()
+        yield self.Vo()
+        yield self.Po()
 
 
 class VerticalPutEquation(StrategyEquation, ABC):
@@ -267,8 +267,8 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
         assert isinstance(strategies, list) and all([value in list(Strategies) for value in list(strategies)])
         super().__init__(*args, **kwargs)
         equations = {strategy: [StrategyEquation[StrategyBasis(strategy, analysis)] for analysis in analyzing] for strategy in strategies}
-        self.__calculations = {strategy: Calculation[xr.DataArray](*args, equations=equations, **kwargs) for strategy, equations in equations.items()}
-        self.__axes = ["expire", "strike", "price", "underlying", "trend", "volatility", "size"]
+        self.__calculations = {strategy: Calculation[xr.DataArray](*args, equations=contents, **kwargs) for strategy, contents in equations.items()}
+        self.__axes = ["expire", "strike", "price", "underlying", "trend", "volatility", "size", "value", "delta", "gamma", "theta", "vega", "rho"]
 
     def execute(self, options, *args, **kwargs):
         assert isinstance(options, pd.DataFrame)

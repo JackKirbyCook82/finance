@@ -31,8 +31,8 @@ class StatisticEquation(TechnicalEquation, register=Variables.Technical.STATISTI
     m = Variable.Dependent("m", "trend", np.float32, function=lambda x, *, dt: x.pct_change(1).rolling(dt).mean())
 
     def execute(self, *args, **kwargs):
-        yield self.m(*args, **kwargs)
-        yield self.δ(*args, **kwargs)
+        yield self.m()
+        yield self.δ()
 
 
 class StochasticEquation(TechnicalEquation, register=Variables.Technical.STOCHASTIC):
@@ -41,7 +41,7 @@ class StochasticEquation(TechnicalEquation, register=Variables.Technical.STOCHAS
     xl = Variable.Dependent("xl", "lowest", np.float32, function=lambda x, *, dt: x.rolling(dt).max())
 
     def execute(self, *args, **kwargs):
-        yield self.xk(*args, **kwargs)
+        yield self.xk()
 
 
 class TechnicalCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
@@ -54,16 +54,15 @@ class TechnicalCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
     def __init__(self, *args, technicals, **kwargs):
         assert all([technical in list(Variables.Technical) for technical in technicals])
         super().__init__(*args, **kwargs)
-        equations = {equation.techncial: equation for equation in iter(TechnicalEquation) if bool(equation.technical)}
-        equations = [equation for technical, equation in equations.items() if technical in technicals]
+        equations = [TechnicalEquation[technical] for technical in technicals]
         self.__calculation = Calculation[pd.Series](*args, equations=equations, **kwargs)
 
     def execute(self, bars, *args, **kwargs):
         assert isinstance(bars, pd.DataFrame)
         if self.empty(bars): return
-        technicals = self.calculate(bars, *args, **kwargs)
-        symbols = self.groups(technicals, by=Querys.Symbol)
+        symbols = self.groups(bars, by=Querys.Symbol)
         symbols = ",".join(list(map(str, symbols)))
+        technicals = self.calculate(bars, *args, **kwargs)
         size = self.size(technicals)
         self.console(f"{str(symbols)}[{int(size):.0f}]")
         if self.empty(technicals): return
@@ -79,9 +78,10 @@ class TechnicalCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
         for symbol, dataframe in self.partition(bars, by=Querys.Symbol):
             assert (dataframe["ticker"].to_numpy()[0] == dataframe["ticker"]).all()
             dataframe = dataframe.sort_values("date", ascending=True, inplace=False)
-            technicals = self.calculation(dataframe, *args, **kwargs)
-            assert isinstance(technicals, pd.DataFrame)
-            yield technicals
+            results = self.calculation(dataframe, *args, **kwargs)
+            assert isinstance(results, pd.DataFrame)
+            dataframe = pd.concat([dataframe[["ticker", "date", "price"]], results], axis=1)
+            yield dataframe
 
     @property
     def calculation(self): return self.__calculation
