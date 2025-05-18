@@ -23,10 +23,10 @@ class SecurityCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
     def execute(self, stocks, options, technicals, *args, **kwargs):
         assert isinstance(stocks, pd.DataFrame) and isinstance(options, pd.DataFrame) and isinstance(technicals, pd.DataFrame)
         if self.empty(options): return
-        stocks = self.stocks(stocks, technicals)
-        options = self.options(options, stocks)
-        querys = self.groups(options, by=Querys.Settlement)
+        querys = self.keys(options, by=Querys.Settlement)
         querys = ",".join(list(map(str, querys)))
+        stocks = self.stocks(stocks, technicals, *args, **kwargs)
+        options = self.options(options, stocks, *args, **kwargs)
         size = self.size(options)
         self.console(f"{str(querys)}[{int(size):.0f}]")
         if self.empty(options): return

@@ -273,14 +273,22 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
     def execute(self, options, *args, **kwargs):
         assert isinstance(options, pd.DataFrame)
         if self.empty(options): return
-        for settlement, dataframe in self.partition(options, by=Querys.Settlement):
-            datasets = dict(self.options(dataframe, *args, **kwargs))
-            strategies = self.calculate(datasets, *args, **kwargs)
-            for strategy, dataset in strategies.items():
-                size = self.size(dataset, "size")
-                self.console(f"{str(settlement)}|{str(strategy)}[{int(size):.0f}]")
-                if self.empty(dataset, "size"): continue
-                yield dataset
+        settlements = self.keys(options, by=Querys.Settlement)
+        settlements = ",".join(list(map(str, settlements)))
+        strategies = self.calculate(options, *args, **kwargs)
+        size = self.size(strategies, "size")
+        self.console(f"{str(settlements)}[{int(size):.0f}]")
+        if self.empty(strategies, "size"): return
+        yield strategies
+
+#        for settlement, dataframe in self.partition(options, by=Querys.Settlement):
+#            datasets = dict(self.options(dataframe, *args, **kwargs))
+#            strategies = self.calculate(datasets, *args, **kwargs)
+#            for strategy, dataset in strategies.items():
+#                size = self.size(dataset, "size")
+#                self.console(f"{str(settlement)}|{str(strategy)}[{int(size):.0f}]")
+#                if self.empty(dataset, "size"): continue
+#                yield dataset
 
     def calculate(self, options, *args, **kwargs):
         strategies = dict(self.calculator(options, *args, **kwargs))

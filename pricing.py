@@ -59,7 +59,7 @@ class PricingCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcul
         criteria = all([column in securities.columns for column in ("expire", "strike")])
         instrument = Variables.Securities.Instrument.OPTION if criteria else Variables.Securities.Instrument.STOCK
         query = {Variables.Securities.Instrument.STOCK: Querys.Symbol, Variables.Securities.Instrument.OPTION: Querys.Settlement}[instrument]
-        querys = self.groups(securities, by=query)
+        querys = self.keys(securities, by=query)
         querys = ",".join(list(map(str, querys)))
         securities = self.calculate(securities, *args, instrument=instrument, **kwargs)
         size = self.size(securities)
@@ -68,17 +68,19 @@ class PricingCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcul
         yield securities
 
     def calculate(self, securities, *args, **kwargs):
+        assert isinstance(securities, pd.DataFrame)
         pricing = list(self.calculator(securities, *args, **kwargs))
         securities = pd.concat(pricing, axis=0)
         securities = securities.reset_index(drop=True, inplace=False)
         return securities
 
     def calculator(self, securities, *args, instrument, **kwargs):
+        assert isinstance(securities, pd.DataFrame)
+        header = {Variables.Securities.Instrument.STOCK: list(Querys.Symbol), Variables.Securities.Instrument.OPTION: list(Querys.Contract)}[instrument]
         for position in list(Variables.Securities.Position):
-            results = self.calculation(securities, *args, position=position, **kwargs)
-            assert isinstance(results, pd.DataFrame)
-            header = {Variables.Securities.Instrument.STOCK: list(Querys.Symbol), Variables.Securities.Instrument.OPTION: list(Querys.Contract)}[instrument]
-            results = pd.concat([securities[header], results], axis=1)
+            pricing = self.calculation(securities, *args, position=position, **kwargs)
+            assert isinstance(pricing, pd.DataFrame)
+            results = pd.concat([securities[header], pricing], axis=1)
             if instrument == Variables.Securities.Instrument.STOCK:
                 results["option"] = Variables.Securities.Option.EMPTY
             results["instrument"] = instrument

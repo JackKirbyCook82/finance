@@ -60,28 +60,32 @@ class TechnicalCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
     def execute(self, bars, *args, **kwargs):
         assert isinstance(bars, pd.DataFrame)
         if self.empty(bars): return
-        symbols = self.groups(bars, by=Querys.Symbol)
+        symbols = self.keys(bars, by=Querys.Symbol)
         symbols = ",".join(list(map(str, symbols)))
-        technicals = self.calculate(bars, *args, **kwargs)
+        technicals = self.calculator(bars, *args, **kwargs)
         size = self.size(technicals)
         self.console(f"{str(symbols)}[{int(size):.0f}]")
         if self.empty(technicals): return
         yield technicals
 
     def calculate(self, bars, *args, **kwargs):
+        assert isinstance(bars, pd.DataFrame)
+        bars = list(self.values(bars, by=Querys.Symbol))
         technicals = list(self.calculator(bars, *args, **kwargs))
         technicals = pd.concat(technicals, axis=0)
         technicals = technicals.reset_index(drop=True, inplace=False)
         return technicals
 
     def calculator(self, bars, *args, **kwargs):
-        for symbol, dataframe in self.partition(bars, by=Querys.Symbol):
+        assert isinstance(bars, list) and all([isinstance(dataframe, pd.DataFrame) for dataframe in bars.values()])
+        header = ["ticker", "date", "price"]
+        for dataframe in bars:
             assert (dataframe["ticker"].to_numpy()[0] == dataframe["ticker"]).all()
             dataframe = dataframe.sort_values("date", ascending=True, inplace=False)
-            results = self.calculation(dataframe, *args, **kwargs)
-            assert isinstance(results, pd.DataFrame)
-            dataframe = pd.concat([dataframe[["ticker", "date", "price"]], results], axis=1)
-            yield dataframe
+            technicals = self.calculation(dataframe, *args, **kwargs)
+            assert isinstance(technicals, pd.DataFrame)
+            results = pd.concat([dataframe[header], technicals], axis=1)
+            yield results
 
     @property
     def calculation(self): return self.__calculation

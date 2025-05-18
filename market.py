@@ -34,15 +34,16 @@ class MarketCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcula
     def execute(self, valuations, options, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame) and isinstance(options, pd.DataFrame)
         if self.empty(valuations): return
-        dataframe = self.calculate(valuations, options, *args, **kwargs)
-        settlements = self.groups(valuations, by=Querys.Settlement)
+        settlements = self.keys(valuations, by=Querys.Settlement)
         settlements = ",".join(list(map(str, settlements)))
-        size = self.size(dataframe)
+        valuations = self.calculate(valuations, options, *args, **kwargs)
+        size = self.size(valuations)
         self.console(f"{str(settlements)}[{int(size):.0f}]")
-        if self.empty(dataframe): return
-        yield dataframe
+        if self.empty(valuations): return
+        yield valuations
 
     def calculate(self, valuations, options, *args, **kwargs):
+        assert isinstance(valuations, pd.DataFrame) and isinstance(options, pd.DataFrame)
         valuations["priority"] = valuations.apply(self.priority, axis=1)
         valuations["liquidity"] = valuations.apply(self.liquidity, axis=1).apply(np.floor).astype(np.int32)
         options["liquidity"] = options.apply(self.liquidity, axis=1).apply(np.floor).astype(np.int32)
@@ -62,6 +63,7 @@ class MarketCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcula
 
     @staticmethod
     def interest(valuations, *args, **kwargs):
+        assert isinstance(valuations, pd.DataFrame)
         parameters = dict(id_vars=list(Querys.Settlement), value_name="strike", var_name="security")
         header = list(Querys.Settlement) + list(map(str, Securities.Options))
         valuations = valuations[header].droplevel(level=1, axis=1)
@@ -73,6 +75,7 @@ class MarketCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcula
 
     @staticmethod
     def available(options, *args, **kwargs):
+        assert isinstance(options, pd.DataFrame)
         function = lambda cols: str(Securities([cols["instrument"], cols["option"], cols["position"]]))
         header = list(Querys.Settlement) + list(Variables.Securities.Security) + ["strike"]
         options = options[header + ["liquidity"]]
@@ -116,6 +119,7 @@ class AcquisitionParameters(metaclass=ParameterMeta):
 class AcquisitionCalculator(MarketCalculator): pass
 class AcquisitionSaver(Saver):
     def categorize(self, dataframe, *args, **kwargs):
+        assert isinstance(dataframe, pd.DataFrame)
         Header = ntuple("Header", "axis scenario")
         headers = {scenario: [Header(axis, scenario) for (axis, scenario) in dataframe.columns] for scenario in list(Variables.Scenarios)}
         headers = {scenario: [header for header in contents if not bool(header.scenario) or header.scenario == scenario] for scenario, contents in headers.items()}

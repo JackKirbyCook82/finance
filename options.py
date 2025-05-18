@@ -71,7 +71,7 @@ class OptionCalculator(Sizing, Emptying, Partition, Logging, title="Calculated")
     def execute(self, options, *args, **kwargs):
         assert isinstance(options, pd.DataFrame)
         if self.empty(options): return
-        settlements = self.groups(options, by=Querys.Settlement)
+        settlements = self.keys(options, by=Querys.Settlement)
         settlements = ",".join(list(map(str, settlements)))
         options = self.calculate(options, *args, **kwargs)
         size = self.size(options)
@@ -80,6 +80,7 @@ class OptionCalculator(Sizing, Emptying, Partition, Logging, title="Calculated")
         yield options
 
     def calculate(self, options, *args, **kwargs):
+        assert isinstance(options, pd.DataFrame)
         greeks = self.calculation(options, *args, **kwargs)
         assert isinstance(greeks, pd.DataFrame)
         options = pd.concat([options, greeks], axis=1)

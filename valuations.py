@@ -95,9 +95,9 @@ class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
     def execute(self, strategies, *args, **kwargs):
         assert isinstance(strategies, xr.Dataset)
         if self.empty(strategies, "size"): return
-        valuations = self.calculate(strategies, *args, **kwargs)
-        settlements = self.groups(valuations, by=Querys.Settlement)
+        settlements = self.keys(strategies, by=Querys.Settlement)
         settlements = ",".join(list(map(str, settlements)))
+        valuations = self.calculate(strategies, *args, **kwargs)
         size = self.size(valuations)
         self.console(f"{str(settlements)}[{int(size):.0f}]")
         if self.empty(valuations): return

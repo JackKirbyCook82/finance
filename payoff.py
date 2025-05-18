@@ -60,7 +60,7 @@ class PayoffCalculator(Sizing, Emptying, Partition, Logging, title="Calculated")
     def execute(self, valuations, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame)
         if self.empty(valuations): return
-        settlements = self.groups(valuations, by=Querys.Settlement)
+        settlements = self.keys(valuations, by=Querys.Settlement)
         settlements = ",".join(list(map(str, settlements)))
         valuations = self.calculate(valuations, *args, **kwargs)
         size = self.size(valuations)
@@ -73,20 +73,19 @@ class PayoffCalculator(Sizing, Emptying, Partition, Logging, title="Calculated")
         yield valuations
 
     def calculate(self, valuations, *args, **kwargs):
-        columns = list(Querys.Settlement) + list(map(str, Securities.Options)) + ["underlying", "strategy"]
-        options = valuations[columns].droplevel(1, axis=1)
+        assert isinstance(valuations, pd.DataFrame)
+        header = list(Querys.Settlement) + list(map(str, Securities.Options)) + ["underlying", "strategy"]
+        options = valuations[header].droplevel(1, axis=1)
         payoffs = self.calculation(options, *args, **kwargs)
         assert isinstance(payoffs, pd.DataFrame)
         payoffs = payoffs.rename(columns={str(scenario).lower(): scenario for scenario in Variables.Scenario})
         columns = list(product(["payoff"], payoffs.columns))
         payoffs.columns = pd.MultiIndex.from_tuples(columns)
-        dataframe = pd.concat([valuations, payoffs], axis=1)
-        dataframe.columns.names = valuations.columns.names
-        return dataframe
+        results = pd.concat([valuations, payoffs], axis=1)
+        results.columns.names = results.columns.names
+        return results
 
     @property
     def calculation(self): return self.__calculation
-    @property
-    def valuation(self): return self.__valuation
 
 
