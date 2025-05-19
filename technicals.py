@@ -62,7 +62,7 @@ class TechnicalCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
         if self.empty(bars): return
         symbols = self.keys(bars, by=Querys.Symbol)
         symbols = ",".join(list(map(str, symbols)))
-        technicals = self.calculator(bars, *args, **kwargs)
+        technicals = self.calculate(bars, *args, **kwargs)
         size = self.size(technicals)
         self.console(f"{str(symbols)}[{int(size):.0f}]")
         if self.empty(technicals): return
@@ -77,7 +77,7 @@ class TechnicalCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
         return technicals
 
     def calculator(self, bars, *args, **kwargs):
-        assert isinstance(bars, list) and all([isinstance(dataframe, pd.DataFrame) for dataframe in bars.values()])
+        assert isinstance(bars, list) and all([isinstance(dataframe, pd.DataFrame) for dataframe in bars])
         header = ["ticker", "date", "price"]
         for dataframe in bars:
             assert (dataframe["ticker"].to_numpy()[0] == dataframe["ticker"]).all()

@@ -10,8 +10,9 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 from abc import ABC
-from functools import reduce
 from scipy.stats import norm
+from functools import reduce
+from itertools import product
 from collections import namedtuple as ntuple
 
 from finance.variables import Variables, Querys, Strategies, Securities
@@ -267,8 +268,9 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
         assert isinstance(strategies, list) and all([value in list(Strategies) for value in list(strategies)])
         super().__init__(*args, **kwargs)
         equations = {strategy: [StrategyEquation[StrategyBasis(strategy, analysis)] for analysis in analyzing] for strategy in strategies}
-        self.__calculations = {strategy: Calculation[xr.DataArray](*args, equations=contents, **kwargs) for strategy, contents in equations.items()}
         self.__axes = {strategy: reduce(lambda lead, lag: lead | lag, [equation.axes for equation in equations], set()) for strategy, equations in equations.items()}
+        self.__calculations = {strategy: Calculation[xr.DataArray](*args, equations=contents, **kwargs) for strategy, contents in equations.items()}
+        self.__strategies = list(equations.keys())
 
     def execute(self, options, *args, **kwargs):
         assert isinstance(options, pd.DataFrame)
@@ -281,31 +283,32 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
         if self.empty(strategies, "size"): return
         yield strategies
 
-#        for settlement, dataframe in self.partition(options, by=Querys.Settlement):
-#            datasets = dict(self.options(dataframe, *args, **kwargs))
-#            strategies = self.calculate(datasets, *args, **kwargs)
-#            for strategy, dataset in strategies.items():
-#                size = self.size(dataset, "size")
-#                self.console(f"{str(settlement)}|{str(strategy)}[{int(size):.0f}]")
-#                if self.empty(dataset, "size"): continue
-#                yield dataset
-
     def calculate(self, options, *args, **kwargs):
-        strategies = dict(self.calculator(options, *args, **kwargs))
+        assert isinstance(options, pd.DataFrame)
+        options = list(self.separator(options, *args, **kwargs))
+        strategies = list(self.calculator(options, *args, **kwargs))
         return strategies
 
     def calculator(self, options, *args, **kwargs):
-        for strategy, calculation in self.calculations.items():
-            if not all([option in options.keys() for option in list(strategy.options)]): continue
-            sources = {StrategyLocator(axis, security): dataset[axis] for security, dataset in options.items() for axis in self.axes[strategy]}
-            strategies = calculation(sources, *args, **kwargs)
+        assert isinstance(options, list) and all([isinstance(mapping, dict) for mapping in options])
+        assert all([isinstance(dataset, xr.Dataset) for mapping in options for dataset in mapping.values()])
+        for mapping, (strategy, calculation) in product(options, self.calculations.items()):
+            if not all([option in mapping.keys() for option in list(strategy.options)]): continue
+            contents = {StrategyLocator(axis, security): dataset[axis] for security, dataset in mapping.items() for axis in self.axes[strategy]}
+            strategies = calculation(contents, *args, **kwargs)
             assert isinstance(strategies, xr.Dataset)
             strategies = strategies.assign_coords({"strategy": xr.Variable("strategy", [strategy]).squeeze("strategy")})
             for field in list(Querys.Settlement): strategies = strategies.expand_dims(field)
-            yield strategy, strategies
+            yield strategies
+
+    def separator(self, options, *args, **kwargs):
+        assert isinstance(options, pd.DataFrame)
+        for dataframe in self.values(options, by=Querys.Settlement):
+            yield dict(self.separate(dataframe, *args, **kwargs))
 
     @staticmethod
-    def options(options, *args, **kwargs):
+    def separate(options, *args, **kwargs):
+        assert isinstance(options, pd.DataFrame)
         for security, dataframe in options.groupby(list(Variables.Securities.Security), sort=False):
             if dataframe.empty: continue
             security = Securities(security)

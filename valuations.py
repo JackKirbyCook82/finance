@@ -15,6 +15,7 @@ from datetime import date as Date
 from finance.variables import Variables, Querys, Securities
 from support.calculations import Calculation, Equation, Variable
 from support.mixins import Emptying, Sizing, Partition, Logging
+from support.decorators import TypeDispatcher
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -93,7 +94,7 @@ class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
         self.__calculation = Calculation[xr.DataArray](*args, equations=equations, **kwargs)
 
     def execute(self, strategies, *args, **kwargs):
-        assert isinstance(strategies, xr.Dataset)
+        assert isinstance(strategies, (list, xr.Dataset))
         if self.empty(strategies, "size"): return
         settlements = self.keys(strategies, by=Querys.Settlement)
         settlements = ",".join(list(map(str, settlements)))
@@ -103,7 +104,17 @@ class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
         if self.empty(valuations): return
         yield valuations
 
-    def calculate(self, strategies, *args, **kwargs):
+    @TypeDispatcher(locator=0)
+    def calculate(self, strategies, *args, **kwargs): raise TypeError(type(strategies))
+    @calculate.register(list)
+    def collection(self, strategies, *args, **kwargs):
+        valuations = [self.calculate(dataset, *args, **kwargs) for dataset in strategies]
+        valuations = pd.concat(valuations, axis=0)
+        valuations = valuations.reset_index(drop=True, inplace=False)
+        return valuations
+
+    @calculate.register(xr.Dataset)
+    def dataset(self, strategies, *args, **kwargs):
         valuations = self.calculation(strategies, *args, **kwargs)
         valuations = valuations.to_dataframe().dropna(how="all", inplace=False)
         valuations = valuations.reset_index(drop=False, inplace=False)
