@@ -46,12 +46,6 @@ class StochasticEquation(TechnicalEquation, register=Variables.Technical.STOCHAS
 
 class TechnicalCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
     def __init__(self, *args, technicals, **kwargs):
-        assert isinstance(technicals, list) and all([value in list(Variables.Technical) for value in list(technicals)])
-        super().__init__(*args, **kwargs)
-        equations = [TechnicalEquation[technical] for technical in technicals]
-        self.__calculation = Calculation[pd.Series](*args, equations=equations, **kwargs)
-
-    def __init__(self, *args, technicals, **kwargs):
         assert all([technical in list(Variables.Technical) for technical in technicals])
         super().__init__(*args, **kwargs)
         equations = [TechnicalEquation[technical] for technical in technicals]

@@ -11,7 +11,7 @@ import pandas as pd
 from enum import Enum
 from itertools import product
 
-from finance.variables import Querys, Variables, Securities
+from finance.variables import Querys, Variables, Securities, Strategies
 from support.calculations import Calculation, Equation, Variable
 from support.mixins import Emptying, Sizing, Partition, Logging
 
@@ -30,10 +30,10 @@ class PayoffEquation(Equation, datatype=pd.Series, vectorize=True):
     ypβ = Variable.Dependent("ypβ", "payoff", np.float32, function=lambda kpβ, xτn: - np.maximum(kpβ - xτn, 0) if not np.isnan(kpβ) else np.zeros_like(xτn))
     ycα = Variable.Dependent("ycα", "payoff", np.float32, function=lambda kcα, xτn: + np.maximum(xτn - kcα, 0) if not np.isnan(kcα) else np.zeros_like(xτn))
     ycβ = Variable.Dependent("ycβ", "payoff", np.float32, function=lambda kcβ, xτn: - np.maximum(xτn - kcβ, 0) if not np.isnan(kcβ) else np.zeros_like(xτn))
-    xτ = Variable.Dependent("xτ", "payoff", np.float32, function=lambda xτn, so: xτn * int(so.position))
 
     yτn = Variable.Dependent("yτn", "payoff", np.float32, function=lambda ypα, ypβ, ycα, ycβ, xτ: ypα + ypβ + ycα + ycβ + xτ)
     xτn = Variable.Dependent("xτn", "underlying", np.float32, function=lambda xτi, xτj: np.arange(xτi, xτj, 1))
+    xτ = Variable.Dependent("xτ", "payoff", np.float32, function=lambda xτn, so: xτn * int(so.position))
 
     xτj = Variable.Dependent("xτj", "upper", np.float32, function=lambda xo, kpα, kpβ, kcα, kcβ: (np.nanmax([0, xo, kpα, kpβ, kcα, kcβ]) * 1.1).astype(np.int32))
     xτi = Variable.Dependent("xτi", "lower", np.float32, function=lambda xo, kpα, kpβ, kcα, kcβ: (np.nanmin([0, xo, kpα, kpβ, kcα, kcβ]) * 0.9).astype(np.int32))
@@ -79,8 +79,8 @@ class PayoffCalculator(Sizing, Emptying, Partition, Logging, title="Calculated")
         payoffs = self.calculation(options, *args, **kwargs)
         assert isinstance(payoffs, pd.DataFrame)
         payoffs = payoffs.rename(columns={str(scenario).lower(): scenario for scenario in Variables.Scenario})
-        columns = list(product(["payoff"], payoffs.columns))
-        payoffs.columns = pd.MultiIndex.from_tuples(columns)
+        header = list(product(["payoff"], payoffs.columns))
+        payoffs.columns = pd.MultiIndex.from_tuples(header)
         results = pd.concat([valuations, payoffs], axis=1)
         results.columns.names = results.columns.names
         return results

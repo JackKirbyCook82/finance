@@ -268,13 +268,17 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
         assert isinstance(strategies, list) and all([value in list(Strategies) for value in list(strategies)])
         super().__init__(*args, **kwargs)
         equations = {strategy: [StrategyEquation[StrategyBasis(strategy, analysis)] for analysis in analyzing] for strategy in strategies}
-        self.__axes = {strategy: reduce(lambda lead, lag: lead | lag, [equation.axes for equation in equations], set()) for strategy, equations in equations.items()}
+#        self.__axes = {strategy: reduce(lambda lead, lag: lead | lag, [equation.axes for equation in equations], set()) for strategy, equations in equations.items()}
         self.__calculations = {strategy: Calculation[xr.DataArray](*args, equations=contents, **kwargs) for strategy, contents in equations.items()}
-        self.__strategies = list(equations.keys())
+        self.__strategies = {strategy: strategy.options for strategy in equations.keys()}
 
     def execute(self, options, *args, **kwargs):
         assert isinstance(options, pd.DataFrame)
         if self.empty(options): return
+
+        print(options)
+        raise Exception()
+
         settlements = self.keys(options, by=Querys.Settlement)
         settlements = ",".join(list(map(str, settlements)))
         strategies = self.calculate(options, *args, **kwargs)
@@ -284,45 +288,48 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
         yield strategies
 
     def calculate(self, options, *args, **kwargs):
-        assert isinstance(options, pd.DataFrame)
-        options = list(self.separator(options, *args, **kwargs))
-        strategies = list(self.calculator(options, *args, **kwargs))
-        return strategies
+        pass
 
-    def calculator(self, options, *args, **kwargs):
-        assert isinstance(options, list) and all([isinstance(mapping, dict) for mapping in options])
-        assert all([isinstance(dataset, xr.Dataset) for mapping in options for dataset in mapping.values()])
-        for mapping, (strategy, calculation) in product(options, self.calculations.items()):
-            if not all([option in mapping.keys() for option in list(strategy.options)]): continue
-            contents = {StrategyLocator(axis, security): dataset[axis] for security, dataset in mapping.items() for axis in self.axes[strategy]}
-            strategies = calculation(contents, *args, **kwargs)
-            assert isinstance(strategies, xr.Dataset)
-            strategies = strategies.assign_coords({"strategy": xr.Variable("strategy", [strategy]).squeeze("strategy")})
-            for field in list(Querys.Settlement): strategies = strategies.expand_dims(field)
-            yield strategies
+#    def calculate(self, options, *args, **kwargs):
+#        assert isinstance(options, pd.DataFrame)
+#        options = list(self.separator(options, *args, **kwargs))
+#        strategies = list(self.calculator(options, *args, **kwargs))
+#        return strategies
 
-    def separator(self, options, *args, **kwargs):
-        assert isinstance(options, pd.DataFrame)
-        for dataframe in self.values(options, by=Querys.Settlement):
-            yield dict(self.separate(dataframe, *args, **kwargs))
+#    def calculator(self, options, *args, **kwargs):
+#        assert isinstance(options, list) and all([isinstance(mapping, dict) for mapping in options])
+#        assert all([isinstance(dataset, xr.Dataset) for mapping in options for dataset in mapping.values()])
+#        for mapping, (strategy, calculation) in product(options, self.calculations.items()):
+#            if not all([option in mapping.keys() for option in list(strategy.options)]): continue
+#            contents = {StrategyLocator(axis, security): dataset[axis] for security, dataset in mapping.items() for axis in self.axes[strategy]}
+#            strategies = calculation(contents, *args, **kwargs)
+#            assert isinstance(strategies, xr.Dataset)
+#            strategies = strategies.assign_coords({"strategy": xr.Variable("strategy", [strategy]).squeeze("strategy")})
+#            for field in list(Querys.Settlement): strategies = strategies.expand_dims(field)
+#            yield strategies
 
-    @staticmethod
-    def separate(options, *args, **kwargs):
-        assert isinstance(options, pd.DataFrame)
-        for security, dataframe in options.groupby(list(Variables.Securities.Security), sort=False):
-            if dataframe.empty: continue
-            security = Securities(security)
-            dataframe = dataframe.drop(columns=list(Variables.Securities.Security))
-            dataframe = dataframe.set_index(list(Querys.Settlement) + ["strike"], drop=True, inplace=False)
-            dataset = xr.Dataset.from_dataframe(dataframe)
-            dataset = reduce(lambda content, axis: content.squeeze(axis), list(Querys.Settlement), dataset)
-            dataset = dataset.rename({"strike": str(security)})
-            dataset["strike"] = dataset[str(security)]
-            yield security, dataset
+#    def separator(self, options, *args, **kwargs):
+#        assert isinstance(options, pd.DataFrame)
+#        for dataframe in self.values(options, by=Querys.Settlement):
+#            yield dict(self.separate(dataframe, *args, **kwargs))
+
+#    @staticmethod
+#    def separate(options, *args, **kwargs):
+#        assert isinstance(options, pd.DataFrame)
+#        for security, dataframe in options.groupby(list(Variables.Securities.Security), sort=False):
+#            if dataframe.empty: continue
+#            security = Securities(security)
+#            dataframe = dataframe.drop(columns=list(Variables.Securities.Security))
+#            dataframe = dataframe.set_index(list(Querys.Settlement) + ["strike"], drop=True, inplace=False)
+#            dataset = xr.Dataset.from_dataframe(dataframe)
+#            dataset = reduce(lambda content, axis: content.squeeze(axis), list(Querys.Settlement), dataset)
+#            dataset = dataset.rename({"strike": str(security)})
+#            dataset["strike"] = dataset[str(security)]
+#            yield security, dataset
 
     @property
     def calculations(self): return self.__calculations
-    @property
-    def axes(self): return self.__axes
+#    @property
+#    def axes(self): return self.__axes
 
 
