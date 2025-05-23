@@ -268,9 +268,9 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
         assert isinstance(strategies, list) and all([value in list(Strategies) for value in list(strategies)])
         super().__init__(*args, **kwargs)
         equations = {strategy: [StrategyEquation[StrategyBasis(strategy, analysis)] for analysis in analyzing] for strategy in strategies}
-#        self.__axes = {strategy: reduce(lambda lead, lag: lead | lag, [equation.axes for equation in equations], set()) for strategy, equations in equations.items()}
         self.__calculations = {strategy: Calculation[xr.DataArray](*args, equations=contents, **kwargs) for strategy, contents in equations.items()}
         self.__strategies = {strategy: strategy.options for strategy in equations.keys()}
+        self.__axes = {strategy: reduce(lambda lead, lag: lead | lag, [equation.axes for equation in equations], set()) for strategy, equations in equations.items()}
 
     def execute(self, options, *args, **kwargs):
         assert isinstance(options, pd.DataFrame)

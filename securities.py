@@ -15,7 +15,6 @@ from finance.variables import Variables, Querys
 from support.calculations import Calculation, Equation, Variable
 from support.mixins import Emptying, Sizing, Partition, Logging
 
-
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
 __all__ = ["SecurityCalculator"]
@@ -67,47 +66,72 @@ class SecurityCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.__calculation = Calculation[pd.Series](*args, equation=SecurityEquation, **kwargs)
+        self.__sizing = {Variables.Securities.Position.LONG: "supply", Variables.Securities.Position.SHORT: "demand"}
+        self.__pricing = {Variables.Securities.Position.LONG: "ask", Variables.Securities.Position.SHORT: "bid"}
+        self.__factors = {Variables.Securities.Position.LONG: + 1, Variables.Securities.Position.SHORT: - 1}
+        self.__greeks = ("value", "delta", "gamma", "theta", "rho", "vega")
 
     def execute(self, stocks, options, technicals, *args, **kwargs):
         assert isinstance(stocks, pd.DataFrame) and isinstance(options, pd.DataFrame) and isinstance(technicals, pd.DataFrame)
         if self.empty(options): return
         querys = self.keys(options, by=Querys.Settlement)
         querys = ",".join(list(map(str, querys)))
-        technicals = self.technicals(technicals, *args, **kwargs)
-        stocks = self.stocks(stocks, technicals, *args, **kwargs)
-        options = self.options(options, stocks, *args, **kwargs)
-        options = self.calculate(options, *args, **kwargs)
+        options = self.calculate(stocks, options, technicals, *args, **kwargs)
         size = self.size(options)
         self.console(f"{str(querys)}[{int(size):.0f}]")
         if self.empty(options): return
+
+        print(options)
+        raise Exception()
+
         yield options
 
-    def calculate(self, options, *args, **kwargs):
-        assert isinstance(options, pd.DataFrame)
+    def calculate(self, stocks, options, technicals, *args, **kwargs):
+        assert isinstance(stocks, pd.DataFrame) and isinstance(options, pd.DataFrame) and isinstance(technicals, pd.DataFrame)
+        options = self.technicals(options, technicals, *args, **kwargs)
+        options = self.stocks(options, stocks, *args, **kwargs)
         greeks = self.calculation(options, *args, **kwargs)
         assert isinstance(greeks, pd.DataFrame)
         options = pd.concat([options, greeks], axis=1)
+        long = self.position(options, *args, position=Variables.Securities.Position.LONG, **kwargs)
+        short = self.position(options, *args, position=Variables.Securities.Position.SHORT, **kwargs)
+        options = pd.concat([long, short], axis=0)
         options = options.reset_index(drop=True, inplace=False)
         return options
 
+    def position(self, options, *args, position, **kwargs):
+        function = lambda column, factor: lambda series: series[column] * factor
+        size = lambda series: series[self.sizing[position]]
+        price = lambda series: series[self.pricing[position]]
+        greeks = {column: function(column, self.factors[position]) for column in self.greeks}
+        contents = dict(instrument=Variables.Securities.Instrument.OPTION, position=position, size=size, price=price)
+        options = options.assign(**contents, **greeks)
+        return options.drop(["ask", "bid", "supply", "demand"], axis=1, inplace=False)
+
     @staticmethod
-    def technicals(technicals, *args, **kwargs):
+    def technicals(options, technicals, *args, **kwargs):
+        assert isinstance(options, pd.DataFrame) and isinstance(technicals, pd.DataFrame)
         mask = technicals["date"] == technicals["date"].max()
-        technicals = technicals.where(mask).dropna(how="all", inplace=False)
-        return technicals[["ticker", "trend", "volatility"]]
+        technicals = technicals.where(mask).dropna(how="all", inplace=False)[["ticker", "trend", "volatility"]]
+        return options.merge(technicals, how="left", on=list(Querys.Symbol), sort=False, suffixes=("", "_"))
 
     @staticmethod
-    def stocks(stocks, technicals, *args, **kwargs):
+    def stocks(options, stocks, *args, **kwargs):
+        assert isinstance(options, pd.DataFrame) and isinstance(stocks, pd.DataFrame)
         underlying = lambda series: (series["ask"] * series["supply"] + series["bid"] * series["demand"]) / (series["supply"] + series["demand"])
-        stocks = stocks.merge(technicals, how="left", on=list(Querys.Symbol), sort=False, suffixes=("", "_"))
-        stocks["underlying"] = stocks.apply(underlying, axis=1)
-        return stocks[["ticker", "trend", "volatility", "underlying"]]
-
-    @staticmethod
-    def options(options, stocks, *args, **kwargs):
-        options = options.merge(stocks, how="left", on=list(Querys.Symbol), sort=False, suffixes=("", "_"))
-        return options
+        underlying = pd.concat([stocks["ticker"], stocks.apply(underlying, axis=1).rename("underlying")], axis=1)
+        return options.merge(underlying, how="left", on=list(Querys.Symbol), sort=False, suffixes=("", "_"))
 
     @property
     def calculation(self): return self.__calculation
+    @property
+    def factors(self): return self.__factors
+    @property
+    def pricing(self): return self.__pricing
+    @property
+    def sizing(self): return self.__sizing
+    @property
+    def greeks(self): return self.__greeks
+
+
 
