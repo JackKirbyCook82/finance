@@ -30,7 +30,7 @@ class StrategyLocator(ntuple("Locator", "axis security")): pass
 class StrategyBasis(ntuple("Basis", "strategy analysis")): pass
 
 
-class StrategyEquation(Equation, ABC, datatype=xr.DataArray, vectorize=True, axes=["strike", "price", "underlying", "trend", "volatility", "size"]):
+class StrategyEquation(Equation, ABC, datatype=xr.DataArray, vectorize=True):
     ε = Variable.Constant("ε", "fees", np.float32, locator="fees")
 
     kpα = Variable.Independent("kpα", "strike", np.float32, locator=StrategyLocator("strike", Securities.Options.Puts.Long))
@@ -102,7 +102,7 @@ class CashflowEquation(StrategyEquation):
         yield self.wbo()
 
 
-class GreeksEquation(StrategyEquation, axes=["value", "delta", "gamma", "theta", "vega", "rho"]):
+class GreeksEquation(StrategyEquation):
     vpα = Variable.Independent("vpα", "value", np.float32, locator=StrategyLocator("value", Securities.Options.Puts.Long))
     vpβ = Variable.Independent("vpβ", "value", np.float32, locator=StrategyLocator("value", Securities.Options.Puts.Short))
     vcα = Variable.Independent("vcα", "value", np.float32, locator=StrategyLocator("value", Securities.Options.Calls.Long))

@@ -11,9 +11,10 @@ import pandas as pd
 import xarray as xr
 from abc import ABC
 from scipy.stats import norm
+from functools import reduce
 from collections import namedtuple as ntuple
 
-from finance.variables import Querys, Strategies, Securities
+from finance.variables import Querys, Variables, Strategies, Securities
 from support.mixins import Emptying, Sizing, Partition, Logging
 from support.calculations import Calculation, Equation, Variable
 
@@ -82,7 +83,72 @@ class StrategyEquation(Equation, ABC, datatype=xr.DataArray, vectorize=True):
         yield self.qo()
 
 
-class VerticalPutEquation(StrategyEquation, register=Strategies.Verticals.Put):
+class GreeksEquation(StrategyEquation, axes=["value", "delta", "gamma", "theta", "vega", "rho"]):
+    vpα = Variable.Independent("vpα", "value", np.float32, locator=StrategyLocator("value", Securities.Options.Puts.Long))
+    vpβ = Variable.Independent("vpβ", "value", np.float32, locator=StrategyLocator("value", Securities.Options.Puts.Short))
+    vcα = Variable.Independent("vcα", "value", np.float32, locator=StrategyLocator("value", Securities.Options.Calls.Long))
+    vcβ = Variable.Independent("vcβ", "value", np.float32, locator=StrategyLocator("value", Securities.Options.Calls.Short))
+
+    Δpα = Variable.Independent("Δpα", "delta", np.float32, locator=StrategyLocator("delta", Securities.Options.Puts.Long))
+    Δpβ = Variable.Independent("Δpβ", "delta", np.float32, locator=StrategyLocator("delta", Securities.Options.Puts.Short))
+    Δcα = Variable.Independent("Δcα", "delta", np.float32, locator=StrategyLocator("delta", Securities.Options.Calls.Long))
+    Δcβ = Variable.Independent("Δcβ", "delta", np.float32, locator=StrategyLocator("delta", Securities.Options.Calls.Short))
+
+    Γpα = Variable.Independent("Γpα", "gamma", np.float32, locator=StrategyLocator("gamma", Securities.Options.Puts.Long))
+    Γpβ = Variable.Independent("Γpβ", "gamma", np.float32, locator=StrategyLocator("gamma", Securities.Options.Puts.Short))
+    Γcα = Variable.Independent("Γcα", "gamma", np.float32, locator=StrategyLocator("gamma", Securities.Options.Calls.Long))
+    Γcβ = Variable.Independent("Γcβ", "gamma", np.float32, locator=StrategyLocator("gamma", Securities.Options.Calls.Short))
+
+    Θpα = Variable.Independent("Θpα", "theta", np.float32, locator=StrategyLocator("theta", Securities.Options.Puts.Long))
+    Θpβ = Variable.Independent("Θpβ", "theta", np.float32, locator=StrategyLocator("theta", Securities.Options.Puts.Short))
+    Θcα = Variable.Independent("Θcα", "theta", np.float32, locator=StrategyLocator("theta", Securities.Options.Calls.Long))
+    Θcβ = Variable.Independent("Θcβ", "theta", np.float32, locator=StrategyLocator("theta", Securities.Options.Calls.Short))
+
+    Vpα = Variable.Independent("Vpα", "vega", np.float32, locator=StrategyLocator("vega", Securities.Options.Puts.Long))
+    Vpβ = Variable.Independent("Vpβ", "vega", np.float32, locator=StrategyLocator("vega", Securities.Options.Puts.Short))
+    Vcα = Variable.Independent("Vcα", "vega", np.float32, locator=StrategyLocator("vega", Securities.Options.Calls.Long))
+    Vcβ = Variable.Independent("Vcβ", "vega", np.float32, locator=StrategyLocator("vega", Securities.Options.Calls.Short))
+
+    Ppα = Variable.Independent("Ppα", "rho", np.float32, locator=StrategyLocator("rho", Securities.Options.Puts.Long))
+    Ppβ = Variable.Independent("Ppβ", "rho", np.float32, locator=StrategyLocator("rho", Securities.Options.Puts.Short))
+    Pcα = Variable.Independent("Pcα", "rho", np.float32, locator=StrategyLocator("rho", Securities.Options.Calls.Long))
+    Pcβ = Variable.Independent("Pcβ", "rho", np.float32, locator=StrategyLocator("rho", Securities.Options.Calls.Short))
+
+
+class VerticalPutGreekEquation(GreeksEquation):
+    vo = Variable.Dependent("vo", "value", np.float32, function=lambda vpα, vpβ: vpα - vpβ)
+    Δo = Variable.Dependent("Δo", "delta", np.float32, function=lambda Δpα, Δpβ: Δpα - Δpβ)
+    Γo = Variable.Dependent("Γo", "gamma", np.float32, function=lambda Γpα, Γpβ: Γpα - Γpβ)
+    Θo = Variable.Dependent("Θo", "theta", np.float32, function=lambda Θpα, Θpβ: Θpα - Θpβ)
+    Vo = Variable.Dependent("Vo", "vega", np.float32, function=lambda Vpα, Vpβ: Vpα - Vpβ)
+    Po = Variable.Dependent("Po", "rho", np.float32, function=lambda Ppα, Ppβ: Ppα - Ppβ)
+
+class VerticalCallGreekEquation(GreeksEquation):
+    vo = Variable.Dependent("vo", "value", np.float32, function=lambda vcα, vcβ: vcα - vcβ)
+    Δo = Variable.Dependent("Δo", "delta", np.float32, function=lambda Δcα, Δcβ: Δcα - Δcβ)
+    Γo = Variable.Dependent("Γo", "gamma", np.float32, function=lambda Γcα, Γcβ: Γcα - Γcβ)
+    Θo = Variable.Dependent("Θo", "theta", np.float32, function=lambda Θcα, Θcβ: Θcα - Θcβ)
+    Vo = Variable.Dependent("Vo", "vega", np.float32, function=lambda Vcα, Vcβ: Vcα - Vcβ)
+    Po = Variable.Dependent("Po", "rho", np.float32, function=lambda Pcα, Pcβ: Pcα - Pcβ)
+
+class CollarLongGreekEquation(GreeksEquation):
+    vo = Variable.Dependent("vo", "value", np.float32, function=lambda vpα, vcβ: vpα - vcβ)
+    Δo = Variable.Dependent("Δo", "delta", np.float32, function=lambda Δpα, Δcβ: Δpα - Δcβ)
+    Γo = Variable.Dependent("Γo", "gamma", np.float32, function=lambda Γpα, Γcβ: Γpα - Γcβ)
+    Θo = Variable.Dependent("Θo", "theta", np.float32, function=lambda Θpα, Θcβ: Θpα - Θcβ)
+    Vo = Variable.Dependent("Vo", "vega", np.float32, function=lambda Vpα, Vcβ: Vpα - Vcβ)
+    Po = Variable.Dependent("Po", "rho", np.float32, function=lambda Ppα, Pcβ: Ppα - Pcβ)
+
+class CollarShortGreekEquation(GreeksEquation):
+    vo = Variable.Dependent("vo", "value", np.float32, function=lambda vcα, vpβ: vcα - vpβ)
+    Δo = Variable.Dependent("Δo", "delta", np.float32, function=lambda Δcα, Δpβ: Δcα - Δpβ)
+    Γo = Variable.Dependent("Γo", "gamma", np.float32, function=lambda Γcα, Γpβ: Γcα - Γpβ)
+    Θo = Variable.Dependent("Θo", "theta", np.float32, function=lambda Θcα, Θpβ: Θcα - Θpβ)
+    Vo = Variable.Dependent("Vo", "vega", np.float32, function=lambda Vcα, Vpβ: Vcα - Vpβ)
+    Po = Variable.Dependent("Po", "rho", np.float32, function=lambda Pcα, Ppβ: Pcα - Ppβ)
+
+
+class VerticalPutEquation(VerticalPutGreekEquation, StrategyEquation, register=Strategies.Verticals.Put):
     yhτ = Variable.Dependent("yhτ", "maximum", np.float32, function=lambda kpα, kpβ: np.maximum(kpα - kpβ, 0))
     yeτ = Variable.Dependent("yeτ", "expected", np.float32, function=lambda fpα, fpβ: fpα - fpβ)
     ylτ = Variable.Dependent("ylτ", "minimum", np.float32, function=lambda kpα, kpβ: np.minimum(kpα - kpβ, 0))
@@ -97,7 +163,7 @@ class VerticalPutEquation(StrategyEquation, register=Strategies.Verticals.Put):
     fpβ = Variable.Dependent("fcβ", "function", np.float32, function=lambda dpβ, zpβ, σo: + dpβ * norm.cdf(+zpβ) + σo * norm.pdf(+zpβ))
 
 
-class VerticalCallEquation(StrategyEquation, register=Strategies.Verticals.Call):
+class VerticalCallEquation(VerticalCallGreekEquation, StrategyEquation, register=Strategies.Verticals.Call):
     yhτ = Variable.Dependent("yhτ", "maximum", np.float32, function=lambda kcα, kcβ: np.maximum(kcβ - kcα, 0))
     yeτ = Variable.Dependent("yeτ", "expected", np.float32, function=lambda fcα, fcβ: fcα - fcβ)
     ylτ = Variable.Dependent("ylτ", "minimum", np.float32, function=lambda kcα, kcβ: np.minimum(kcβ - kcα, 0))
@@ -112,7 +178,7 @@ class VerticalCallEquation(StrategyEquation, register=Strategies.Verticals.Call)
     fcβ = Variable.Dependent("fcβ", "function", np.float32, function=lambda dcβ, zcβ, σo: - dcβ * norm.cdf(-zcβ) + σo * norm.pdf(-zcβ))
 
 
-class CollarLongEquation(StrategyEquation, register=Strategies.Collars.Long):
+class CollarLongEquation(CollarLongGreekEquation, StrategyEquation, register=Strategies.Collars.Long):
     yhτ = Variable.Dependent("yhτ", "maximum", np.float32, function=lambda kpα, kcβ: + np.maximum(kpα, kcβ))
     yeτ = Variable.Dependent("yeτ", "expected", np.float32, function=lambda xo, fpα, fcβ: fpα - fcβ + xo)
     ylτ = Variable.Dependent("ylτ", "minimum", np.float32, function=lambda kpα, kcβ: + np.minimum(kpα, kcβ))
@@ -127,7 +193,7 @@ class CollarLongEquation(StrategyEquation, register=Strategies.Collars.Long):
     fcβ = Variable.Dependent("fcβ", "function", np.float32, function=lambda dcβ, zcβ, σo: - dcβ * norm.cdf(-zcβ) + σo * norm.pdf(-zcβ))
 
 
-class CollarShortEquation(StrategyEquation, register=Strategies.Collars.Short):
+class CollarShortEquation(CollarShortGreekEquation, StrategyEquation, register=Strategies.Collars.Short):
     yhτ = Variable.Dependent("yhτ", "maximum", np.float32, function=lambda kcα, kpβ: - np.minimum(kcα, kpβ))
     yeτ = Variable.Dependent("yeτ", "expected", np.float32, function=lambda xo, fcα, fpβ: fcα - fpβ - xo)
     ylτ = Variable.Dependent("ylτ", "minimum", np.float32, function=lambda kcα, kpβ: - np.maximum(kcα, kpβ))
@@ -164,6 +230,27 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
     def calculate(self, options, *args, **kwargs):
         print(options)
         raise Exception()
+
+        options = list(self.separator(options, *args, **kwargs))
+
+    def separator(self, options, *args, **kwargs):
+        assert isinstance(options, pd.DataFrame)
+        for dataframe in self.values(options, by=Querys.Settlement):
+            yield dict(self.separate(dataframe, *args, **kwargs))
+
+    @staticmethod
+    def separate(options, *args, **kwargs):
+        assert isinstance(options, pd.DataFrame)
+        for security, dataframe in options.groupby(list(Variables.Securities.Security), sort=False):
+            if dataframe.empty: continue
+            security = Securities(security)
+            dataframe = dataframe.drop(columns=list(Variables.Securities.Security))
+            dataframe = dataframe.set_index(list(Querys.Settlement) + ["strike"], drop=True, inplace=False)
+            dataset = xr.Dataset.from_dataframe(dataframe)
+            dataset = reduce(lambda content, axis: content.squeeze(axis), list(Querys.Settlement), dataset)
+            dataset = dataset.rename({"strike": str(security)})
+            dataset["strike"] = dataset[str(security)]
+            yield security, dataset
 
     @property
     def calculations(self): return self.__calculations
