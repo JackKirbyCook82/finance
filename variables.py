@@ -23,8 +23,7 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-TechnicalVariable = Variable("Technical", ["STATISTIC", "STOCHASTIC"], start=1)
-AnalysisVariable = Variable("Dataset", ["PAYOFF", "CASHFLOW", "GREEKS"], start=1)
+TechnicalVariable = Variable("Technical", ["BARS", "STATISTIC", "STOCHASTIC"], start=1)
 InstrumentVariable = Variable("Instrument", ["EMPTY", "STOCK", "OPTION"], start=0)
 OptionVariable = Variable("Option", ["PUT", "EMPTY", "CALL"], start=-1)
 PositionVariable = Variable("Position", ["SHORT", "EMPTY", "LONG"], start=-1)
@@ -75,7 +74,6 @@ class Variables(Category):
     class Markets(Category): Status, Term, Tenure, Action, Pricing = StatusVariable, TermVariable, TenureVariable, ActionVariable, PricingVariable
     Scenario = ScenarioVariable
     Technical = TechnicalVariable
-    Analysis = AnalysisVariable
 
 class Securities(Category):
     class Stocks(Category): Long = StockLongSecurity; Short = StockShortSecurity

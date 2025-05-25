@@ -9,6 +9,7 @@ Created on Fri Apr 19 2024
 import numpy as np
 import pandas as pd
 from abc import ABC
+from datetime import date as Date
 
 from finance.variables import Variables, Querys
 from support.calculations import Calculation, Equation, Variable
@@ -22,8 +23,29 @@ __license__ = "MIT License"
 
 
 class TechnicalEquation(Equation, ABC, datatype=pd.Series, vectorize=False):
-    x = Variable.Independent("x", "price", np.float32, locator="price")
+    s = Variable.Independent("s", "ticker", Date, locator="ticker")
+    t = Variable.Independent("t", "date", Date, locator="date")
+    x = Variable.Independent("x", "adjusted", np.float32, locator="adjusted")
     dt = Variable.Constant("dt", "period", np.int32, locator="period")
+
+    def execute(self, *args, **kwargs):
+        yield self.s()
+        yield self.t()
+
+
+class BarsEquation(TechnicalEquation, register=Variables.Technical.BARS):
+    xo = Variable.Independent("xo", "open", np.float32, locator="open")
+    xc = Variable.Independent("xc", "close", np.float32, locator="close")
+    xh = Variable.Independent("xc", "high", np.float32, locator="high")
+    xl = Variable.Independent("xc", "low", np.float32, locator="low")
+
+    def execute(self, *args, **kwargs):
+        yield from super().execute(*args, **kwargs)
+        yield self.x()
+        yield self.xo()
+        yield self.xc()
+        yield self.xh()
+        yield self.xl()
 
 
 class StatisticEquation(TechnicalEquation, register=Variables.Technical.STATISTIC):
@@ -31,16 +53,18 @@ class StatisticEquation(TechnicalEquation, register=Variables.Technical.STATISTI
     m = Variable.Dependent("m", "trend", np.float32, function=lambda x, *, dt: x.pct_change(1).rolling(dt).mean())
 
     def execute(self, *args, **kwargs):
+        yield from super().execute(*args, **kwargs)
         yield self.m()
         yield self.δ()
 
 
 class StochasticEquation(TechnicalEquation, register=Variables.Technical.STOCHASTIC):
-    xk = Variable.Dependent("xk", "oscillator", np.float32, function=lambda x, xl, xh: (x - xl) * 100 / (xh - xl))
-    xh = Variable.Dependent("xh", "highest", np.float32, function=lambda x, *, dt: x.rolling(dt).min())
-    xl = Variable.Dependent("xl", "lowest", np.float32, function=lambda x, *, dt: x.rolling(dt).max())
+    xk = Variable.Dependent("xk", "oscillator", np.float32, function=lambda x, xkl, xkh: (x - xkl) * 100 / (xkh - xkl))
+    xkh = Variable.Dependent("xkh", "highest", np.float32, function=lambda x, *, dt: x.rolling(dt).min())
+    xkl = Variable.Dependent("xkl", "lowest", np.float32, function=lambda x, *, dt: x.rolling(dt).max())
 
     def execute(self, *args, **kwargs):
+        yield from super().execute(*args, **kwargs)
         yield self.xk()
 
 
@@ -72,14 +96,12 @@ class TechnicalCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
 
     def calculator(self, bars, *args, **kwargs):
         assert isinstance(bars, list) and all([isinstance(dataframe, pd.DataFrame) for dataframe in bars])
-        header = ["ticker", "date", "price"]
         for dataframe in bars:
             assert (dataframe["ticker"].to_numpy()[0] == dataframe["ticker"]).all()
             dataframe = dataframe.sort_values("date", ascending=True, inplace=False)
             technicals = self.calculation(dataframe, *args, **kwargs)
             assert isinstance(technicals, pd.DataFrame)
-            results = pd.concat([dataframe[header], technicals], axis=1)
-            yield results
+            yield technicals
 
     @property
     def calculation(self): return self.__calculation

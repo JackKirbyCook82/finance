@@ -25,23 +25,21 @@ __license__ = "MIT License"
 
 
 class ValuationEquation(Equation, ABC, datatype=xr.DataArray, vectorize=True):
+    vlo = Variable.Dependent("vlo", ("npv", Variables.Scenario.MINIMUM), np.float32, function=lambda wlτ, wo, τ, *, ρ: np.divide(wlτ, np.power(ρ + 1, np.divide(τ, 365))) + wo)
+    veo = Variable.Dependent("veo", ("npv", Variables.Scenario.EXPECTED), np.float32, function=lambda weτ, wo, τ, *, ρ: np.divide(weτ, np.power(ρ + 1, np.divide(τ, 365))) + wo)
+    vho = Variable.Dependent("vho", ("npv", Variables.Scenario.MAXIMUM), np.float32, function=lambda whτ, wo, τ, *, ρ: np.divide(whτ, np.power(ρ + 1, np.divide(τ, 365))) + wo)
     τ = Variable.Dependent("τ", "tau", np.int32, function=lambda tτ, *, to: (tτ - to).days)
 
+    wlτ = Variable.Independent("wlτ", ("future", Variables.Scenario.MINIMUM), np.float32, locator="minimum")
+    weτ = Variable.Independent("weτ", ("future", Variables.Scenario.EXPECTED), np.float32, locator="expected")
+    whτ = Variable.Independent("whτ", ("future", Variables.Scenario.MAXIMUM), np.float32, locator="maximum")
+
     xo = Variable.Independent("xo", "underlying", np.float32, locator="underlying")
+    wo = Variable.Independent("wo", "spot", np.float32, locator="spot")
     qo = Variable.Independent("qo", "size", np.int32, locator="size")
     to = Variable.Constant("to", "current", Date, locator="current")
     tτ = Variable.Independent("tτ", "expire", Date, locator="expire")
     ρ = Variable.Constant("ρ", "discount", np.float32, locator="discount")
-
-
-class PayoffEquation(ValuationEquation, register=Variables.Analysis.PAYOFF):
-    vlo = Variable.Dependent("vlo", ("npv", Variables.Scenario.MINIMUM), np.float32, function=lambda wlτ, wo, τ, *, ρ: np.divide(wlτ, np.power(ρ + 1, np.divide(τ, 365))) + wo)
-    veo = Variable.Dependent("veo", ("npv", Variables.Scenario.EXPECTED), np.float32, function=lambda weτ, wo, τ, *, ρ: np.divide(weτ, np.power(ρ + 1, np.divide(τ, 365))) + wo)
-    vho = Variable.Dependent("vho", ("npv", Variables.Scenario.MAXIMUM), np.float32, function=lambda whτ, wo, τ, *, ρ: np.divide(whτ, np.power(ρ + 1, np.divide(τ, 365))) + wo)
-    wlτ = Variable.Independent("wlτ", ("future", Variables.Scenario.MINIMUM), np.float32, locator="minimum")
-    weτ = Variable.Independent("weτ", ("future", Variables.Scenario.EXPECTED), np.float32, locator="expected")
-    whτ = Variable.Independent("whτ", ("future", Variables.Scenario.MAXIMUM), np.float32, locator="maximum")
-    wo = Variable.Independent("wo", "spot", np.float32, locator="spot")
 
     def execute(self, *args, **kwargs):
         yield self.vlo()
@@ -56,42 +54,11 @@ class PayoffEquation(ValuationEquation, register=Variables.Analysis.PAYOFF):
         yield self.τ()
 
 
-class CashflowEquation(ValuationEquation, register=Variables.Analysis.CASHFLOW):
-    wio = Variable.Independent("wio", "invest", np.float32, locator="invest")
-    wbo = Variable.Independent("wbo", "borrow", np.float32, locator="borrow")
-    wro = Variable.Independent("wro", "revenue", np.float32, locator="revenue")
-    weo = Variable.Independent("weo", "expense", np.float32, locator="expense")
-
-    def execute(self, *args, **kwargs):
-        yield self.wro()
-        yield self.weo()
-        yield self.wio()
-        yield self.wbo()
-
-
-class GreeksEquation(ValuationEquation, register=Variables.Analysis.GREEKS):
-    vo = Variable.Independent("vo", "value", np.float32, locator="value")
-    Δo = Variable.Independent("Δo", "delta", np.float32, locator="delta")
-    Γo = Variable.Independent("Γo", "gamma", np.float32, locator="gamma")
-    Θo = Variable.Independent("Θo", "theta", np.float32, locator="theta")
-    Vo = Variable.Independent("Vo", "vega", np.float32, locator="vega")
-    Po = Variable.Independent("Po", "rho", np.float32, locator="rho")
-
-    def execute(self, *args, **kwargs):
-        yield self.vo()
-        yield self.Δo()
-        yield self.Γo()
-        yield self.Θo()
-        yield self.Vo()
-        yield self.Po()
-
-
 class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
-    def __init__(self, *args, analyzing, **kwargs):
-        assert isinstance(analyzing, list) and all([value in list(Variables.Analysis) for value in list(analyzing)])
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        equations = [ValuationEquation[analysis] for analysis in analyzing]
-        self.__calculation = Calculation[xr.DataArray](*args, equations=equations, **kwargs)
+        calculation = Calculation[xr.DataArray](*args, equation=ValuationEquation, **kwargs)
+        self.__calculation = calculation
 
     def execute(self, strategies, *args, **kwargs):
         assert isinstance(strategies, (list, xr.Dataset))
