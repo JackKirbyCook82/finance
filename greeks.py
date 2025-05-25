@@ -86,6 +86,9 @@ class GreekCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
         options = options.reset_index(drop=True, inplace=False)
         return options
 
+    @property
+    def calculation(self): return self.__calculation
+
 
 
 

@@ -14,7 +14,7 @@ from support.mixins import Emptying, Sizing, Partition, Logging
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["SecurityCalculator"]
+__all__ = ["StockCalculator", "OptionCalculator", "SecurityCalculator"]
 __copyright__ = "Copyright 2025, Jack Kirby Cook"
 __license__ = "MIT License"
 
