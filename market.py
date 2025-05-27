@@ -9,17 +9,13 @@ Created on Tues Mar 18 2025
 import numpy as np
 import pandas as pd
 from abc import ABC
-from datetime import datetime as Datetime
-from collections import namedtuple as ntuple
 
-from finance.variables import Variables, Querys, Securities, Strategies
+from finance.variables import Variables, Querys, Securities
 from support.mixins import Emptying, Sizing, Partition, Logging
-from support.meta import ParameterMeta
-from support.files import Saver
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["AcquisitionCalculator", "AcquisitionSaver", "AcquisitionParameters"]
+__all__ = ["MarketCalculator"]
 __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
@@ -104,28 +100,5 @@ class MarketCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcula
     def liquidity(self): return self.__liquidity
     @property
     def priority(self): return self.__priority
-
-
-class AcquisitionParameters(metaclass=ParameterMeta):
-    order = ["scenario", "strategy"] + list(Querys.Settlement) + list(map(str, Securities.Options))
-    order = order + ["underlying", "tau", "size", "liquidity", "quantity", "revenue", "expense", "invest", "borrow", "spot", "breakeven", "payoff", "future", "npv"]
-    types = {"ticker": str, " ".join(map(str, Securities.Options)): str, "underlying": np.float32, "tau size liquidity quantity": np.float32}
-    types = types | {"revenue expense invest borrow": np.float32, "spot breakeven future payoff npv": np.float32}
-    parsers = dict(scenario=Variables.Scenario, strategy=Strategies)
-    formatters = dict(scenario=str, strategy=str)
-    dates = dict(expire="%Y%m%d")
-
-
-class AcquisitionCalculator(MarketCalculator): pass
-class AcquisitionSaver(Saver):
-    def categorize(self, dataframe, *args, **kwargs):
-        assert isinstance(dataframe, pd.DataFrame)
-        Header = ntuple("Header", "axis scenario")
-        headers = {scenario: [Header(axis, scenario) for (axis, scenario) in dataframe.columns] for scenario in list(Variables.Scenarios)}
-        headers = {scenario: [header for header in contents if not bool(header.scenario) or header.scenario == scenario] for scenario, contents in headers.items()}
-        dataframes = [dataframe[header].assign(scenario=scenario).droplevel(level=1, axis=1) for scenario, header in headers.items()]
-        dataframe = pd.concat(dataframes, axis=0)
-        current = ".".join([Datetime.now().strftime("%Y%m%d"), "csv"])
-        yield current, dataframe
 
 

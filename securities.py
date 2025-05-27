@@ -116,8 +116,10 @@ class SecurityCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
             generator = zip(header._fields, header)
             dataframes = [options[value].rename(key) for key, value in generator]
             dataframe = pd.concat([options] + dataframes, axis=1)
-            dataframe["price"] = dataframe.apply(self.pricing, axis=1)
-            dataframe["position"] = position
+            function = lambda column: lambda series: series[column] * int(position)
+            greeks = {column: function(column) for column in ("value", "delta", "gamma", "theta", "rho", "vega")}
+            pricing = {"cashflow": lambda series: - self.pricing(series) * int(position)}
+            dataframe = dataframe.assign(**pricing, **greeks, position=position)
             yield dataframe
 
     @property
