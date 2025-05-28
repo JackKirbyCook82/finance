@@ -24,7 +24,7 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class ValuationEquation(Equation, ABC, datatype=xr.DataArray, vectorize=True):
+class ValuationEquation(Equation, datatype=xr.DataArray, vectorize=True):
     vlo = Variable.Dependent("vlo", ("npv", Variables.Scenario.MINIMUM), np.float32, function=lambda wlτ, wo, τ, *, ρ: np.divide(wlτ, np.power(ρ + 1, np.divide(τ, 365))) + wo)
     veo = Variable.Dependent("veo", ("npv", Variables.Scenario.EXPECTED), np.float32, function=lambda weτ, wo, τ, *, ρ: np.divide(weτ, np.power(ρ + 1, np.divide(τ, 365))) + wo)
     vho = Variable.Dependent("vho", ("npv", Variables.Scenario.MAXIMUM), np.float32, function=lambda whτ, wo, τ, *, ρ: np.divide(whτ, np.power(ρ + 1, np.divide(τ, 365))) + wo)
@@ -54,10 +54,28 @@ class ValuationEquation(Equation, ABC, datatype=xr.DataArray, vectorize=True):
         yield self.τ()
 
 
+class ValuationGreekEquation(ValuationEquation):
+    vo = Variable.Independent("vo", "value", np.float32, locator="value")
+    Δo = Variable.Independent("Δo", "delta", np.float32, locator="delta")
+    Γo = Variable.Independent("Γo", "gamma", np.float32, locator="gamma")
+    Θo = Variable.Independent("Θo", "theta", np.float32, locator="theta")
+    Vo = Variable.Independent("Vo", "vega", np.float32, locator="vega")
+    Po = Variable.Independent("Po", "rho", np.float32, locator="rho")
+
+    def execute(self, *args, **kwargs):
+        yield from super().execute(*args, **kwargs)
+        yield self.vo()
+        yield self.Δo()
+        yield self.Γo()
+        yield self.Θo()
+        yield self.Vo()
+        yield self.Po()
+
+
 class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        calculation = Calculation[xr.DataArray](*args, equation=ValuationEquation, **kwargs)
+        calculation = Calculation[xr.DataArray](*args, equation=ValuationGreekEquation, **kwargs)
         self.__calculation = calculation
 
     def execute(self, strategies, *args, **kwargs):

@@ -23,24 +23,23 @@ __license__ = "MIT License"
 
 
 class GreekEquation(Equation, ABC, datatype=pd.Series, vectorize=True):
-    Θ = Variable.Dependent("Θ", "theta", np.float32, function=lambda vx, vk, zx, σ, q, r, τ, i: (vx * int(i) * q - vk * int(i) * r - norm.pdf(zx) * σ / np.exp(q * τ) / np.sqrt(τ) / 2) / 364)
-    Δ = Variable.Dependent("Δ", "delta", np.float32, function=lambda zx, q, τ, i: + norm.cdf(zx * int(i)) * int(i) / np.exp(q * τ))
-    Γ = Variable.Dependent("Γ", "gamma", np.float32, function=lambda zx, x, σ, q, τ: norm.pdf(zx) / np.exp(q * τ) / np.sqrt(τ) / x / σ)
-    P = Variable.Dependent("P", "rho", np.float32, function=lambda zk, k, r, τ, i: - norm.cdf(zk * int(i)) * int(i) * k * τ / np.exp(r * τ))
-    V = Variable.Dependent("V", "vega", np.float32, function=lambda zx, x, σ, q, τ: norm.pdf(zx) * np.sqrt(τ) * x / np.exp(q * τ))
-
     τ = Variable.Dependent("τ", "tau", np.float32, function=lambda to, tτ: (np.datetime64(tτ, "ns") - np.datetime64(to, "ns")) / np.timedelta64(364, 'D'))
-    v = Variable.Dependent("v", "value", np.float32, function=lambda vx, vk: (vx - vk))
-    vx = Variable.Dependent("yx", "underlying", np.float32, function=lambda zx, x, τ, q, i: x * int(i) * norm.cdf(zx * int(i)) / np.exp(q * τ))
-    vk = Variable.Dependent("yk", "strike", np.float32, function=lambda zk, k, τ, r, i: k * int(i) * norm.cdf(zk * int(i)) / np.exp(r * τ))
+    Δ = Variable.Dependent("Δ", "delta", np.float32, function=lambda zx, i: + norm.cdf(zx * int(i)) * int(i))
+    Γ = Variable.Dependent("Γ", "gamma", np.float32, function=lambda zx, x, σ, τ: + norm.pdf(zx) / np.sqrt(τ) / σ / x)
+    P = Variable.Dependent("P", "rho", np.float32, function=lambda zk, k, r, τ, i: + norm.cdf(zk * int(i)) * int(i) * k * τ / np.exp(r * τ))
+    V = Variable.Dependent("V", "vega", np.float32, function=lambda zx, x, τ: + norm.pdf(zx) * np.sqrt(τ) * x)
+    Θ = Variable.Dependent("Θ", "theta", np.float32, function=lambda zx, zk, x, k, r, σ, τ, i: - norm.cdf(zk * int(i)) * int(i) * k * r / np.exp(r * τ) - norm.pdf(zx) * x * σ / np.sqrt(τ) / 2)
 
-    zx = Variable.Dependent("zx", "underlying", np.float32, function=lambda zxk, zvt, zrt, zqt: zxk + zvt + zrt + zqt)
-    zk = Variable.Dependent("zx", "strike", np.float32, function=lambda zxk, zvt, zrt, zqt: zxk - zvt + zrt + zqt)
+    v = Variable.Dependent("v", "value", np.float32, function=lambda vx, vk, i: (vx - vk) * int(i))
+    vx = Variable.Dependent("yx", "underlying", np.float32, function=lambda zx, x, τ, q, i: norm.cdf(zx * int(i)) * x)
+    vk = Variable.Dependent("yk", "strike", np.float32, function=lambda zk, k, τ, r, i: norm.cdf(zk * int(i)) * k / np.exp(r * τ))
+
+    zx = Variable.Dependent("zx", "underlying", np.float32, function=lambda zxk, zvt, zrt: zxk + zvt + zrt)
+    zk = Variable.Dependent("zx", "strike", np.float32, function=lambda zxk, zvt, zrt: zxk - zvt + zrt)
 
     zxk = Variable.Dependent("zxk", "strike", np.float32, function=lambda x, k, σ, τ: np.log(x / k) / np.sqrt(τ) / σ)
     zvt = Variable.Dependent("zvt", "volatility", np.float32, function=lambda σ, τ: np.sqrt(τ) * σ / 2)
     zrt = Variable.Dependent("zrt", "interest", np.float32, function=lambda σ, r, τ: np.sqrt(τ) * r / σ)
-    zqt = Variable.Dependent("zqt", "dividend", np.float32, function=lambda σ, q, τ: np.sqrt(τ) * q / σ)
 
     tτ = Variable.Independent("tτ", "expire", np.datetime64, locator="expire")
     to = Variable.Constant("to", "current", np.datetime64, locator="current")
