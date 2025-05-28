@@ -33,6 +33,7 @@ StatusVariable = Variable("Status", ["PROSPECT", "PENDING", "OBSOLETE", "ABANDON
 TermVariable = Variable("Terms", ["MARKET", "LIMIT", "STOP", "STOPLIMIT", "LIMITDEBIT", "LIMITCREDIT"], start=1)
 TenureVariable = Variable("Tenure", ["DAY", "STANDING", "OPENING", "CLOSING", "IMMEDIATE", "FILLKILL"], start=1)
 PricingVariable = Variable("Pricing", ["AGGRESSIVE", "PASSIVE", "MODERATE"], start=1)
+QuotingVariable = Variable("Quoting", ["DELAYED", "REALTIME"], start=0)
 ActionVariable = Variable("Action", ["BUY", "SELL"], start=1)
 
 SecurityVariables = Variables("Security", ["instrument", "option", "position"])
@@ -71,7 +72,7 @@ class Querys(Category): Symbol, Settlement, Contract = SymbolQuery, SettlementQu
 class Variables(Category):
     class Securities(Category): Security, Instrument, Option, Position = SecurityVariables, InstrumentVariable, OptionVariable, PositionVariable
     class Strategies(Category): Strategy, Spread = StrategyVariables, SpreadVariable
-    class Markets(Category): Status, Term, Tenure, Action, Pricing = StatusVariable, TermVariable, TenureVariable, ActionVariable, PricingVariable
+    class Markets(Category): Status, Term, Tenure, Action, Pricing, Quoting = StatusVariable, TermVariable, TenureVariable, ActionVariable, PricingVariable, QuotingVariable
     Scenario = ScenarioVariable
     Technical = TechnicalVariable
 
