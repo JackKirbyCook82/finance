@@ -33,7 +33,7 @@ StatusVariable = Variable("Status", ["PROSPECT", "PENDING", "OBSOLETE", "ABANDON
 TermVariable = Variable("Terms", ["MARKET", "LIMIT", "STOP", "STOPLIMIT", "LIMITDEBIT", "LIMITCREDIT"], start=1)
 TenureVariable = Variable("Tenure", ["DAY", "STANDING", "OPENING", "CLOSING", "IMMEDIATE", "FILLKILL"], start=1)
 PricingVariable = Variable("Pricing", ["AGGRESSIVE", "PASSIVE", "MODERATE"], start=1)
-QuotingVariable = Variable("Quoting", ["DELAYED", "REALTIME"], start=0)
+QuotingVariable = Variable("Quoting", ["CLOSING", "DELAYED", "REALTIME"], start=1)
 ActionVariable = Variable("Action", ["BUY", "SELL"], start=1)
 
 SecurityVariables = Variables("Security", ["instrument", "option", "position"])
