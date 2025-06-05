@@ -9,7 +9,6 @@ Created on Weds Jul 19 2023
 import numpy as np
 import pandas as pd
 import xarray as xr
-from abc import ABC
 from datetime import date as Date
 
 from finance.variables import Variables, Querys, Securities
@@ -25,36 +24,47 @@ __license__ = "MIT License"
 
 
 class ValuationEquation(Equation, datatype=xr.DataArray, vectorize=True):
-    vlo = Variable.Dependent("vlo", ("npv", Variables.Scenario.MINIMUM), np.float32, function=lambda wlτ, wo, τ, *, ρ: np.divide(wlτ, np.power(ρ + 1, np.divide(τ, 365))) + wo)
-    veo = Variable.Dependent("veo", ("npv", Variables.Scenario.EXPECTED), np.float32, function=lambda weτ, wo, τ, *, ρ: np.divide(weτ, np.power(ρ + 1, np.divide(τ, 365))) + wo)
-    vho = Variable.Dependent("vho", ("npv", Variables.Scenario.MAXIMUM), np.float32, function=lambda whτ, wo, τ, *, ρ: np.divide(whτ, np.power(ρ + 1, np.divide(τ, 365))) + wo)
     τ = Variable.Dependent("τ", "tau", np.int32, function=lambda tτ, *, to: (tτ - to).days)
-
-    wlτ = Variable.Independent("wlτ", ("future", Variables.Scenario.MINIMUM), np.float32, locator="minimum")
-    weτ = Variable.Independent("weτ", ("future", Variables.Scenario.EXPECTED), np.float32, locator="expected")
-    whτ = Variable.Independent("whτ", ("future", Variables.Scenario.MAXIMUM), np.float32, locator="maximum")
-
     xo = Variable.Independent("xo", "underlying", np.float32, locator="underlying")
     wo = Variable.Independent("wo", "spot", np.float32, locator="spot")
     qo = Variable.Independent("qo", "size", np.int32, locator="size")
-    to = Variable.Constant("to", "current", Date, locator="current")
     tτ = Variable.Independent("tτ", "expire", Date, locator="expire")
+    to = Variable.Constant("to", "current", Date, locator="current")
     ρ = Variable.Constant("ρ", "discount", np.float32, locator="discount")
 
     def execute(self, *args, **kwargs):
-        yield self.vlo()
-        yield self.veo()
-        yield self.vho()
-        yield self.wlτ()
-        yield self.weτ()
-        yield self.whτ()
+        yield from super().execute(*args, **kwargs)
         yield self.wo()
         yield self.xo()
         yield self.qo()
         yield self.τ()
 
 
-class ValuationGreekEquation(ValuationEquation):
+class PayoffEquation(ValuationEquation):
+    vlo = Variable.Dependent("vlo", ("npv", Variables.Scenario.MINIMUM), np.float32, function=lambda wlτ, wo, τ, *, ρ: np.divide(wlτ, np.power(ρ + 1, np.divide(τ, 365))) + wo)
+    vho = Variable.Dependent("vho", ("npv", Variables.Scenario.MAXIMUM), np.float32, function=lambda whτ, wo, τ, *, ρ: np.divide(whτ, np.power(ρ + 1, np.divide(τ, 365))) + wo)
+    wlτ = Variable.Independent("wlτ", ("future", Variables.Scenario.MINIMUM), np.float32, locator="minimum")
+    whτ = Variable.Independent("whτ", ("future", Variables.Scenario.MAXIMUM), np.float32, locator="maximum")
+
+    def execute(self, *args, **kwargs):
+        yield from super().execute(*args, **kwargs)
+        yield self.vlo()
+        yield self.vho()
+        yield self.wlτ()
+        yield self.whτ()
+
+
+class ExpectedEquation(ValuationEquation):
+    veo = Variable.Dependent("veo", ("npv", Variables.Scenario.EXPECTED), np.float32, function=lambda weτ, wo, τ, *, ρ: np.divide(weτ, np.power(ρ + 1, np.divide(τ, 365))) + wo)
+    weτ = Variable.Independent("weτ", ("future", Variables.Scenario.EXPECTED), np.float32, locator="expected")
+
+    def execute(self, *args, **kwargs):
+        yield from super().execute(*args, **kwargs)
+        yield self.veo()
+        yield self.weτ()
+
+
+class GreekEquation(ValuationEquation):
     vo = Variable.Independent("vo", "value", np.float32, locator="value")
     Δo = Variable.Independent("Δo", "delta", np.float32, locator="delta")
     Γo = Variable.Independent("Γo", "gamma", np.float32, locator="gamma")
@@ -75,7 +85,8 @@ class ValuationGreekEquation(ValuationEquation):
 class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        calculation = Calculation[xr.DataArray](*args, equation=ValuationGreekEquation, **kwargs)
+        required, optional = PayoffEquation, [ExpectedEquation, GreekEquation]
+        calculation = Calculation[xr.DataArray](*args, required=required, optional=optional, **kwargs)
         self.__calculation = calculation
 
     def execute(self, strategies, *args, **kwargs):

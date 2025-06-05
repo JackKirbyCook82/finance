@@ -11,7 +11,7 @@ import pandas as pd
 from enum import Enum
 from itertools import product
 
-from finance.variables import Querys, Variables, Securities, Strategies
+from finance.variables import Querys, Variables, Securities
 from support.calculations import Calculation, Equation, Variable
 from support.mixins import Emptying, Sizing, Partition, Logging
 
@@ -48,6 +48,7 @@ class PayoffEquation(Equation, datatype=pd.Series, vectorize=True):
     ε = Variable.Constant("ε", "fees", np.float32, locator="fees")
 
     def execute(self, *args, **kwargs):
+        yield from super().execute(*args, **kwargs)
         yield self.wlτ()
         yield self.whτ()
 
@@ -55,7 +56,7 @@ class PayoffEquation(Equation, datatype=pd.Series, vectorize=True):
 class PayoffCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.__calculation = Calculation[pd.Series](*args, equation=PayoffEquation, **kwargs)
+        self.__calculation = Calculation[pd.Series](*args, required=PayoffEquation, **kwargs)
 
     def execute(self, valuations, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame)
@@ -66,10 +67,6 @@ class PayoffCalculator(Sizing, Emptying, Partition, Logging, title="Calculated")
         size = self.size(valuations)
         self.console(f"{str(settlements)}[{int(size):.0f}]")
         if self.empty(valuations): return
-
-        print(valuations)
-        raise Exception()
-
         yield valuations
 
     def calculate(self, valuations, *args, **kwargs):

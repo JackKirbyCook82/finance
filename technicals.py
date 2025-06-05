@@ -12,8 +12,9 @@ from abc import ABC
 from datetime import date as Date
 
 from finance.variables import Variables, Querys
-from support.calculations import Calculation, Equation, Variable
 from support.mixins import Emptying, Sizing, Partition, Logging
+from support.calculations import Calculation, Equation, Variable
+from support.meta import RegistryMeta
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -22,13 +23,16 @@ __copyright__ = "Copyright 2024, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class TechnicalEquation(Equation, ABC, datatype=pd.Series, vectorize=False):
+class TechnicalEquationMeta(RegistryMeta, type(Equation)): pass
+class TechnicalEquation(Equation, ABC, datatype=pd.Series, vectorize=False, metaclass=TechnicalEquationMeta):
+    x = Variable.Independent("x", "adjusted", np.float32, locator="adjusted")
     s = Variable.Independent("s", "ticker", Date, locator="ticker")
     t = Variable.Independent("t", "date", Date, locator="date")
-    x = Variable.Independent("x", "adjusted", np.float32, locator="adjusted")
     dt = Variable.Constant("dt", "period", np.int32, locator="period")
 
     def execute(self, *args, **kwargs):
+        yield from super().execute(*args, **kwargs)
+        yield self.x()
         yield self.s()
         yield self.t()
 
@@ -41,7 +45,6 @@ class BarsEquation(TechnicalEquation, register=Variables.Technical.BARS):
 
     def execute(self, *args, **kwargs):
         yield from super().execute(*args, **kwargs)
-        yield self.x()
         yield self.xo()
         yield self.xc()
         yield self.xh()
@@ -72,8 +75,8 @@ class TechnicalCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
     def __init__(self, *args, technicals, **kwargs):
         assert all([technical in list(Variables.Technical) for technical in technicals])
         super().__init__(*args, **kwargs)
-        equations = [TechnicalEquation[technical] for technical in technicals]
-        self.__calculation = Calculation[pd.Series](*args, equations=equations, **kwargs)
+        equations = [equation for technical, equation in iter(TechnicalEquation) if technical in technicals]
+        self.__calculation = Calculation[pd.Series](*args, required=equations, **kwargs)
 
     def execute(self, bars, *args, **kwargs):
         assert isinstance(bars, pd.DataFrame)

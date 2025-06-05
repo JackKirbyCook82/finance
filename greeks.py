@@ -53,6 +53,7 @@ class GreekEquation(Equation, ABC, datatype=pd.Series, vectorize=True):
     q = Variable.Constant("q", "dividend", np.float32, locator="dividend")
 
     def execute(self, *args, **kwargs):
+        yield from super().execute(*args, **kwargs)
         yield self.v()
         yield self.Δ()
         yield self.Γ()
@@ -64,7 +65,7 @@ class GreekEquation(Equation, ABC, datatype=pd.Series, vectorize=True):
 class GreekCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.__calculation = Calculation[pd.Series](*args, equation=GreekEquation, **kwargs)
+        self.__calculation = Calculation[pd.Series](*args, required=GreekEquation, **kwargs)
 
     def execute(self, options, *args, **kwargs):
         assert isinstance(options, pd.DataFrame)
