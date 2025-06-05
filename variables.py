@@ -28,7 +28,7 @@ InstrumentVariable = Variable("Instrument", ["EMPTY", "STOCK", "OPTION"], start=
 OptionVariable = Variable("Option", ["PUT", "EMPTY", "CALL"], start=-1)
 PositionVariable = Variable("Position", ["SHORT", "EMPTY", "LONG"], start=-1)
 SpreadVariable = Variable("Spread", ["STRANGLE", "COLLAR", "VERTICAL"], start=1)
-ScenarioVariable = Variable("Scenario", ["MINIMUM", "EXPECTED", "MAXIMUM"], start=1)
+ScenarioVariable = Variable("Scenario", ["CURRENT", "BREAKEVEN", "MINIMUM", "EXPECTED", "MAXIMUM"], start=1)
 StatusVariable = Variable("Status", ["PROSPECT", "PENDING", "OBSOLETE", "ABANDONED", "REJECTED", "ACCEPTED"], start=1)
 TermVariable = Variable("Terms", ["MARKET", "LIMIT", "STOP", "STOPLIMIT", "LIMITDEBIT", "LIMITCREDIT"], start=1)
 TenureVariable = Variable("Tenure", ["DAY", "STANDING", "OPENING", "CLOSING", "IMMEDIATE", "FILLKILL"], start=1)

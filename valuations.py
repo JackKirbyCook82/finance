@@ -25,6 +25,7 @@ __license__ = "MIT License"
 
 class ValuationEquation(Equation, datatype=xr.DataArray, vectorize=True):
     τ = Variable.Dependent("τ", "tau", np.int32, function=lambda tτ, *, to: (tτ - to).days)
+
     xo = Variable.Independent("xo", "underlying", np.float32, locator="underlying")
     wo = Variable.Independent("wo", "spot", np.float32, locator="spot")
     qo = Variable.Independent("qo", "size", np.int32, locator="size")
@@ -34,7 +35,6 @@ class ValuationEquation(Equation, datatype=xr.DataArray, vectorize=True):
 
     def execute(self, *args, **kwargs):
         yield from super().execute(*args, **kwargs)
-        yield self.wo()
         yield self.xo()
         yield self.qo()
         yield self.τ()
@@ -43,6 +43,8 @@ class ValuationEquation(Equation, datatype=xr.DataArray, vectorize=True):
 class PayoffEquation(ValuationEquation):
     vlo = Variable.Dependent("vlo", ("npv", Variables.Scenario.MINIMUM), np.float32, function=lambda wlτ, wo, τ, *, ρ: np.divide(wlτ, np.power(ρ + 1, np.divide(τ, 365))) + wo)
     vho = Variable.Dependent("vho", ("npv", Variables.Scenario.MAXIMUM), np.float32, function=lambda whτ, wo, τ, *, ρ: np.divide(whτ, np.power(ρ + 1, np.divide(τ, 365))) + wo)
+    wbo = Variable.Dependent("wbo", ("spot", Variables.Scenario.BREAKEVEN), np.float32, function=lambda wo, vlo: wo - vlo)
+    wco = Variable.Dependent("wco", ("spot", Variables.Scenario.CURRENT), np.float32, function=lambda wo: wo)
     wlτ = Variable.Independent("wlτ", ("future", Variables.Scenario.MINIMUM), np.float32, locator="minimum")
     whτ = Variable.Independent("whτ", ("future", Variables.Scenario.MAXIMUM), np.float32, locator="maximum")
 
@@ -52,6 +54,8 @@ class PayoffEquation(ValuationEquation):
         yield self.vho()
         yield self.wlτ()
         yield self.whτ()
+        yield self.wbo()
+        yield self.wco()
 
 
 class ExpectedEquation(ValuationEquation):
@@ -111,12 +115,17 @@ class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
 
     @calculate.register(xr.Dataset)
     def dataset(self, strategies, *args, **kwargs):
+        print(strategies)
+
         valuations = self.calculation(strategies, *args, **kwargs)
+
+        print(valuations)
+        raise Exception()
+
         valuations = valuations.to_dataframe().dropna(how="all", inplace=False)
         valuations = valuations.reset_index(drop=False, inplace=False)
         options = [option for option in list(map(str, Securities.Options)) if option not in valuations.columns]
         for option in options: valuations[option] = np.NaN
-        valuations["breakeven"] = valuations["spot"] - valuations[("npv", Variables.Scenario.MINIMUM)]
         columns = {column: (column, "") for column in valuations.columns if not isinstance(column, tuple)}
         valuations = valuations.rename(columns=columns, inplace=False)
         valuations.columns = pd.MultiIndex.from_tuples(valuations.columns)
