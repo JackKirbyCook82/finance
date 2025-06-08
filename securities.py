@@ -13,7 +13,7 @@ from support.mixins import Emptying, Sizing, Partition, Logging
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["PricingCalculator", "SecurityCalculator"]
+__all__ = ["AnalyticCalculator", "PricingCalculator", "SecurityCalculator"]
 __copyright__ = "Copyright 2025, Jack Kirby Cook"
 __license__ = "MIT License"
 
@@ -90,6 +90,12 @@ class SecurityCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
         securities = self.calculate(stocks, options, *args, **kwargs)
         size = self.size(securities)
         self.console(f"{str(settlements)}[{int(size):.0f}]")
+        if all([column in securities.columns for column in ("quoting", "timing")]):
+            quoting = set(securities["quoting"].values)
+            quoting = list(map(lambda value: str(value).title(), quoting))
+            quoting = ",".join(list(quoting))
+            timing = securities["timing"].min()
+            self.console(f"{str(settlements)}[{quoting}|{timing:%Y-%m-%d %I:%M %p}]")
         if self.empty(securities): return
         yield securities
 
@@ -110,7 +116,7 @@ class SecurityCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
             existing = options.drop(columns=list(positions.values()), inplace=False)
             updated = options["supply"].rename("size")
             dataframe = pd.concat([existing, updated], axis=1)
-            dataframe["cashflow"] = dataframe["price"].apply(np.negative) * int(position)
+            dataframe["spot"] = dataframe["price"].apply(np.negative) * int(position)
             dataframe["position"] = position
             for greek in ["value", "delta", "gamma", "theta", "rho", "vega"]:
                 try: dataframe[greek] = dataframe[greek] * int(position)

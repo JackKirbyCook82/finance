@@ -32,10 +32,10 @@ class StrategyCollection(ntuple("Collection", "payoff expected greeks")): pass
 
 class StrategyEquationMeta(RegistryMeta, type(Equation)): pass
 class StrategyEquation(Equation, ABC, datatype=xr.DataArray, vectorize=True):
-    ypα = Variable.Independent("ypα", "cashflow", np.float32, locator=StrategyLocator(Securities.Options.Puts.Long, "cashflow"))
-    ypβ = Variable.Independent("ypβ", "cashflow", np.float32, locator=StrategyLocator(Securities.Options.Puts.Short, "cashflow"))
-    ycα = Variable.Independent("ycα", "cashflow", np.float32, locator=StrategyLocator(Securities.Options.Calls.Long, "cashflow"))
-    ycβ = Variable.Independent("ycβ", "cashflow", np.float32, locator=StrategyLocator(Securities.Options.Calls.Short, "cashflow"))
+    ypα = Variable.Independent("ypα", "spot", np.float32, locator=StrategyLocator(Securities.Options.Puts.Long, "spot"))
+    ypβ = Variable.Independent("ypβ", "spot", np.float32, locator=StrategyLocator(Securities.Options.Puts.Short, "spot"))
+    ycα = Variable.Independent("ycα", "spot", np.float32, locator=StrategyLocator(Securities.Options.Calls.Long, "spot"))
+    ycβ = Variable.Independent("ycβ", "spot", np.float32, locator=StrategyLocator(Securities.Options.Calls.Short, "spot"))
 
     xpα = Variable.Independent("xpα", "underlying", np.float32, locator=StrategyLocator(Securities.Options.Puts.Long, "underlying"))
     xpβ = Variable.Independent("xpβ", "underlying", np.float32, locator=StrategyLocator(Securities.Options.Puts.Short, "underlying"))
@@ -257,20 +257,15 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
     def execute(self, options, *args, **kwargs):
         assert isinstance(options, pd.DataFrame)
         if self.empty(options): return
-        settlements = self.keys(options, by=Querys.Settlement)
-        settlements = ",".join(list(map(str, settlements)))
-        strategies = self.calculate(options, *args, **kwargs)
-        size = self.size(strategies, "size")
-        self.console(f"{str(settlements)}[{int(size):.0f}]")
-        if self.empty(strategies, "size"): return
-        yield strategies
-
-    def calculate(self, options, *args, **kwargs):
-        assert isinstance(options, pd.DataFrame)
-        strategies = list(self.calculator(options, *args, **kwargs))
-        return strategies
+        generator = self.calculator(options, *args, **kwargs)
+        for settlement, strategy, strategies in generator:
+            size = self.size(strategies, "size")
+            self.console(f"{str(settlement)}|{str(strategy)}[{int(size):.0f}]")
+            if self.empty(strategies, "size"): return
+            yield strategies
 
     def calculator(self, options, *args, **kwargs):
+        assert isinstance(options, pd.DataFrame)
         for settlement, dataframes in self.partition(options, by=Querys.Settlement):
             datasets = dict(self.unflatten(dataframes, *args, **kwargs))
             for strategy, calculation in self.calculations.items():
@@ -279,7 +274,7 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
                 assert isinstance(strategies, xr.Dataset)
                 strategies = strategies.assign_coords({"strategy": xr.Variable("strategy", [strategy]).squeeze("strategy")})
                 for field in list(Querys.Settlement): strategies = strategies.expand_dims(field)
-                yield strategies
+                yield settlement, strategy, strategies
 
     @staticmethod
     def unflatten(options, *args, **kwargs):
