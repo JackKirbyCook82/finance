@@ -58,16 +58,6 @@ class PayoffEquation(ValuationEquation):
         yield self.wco()
 
 
-class ExpectedEquation(ValuationEquation):
-    veo = Variable.Dependent("veo", ("npv", Variables.Scenario.EXPECTED), np.float32, function=lambda weτ, wo, τ, *, ρ: np.divide(weτ, np.power(ρ + 1, np.divide(τ, 365))) + wo)
-    weτ = Variable.Independent("weτ", ("future", Variables.Scenario.EXPECTED), np.float32, locator="expected")
-
-    def execute(self, *args, **kwargs):
-        yield from super().execute(*args, **kwargs)
-        yield self.veo()
-        yield self.weτ()
-
-
 class GreekEquation(ValuationEquation):
     vo = Variable.Independent("vo", "value", np.float32, locator="value")
     Δo = Variable.Independent("Δo", "delta", np.float32, locator="delta")
@@ -89,7 +79,7 @@ class GreekEquation(ValuationEquation):
 class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        required, optional = PayoffEquation, [ExpectedEquation, GreekEquation]
+        required, optional = PayoffEquation, [GreekEquation]
         calculation = Calculation[xr.DataArray](*args, required=required, optional=optional, **kwargs)
         self.__calculation = calculation
 
@@ -114,8 +104,9 @@ class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
         return valuations
 
     @calculate.register(xr.Dataset)
-    def dataset(self, strategies, *args, **kwargs):
-        valuations = self.calculation(strategies, *args, **kwargs)
+    def dataset(self, strategies, *args, current, **kwargs):
+        parameters = dict(current=current)
+        valuations = self.calculation(strategies, *args, **parameters, **kwargs)
         valuations = valuations.to_dataframe().dropna(how="all", inplace=False)
         valuations = valuations.reset_index(drop=False, inplace=False)
         options = [option for option in list(map(str, Securities.Options)) if option not in valuations.columns]

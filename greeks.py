@@ -44,7 +44,7 @@ class GreekEquation(Equation, ABC, datatype=pd.Series, vectorize=True):
     tτ = Variable.Independent("tτ", "expire", np.datetime64, locator="expire")
     to = Variable.Constant("to", "current", np.datetime64, locator="current")
 
-    x = Variable.Independent("x", "underlying", np.float32, locator="underlying")
+    x = Variable.Independent("x", "adjusted", np.float32, locator="adjusted")
     σ = Variable.Independent("σ", "volatility", np.float32, locator="volatility")
     μ = Variable.Independent("μ", "trend", np.float32, locator="trend")
     i = Variable.Independent("i", "option", Variables.Securities.Option, locator="option")
@@ -78,9 +78,10 @@ class GreekCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
         if self.empty(options): return
         yield options
 
-    def calculate(self, options, *args, **kwargs):
+    def calculate(self, options, *args, current, interest, dividend, **kwargs):
         assert isinstance(options, pd.DataFrame)
-        greeks = self.calculation(options, *args, **kwargs)
+        parameters = dict(current=current, interest=interest, dividend=dividend)
+        greeks = self.calculation(options, *args, **parameters, **kwargs)
         assert isinstance(greeks, pd.DataFrame)
         options = pd.concat([options, greeks], axis=1)
         options = options.reset_index(drop=True, inplace=False)
@@ -88,10 +89,6 @@ class GreekCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
 
     @property
     def calculation(self): return self.__calculation
-
-
-
-
 
 
 
