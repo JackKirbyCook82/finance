@@ -11,6 +11,7 @@ import pandas as pd
 import xarray as xr
 from abc import ABC
 from functools import reduce
+from scipy.interpolate import interp1d
 from collections import namedtuple as ntuple
 
 from finance.variables import Querys, Variables, Strategies, Securities
@@ -26,90 +27,135 @@ __license__ = "MIT License"
 
 
 class StrategyLocator(ntuple("Locator", "axis security")): pass
-class StrategyCollection(ntuple("Collection", "payoff greeks")): pass
+class StrategyCollection(ntuple("Collection", "payoff underlying greeks")): pass
 
 
 class StrategyEquationMeta(RegistryMeta, type(Equation)): pass
-class StrategyEquation(Equation, ABC, datatype=xr.DataArray, vectorize=True):
+class StrategyEquation(Equation, ABC, datatype=xr.DataArray, vectorize=False):
     ypα = Variable.Independent("ypα", "spot", np.float32, locator=StrategyLocator(Securities.Options.Puts.Long, "spot"))
     ypβ = Variable.Independent("ypβ", "spot", np.float32, locator=StrategyLocator(Securities.Options.Puts.Short, "spot"))
     ycα = Variable.Independent("ycα", "spot", np.float32, locator=StrategyLocator(Securities.Options.Calls.Long, "spot"))
     ycβ = Variable.Independent("ycβ", "spot", np.float32, locator=StrategyLocator(Securities.Options.Calls.Short, "spot"))
-
-    xpα = Variable.Independent("xpα", "underlying", np.float32, locator=StrategyLocator(Securities.Options.Puts.Long, "underlying"))
-    xpβ = Variable.Independent("xpβ", "underlying", np.float32, locator=StrategyLocator(Securities.Options.Puts.Short, "underlying"))
-    xcα = Variable.Independent("xcα", "underlying", np.float32, locator=StrategyLocator(Securities.Options.Calls.Long, "underlying"))
-    xcβ = Variable.Independent("xcβ", "underlying", np.float32, locator=StrategyLocator(Securities.Options.Calls.Short, "underlying"))
 
     qpα = Variable.Independent("qpα", "size", np.int32, locator=StrategyLocator(Securities.Options.Puts.Long, "size"))
     qpβ = Variable.Independent("qpβ", "size", np.int32, locator=StrategyLocator(Securities.Options.Puts.Short, "size"))
     qcα = Variable.Independent("qcα", "size", np.int32, locator=StrategyLocator(Securities.Options.Calls.Long, "size"))
     qcβ = Variable.Independent("qcβ", "size", np.int32, locator=StrategyLocator(Securities.Options.Calls.Short, "size"))
 
-    kpα = Variable.Independent("kpα", "strike", np.float32, locator=StrategyLocator(Securities.Options.Puts.Long, "strike"))
-    kpβ = Variable.Independent("kpβ", "strike", np.float32, locator=StrategyLocator(Securities.Options.Puts.Short, "strike"))
-    kcα = Variable.Independent("kcα", "strike", np.float32, locator=StrategyLocator(Securities.Options.Calls.Long, "strike"))
-    kcβ = Variable.Independent("kcβ", "strike", np.float32, locator=StrategyLocator(Securities.Options.Calls.Short, "strike"))
-
-    wo = Variable.Dependent("wo", "spot", np.float32, function=lambda yo, *, ε: yo * 100 - ε)
-    ε = Variable.Constant("ε", "fees", np.float32, locator="fees")
-
-    def __init_subclass__(cls, *args, axes=[], **kwargs):
+    def __init_subclass__(cls, *args, **kwargs):
         cls.strategy = kwargs.get("strategy", getattr(cls, "strategy", None))
 
     def execute(self, *args, **kwargs):
         yield from super().execute(*args, **kwargs)
-        yield self.wo()
-        yield self.xo()
+        yield self.yo()
         yield self.qo()
 
 
 class VerticalPutStrategyEquation(StrategyEquation, strategy=Strategies.Verticals.Put):
     yo = Variable.Dependent("yo", "spot", np.float32, function=lambda ypα, ypβ: ypβ + ypα)
-    xo = Variable.Dependent("xo", "underlying", np.float32, function=lambda xpα, xpβ: np.divide(xpα + xpβ, 2))
     qo = Variable.Dependent("qo", "size", np.int32, function=lambda qpα, qpβ: np.minimum(qpα, qpβ))
 
 class VerticalCallStrategyEquation(StrategyEquation, strategy=Strategies.Verticals.Call):
     yo = Variable.Dependent("yo", "spot", np.float32, function=lambda ycα, ycβ: ycβ + ycα)
-    xo = Variable.Dependent("xo", "underlying", np.float32, function=lambda xcα, xcβ: np.divide(xcα + xcβ, 2))
     qo = Variable.Dependent("qo", "size", np.int32, function=lambda qcα, qcβ: np.minimum(qcα, qcβ))
 
 class CollarLongStrategyEquation(StrategyEquation, strategy=Strategies.Collars.Long):
     yo = Variable.Dependent("yo", "spot", np.float32, function=lambda ypα, ycβ, xo: ycβ + ypα - xo)
-    xo = Variable.Dependent("xo", "underlying", np.float32, function=lambda xpα, xcβ: np.divide(xpα + xcβ, 2))
     qo = Variable.Dependent("qo", "size", np.int32, function=lambda qpα, qcβ: np.minimum(qpα, qcβ))
 
 class CollarShortStrategyEquation(StrategyEquation, strategy=Strategies.Collars.Short):
     yo = Variable.Dependent("yo", "spot", np.float32, function=lambda ycα, ypβ, xo: ypβ + ycα + xo)
-    xo = Variable.Dependent("xo", "underlying", np.float32, function=lambda xcα, xpβ: np.divide(xcα + xpβ, 2))
     qo = Variable.Dependent("qo", "size", np.int32, function=lambda qcα, qpβ: np.minimum(qcα, qpβ))
 
 
 class PayoffEquation(StrategyEquation, metaclass=StrategyEquationMeta):
-    whτ = Variable.Dependent("whτ", "maximum", np.float32, function=lambda yhτ, *, ε: yhτ * 100 - ε)
-    wlτ = Variable.Dependent("wlτ", "minimum", np.float32, function=lambda ylτ, *, ε: ylτ * 100 - ε)
+    xoτ = Variable.Dependent("xoτ", "xmkt", np.float32, function=lambda yoτ, moτ, zoτ, ylτ, xlτ: (np.divide(yoτ - ylτ, moτ) + xlτ) * zoτ)
+    moτ = Variable.Dependent("moτ", "mmkt", np.float32, function=lambda ylτ, yhτ, xlτ, xhτ: np.divide(yhτ - ylτ, xhτ - xlτ))
+    zoτ = Variable.Dependent("zoτ", "zmkt", np.int32, function=lambda yoτ, ylτ, yhτ: xr.where(ylτ < yoτ, 1, 0) * xr.where(yoτ < yhτ, 1, 0))
+    yoτ = Variable.Dependent("yoτ", "ymkt", np.float32, function=lambda yo: np.negative(yo))
+
+    kpα = Variable.Independent("kpα", "strike", np.float32, locator=StrategyLocator(Securities.Options.Puts.Long, "strike"))
+    kpβ = Variable.Independent("kpβ", "strike", np.float32, locator=StrategyLocator(Securities.Options.Puts.Short, "strike"))
+    kcα = Variable.Independent("kcα", "strike", np.float32, locator=StrategyLocator(Securities.Options.Calls.Long, "strike"))
+    kcβ = Variable.Independent("kcβ", "strike", np.float32, locator=StrategyLocator(Securities.Options.Calls.Short, "strike"))
 
     def execute(self, *args, **kwargs):
         yield from super().execute(*args, **kwargs)
-        yield self.wlτ()
-        yield self.whτ()
+        yield self.ylτ()
+        yield self.yhτ()
+        yield self.yoτ()
+        yield self.xlτ()
+        yield self.xhτ()
+        yield self.xoτ()
 
 
 class VerticalPutPayoffEquation(PayoffEquation, VerticalPutStrategyEquation, register=Strategies.Verticals.Put):
-    yhτ = Variable.Dependent("yhτ", "maximum", np.float32, function=lambda kpα, kpβ: np.maximum(kpα - kpβ, 0))
-    ylτ = Variable.Dependent("ylτ", "minimum", np.float32, function=lambda kpα, kpβ: np.minimum(kpα - kpβ, 0))
+    yhτ = Variable.Dependent("yhτ", "ymax", np.float32, function=lambda kpα, kpβ: np.maximum(kpα - kpβ, 0))
+    ylτ = Variable.Dependent("ylτ", "ymin", np.float32, function=lambda kpα, kpβ: np.minimum(kpα - kpβ, 0))
+    xhτ = Variable.Dependent("xhτ", "xmax", np.float32, function=lambda kpα, kpβ: xr.where(kpα > kpβ, kpβ, kpα))
+    xlτ = Variable.Dependent("xlτ", "xmin", np.float32, function=lambda kpα, kpβ: xr.where(kpα > kpβ, kpα, kpβ))
 
 class VerticalCallPayoffEquation(PayoffEquation, VerticalCallStrategyEquation, register=Strategies.Verticals.Call):
-    yhτ = Variable.Dependent("yhτ", "maximum", np.float32, function=lambda kcα, kcβ: np.maximum(kcβ - kcα, 0))
-    ylτ = Variable.Dependent("ylτ", "minimum", np.float32, function=lambda kcα, kcβ: np.minimum(kcβ - kcα, 0))
+    yhτ = Variable.Dependent("yhτ", "ymax", np.float32, function=lambda kcα, kcβ: np.maximum(kcβ - kcα, 0))
+    ylτ = Variable.Dependent("ylτ", "ymin", np.float32, function=lambda kcα, kcβ: np.minimum(kcβ - kcα, 0))
+    xhτ = Variable.Dependent("xhτ", "xmax", np.float32, function=lambda kcα, kcβ: xr.where(kcα > kcβ, kcβ, kcα))
+    xlτ = Variable.Dependent("xlτ", "xmin", np.float32, function=lambda kcα, kcβ: xr.where(kcα > kcβ, kcα, kcβ))
 
 class CollarLongPayoffEquation(PayoffEquation, CollarLongStrategyEquation, register=Strategies.Collars.Long):
-    yhτ = Variable.Dependent("yhτ", "maximum", np.float32, function=lambda kpα, kcβ: + np.maximum(kpα, kcβ))
-    ylτ = Variable.Dependent("ylτ", "minimum", np.float32, function=lambda kpα, kcβ: + np.minimum(kpα, kcβ))
+    yhτ = Variable.Dependent("yhτ", "ymax", np.float32, function=lambda kpα, kcβ: + np.maximum(kpα, kcβ))
+    ylτ = Variable.Dependent("ylτ", "ymin", np.float32, function=lambda kpα, kcβ: + np.minimum(kpα, kcβ))
+    xhτ = Variable.Dependent("xhτ", "xmax", np.float32, function=lambda kpα, kcβ: xr.where(kpα > kcβ, kcβ, kpα))
+    xlτ = Variable.Dependent("xlτ", "xmin", np.float32, function=lambda kpα, kcβ: xr.where(kpα > kcβ, kpα, kcβ))
 
 class CollarShortPayoffEquation(PayoffEquation, CollarShortStrategyEquation, register=Strategies.Collars.Short):
-    yhτ = Variable.Dependent("yhτ", "maximum", np.float32, function=lambda kcα, kpβ: - np.minimum(kcα, kpβ))
-    ylτ = Variable.Dependent("ylτ", "minimum", np.float32, function=lambda kcα, kpβ: - np.maximum(kcα, kpβ))
+    yhτ = Variable.Dependent("yhτ", "ymax", np.float32, function=lambda kcα, kpβ: - np.minimum(kcα, kpβ))
+    ylτ = Variable.Dependent("ylτ", "ymin", np.float32, function=lambda kcα, kpβ: - np.maximum(kcα, kpβ))
+    xhτ = Variable.Dependent("xhτ", "xmax", np.float32, function=lambda kcα, kpβ: xr.where(kcα > kpβ, kpβ, kcα))
+    xlτ = Variable.Dependent("xlτ", "xmin", np.float32, function=lambda kcα, kpβ: xr.where(kcα > kpβ, kcα, kpβ))
+
+
+class UnderlyingEquation(StrategyEquation, metaclass=StrategyEquationMeta):
+    xpα = Variable.Independent("xpα", "underlying", np.float32, locator=StrategyLocator(Securities.Options.Puts.Long, "underlying"))
+    xpβ = Variable.Independent("xpβ", "underlying", np.float32, locator=StrategyLocator(Securities.Options.Puts.Short, "underlying"))
+    xcα = Variable.Independent("xcα", "underlying", np.float32, locator=StrategyLocator(Securities.Options.Calls.Long, "underlying"))
+    xcβ = Variable.Independent("xcβ", "underlying", np.float32, locator=StrategyLocator(Securities.Options.Calls.Short, "underlying"))
+
+    μpα = Variable.Independent("μpα", "trend", np.float32, locator=StrategyLocator(Securities.Options.Puts.Long, "trend"))
+    μpβ = Variable.Independent("μpβ", "trend", np.float32, locator=StrategyLocator(Securities.Options.Puts.Short, "trend"))
+    μcα = Variable.Independent("μcα", "trend", np.float32, locator=StrategyLocator(Securities.Options.Calls.Long, "trend"))
+    μcβ = Variable.Independent("μcβ", "trend", np.float32, locator=StrategyLocator(Securities.Options.Calls.Short, "trend"))
+
+    δpα = Variable.Independent("δpα", "volatility", np.float32, locator=StrategyLocator(Securities.Options.Puts.Long, "volatility"))
+    δpβ = Variable.Independent("δpβ", "volatility", np.float32, locator=StrategyLocator(Securities.Options.Puts.Short, "volatility"))
+    δcα = Variable.Independent("δcα", "volatility", np.float32, locator=StrategyLocator(Securities.Options.Calls.Long, "volatility"))
+    δcβ = Variable.Independent("δcβ", "volatility", np.float32, locator=StrategyLocator(Securities.Options.Calls.Short, "volatility"))
+
+    def execute(self, *args, **kwargs):
+        yield from super().execute(*args, **kwargs)
+        yield self.xo()
+        yield self.μo()
+        yield self.δo()
+
+
+class VerticalPutUnderlyingEquation(UnderlyingEquation, VerticalPutStrategyEquation, register=Strategies.Verticals.Put):
+    xo = Variable.Dependent("xo", "underlying", np.float32, function=lambda xpα, xpβ: np.divide(xpα + xpβ, 2))
+    μo = Variable.Dependent("μo", "trend", np.float32, function=lambda μpα, μpβ: np.divide(μpα + μpβ, 2))
+    δo = Variable.Dependent("δo", "volatility", np.float32, function=lambda δpα, δpβ: np.divide(δpα + δpβ, 2))
+
+class VerticalCallUnderlyingEquation(UnderlyingEquation, VerticalCallStrategyEquation, register=Strategies.Verticals.Call):
+    xo = Variable.Dependent("xo", "underlying", np.float32, function=lambda xcα, xcβ: np.divide(xcα + xcβ, 2))
+    μo = Variable.Dependent("μo", "trend", np.float32, function=lambda μcα, μcβ: np.divide(μcα + μcβ, 2))
+    δo = Variable.Dependent("δo", "volatility", np.float32, function=lambda δcα, δcβ: np.divide(δcα + δcβ, 2))
+
+class CollarLongUnderlyingEquation(UnderlyingEquation, CollarLongStrategyEquation, register=Strategies.Collars.Long):
+    xo = Variable.Dependent("xo", "underlying", np.float32, function=lambda xpα, xcβ: np.divide(xpα + xcβ, 2))
+    μo = Variable.Dependent("μo", "trend", np.float32, function=lambda μpα, μcβ: np.divide(μpα + μcβ, 2))
+    δo = Variable.Dependent("δo", "volatility", np.float32, function=lambda δpα, δcβ: np.divide(δpα + δcβ, 2))
+
+class CollarShortUnderlyingEquation(UnderlyingEquation, CollarShortStrategyEquation, register=Strategies.Collars.Short):
+    xo = Variable.Dependent("xo", "underlying", np.float32, function=lambda xcα, xpβ: np.divide(xcα + xpβ, 2))
+    μo = Variable.Dependent("μo", "trend", np.float32, function=lambda μcα, μpβ: np.divide(μcα + μpβ, 2))
+    δo = Variable.Dependent("δo", "volatility", np.float32, function=lambda δcα, δpβ: np.divide(δcα + δpβ, 2))
 
 
 class GreeksEquation(StrategyEquation, metaclass=StrategyEquationMeta):
@@ -190,9 +236,9 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
     def __init__(self, *args, strategies, **kwargs):
         assert isinstance(strategies, list) and all([value in list(Strategies) for value in list(strategies)])
         super().__init__(*args, **kwargs)
-        payoffs, greeks = dict(PayoffEquation), dict(GreeksEquation)
-        equations = {strategy: StrategyCollection(payoffs[strategy], greeks[strategy]) for strategy in strategies}
-        equations = {strategy: dict(required=collection.payoff, optional=[collection.greeks]) for strategy, collection in equations.items()}
+        payoffs, underlying, greeks = dict(PayoffEquation), dict(UnderlyingEquation), dict(GreeksEquation)
+        equations = {strategy: StrategyCollection(payoffs[strategy], underlying[strategy], greeks[strategy]) for strategy in strategies}
+        equations = {strategy: dict(required=collection.payoff, optional=[collection.underlying, collection.greeks]) for strategy, collection in equations.items()}
         calculations = {strategy: Calculation[xr.DataArray](*args, **parameters, **kwargs) for strategy, parameters in equations.items()}
         self.__calculations = calculations
 

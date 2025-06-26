@@ -53,11 +53,11 @@ class BarsEquation(TechnicalEquation, register=Variables.Technical.BARS):
 
 class StatisticEquation(TechnicalEquation, register=Variables.Technical.STATISTIC):
     δ = Variable.Dependent("δ", "volatility", np.float32, function=lambda x, *, dt: x.pct_change(1).rolling(dt).std())
-    m = Variable.Dependent("m", "trend", np.float32, function=lambda x, *, dt: x.pct_change(1).rolling(dt).mean())
+    μ = Variable.Dependent("μ", "trend", np.float32, function=lambda x, *, dt: x.pct_change(1).rolling(dt).mean())
 
     def execute(self, *args, **kwargs):
         yield from super().execute(*args, **kwargs)
-        yield self.m()
+        yield self.μ()
         yield self.δ()
 
 

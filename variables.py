@@ -28,7 +28,8 @@ InstrumentVariable = Variable("Instrument", ["EMPTY", "STOCK", "OPTION"], start=
 OptionVariable = Variable("Option", ["PUT", "EMPTY", "CALL"], start=-1)
 PositionVariable = Variable("Position", ["SHORT", "EMPTY", "LONG"], start=-1)
 SpreadVariable = Variable("Spread", ["STRANGLE", "COLLAR", "VERTICAL"], start=1)
-ScenarioVariable = Variable("Scenario", ["CURRENT", "BREAKEVEN", "MINIMUM", "EXPECTED", "MAXIMUM"], start=1)
+ValuationVariable = Variable("Valuation", ["ARBITRAGE", "RISKY", "WORTHLESS"], start=1)
+ScenarioVariable = Variable("Scenario", ["MINIMUM", "MAXIMUM"], start=1)
 StatusVariable = Variable("Status", ["PROSPECT", "PENDING", "OBSOLETE", "ABANDONED", "REJECTED", "ACCEPTED"], start=1)
 TermVariable = Variable("Terms", ["MARKET", "LIMIT", "STOP", "STOPLIMIT", "LIMITDEBIT", "LIMITCREDIT"], start=1)
 TenureVariable = Variable("Tenure", ["DAY", "STANDING", "OPENING", "CLOSING", "IMMEDIATE", "FILLKILL"], start=1)
@@ -46,7 +47,9 @@ StrikeField = Field("strike", numbers.Number, digits=2)
 PriceField = Field("price", numbers.Number, digits=2)
 AskField = Field("ask", numbers.Number, digits=2)
 BidField = Field("bid", numbers.Number, digits=2)
+InstrumentField = Field("instrument", Enum, variable=InstrumentVariable)
 OptionField = Field("option", Enum, variable=OptionVariable)
+PositionField = Field("position", Enum, variable=PositionVariable)
 
 SymbolQuery = Query("Symbol", fields=[TickerField], delimiter="|")
 TradeQuery = Query("Trade", fields=[TickerField, PriceField], delimiter="|")
@@ -75,6 +78,7 @@ class Variables(Category):
     class Markets(Category): Status, Term, Tenure, Action, Pricing, Quoting = StatusVariable, TermVariable, TenureVariable, ActionVariable, PricingVariable, QuotingVariable
     Scenario = ScenarioVariable
     Technical = TechnicalVariable
+    Valuation = ValuationVariable
 
 class Securities(Category):
     class Stocks(Category): Long = StockLongSecurity; Short = StockShortSecurity
