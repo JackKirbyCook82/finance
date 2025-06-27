@@ -13,7 +13,7 @@ from abc import ABC
 from scipy.stats import norm
 from datetime import date as Date
 
-from finance.variables import Querys
+from finance.variables import Querys, Securities
 from support.calculations import Calculation, Equation, Variable
 from support.mixins import Emptying, Sizing, Partition, Logging
 from support.decorators import TypeDispatcher
@@ -26,19 +26,18 @@ __license__ = "MIT License"
 
 
 class ValuationEquation(Equation, ABC, datatype=xr.DataArray, vectorize=True):
-    πk = Variable.Dependent("πk", "profit", np.float32, function=lambda zτ, yoτ, ylτ, yhτ: (norm.ppf(zτ) if ylτ < yhτ else 1 - norm.ppf(zτ)) if ylτ < yoτ < yhτ else (1 if yoτ < ylτ else 0))
-    vk = Variable.Dependent("vk", "var", np.float32, function=lambda yok, ylτ: np.maximum(yok - ylτ))
+#    πk = Variable.Dependent("πk", "risk", np.float32, function=lambda zτ, yo, yh, kα, kβ: (norm.ppf(zτ) if kα < kβ else 1 - norm.ppf(zτ)) if not np.isnan(zτ) else (1 if yk > yh else 0))
+    vk = Variable.Dependent("vk", "var", np.float32, function=lambda yo, yl: - np.minimum(yl + yo, 0))
 
-    zτ = Variable.Dependent("zoτ", "zmkt", np.float32, function=lambda xoτ, xτ, δo, τ, r: np.divide(np.log(xoτ / xτ) - r * τ + np.square(δo) * τ / 2, δo * np.sqrt(τ)))
+    zτ = Variable.Dependent("zτ", "zscore", np.float32, function=lambda xk, xτ, δo, τ, r: np.divide(np.log(xk / xτ) - r * τ + np.square(δo) * τ / 2, δo * np.sqrt(τ)))
     xτ = Variable.Dependent("xτ", "expected", np.float32, function=lambda xo, μo, τ: xo + μo * τ)
     τ = Variable.Dependent("τ", "tau", np.int32, function=lambda tτ, *, to: (tτ - to).days)
 
-    yhτ = Variable.Independent("yhτ", "ymax", np.float32, locator="ymax")
-    ylτ = Variable.Independent("ylτ", "ymin", np.float32, locator="ymin")
-    yoτ = Variable.Independent("yoτ", "ymkt", np.float32, locator="ymkt")
-    xhτ = Variable.Independent("xhτ", "xmax", np.float32, locator="xmax")
-    xlτ = Variable.Independent("xlτ", "xmin", np.float32, locator="xmin")
-    xoτ = Variable.Independent("xoτ", "xmkt", np.float32, locator="xmkt")
+    yh = Variable.Independent("yh", "maximum", np.float32, locator="maximum")
+    yl = Variable.Independent("yl", "minimum", np.float32, locator="minimum")
+    xk = Variable.Independent("xk", "breakeven", np.float32, locator="breakeven")
+    kα = Variable.Independent("kα", "long", np.float32, locator="long")
+    kβ = Variable.Independent("kβ", "short", np.float32, locator="short")
 
     yo = Variable.Independent("yo", "spot", np.float32, locator="spot")
     qo = Variable.Independent("qo", "size", np.float32, locator="size")
@@ -57,6 +56,9 @@ class ValuationEquation(Equation, ABC, datatype=xr.DataArray, vectorize=True):
         yield from super().execute(*args, **kwargs)
         yield self.πk()
         yield self.vk()
+        yield self.yo()
+        yield self.yl()
+        yield self.yh()
 
 
 class GreeksEquation(ValuationEquation):
@@ -92,6 +94,10 @@ class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
         size = self.size(valuations)
         self.console(f"{str(settlements)}[{int(size):.0f}]")
         if self.empty(valuations): return
+
+        print(valuations)
+        raise Exception()
+
         yield valuations
 
     @TypeDispatcher(locator=0)
@@ -104,21 +110,20 @@ class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
         return valuations
 
     @calculate.register(xr.Dataset)
-    def dataset(self, strategies, *args, current, discount, interest, dividend, fees, **kwargs):
-        parameters = dict(current=current, discount=discount, interest=interest, dividend=dividend, fees=fees)
+    def dataset(self, strategies, *args, current, discount, interest, dividend, **kwargs):
+        parameters = dict(current=current, discount=discount, interest=interest, dividend=dividend)
         valuations = self.calculation(strategies, *args, **parameters, **kwargs)
-
-        print(valuations)
-
         valuations = valuations.to_dataframe().dropna(how="all", inplace=False)
         valuations = valuations.reset_index(drop=False, inplace=False)
         options = [option for option in list(map(str, Securities.Options)) if option not in valuations.columns]
         for option in options: valuations[option] = np.NaN
-        columns = {column: (column, "") for column in valuations.columns if not isinstance(column, tuple)}
-        valuations = valuations.rename(columns=columns, inplace=False)
-        valuations.columns = pd.MultiIndex.from_tuples(valuations.columns)
-        valuations.columns.names = ["axis", "scenario"]
         return valuations
+
+#        columns = {column: (column, "") for column in valuations.columns if not isinstance(column, tuple)}
+#        valuations = valuations.rename(columns=columns, inplace=False)
+#        valuations.columns = pd.MultiIndex.from_tuples(valuations.columns)
+#        valuations.columns.names = ["axis", "scenario"]
+#        return valuations
 
     @property
     def calculation(self): return self.__calculation
