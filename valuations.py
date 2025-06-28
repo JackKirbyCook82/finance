@@ -26,11 +26,12 @@ __license__ = "MIT License"
 
 
 class ValuationEquation(Equation, ABC, datatype=xr.DataArray, vectorize=True):
-#    πk = Variable.Dependent("πk", "risk", np.float32, function=lambda zτ, yo, yh, kα, kβ: (norm.ppf(zτ) if kα < kβ else 1 - norm.ppf(zτ)) if not np.isnan(zτ) else (1 if yk > yh else 0))
-    vk = Variable.Dependent("vk", "var", np.float32, function=lambda yo, yl: - np.minimum(yl + yo, 0))
-
+    pk = Variable.Dependent("pk", "profit", np.float32, function=lambda zτ, yo, kα, kβ, ω: (norm.ppf(zτ) if kβ < kα else 1 - norm.ppf(zτ)) if not np.isnan(zτ) else ω)
+    lk = Variable.Dependent("lk", "loss", np.float32, function=lambda zτ, yo, kα, kβ, ω: (norm.ppf(zτ) if kα < kβ else 1 - norm.ppf(zτ)) if not np.isnan(zτ) else ω)
     zτ = Variable.Dependent("zτ", "zscore", np.float32, function=lambda xk, xτ, δo, τ, r: np.divide(np.log(xk / xτ) - r * τ + np.square(δo) * τ / 2, δo * np.sqrt(τ)))
     xτ = Variable.Dependent("xτ", "expected", np.float32, function=lambda xo, μo, τ: xo + μo * τ)
+
+    ω = Variable.Dependent("ω", "zone", np.int32, function=lambda yo, yl, yh: np.minimum(np.maximum(np.divide(yo - yl, yh - yl), 0), 1))
     τ = Variable.Dependent("τ", "tau", np.int32, function=lambda tτ, *, to: (tτ - to).days)
 
     yh = Variable.Independent("yh", "maximum", np.float32, locator="maximum")
@@ -54,8 +55,8 @@ class ValuationEquation(Equation, ABC, datatype=xr.DataArray, vectorize=True):
 
     def execute(self, *args, **kwargs):
         yield from super().execute(*args, **kwargs)
-        yield self.πk()
-        yield self.vk()
+        yield self.pk()
+        yield self.lk()
         yield self.yo()
         yield self.yl()
         yield self.yh()
