@@ -68,15 +68,12 @@ class CollarShortStrategyEquation(StrategyEquation, strategy=Strategies.Collars.
 
 
 class PayoffEquation(StrategyEquation, metaclass=StrategyEquationMeta):
-# WRONG
-#    yk = Variable.Dependent("yk", "breakeven", np.float32, function=lambda yo, ymin, ymax: xr.where(ymin + yo <= 0, 1, np.NaN) * xr.where(ymax + yo >= 0, 1, np.NaN) * np.negative(yo))
-#    mk = Variable.Dependent("mk", "breakeven", np.float32, function=lambda xkl, xkh, ykl, ykh: np.divide(ykh - ykl, xkh - xkl))
-#    xk = Variable.Dependent("xk", "breakeven", np.float32, function=lambda yk, mk, xkl, ykl: np.divide(yk - ykl, mk) + xkl)
+    yk = Variable.Dependent("yk", "yk", np.float32, function=lambda yo, ymin, ymax: xr.where(ymin + yo <= 0, 1, np.NaN) * xr.where(ymax + yo >= 0, 1, np.NaN) * np.negative(yo))
+    xk = Variable.Dependent("xk", "xk", np.float32, function=lambda yk, mk, xkl, xkr: xr.where(np.sign(yk) == mk, xkl, xkr) + yk / mk)
+    mk = Variable.Dependent("mk", "mk", np.float32, function=lambda kα, kβ: np.sign(kβ - kα))
 
-    ykh = Variable.Dependent("ykh", "yhigh", np.float32, function=lambda kα, kβ, ymin, ymax: xr.where(kα <= kβ, ymax, ymin))
-    ykl = Variable.Dependent("ykl", "ylow", np.float32, function=lambda kα, kβ, ymin, ymax: xr.where(kα <= kβ, ymin, ymax))
-    xkh = Variable.Dependent("xkh", "xhigh", np.float32, function=lambda kα, kβ: np.maximum(kα, kβ))
-    xkl = Variable.Dependent("xkl", "xlow", np.float32, function=lambda kα, kβ: np.minimum(kα, kβ))
+    xkr = Variable.Dependent("xkr", "right", np.float32, function=lambda kα, kβ: np.maximum(kα, kβ))
+    xkl = Variable.Dependent("xkl", "left", np.float32, function=lambda kα, kβ: np.minimum(kα, kβ))
 
     kpα = Variable.Independent("kpα", "strike", np.float32, locator=StrategyLocator(Securities.Options.Puts.Long, "strike"))
     kpβ = Variable.Independent("kpβ", "strike", np.float32, locator=StrategyLocator(Securities.Options.Puts.Short, "strike"))
@@ -253,12 +250,6 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
             size = self.size(strategies, "size")
             self.console(f"{str(settlement)}|{str(strategy)}[{int(size):.0f}]")
             if self.empty(strategies, "size"): return
-
-            strategies = strategies.to_dataframe().dropna(how="all", inplace=False)
-            strategies = strategies.reset_index(drop=False, inplace=False)
-            print(strategies)
-            raise Exception()
-
             yield strategies
 
     def calculator(self, options, *args, **kwargs):

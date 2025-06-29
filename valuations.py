@@ -111,11 +111,15 @@ class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
         return valuations
 
     @calculate.register(xr.Dataset)
-    def dataset(self, strategies, *args, current, discount, interest, dividend, **kwargs):
-        parameters = dict(current=current, discount=discount, interest=interest, dividend=dividend)
+    def dataset(self, strategies, *args, current, discount, interest, dividend, fees, **kwargs):
+        parameters = dict(current=current, discount=discount, interest=interest, dividend=dividend, fees=fees)
         valuations = self.calculation(strategies, *args, **parameters, **kwargs)
         valuations = valuations.to_dataframe().dropna(how="all", inplace=False)
         valuations = valuations.reset_index(drop=False, inplace=False)
+
+        print(valuations)
+        raise Exception()
+
         options = [option for option in list(map(str, Securities.Options)) if option not in valuations.columns]
         for option in options: valuations[option] = np.NaN
         return valuations
