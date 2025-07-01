@@ -25,6 +25,8 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
+# NEED TO HAVE OPTION TO VECTORIZE
+
 class ValuationEquation(Equation, ABC, datatype=xr.DataArray):
     pk = Variable.Dependent("pk", "profit", np.float32, function=lambda zτ, yo, kα, kβ: norm.cdf(zτ) if kβ < kα else 1 - norm.cdf(zτ))
     lk = Variable.Dependent("lk", "loss", np.float32, function=lambda zτ, yo, kα, kβ: norm.cdf(zτ) if kα < kβ else 1 - norm.cdf(zτ))

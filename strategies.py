@@ -80,6 +80,8 @@ class PayoffEquation(StrategyEquation, metaclass=StrategyEquationMeta):
         yield self.ymax()
         yield self.ymin()
         yield self.xk()
+        yield self.kα()
+        yield self.kβ()
 
 
 class VerticalPutPayoffEquation(PayoffEquation, VerticalPutStrategyEquation, register=Strategies.Verticals.Put):
@@ -89,6 +91,8 @@ class VerticalPutPayoffEquation(PayoffEquation, VerticalPutStrategyEquation, reg
     ymin = Variable.Dependent("ymin", "minimum", np.float32, function=lambda kpα, kpβ: np.minimum(kpα - kpβ, 0))
     xmax = Variable.Dependent("xmax", "strike", np.float32, function=lambda kpα, kpβ: np.maximum(kpα, kpβ))
     xmin = Variable.Dependent("xmin", "strike", np.float32, function=lambda kpα, kpβ: np.minimum(kpα, kpβ))
+    kα = Variable.Dependent("kα", "long", np.float32, function=lambda kpα: kpα)
+    kβ = Variable.Dependent("kβ", "short", np.float32, function=lambda kpβ: kpβ)
 
 class VerticalCallPayoffEquation(PayoffEquation, VerticalCallStrategyEquation, register=Strategies.Verticals.Call):
     xk = Variable.Dependent("xk", "breakeven", np.float32, function=lambda yk, xmin: xmin + np.abs(yk))
@@ -97,6 +101,8 @@ class VerticalCallPayoffEquation(PayoffEquation, VerticalCallStrategyEquation, r
     ymin = Variable.Dependent("ymin", "minimum", np.float32, function=lambda kcα, kcβ: np.minimum(kcβ - kcα, 0))
     xmax = Variable.Dependent("xmax", "strike", np.float32, function=lambda kcα, kcβ: np.maximum(kcα, kcβ))
     xmin = Variable.Dependent("xmin", "strike", np.float32, function=lambda kcα, kcβ: np.minimum(kcα, kcβ))
+    kα = Variable.Dependent("kα", "long", np.float32, function=lambda kcα: kcα)
+    kβ = Variable.Dependent("kβ", "short", np.float32, function=lambda kcβ: kcβ)
 
 class CollarLongPayoffEquation(PayoffEquation, CollarLongStrategyEquation, register=Strategies.Collars.Long):
     xk = Variable.Dependent("xk", "breakeven", np.float32, function=lambda yk, mk, xmin, ymin, ymax: xmin + (yk - ymin) * np.abs(mk + 1) / 2 + (ymax - yk) * np.abs(mk - 1) / 2)
@@ -105,6 +111,8 @@ class CollarLongPayoffEquation(PayoffEquation, CollarLongStrategyEquation, regis
     ymin = Variable.Dependent("ymin", "minimum", np.float32, function=lambda kpα, kcβ: + np.minimum(kpα, kcβ))
     xmax = Variable.Dependent("xmax", "strike", np.float32, function=lambda kpα, kcβ: np.maximum(kpα, kcβ))
     xmin = Variable.Dependent("xmin", "strike", np.float32, function=lambda kpα, kcβ: np.minimum(kpα, kcβ))
+    kα = Variable.Dependent("kα", "long", np.float32, function=lambda kpα: kpα)
+    kβ = Variable.Dependent("kβ", "short", np.float32, function=lambda kcβ: kcβ)
 
 class CollarShortPayoffEquation(PayoffEquation, CollarShortStrategyEquation, register=Strategies.Collars.Short):
     xk = Variable.Dependent("xk", "breakeven", np.float32, function=lambda yk, mk, xmin, ymin, ymax: xmin + (yk - ymin) * np.abs(mk + 1) / 2 + (ymax - yk) * np.abs(mk - 1) / 2)
@@ -113,6 +121,8 @@ class CollarShortPayoffEquation(PayoffEquation, CollarShortStrategyEquation, reg
     ymin = Variable.Dependent("ymin", "minimum", np.float32, function=lambda kcα, kpβ: - np.maximum(kcα, kpβ))
     xmax = Variable.Dependent("xmax", "strike", np.float32, function=lambda kcα, kpβ: np.maximum(kcα, kpβ))
     xmin = Variable.Dependent("xmin", "strike", np.float32, function=lambda kcα, kpβ: np.minimum(kcα, kpβ))
+    kα = Variable.Dependent("kα", "long", np.float32, function=lambda kcα: kcα)
+    kβ = Variable.Dependent("kβ", "short", np.float32, function=lambda kpβ: kpβ)
 
 
 class UnderlyingEquation(StrategyEquation, metaclass=StrategyEquationMeta):
@@ -263,15 +273,7 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
                 assert isinstance(strategies, xr.Dataset)
                 strategies = strategies.assign_coords({"strategy": xr.Variable("strategy", [strategy]).squeeze("strategy")})
                 for field in list(Querys.Settlement): strategies = strategies.expand_dims(field)
-
-                strategies = strategies.to_dataframe().dropna(how="all", inplace=False)
-                strategies = strategies.reset_index(drop=False, inplace=False)
-                print(strategies)
-                continue
-
                 yield settlement, strategy, strategies
-
-            raise Exception()
 
     @staticmethod
     def unflatten(options, *args, **kwargs):
