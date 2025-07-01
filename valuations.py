@@ -25,13 +25,11 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class ValuationEquation(Equation, ABC, datatype=xr.DataArray, vectorize=True):
-    pk = Variable.Dependent("pk", "profit", np.float32, function=lambda zτ, yo, kα, kβ, ω: (norm.ppf(zτ) if kβ < kα else 1 - norm.ppf(zτ)) if not np.isnan(zτ) else ω)
-    lk = Variable.Dependent("lk", "loss", np.float32, function=lambda zτ, yo, kα, kβ, ω: (norm.ppf(zτ) if kα < kβ else 1 - norm.ppf(zτ)) if not np.isnan(zτ) else ω)
+class ValuationEquation(Equation, ABC, datatype=xr.DataArray):
+    pk = Variable.Dependent("pk", "profit", np.float32, function=lambda zτ, yo, kα, kβ: norm.cdf(zτ) if kβ < kα else 1 - norm.cdf(zτ))
+    lk = Variable.Dependent("lk", "loss", np.float32, function=lambda zτ, yo, kα, kβ: norm.cdf(zτ) if kα < kβ else 1 - norm.cdf(zτ))
     zτ = Variable.Dependent("zτ", "zscore", np.float32, function=lambda xk, xτ, δo, τ, r: np.divide(np.log(xk / xτ) - r * τ + np.square(δo) * τ / 2, δo * np.sqrt(τ)))
-    xτ = Variable.Dependent("xτ", "expected", np.float32, function=lambda xo, μo, τ: xo + μo * τ)
-
-    ω = Variable.Dependent("ω", "zone", np.int32, function=lambda yo, yl, yh: np.minimum(np.maximum(np.divide(yo - yl, yh - yl), 0), 1))
+    xτ = Variable.Dependent("xτ", "expected", np.float32, function=lambda xo, μo, τ: xo * np.exp(μo * τ))
     τ = Variable.Dependent("τ", "tau", np.int32, function=lambda tτ, *, to: (tτ - to).days)
 
     yh = Variable.Independent("yh", "maximum", np.float32, locator="maximum")
@@ -97,7 +95,7 @@ class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
         if self.empty(valuations): return
 
         print(valuations)
-        raise Exception()
+        return
 
         yield valuations
 
@@ -115,13 +113,9 @@ class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
         parameters = dict(current=current, discount=discount, interest=interest, dividend=dividend, fees=fees)
         valuations = self.calculation(strategies, *args, **parameters, **kwargs)
         valuations = valuations.to_dataframe().dropna(how="all", inplace=False)
-        valuations = valuations.reset_index(drop=False, inplace=False)
-
-        print(valuations)
-        raise Exception()
-
         options = [option for option in list(map(str, Securities.Options)) if option not in valuations.columns]
         for option in options: valuations[option] = np.NaN
+        valuations = valuations.reset_index(drop=False, inplace=False)
         return valuations
 
 #        columns = {column: (column, "") for column in valuations.columns if not isinstance(column, tuple)}

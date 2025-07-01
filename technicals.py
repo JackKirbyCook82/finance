@@ -24,7 +24,7 @@ __license__ = "MIT License"
 
 
 class TechnicalEquationMeta(RegistryMeta, type(Equation)): pass
-class TechnicalEquation(Equation, ABC, datatype=pd.Series, vectorize=False, metaclass=TechnicalEquationMeta):
+class TechnicalEquation(Equation, ABC, datatype=pd.Series, metaclass=TechnicalEquationMeta):
     x = Variable.Independent("x", "adjusted", np.float32, locator="adjusted")
     s = Variable.Independent("s", "ticker", Date, locator="ticker")
     t = Variable.Independent("t", "date", Date, locator="date")
