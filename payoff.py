@@ -22,7 +22,7 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class PayoffEquation(Equation, datatype=pd.Series):
+class PayoffEquation(Equation, datatype=pd.Series, vectorize=True):
     wlτ = Variable.Dependent("wlτ", "minimum", np.float32, function=lambda yτn, *, ε: np.min(yτn) * 100 - ε)
     whτ = Variable.Dependent("whτ", "maximum", np.float32, function=lambda yτn, *, ε: np.max(yτn) * 100 - ε)
 

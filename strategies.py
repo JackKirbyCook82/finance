@@ -30,7 +30,7 @@ class StrategyCollection(ntuple("Collection", "payoff underlying greeks")): pass
 
 
 class StrategyEquationMeta(RegistryMeta, type(Equation)): pass
-class StrategyEquation(Equation, ABC, datatype=xr.DataArray):
+class StrategyEquation(Equation, ABC, datatype=xr.DataArray, vectorize=False):
     ypα = Variable.Independent("ypα", "spot", np.float32, locator=StrategyLocator(Securities.Options.Puts.Long, "spot"))
     ypβ = Variable.Independent("ypβ", "spot", np.float32, locator=StrategyLocator(Securities.Options.Puts.Short, "spot"))
     ycα = Variable.Independent("ycα", "spot", np.float32, locator=StrategyLocator(Securities.Options.Calls.Long, "spot"))
