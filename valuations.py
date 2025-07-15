@@ -65,17 +65,10 @@ class ValuationEquation(Equation, ABC, datatype=xr.DataArray, vectorize=True):
     def execute(self, *args, **kwargs):
         yield from super().execute(*args, **kwargs)
         yield self.pl()
-        yield self.zτ()
-        yield self.kα()
-        yield self.kβ()
         yield self.xk()
         yield self.yh()
         yield self.yo()
         yield self.yl()
-        yield self.kα()
-        yield self.kβ()
-        yield self.yl()
-        yield self.yh()
 
 
 class GreeksEquation(ValuationEquation):
@@ -111,10 +104,6 @@ class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
         size = self.size(valuations)
         self.console(f"{str(settlements)}[{int(size):.0f}]")
         if self.empty(valuations): return
-
-        print(valuations)
-        return
-
         yield valuations
 
     @TypeDispatcher(locator=0)
@@ -135,12 +124,6 @@ class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
         options = [option for option in list(map(str, Securities.Options)) if option not in valuations.columns]
         for option in options: valuations[option] = np.NaN
         return valuations
-
-#        columns = {column: (column, "") for column in valuations.columns if not isinstance(column, tuple)}
-#        valuations = valuations.rename(columns=columns, inplace=False)
-#        valuations.columns = pd.MultiIndex.from_tuples(valuations.columns)
-#        valuations.columns.names = ["axis", "scenario"]
-#        return valuations
 
     @property
     def calculation(self): return self.__calculation
