@@ -27,7 +27,7 @@ TechnicalVariable = Variable("Technical", ["BARS", "STATISTIC", "STOCHASTIC"], s
 InstrumentVariable = Variable("Instrument", ["EMPTY", "STOCK", "OPTION"], start=0)
 OptionVariable = Variable("Option", ["PUT", "EMPTY", "CALL"], start=-1)
 PositionVariable = Variable("Position", ["SHORT", "EMPTY", "LONG"], start=-1)
-SpreadVariable = Variable("Spread", ["STRANGLE", "COLLAR", "VERTICAL"], start=1)
+SpreadVariable = Variable("Spread", ["EMPTY", "STRANGLE", "COLLAR", "VERTICAL"], start=0)
 ValuationVariable = Variable("Valuation", ["ARBITRAGE", "RISKY", "WORTHLESS"], start=1)
 ScenarioVariable = Variable("Scenario", ["MINIMUM", "MAXIMUM"], start=1)
 StatusVariable = Variable("Status", ["PROSPECT", "PENDING", "OBSOLETE", "ABANDONED", "REJECTED", "ACCEPTED"], start=1)
@@ -35,6 +35,7 @@ TermVariable = Variable("Terms", ["MARKET", "LIMIT", "STOP", "STOPLIMIT", "LIMIT
 TenureVariable = Variable("Tenure", ["DAY", "STANDING", "OPENING", "CLOSING", "IMMEDIATE", "FILLKILL"], start=1)
 PricingVariable = Variable("Pricing", ["AGGRESSIVE", "PASSIVE", "MODERATE"], start=1)
 QuotingVariable = Variable("Quoting", ["CLOSING", "DELAYED", "REALTIME"], start=1)
+MarketVariable = Variable("Market", ["BEAR", "FLAT", "BULL"], start=1)
 ActionVariable = Variable("Action", ["BUY", "SELL"], start=1)
 
 SecurityVariables = Variables("Security", ["instrument", "option", "position"])
@@ -65,6 +66,11 @@ OptionPutLongSecurity = SecurityVariables("OptionPutLong", [InstrumentVariable.O
 OptionPutShortSecurity = SecurityVariables("OptionPutShort", [InstrumentVariable.OPTION, OptionVariable.PUT, PositionVariable.SHORT])
 OptionCallLongSecurity = SecurityVariables("OptionCallLong", [InstrumentVariable.OPTION, OptionVariable.CALL, PositionVariable.LONG])
 OptionCallShortSecurity = SecurityVariables("OptionCallShort", [InstrumentVariable.OPTION, OptionVariable.CALL, PositionVariable.SHORT])
+
+PutLongStrategy = StrategyVariables("PutLong", [SpreadVariable.EMPTY, OptionVariable.PUT, PositionVariable.LONG], options=[OptionPutLongSecurity], stocks=[])
+PutShortStrategy = StrategyVariables("PutShort", [SpreadVariable.EMPTY, OptionVariable.PUT, PositionVariable.SHORT], options=[OptionPutShortSecurity], stocks=[])
+CallLongStrategy = StrategyVariables("CallLong", [SpreadVariable.EMPTY, OptionVariable.CALL, PositionVariable.LONG], options=[OptionCallLongSecurity], stocks=[])
+CallShortStrategy = StrategyVariables("CallShort", [SpreadVariable.EMPTY, OptionVariable.CALL, PositionVariable.SHORT], options=[OptionCallShortSecurity], stocks=[])
 VerticalPutStrategy = StrategyVariables("VerticalPut", [SpreadVariable.VERTICAL, OptionVariable.PUT, PositionVariable.EMPTY], options=[OptionPutLongSecurity, OptionPutShortSecurity], stocks=[])
 VerticalCallStrategy = StrategyVariables("VerticalCall", [SpreadVariable.VERTICAL, OptionVariable.CALL, PositionVariable.EMPTY], options=[OptionCallLongSecurity, OptionCallShortSecurity], stocks=[])
 CollarLongStrategy = StrategyVariables("CollarLong", [SpreadVariable.COLLAR, OptionVariable.EMPTY, PositionVariable.LONG], options=[OptionPutLongSecurity, OptionCallShortSecurity], stocks=[StockLongSecurity])
@@ -76,9 +82,10 @@ class Variables(Category):
     class Securities(Category): Security, Instrument, Option, Position = SecurityVariables, InstrumentVariable, OptionVariable, PositionVariable
     class Strategies(Category): Strategy, Spread = StrategyVariables, SpreadVariable
     class Markets(Category): Status, Term, Tenure, Action, Pricing, Quoting = StatusVariable, TermVariable, TenureVariable, ActionVariable, PricingVariable, QuotingVariable
-    Scenario = ScenarioVariable
     Technical = TechnicalVariable
     Valuation = ValuationVariable
+    Scenario = ScenarioVariable
+    Market = MarketVariable
 
 class Securities(Category):
     class Stocks(Category): Long = StockLongSecurity; Short = StockShortSecurity
@@ -87,6 +94,8 @@ class Securities(Category):
         class Calls(Category): Long = OptionCallLongSecurity; Short = OptionCallShortSecurity
 
 class Strategies(Category):
+    class Puts(Category): Long = PutLongStrategy; Short = PutShortStrategy
+    class Calls(Category): Long = CallLongStrategy; Short = CallShortStrategy
     class Verticals(Category): Put = VerticalPutStrategy; Call = VerticalCallStrategy
     class Collars(Category): Long = CollarLongStrategy; Short = CollarShortStrategy
 

@@ -10,7 +10,6 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 from abc import ABC
-from scipy.stats import norm
 from datetime import date as Date
 
 from finance.variables import Querys, Securities
@@ -25,30 +24,11 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-@np.vectorize
-def profitable(zτ, yk, yl, yh, kα, kβ):
-    if kα == kβ: assert yl == yh
-    if yk < yl: return 0
-    elif yk > yh: return 1
-    else: assert yl <= yk <= yh
-    if kα == kβ: return np.int32(yk == yl == yh)
-    elif kα < kβ: return 1 - norm.cdf(zτ)
-    elif kα > kβ: return norm.cdf(zτ)
-    else: pass
-
-
 class ValuationEquation(Equation, ABC, datatype=xr.DataArray, vectorize=True):
-    pl = Variable.Dependent("pk", "profit", np.float32, function=lambda zτ, yo, yl, yh, kα, kβ: profitable(zτ, np.negative(yo), yl, yh, kα, kβ))
-    zτ = Variable.Dependent("zτ", "zscore", np.float32, function=lambda xk, xτ, δo, τ, r: np.divide(np.log(xk / xτ) - r * τ + np.square(δo) * τ / 2, δo * np.sqrt(τ)))
-    xτ = Variable.Dependent("xτ", "expected", np.float32, function=lambda xo, μo, τ: xo * np.exp(μo * τ))
     τ = Variable.Dependent("τ", "tau", np.int32, function=lambda tτ, *, to: (tτ - to).days)
 
-    xk = Variable.Independent("xk", "breakeven", np.float32, locator="breakeven")
     yh = Variable.Independent("yh", "maximum", np.float32, locator="maximum")
     yl = Variable.Independent("yl", "minimum", np.float32, locator="minimum")
-    kα = Variable.Independent("kα", "long", np.float32, locator="long")
-    kβ = Variable.Independent("kβ", "short", np.float32, locator="short")
-
     yo = Variable.Independent("yo", "spot", np.float32, locator="spot")
     qo = Variable.Independent("qo", "size", np.float32, locator="size")
     xo = Variable.Independent("xo", "underlying", np.float32, locator="underlying")
@@ -57,15 +37,12 @@ class ValuationEquation(Equation, ABC, datatype=xr.DataArray, vectorize=True):
     tτ = Variable.Independent("tτ", "expire", Date, locator="expire")
     to = Variable.Constant("to", "current", Date, locator="current")
 
-    ρ = Variable.Constant("ρ", "discount", np.float32, locator="discount")
     r = Variable.Constant("r", "interest", np.float32, locator="interest")
     q = Variable.Constant("q", "dividend", np.float32, locator="dividend")
     ε = Variable.Constant("ε", "fees", np.float32, locator="fees")
 
     def execute(self, *args, **kwargs):
         yield from super().execute(*args, **kwargs)
-        yield self.pl()
-        yield self.xk()
         yield self.yh()
         yield self.yo()
         yield self.yl()
