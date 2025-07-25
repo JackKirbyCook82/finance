@@ -27,15 +27,11 @@ __license__ = "MIT License"
 class ValuationEquation(Equation, ABC, datatype=xr.DataArray, vectorize=True):
     τ = Variable.Dependent("τ", "tau", np.int32, function=lambda tτ, *, to: (tτ - to).days)
 
-    yh = Variable.Independent("yh", "maximum", np.float32, locator="maximum")
-    yl = Variable.Independent("yl", "minimum", np.float32, locator="minimum")
+    xo = Variable.Independent("xo", "underlying", np.float32, locator="underlying")
     yo = Variable.Independent("yo", "spot", np.float32, locator="spot")
     qo = Variable.Independent("qo", "size", np.float32, locator="size")
-    xo = Variable.Independent("xo", "underlying", np.float32, locator="underlying")
-    μo = Variable.Independent("μo", "trend", np.float32, locator="trend")
-    δo = Variable.Independent("δo", "volatility", np.float32, locator="volatility")
-    tτ = Variable.Independent("tτ", "expire", Date, locator="expire")
     to = Variable.Constant("to", "current", Date, locator="current")
+    tτ = Variable.Independent("tτ", "expire", Date, locator="expire")
 
     r = Variable.Constant("r", "interest", np.float32, locator="interest")
     q = Variable.Constant("q", "dividend", np.float32, locator="dividend")
@@ -43,9 +39,23 @@ class ValuationEquation(Equation, ABC, datatype=xr.DataArray, vectorize=True):
 
     def execute(self, *args, **kwargs):
         yield from super().execute(*args, **kwargs)
-        yield self.yh()
         yield self.yo()
-        yield self.yl()
+        yield self.qo()
+        yield self.τ()
+
+
+class PayoffEquation(ValuationEquation):
+    yh = Variable.Independent("yh", "maximum", np.float32, locator="maximum")
+    yl = Variable.Independent("yl", "minimum", np.float32, locator="minimum")
+
+
+class ArbitrageEquation(PayoffEquation):
+    pass
+
+
+class UnderlyingEquation(ValuationEquation):
+    δo = Variable.Independent("δo", "volatility", np.float32, locator="volatility")
+    μo = Variable.Independent("μo", "trend", np.float32, locator="trend")
 
 
 class GreeksEquation(ValuationEquation):
@@ -56,25 +66,21 @@ class GreeksEquation(ValuationEquation):
     Vo = Variable.Independent("Vo", "vega", np.float32, locator="vega")
     Po = Variable.Independent("Po", "rho", np.float32, locator="rho")
 
-    def execute(self, *args, **kwargs):
-        yield from super().execute(*args, **kwargs)
-        yield self.vo()
-        yield self.Δo()
-        yield self.Γo()
-        yield self.Θo()
-        yield self.Vo()
-        yield self.Po()
-
 
 class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        calculation = Calculation[xr.DataArray](*args, required=ValuationEquation, optional=[GreeksEquation], **kwargs)
+        equations = [PayoffEquation, UnderlyingEquation, GreeksEquation]
+        calculation = Calculation[xr.DataArray](*args, required=ValuationEquation, optional=equations, **kwargs)
         self.__calculation = calculation
 
     def execute(self, strategies, *args, **kwargs):
         assert isinstance(strategies, (list, xr.Dataset))
         if self.empty(strategies, "size"): return
+
+        print(strategies)
+        raise Exception()
+
         settlements = self.keys(strategies, by=Querys.Settlement)
         settlements = ",".join(list(map(str, settlements)))
         valuations = self.calculate(strategies, *args, **kwargs)

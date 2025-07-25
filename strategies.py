@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 from abc import ABC
+from enum import Enum
 from functools import reduce
 from collections import namedtuple as ntuple
 
@@ -50,22 +51,6 @@ class StrategyEquation(Equation, ABC, datatype=xr.DataArray, vectorize=False):
         yield self.qo()
 
 
-class PutLongStrategyEquation(StrategyEquation, strategy=Strategies.Puts.Long):
-    yo = Variable.Dependent("yo", "spot", np.float32, function=lambda ypα: ypα)
-    qo = Variable.Dependent("qo", "size", np.int32, function=lambda qpα: qpα)
-
-class PutShortStrategyEquation(StrategyEquation, strategy=Strategies.Puts.Short):
-    yo = Variable.Dependent("yo", "spot", np.float32, function=lambda ypβ: ypβ)
-    qo = Variable.Dependent("qo", "size", np.int32, function=lambda ypβ: ypβ)
-
-class CallLongStrategyEquation(StrategyEquation, strategy=Strategies.Calls.Long):
-    yo = Variable.Dependent("yo", "spot", np.float32, function=lambda ycα: ycα)
-    qo = Variable.Dependent("qo", "size", np.int32, function=lambda qcα: qcα)
-
-class CallShortStrategyEquation(StrategyEquation, strategy=Strategies.Calls.Short):
-    yo = Variable.Dependent("yo", "spot", np.float32, function=lambda ycβ: ycβ)
-    qo = Variable.Dependent("qo", "size", np.int32, function=lambda ycβ: ycβ)
-
 class VerticalPutStrategyEquation(StrategyEquation, strategy=Strategies.Verticals.Put):
     yo = Variable.Dependent("yo", "spot", np.float32, function=lambda ypα, ypβ: ypβ + ypα)
     qo = Variable.Dependent("qo", "size", np.int32, function=lambda qpα, qpβ: np.minimum(qpα, qpβ))
@@ -84,6 +69,12 @@ class CollarShortStrategyEquation(StrategyEquation, strategy=Strategies.Collars.
 
 
 class PayoffEquation(StrategyEquation, metaclass=StrategyEquationMeta):
+    mk = Variable.Dependent("mk", "market", Enum, function=lambda kα, kβ: xr.where(kα < kβ, Variables.Market.BULL, xr.where(kα > kβ, Variables.Market.BEAR, Variables.Market.NEUTRAL)))
+    yk = Variable.Dependent("yk", "breakeven", np.float32, function=lambda yo, yl, yh: xr.where(np.negative(yo) <= yh, xr.where(np.negative(yo) >= yl, np.negative(yo), np.NaN), np.NaN))
+    xk = Variable.Dependent("xk", "breakeven", np.float32, function=lambda yk, yl, yh, mk, xl: xl + (yk - yl) * np.abs(mk + 1) / 2 + (yh - yk) * np.abs(mk - 1) / 2)
+    xh = Variable.Dependent("xh", "strike", np.float32, function=lambda kα, kβ: np.maximum(kα, kβ))
+    xl = Variable.Dependent("xl", "strike", np.float32, function=lambda kα, kβ: np.minimum(kα, kβ))
+
     kpα = Variable.Independent("kpα", "strike", np.float32, locator=StrategyLocator(Securities.Options.Puts.Long, "strike"))
     kpβ = Variable.Independent("kpβ", "strike", np.float32, locator=StrategyLocator(Securities.Options.Puts.Short, "strike"))
     kcα = Variable.Independent("kcα", "strike", np.float32, locator=StrategyLocator(Securities.Options.Calls.Long, "strike"))
@@ -91,41 +82,35 @@ class PayoffEquation(StrategyEquation, metaclass=StrategyEquationMeta):
 
     def execute(self, *args, **kwargs):
         yield from super().execute(*args, **kwargs)
-        yield self.ymax()
-        yield self.ymin()
+        yield self.yh()
+        yield self.yk()
+        yield self.yl()
+        yield self.xk()
 
-
-class PutLongPayoffEquation(PayoffEquation, PutLongStrategyEquation, register=Strategies.Puts.Long):
-    ymax = Variable.Dependent("ymax", "maximum", np.float32, function=lambda kpα: np.positive(kpα))
-    ymin = Variable.Dependent("ymin", "minimum", np.float32, function=lambda: np.float32(0))
-
-class PutShortPayoffEquation(PayoffEquation, PutShortStrategyEquation, register=Strategies.Puts.Short):
-    ymax = Variable.Dependent("ymax", "maximum", np.float32, function=lambda: np.float32(0))
-    ymin = Variable.Dependent("ymin", "minimum", np.float32, function=lambda kcβ: np.negative(kcβ))
-
-class CallLongPayoffEquation(PayoffEquation, CallLongStrategyEquation, register=Strategies.Calls.Long):
-    ymax = Variable.Dependent("ymax", "maximum", np.float32, function=lambda: + np.Inf)
-    ymin = Variable.Dependent("ymin", "minimum", np.float32, function=lambda: np.float32(0))
-
-class CallShortPayoffEquation(PayoffEquation, CallShortStrategyEquation, register=Strategies.Calls.Short):
-    ymax = Variable.Dependent("ymax", "maximum", np.float32, function=lambda: np.float32(0))
-    ymin = Variable.Dependent("ymin", "minimum", np.float32, function=lambda: - np.Inf)
 
 class VerticalPutPayoffEquation(PayoffEquation, VerticalPutStrategyEquation, register=Strategies.Verticals.Put):
-    ymax = Variable.Dependent("ymax", "maximum", np.float32, function=lambda kpα, kpβ: np.maximum(kpα - kpβ, 0))
-    ymin = Variable.Dependent("ymin", "minimum", np.float32, function=lambda kpα, kpβ: np.minimum(kpα - kpβ, 0))
+    yh = Variable.Dependent("yh", "value", np.float32, function=lambda kpα, kpβ: np.maximum(kpα - kpβ, 0))
+    yl = Variable.Dependent("yl", "value", np.float32, function=lambda kpα, kpβ: np.minimum(kpα - kpβ, 0))
+    kα = Variable.Dependent("kα", "strike", np.float32, function=lambda kpα: kpα)
+    kβ = Variable.Dependent("kβ", "strike", np.float32, function=lambda kpβ: kpβ)
 
 class VerticalCallPayoffEquation(PayoffEquation, VerticalCallStrategyEquation, register=Strategies.Verticals.Call):
-    ymax = Variable.Dependent("ymax", "maximum", np.float32, function=lambda kcα, kcβ: np.maximum(kcβ - kcα, 0))
-    ymin = Variable.Dependent("ymin", "minimum", np.float32, function=lambda kcα, kcβ: np.minimum(kcβ - kcα, 0))
+    yh = Variable.Dependent("yh", "value", np.float32, function=lambda kcα, kcβ: np.maximum(kcβ - kcα, 0))
+    yl = Variable.Dependent("yl", "value", np.float32, function=lambda kcα, kcβ: np.minimum(kcβ - kcα, 0))
+    kα = Variable.Dependent("kα", "strike", np.float32, function=lambda kcα: kcα)
+    kβ = Variable.Dependent("kβ", "strike", np.float32, function=lambda kcβ: kcβ)
 
 class CollarLongPayoffEquation(PayoffEquation, CollarLongStrategyEquation, register=Strategies.Collars.Long):
-    ymax = Variable.Dependent("ymax", "maximum", np.float32, function=lambda kpα, kcβ: + np.maximum(kpα, kcβ))
-    ymin = Variable.Dependent("ymin", "minimum", np.float32, function=lambda kpα, kcβ: + np.minimum(kpα, kcβ))
+    yh = Variable.Dependent("yh", "value", np.float32, function=lambda kpα, kcβ: + np.maximum(kpα, kcβ))
+    yl = Variable.Dependent("yl", "value", np.float32, function=lambda kpα, kcβ: + np.minimum(kpα, kcβ))
+    kα = Variable.Dependent("kα", "strike", np.float32, function=lambda kpα: kpα)
+    kβ = Variable.Dependent("kβ", "strike", np.float32, function=lambda kcβ: kcβ)
 
 class CollarShortPayoffEquation(PayoffEquation, CollarShortStrategyEquation, register=Strategies.Collars.Short):
-    ymax = Variable.Dependent("ymax", "maximum", np.float32, function=lambda kcα, kpβ: - np.minimum(kcα, kpβ))
-    ymin = Variable.Dependent("ymin", "minimum", np.float32, function=lambda kcα, kpβ: - np.maximum(kcα, kpβ))
+    yh = Variable.Dependent("yh", "value", np.float32, function=lambda kcα, kpβ: - np.minimum(kcα, kpβ))
+    yl = Variable.Dependent("yl", "value", np.float32, function=lambda kcα, kpβ: - np.maximum(kcα, kpβ))
+    kα = Variable.Dependent("kα", "strike", np.float32, function=lambda kcα: kcα)
+    kβ = Variable.Dependent("kβ", "strike", np.float32, function=lambda kpβ: kpβ)
 
 
 class UnderlyingEquation(StrategyEquation, metaclass=StrategyEquationMeta):
@@ -150,26 +135,6 @@ class UnderlyingEquation(StrategyEquation, metaclass=StrategyEquationMeta):
         yield self.μo()
         yield self.δo()
 
-
-class PutLongUnderlyingEquation(PayoffEquation, PutLongStrategyEquation, register=Strategies.Puts.Long):
-    xo = Variable.Dependent("xo", "underlying", np.float32, function=lambda xpα: xpα)
-    μo = Variable.Dependent("μo", "trend", np.float32, function=lambda μpα: μpα)
-    δo = Variable.Dependent("δo", "volatility", np.float32, function=lambda δpα: δpα)
-
-class PutShortUnderlyingEquation(PayoffEquation, PutShortStrategyEquation, register=Strategies.Puts.Short):
-    xo = Variable.Dependent("xo", "underlying", np.float32, function=lambda xpβ: xpβ)
-    μo = Variable.Dependent("μo", "trend", np.float32, function=lambda μpβ: μpβ)
-    δo = Variable.Dependent("δo", "volatility", np.float32, function=lambda δpβ: δpβ)
-
-class CallLongUnderlyingEquation(PayoffEquation, CallLongStrategyEquation, register=Strategies.Calls.Long):
-    xo = Variable.Dependent("xo", "underlying", np.float32, function=lambda xcα: xcα)
-    μo = Variable.Dependent("μo", "trend", np.float32, function=lambda μcα: μcα)
-    δo = Variable.Dependent("δo", "volatility", np.float32, function=lambda δcα: δcα)
-
-class CallShortUnderlyingEquation(PayoffEquation, CallShortStrategyEquation, register=Strategies.Calls.Short):
-    xo = Variable.Dependent("xo", "underlying", np.float32, function=lambda xcβ: xcβ)
-    μo = Variable.Dependent("μo", "trend", np.float32, function=lambda μcβ: μcβ)
-    δo = Variable.Dependent("δo", "volatility", np.float32, function=lambda δcβ: δcβ)
 
 class VerticalPutUnderlyingEquation(UnderlyingEquation, VerticalPutStrategyEquation, register=Strategies.Verticals.Put):
     xo = Variable.Dependent("xo", "underlying", np.float32, function=lambda xpα, xpβ: np.divide(xpα + xpβ, 2))
@@ -232,38 +197,6 @@ class GreeksEquation(StrategyEquation, metaclass=StrategyEquationMeta):
         yield self.Vo()
         yield self.Po()
 
-
-class PutLongGreeksEquation(PayoffEquation, PutLongStrategyEquation, register=Strategies.Puts.Long):
-    vo = Variable.Dependent("vo", "value", np.float32, function=lambda vpα: vpα)
-    Δo = Variable.Dependent("Δo", "delta", np.float32, function=lambda Δpα: Δpα)
-    Γo = Variable.Dependent("Γo", "gamma", np.float32, function=lambda Γpα: Γpα)
-    Θo = Variable.Dependent("Θo", "theta", np.float32, function=lambda Θpα: Θpα)
-    Vo = Variable.Dependent("Vo", "vega", np.float32, function=lambda Vpα: Vpα)
-    Po = Variable.Dependent("Po", "rho", np.float32, function=lambda Ppα: Ppα)
-
-class PutShortGreeksEquation(PayoffEquation, PutShortStrategyEquation, register=Strategies.Puts.Short):
-    vo = Variable.Dependent("vo", "value", np.float32, function=lambda vpβ: vpβ)
-    Δo = Variable.Dependent("Δo", "delta", np.float32, function=lambda Δpβ: Δpβ)
-    Γo = Variable.Dependent("Γo", "gamma", np.float32, function=lambda Γpβ: Γpβ)
-    Θo = Variable.Dependent("Θo", "theta", np.float32, function=lambda Θpβ: Θpβ)
-    Vo = Variable.Dependent("Vo", "vega", np.float32, function=lambda Vpβ: Vpβ)
-    Po = Variable.Dependent("Po", "rho", np.float32, function=lambda Ppβ: Ppβ)
-
-class CallLongGreeksEquation(PayoffEquation, CallLongStrategyEquation, register=Strategies.Calls.Long):
-    vo = Variable.Dependent("vo", "value", np.float32, function=lambda vcα: vcα)
-    Δo = Variable.Dependent("Δo", "delta", np.float32, function=lambda Δcα: Δcα)
-    Γo = Variable.Dependent("Γo", "gamma", np.float32, function=lambda Γcα: Γcα)
-    Θo = Variable.Dependent("Θo", "theta", np.float32, function=lambda Θcα: Θcα)
-    Vo = Variable.Dependent("Vo", "vega", np.float32, function=lambda Vcα: Vcα)
-    Po = Variable.Dependent("Po", "rho", np.float32, function=lambda Pcα: Pcα)
-
-class CallShortGreeksEquation(PayoffEquation, CallShortStrategyEquation, register=Strategies.Calls.Short):
-    vo = Variable.Dependent("vo", "value", np.float32, function=lambda vcβ: vcβ)
-    Δo = Variable.Dependent("Δo", "delta", np.float32, function=lambda Δcβ: Δcβ)
-    Γo = Variable.Dependent("Γo", "gamma", np.float32, function=lambda Γcβ: Γcβ)
-    Θo = Variable.Dependent("Θo", "theta", np.float32, function=lambda Θcβ: Θcβ)
-    Vo = Variable.Dependent("Vo", "vega", np.float32, function=lambda Vcβ: Vcβ)
-    Po = Variable.Dependent("Po", "rho", np.float32, function=lambda Pcβ: Pcβ)
 
 class VerticalPutGreeksEquation(GreeksEquation, register=Strategies.Verticals.Put):
     vo = Variable.Dependent("vo", "value", np.float32, function=lambda vpα, vpβ: vpα + vpβ)
