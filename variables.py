@@ -24,6 +24,7 @@ __license__ = "MIT License"
 
 
 TechnicalVariable = Variable("Technical", ["BARS", "STATISTIC", "STOCHASTIC"], start=1)
+AnalyticVariable = Variable("Calculation", ["PAYOFF", "UNDERLYING", "GREEKS"], start=1)
 InstrumentVariable = Variable("Instrument", ["EMPTY", "STOCK", "OPTION"], start=0)
 OptionVariable = Variable("Option", ["PUT", "EMPTY", "CALL"], start=-1)
 PositionVariable = Variable("Position", ["SHORT", "EMPTY", "LONG"], start=-1)
@@ -78,6 +79,7 @@ class Variables(Category):
     class Securities(Category): Security, Instrument, Option, Position = SecurityVariables, InstrumentVariable, OptionVariable, PositionVariable
     class Strategies(Category): Strategy, Spread = StrategyVariables, SpreadVariable
     class Markets(Category): Status, Term, Tenure, Action, Pricing, Quoting = StatusVariable, TermVariable, TenureVariable, ActionVariable, PricingVariable, QuotingVariable
+    Analytic = AnalyticVariable
     Technical = TechnicalVariable
     Valuation = ValuationVariable
     Scenario = ScenarioVariable

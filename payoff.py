@@ -72,8 +72,7 @@ class PayoffCalculator(Sizing, Emptying, Partition, Logging, title="Calculated")
     def calculate(self, valuations, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame)
         header = list(Querys.Settlement) + list(map(str, Securities.Options)) + ["underlying", "strategy"]
-        options = valuations[header].droplevel(1, axis=1)
-        payoffs = self.calculation(options, *args, **kwargs)
+        payoffs = self.calculation(valuations[header], *args, **kwargs)
         assert isinstance(payoffs, pd.DataFrame)
         payoffs = payoffs.rename(columns={str(scenario).lower(): scenario for scenario in Variables.Scenario})
         header = list(product(["payoff"], payoffs.columns))

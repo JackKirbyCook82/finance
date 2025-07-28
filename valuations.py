@@ -9,10 +9,10 @@ Created on Weds Jul 19 2023
 import numpy as np
 import pandas as pd
 import xarray as xr
-from abc import ABC
+from abc import ABC, ABCMeta
 from datetime import date as Date
 
-from finance.variables import Querys, Securities
+from finance.variables import Variables, Querys, Securities
 from support.calculations import Calculation, Equation, Variable
 from support.mixins import Emptying, Sizing, Partition, Logging
 from support.decorators import TypeDispatcher
@@ -27,38 +27,51 @@ __license__ = "MIT License"
 class ValuationEquation(Equation, ABC, datatype=xr.DataArray, vectorize=True):
     τ = Variable.Dependent("τ", "tau", np.int32, function=lambda tτ, *, to: (tτ - to).days)
 
-    xo = Variable.Independent("xo", "underlying", np.float32, locator="underlying")
     yo = Variable.Independent("yo", "spot", np.float32, locator="spot")
     qo = Variable.Independent("qo", "size", np.float32, locator="size")
-    to = Variable.Constant("to", "current", Date, locator="current")
     tτ = Variable.Independent("tτ", "expire", Date, locator="expire")
+    to = Variable.Constant("to", "current", Date, locator="current")
 
     r = Variable.Constant("r", "interest", np.float32, locator="interest")
     q = Variable.Constant("q", "dividend", np.float32, locator="dividend")
+    ρ = Variable.Constant("ρ", "discount", np.float32, locator="discount")
     ε = Variable.Constant("ε", "fees", np.float32, locator="fees")
+
+    def __init_subclass__(cls, *args, analytic, **kwargs):
+        cls.analytic = analytic
 
     def execute(self, *args, **kwargs):
         yield from super().execute(*args, **kwargs)
-        yield self.yo()
-        yield self.qo()
         yield self.τ()
+        yield self.qo()
 
 
-class PayoffEquation(ValuationEquation):
+class PayoffEquation(ValuationEquation, analytic=Variables.Analytic.PAYOFF):
+    vl = Variable.Dependent("vl", "npv", np.float32, function=lambda wl, wo, τ, *, ρ: + np.divide(wl, np.power(ρ + 1, np.divide(τ, 365))) + wo)
+    wb = Variable.Dependent("wb", "breakeven", np.float32, function=lambda wl, τ, *, ρ: - np.divide(wl, np.power(ρ + 1, np.divide(τ, 365))))
+    wh = Variable.Dependent("wh", "maximum", np.float32, function=lambda yh, *, ε: yh * 100 - ε)
+    wl = Variable.Dependent("wl", "minimum", np.float32, function=lambda yl, *, ε: yl * 100 - ε)
+    wo = Variable.Dependent("wo", "spot", np.float32, function=lambda yo, *, ε: yo * 100 - ε)
+
     yh = Variable.Independent("yh", "maximum", np.float32, locator="maximum")
     yl = Variable.Independent("yl", "minimum", np.float32, locator="minimum")
 
+    def execute(self, *args, **kwargs):
+        yield from super().execute(*args, **kwargs)
+        yield self.wo()
+        yield self.wb()
+        yield self.wl()
+        yield self.wh()
+        yield self.vl()
 
-class ArbitrageEquation(PayoffEquation):
-    pass
 
-
-class UnderlyingEquation(ValuationEquation):
+class UnderlyingEquation(ValuationEquation, analytic=Variables.Analytic.UNDERLYING):
+    xo = Variable.Independent("xo", "underlying", np.float32, locator="underlying")
     δo = Variable.Independent("δo", "volatility", np.float32, locator="volatility")
     μo = Variable.Independent("μo", "trend", np.float32, locator="trend")
 
 
-class GreeksEquation(ValuationEquation):
+class GreeksEquation(ValuationEquation, analytic=Variables.Analytic.GREEKS):
     vo = Variable.Independent("vo", "value", np.float32, locator="value")
     Δo = Variable.Independent("Δo", "delta", np.float32, locator="delta")
     Γo = Variable.Independent("Γo", "gamma", np.float32, locator="gamma")
@@ -68,26 +81,28 @@ class GreeksEquation(ValuationEquation):
 
 
 class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, analytics, **kwargs):
         super().__init__(*args, **kwargs)
-        equations = [PayoffEquation, UnderlyingEquation, GreeksEquation]
-        calculation = Calculation[xr.DataArray](*args, required=ValuationEquation, optional=equations, **kwargs)
+        equations = list(ValuationEquation.__subclasses__())
+        equations = [equation for equation in equations if equation.analytic in analytics]
+        equation = ABCMeta("Equation", tuple(equations), {}, analytic=None)
+        calculation = Calculation[xr.DataArray](*args, equation=equation, **kwargs)
         self.__calculation = calculation
 
     def execute(self, strategies, *args, **kwargs):
         assert isinstance(strategies, (list, xr.Dataset))
         if self.empty(strategies, "size"): return
+        generator = self.calculator(strategies, *args, **kwargs)
+        for settlement, valuations in generator:
+            size = self.size(valuations)
+            self.console(f"{str(settlement)}[{int(size):.0f}]")
+            if self.empty(valuations): return
+            yield valuations
 
-        print(strategies)
-        raise Exception()
-
-        settlements = self.keys(strategies, by=Querys.Settlement)
-        settlements = ",".join(list(map(str, settlements)))
-        valuations = self.calculate(strategies, *args, **kwargs)
-        size = self.size(valuations)
-        self.console(f"{str(settlements)}[{int(size):.0f}]")
-        if self.empty(valuations): return
-        yield valuations
+    def calculator(self, strategies, *args, **kwargs):
+        for settlement, datasets in self.partition(strategies, by=Querys.Settlement):
+            valuations = self.calculate(datasets, *args, **kwargs)
+            yield settlement, valuations
 
     @TypeDispatcher(locator=0)
     def calculate(self, strategies, *args, **kwargs): raise TypeError(type(strategies))

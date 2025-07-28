@@ -43,7 +43,7 @@ class MarketCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcula
         valuations["priority"] = valuations.apply(self.priority, axis=1)
         valuations["liquidity"] = valuations.apply(self.liquidity, axis=1).apply(np.floor).astype(np.int32)
         options["liquidity"] = options.apply(self.liquidity, axis=1).apply(np.floor).astype(np.int32)
-        options = options.where(options["size"] >= 1).dropna(how="all", inplace=False)
+        options = options.where(options["liquidity"] >= 1).dropna(how="all", inplace=False)
         valuations = valuations.sort_values("priority", axis=0, ascending=False, inplace=False, ignore_index=False)
         valuations = valuations.reset_index(drop=True, inplace=False)
         interest = self.interest(valuations, *args, **kwargs)
@@ -51,10 +51,9 @@ class MarketCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcula
         available = available[available.index.isin(interest)]
         header = list(Querys.Settlement) + list(map(str, Securities.Options))
         valuations["quantity"] = valuations[header].apply(self.converge, axis=1, available=available)
-        mask = valuations[("quantity", "")] > 0
+        mask = valuations["quantity"] > 0
         valuations = valuations.where(mask).dropna(how="all", inplace=False)
         valuations = valuations.reset_index(drop=True, inplace=False)
-        valuations.columns.names = ["axis", "scenario"]
         return valuations
 
     @staticmethod
@@ -62,8 +61,7 @@ class MarketCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcula
         assert isinstance(valuations, pd.DataFrame)
         parameters = dict(id_vars=list(Querys.Settlement), value_name="strike", var_name="security")
         header = list(Querys.Settlement) + list(map(str, Securities.Options))
-        valuations = valuations[header].droplevel(level=1, axis=1)
-        interest = pd.melt(valuations, **parameters)
+        interest = pd.melt(valuations[header], **parameters)
         mask = interest["strike"].isna()
         interest = interest.where(~mask).dropna(how="all", inplace=False)
         interest = pd.MultiIndex.from_frame(interest)
@@ -84,7 +82,6 @@ class MarketCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcula
     @staticmethod
     def converge(valuation, *arg, available, **kwargs):
         parameters = dict(id_vars=list(Querys.Settlement), value_name="strike", var_name="security")
-        valuation = valuation.droplevel(level=1)
         valuation = valuation.to_frame().transpose()
         valuation = pd.melt(valuation, **parameters)
         mask = valuation["strike"].isna()
