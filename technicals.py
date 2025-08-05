@@ -13,7 +13,7 @@ from datetime import date as Date
 
 from finance.variables import Variables, Querys
 from support.mixins import Emptying, Sizing, Partition, Logging
-from support.calculations import Calculation, Equation, Variable
+from support.equations import Calculation, Equation, Variable
 from support.meta import RegistryMeta
 
 __version__ = "1.0.0"

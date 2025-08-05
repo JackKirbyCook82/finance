@@ -13,7 +13,7 @@ from abc import ABC, ABCMeta
 from datetime import date as Date
 
 from finance.variables import Variables, Querys, Securities
-from support.calculations import Calculation, Equation, Variable
+from support.equations import Calculation, Equation, Variable
 from support.mixins import Emptying, Sizing, Partition, Logging
 from support.decorators import TypeDispatcher
 

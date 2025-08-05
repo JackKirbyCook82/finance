@@ -16,7 +16,7 @@ from collections import namedtuple as ntuple
 
 from finance.variables import Querys, Variables, Strategies, Securities
 from support.mixins import Emptying, Sizing, Partition, Logging
-from support.calculations import Calculation, Equation, Variable
+from support.equations import Calculation, Equation, Variable
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
