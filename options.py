@@ -59,66 +59,34 @@ class GreekEquation(Equation, ABC, datatype=pd.Series, vectorize=True):
     V = Variable.Dependent("V", "vega", np.float32, function=lambda zx, x, τ: + norm.pdf(zx) * np.sqrt(τ) * x)
 
 
-class AnsatzFunction(Function, signature="(α,β,γ,ξ,τ,r)->ϕ(σ,u,w,x)"):
+class AnsatzFunction(Function, signature="(α,β,γ,ξ,τ,r,w)->ϕ(σ,u,x)"):
     a = lambda α, β: α * β
-    b = lambda α, γ, ξ, u: α - ξ * γ * u * 1j
+    b = lambda α, γ, ξ, u, w: α - ξ * γ * (u - w) * 1j
     c = lambda τ, b, d, f, g: (b - d) * τ - 2 * np.log(f / (1 - g))
-    d = lambda γ, b, u: np.sqrt(b ** 2 + γ ** 2 * (u ** 2 + u * 1j))
+    d = lambda γ, b, u, w: np.sqrt(b ** 2 + γ ** 2 * ((u - w) ** 2 + (u - w) * 1j))
     e = lambda τ, d: 1 - 1 / np.exp(d * τ)
     f = lambda τ, d, g: 1 - g / np.exp(d * τ)
     g = lambda b, d: (b - d) / (b + d)
 
     A = lambda γ, τ, b, d, e, f, g: ((b - d) / γ**2) * ((b - d) * τ - 2 * np.log(f / (1 - g)))
-    B = lambda γ, τ, a, c, r, u, w: (u * 1j - w) * r * τ + (a / γ**2) * c
-    ϕ = lambda σ, A, B, u, w, x: np.exp(A + B * σ + (u * 1j - w) * x)
+    B = lambda γ, τ, a, c, r, u, w: ((u - w) * 1j - int(not w)) * r * τ + (a / γ**2) * c
+    ϕ = lambda σ, A, B, u, w, x: np.exp(A + B * σ + ((u - w) * 1j - int(not w)) * x)
 
-class RiccatiIntegral(Integral, bounds=(1e-8, 200), signature="(α,β,γ,ξ,τ,k,r)->Ψ(σ,w,x)"):
+class RiccatiIntegral(Integral, bounds=(1e-8, 200), signature="(α,β,γ,ξ,τ,k,r,w)->Ψ(σ,x)"):
     Ψ = lambda ϕ, k: lambda u: ϕ / (np.exp(u * 1j * np.log(k)) * u * 1j)
-    ϕ = lambda α, β, γ, ξ, σ, τ, r, w, x: lambda u: AnsatzFunction(α, β, γ, ξ, τ, r)(σ, u, w, x)
+    ϕ = lambda α, β, γ, ξ, σ, τ, r, w, x: lambda u: AnsatzFunction(α, β, γ, ξ, τ, r, w)(σ, u, x)
 
 class RiccatiFunction(Function, signature=""):
-    Σx = lambda α, β, γ, ξ, σ, τ, k, r: RiccatiIntegral(α, β, γ, ξ, τ, k, r)(σ, w, x)
-    Σk = lambda α, β, γ, ξ, σ, τ, k, r: RiccatiIntegral(α, β, γ, ξ, τ, k, r)(σ, w, x)
+    Σx = lambda α, β, γ, ξ, σ, τ, k, r, x: RiccatiIntegral(α, β, γ, ξ, τ, 0, k, r)(σ, x)
+    Σk = lambda α, β, γ, ξ, σ, τ, k, r, x: RiccatiIntegral(α, β, γ, ξ, τ, 1, k, r)(σ, x)
+    X = lambda Σx: 0.5 + (1 / np.pi) * Σx
+    K = lambda Σk: 0.5 + (1 / np.pi) * Σk
 
+class HestonCallEquation(ValueEquation):
+    v = Variable.Dependent("v", "value", np.float32, function=lambda Σk, Σx, k, x, r, τ: x * Σx - k * Σk / np.exp(r * τ))
 
-# class RiccatiIntegral(Integral, parameters="α β γ σ ξ τ x r", domain="u", range="Σ"):
-#     R = lambda ϕ, k: lambda u: RiccatiFunction(ϕ, k)(u)
-# class RiccatiStrikeIntegral(RiccatiIntegral):
-#     ϕ = lambda α, β, γ, σ, ξ, τ, x, r: lambda u: AnsatzFunction(α, β, γ, ξ, τ, r)(u - 0, np.log(x), u, 1)
-# class RiccatiStockIntegral(RiccatiIntegral):
-#     ϕ = lambda α, β, γ, σ, ξ, τ, x, r: lambda u: AnsatzFunction(α, β, γ, ξ, τ, r)(u - 1, np.log(x), u, 0)
-# class RiccatiFunction(Function):
-#    Rx = lambda Σx: 0.5 + (1 / np.pi) * Σx
-#    Rk = lambda Σk: 0.5 + (1 / np.pi) * Σk
-#    Σx = lambda : RiccatiIntegral()()
-#    Σk = lambda : RiccatiIntegral()()
-#    Σx = lambda : lambda : np.real(ϕx / (np.exp(np.log(k) * u * 1j) * u * 1j))
-#    Σk = lambda : lambda : np.real(ϕk / (np.exp(np.log(k) * u * 1j) * u * 1j))
-#    ψ = lambda ϕ, k: lambda u: np.real(ϕ / (np.exp(np.log(k) * u * 1j) * u * 1j))
-# class UnderlyingRiccatiIntegral(RiccatiIntegral):
-#     ϕx = lambda x, σ, τ, r, C, D: lambda u: ((u - 0) * 1j - 1) * r * τ + C + D * σ + ((u - 0) * 1j - 1) * np.log(x)
-#     Σx = lambda ϕx, k: lambda u: np.real(ϕx / (np.exp(np.log(k) * u * 1j) * u * 1j))
-#    ϕk = lambda x, σ, A, B: lambda u: np.exp(A, B * σ + (u * 1j - XXX) * np.log(x))
-#    R = lambda τ, r: lambda u: (u * 1j - 0) * r * τ
-# class StrikeRiccatiIntegral(RiccatiIntegral):
-#     b = lambda α, γ, ξ: lambda u: α - ξ * γ * (u ) * 1j
-#     ϕk = lambda x, σ, τ, r, C, D: lambda u: ((u - 1) * 1j - 0) * r * τ + C + D * σ + ((u - 1) * 1j - 0) * np.log(x)
-#     Σk = lambda ϕk, k: lambda u: np.real(ϕk / (np.exp(np.log(k) * u * 1j) * u * 1j))
-#    ϕx = lambda x, σ, A, B: lambda u: np.exp(A, B * σ + (u * 1j - XXX) * np.log(x))
-#    R = lambda τ, r: lambda u: (u * 1j - 1) * r * τ
-# class HestonEquation(ValueEquation):
-#     zx = Variable.Dependent("zx", "underlying", np.float32, function=lambda Σx: 0.5 + 1 / np.pi * Σx)
-#     zk = Variable.Dependent("zk", "strike", np.float32, function=lambda Σk: 0.5 + 1 / np.pi * Σk)
-#     Σx = Variable.Dependent("Σx", "underlying", np.float32, function=lambda x, k, τ, r, λ, α, β, γ: RiccatiIntegral(1e-8, 200).Σx(x, k, τ, r, λ, α, β, γ))
-#     Σk = Variable.Dependent("Σk", "strike", np.float32, function=lambda x, k, τ, r, λ, α, β, γ: RiccatiIntegral(1e-8, 200).Σk(x, k, τ, r, λ, α, β, γ))
-#    Σx = Variable.Dependent("Σx", "underlying", np.float32, function=lambda ?x: np.quad(?x, 1e-8, 200, limit=200)[0])
-#    Σk = Variable.Dependent("Σk", "strike", np.float32, function=lambda ?k: np.quad(?k, 1e-8, 200, limit=200)[0])
-#    fx = Variable.Dependent("fx", "underlying", types.LambdaType, function=lambda : lambda : )
-#    fk = Variable.Dependent("fk", "strike", types.LambdaType, function=lambda : lambda : )
-# class HestonCallEquation(HestonEquation):
-#     v = Variable.Dependent("v", "value", np.float32, function=lambda x, k, zx, zk, r, τ: x * zx - k * zk / np.exp(r * τ))
-# class HestonPutEquation(HestonEquation):
-#     v = Variable.Dependent("v", "value", np.float32, function=lambda x, k, zx, zk, r, τ: k * (1 - zk) / np.exp(r * τ) - x * (1 - zx))
+class HestonPutEquation(ValueEquation):
+    v = Variable.Dependent("v", "value", np.float32, function=lambda Σk, Σx, k, x, r, τ: x * (Σx - 1) - k * (Σk - 1) / np.exp(r * τ))
 
 
 class GreekCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
