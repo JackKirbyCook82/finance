@@ -11,10 +11,9 @@ import pandas as pd
 from abc import ABC
 from scipy.stats import norm
 
+import calculations as calc
 from finance.variables import Variables, Querys
-from support.equations import Calculation, Equation, Variable
 from support.mixins import Emptying, Sizing, Partition, Logging
-from support.calculus import Integral, Function
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -23,43 +22,7 @@ __copyright__ = "Copyright 2025, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class ValueEquation(Equation, ABC, datatype=pd.Series, vectorize=True):
-    τ = Variable.Dependent("τ", "tau", np.float32, function=lambda to, tτ: (np.datetime64(tτ, "ns") - np.datetime64(to, "ns")) / np.timedelta64(364, 'D'))
-
-    tτ = Variable.Independent("tτ", "expire", np.datetime64, locator="expire")
-    to = Variable.Constant("to", "current", np.datetime64, locator="current")
-
-    i = Variable.Independent("i", "option", Variables.Securities.Option, locator="option")
-    j = Variable.Independent("j", "position", Variables.Securities.Position, locator="position")
-    x = Variable.Independent("x", "adjusted", np.float32, locator="adjusted")
-    σ = Variable.Independent("σ", "volatility", np.float32, locator="volatility")
-    μ = Variable.Independent("μ", "trend", np.float32, locator="trend")
-    k = Variable.Independent("k", "strike", np.float32, locator="strike")
-    r = Variable.Constant("r", "interest", np.float32, locator="interest")
-
-class BlackScholesEquation(ValueEquation):
-    zx = Variable.Dependent("zx", "underlying", np.float32, function=lambda zxk, zvt, zrt: zxk + zvt + zrt)
-    zk = Variable.Dependent("zx", "strike", np.float32, function=lambda zxk, zvt, zrt: zxk - zvt + zrt)
-
-    zxk = Variable.Dependent("zxk", "strike", np.float32, function=lambda x, k, σ, τ: np.log(x / k) / np.sqrt(τ) / σ)
-    zvt = Variable.Dependent("zvt", "volatility", np.float32, function=lambda σ, τ: np.sqrt(τ) * σ / 2)
-    zrt = Variable.Dependent("zrt", "interest", np.float32, function=lambda σ, r, τ: np.sqrt(τ) * r / σ)
-
-class BlackScholesCallEquation(BlackScholesEquation):
-    v = Variable.Dependent("v", "value", np.float32, function=lambda x, k, zx, zk, r, τ: x * norm.cdf(+zx) - k * norm.cdf(+zk) / np.exp(r * τ))
-
-class BlackScholesPutEquation(BlackScholesEquation):
-    v = Variable.Dependent("v", "value", np.float32, function=lambda x, k, zx, zk, r, τ: k * norm.cdf(-zk) / np.exp(r * τ) - x * norm.cdf(-zx))
-
-class GreekEquation(Equation, ABC, datatype=pd.Series, vectorize=True):
-    Θ = Variable.Dependent("Θ", "theta", np.float32, function=lambda zx, zk, x, k, r, σ, τ, i: - norm.cdf(zk * int(i)) * int(i) * k * r / np.exp(r * τ) - norm.pdf(zx) * x * σ / np.sqrt(τ) / 2)
-    P = Variable.Dependent("P", "rho", np.float32, function=lambda zk, k, r, τ, i: + norm.cdf(zk * int(i)) * int(i) * k * τ / np.exp(r * τ))
-    Δ = Variable.Dependent("Δ", "delta", np.float32, function=lambda zx, i: + norm.cdf(zx * int(i)) * int(i))
-    Γ = Variable.Dependent("Γ", "gamma", np.float32, function=lambda zx, x, σ, τ: + norm.pdf(zx) / np.sqrt(τ) / σ / x)
-    V = Variable.Dependent("V", "vega", np.float32, function=lambda zx, x, τ: + norm.pdf(zx) * np.sqrt(τ) * x)
-
-
-class AnsatzFunction(Function, signature="(α,β,γ,ξ,τ,r,w)->ϕ(σ,u,x)"):
+class AnsatzFunction(calc.Equations.Numeric, signature="(α,β,γ,ξ,τ,r,w)->ϕ(σ,u,x)"):
     a = lambda α, β: α * β
     b = lambda α, γ, ξ, u, w: α - ξ * γ * (u - w) * 1j
     c = lambda τ, b, d, f, g: (b - d) * τ - 2 * np.log(f / (1 - g))
@@ -72,21 +35,57 @@ class AnsatzFunction(Function, signature="(α,β,γ,ξ,τ,r,w)->ϕ(σ,u,x)"):
     B = lambda γ, τ, a, c, r, u, w: ((u - w) * 1j - int(not w)) * r * τ + (a / γ**2) * c
     ϕ = lambda σ, A, B, u, w, x: np.exp(A + B * σ + ((u - w) * 1j - int(not w)) * x)
 
-class RiccatiIntegral(Integral, bounds=(1e-8, 200), signature="(α,β,γ,ξ,τ,k,r,w)->Ψ(σ,x)"):
+class RiccatiIntegral(calc.Equations.Integral, bounds=(1e-8, 200), signature="(α,β,γ,ξ,τ,k,r,w)->Ψ(σ,x)"):
     Ψ = lambda ϕ, k: lambda u: ϕ / (np.exp(u * 1j * np.log(k)) * u * 1j)
     ϕ = lambda α, β, γ, ξ, σ, τ, r, w, x: lambda u: AnsatzFunction(α, β, γ, ξ, τ, r, w)(σ, u, x)
 
-class RiccatiFunction(Function, signature=""):
+class RiccatiFunction(calc.Equations.Numeric, signature=""):
     Σx = lambda α, β, γ, ξ, σ, τ, k, r, x: RiccatiIntegral(α, β, γ, ξ, τ, 0, k, r)(σ, x)
     Σk = lambda α, β, γ, ξ, σ, τ, k, r, x: RiccatiIntegral(α, β, γ, ξ, τ, 1, k, r)(σ, x)
     X = lambda Σx: 0.5 + (1 / np.pi) * Σx
     K = lambda Σk: 0.5 + (1 / np.pi) * Σk
 
+
+class ValueEquation(calc.Equations.Table, ABC):
+    τ = calc.Variables.Dependent("τ", "tau", np.float32, function=lambda to, tτ: (np.datetime64(tτ, "ns") - np.datetime64(to, "ns")) / np.timedelta64(364, 'D'))
+
+    tτ = calc.Variables.Independent("tτ", "expire", np.datetime64, locator="expire")
+    to = calc.Variables.Constant("to", "current", np.datetime64, locator="current")
+
+    i = calc.Variables.Independent("i", "option", Variables.Securities.Option, locator="option")
+    j = calc.Variables.Independent("j", "position", Variables.Securities.Position, locator="position")
+    x = calc.Variables.Independent("x", "adjusted", np.float32, locator="adjusted")
+    σ = calc.Variables.Independent("σ", "volatility", np.float32, locator="volatility")
+    μ = calc.Variables.Independent("μ", "trend", np.float32, locator="trend")
+    k = calc.Variables.Independent("k", "strike", np.float32, locator="strike")
+    r = calc.Variables.Constant("r", "interest", np.float32, locator="interest")
+
+class BlackScholesEquation(ValueEquation):
+    zx = calc.Variables.Dependent("zx", "underlying", np.float32, function=lambda zxk, zvt, zrt: zxk + zvt + zrt)
+    zk = calc.Variables.Dependent("zx", "strike", np.float32, function=lambda zxk, zvt, zrt: zxk - zvt + zrt)
+
+    zxk = calc.Variables.Dependent("zxk", "strike", np.float32, function=lambda x, k, σ, τ: np.log(x / k) / np.sqrt(τ) / σ)
+    zvt = calc.Variables.Dependent("zvt", "volatility", np.float32, function=lambda σ, τ: np.sqrt(τ) * σ / 2)
+    zrt = calc.Variables.Dependent("zrt", "interest", np.float32, function=lambda σ, r, τ: np.sqrt(τ) * r / σ)
+
+class BlackScholesCallEquation(BlackScholesEquation):
+    v = calc.Variables.Dependent("v", "value", np.float32, function=lambda x, k, zx, zk, r, τ: x * norm.cdf(+zx) - k * norm.cdf(+zk) / np.exp(r * τ))
+
+class BlackScholesPutEquation(BlackScholesEquation):
+    v = calc.Variables.Dependent("v", "value", np.float32, function=lambda x, k, zx, zk, r, τ: k * norm.cdf(-zk) / np.exp(r * τ) - x * norm.cdf(-zx))
+
 class HestonCallEquation(ValueEquation):
-    v = Variable.Dependent("v", "value", np.float32, function=lambda Σk, Σx, k, x, r, τ: x * Σx - k * Σk / np.exp(r * τ))
+    v = calc.Variables.Dependent("v", "value", np.float32, function=lambda Σk, Σx, k, x, r, τ: x * Σx - k * Σk / np.exp(r * τ))
 
 class HestonPutEquation(ValueEquation):
-    v = Variable.Dependent("v", "value", np.float32, function=lambda Σk, Σx, k, x, r, τ: x * (Σx - 1) - k * (Σk - 1) / np.exp(r * τ))
+    v = calc.Variables.Dependent("v", "value", np.float32, function=lambda Σk, Σx, k, x, r, τ: x * (Σx - 1) - k * (Σk - 1) / np.exp(r * τ))
+
+class GreekEquation(calc.Equations.Table, ABC):
+    Θ = calc.Variables.Dependent("Θ", "theta", np.float32, function=lambda zx, zk, x, k, r, σ, τ, i: - norm.cdf(zk * int(i)) * int(i) * k * r / np.exp(r * τ) - norm.pdf(zx) * x * σ / np.sqrt(τ) / 2)
+    P = calc.Variables.Dependent("P", "rho", np.float32, function=lambda zk, k, r, τ, i: + norm.cdf(zk * int(i)) * int(i) * k * τ / np.exp(r * τ))
+    Δ = calc.Variables.Dependent("Δ", "delta", np.float32, function=lambda zx, i: + norm.cdf(zx * int(i)) * int(i))
+    Γ = calc.Variables.Dependent("Γ", "gamma", np.float32, function=lambda zx, x, σ, τ: + norm.pdf(zx) / np.sqrt(τ) / σ / x)
+    V = calc.Variables.Dependent("V", "vega", np.float32, function=lambda zx, x, τ: + norm.pdf(zx) * np.sqrt(τ) * x)
 
 
 class GreekCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):

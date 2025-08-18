@@ -11,9 +11,9 @@ import pandas as pd
 from abc import ABC
 from datetime import date as Date
 
+import calculations as calc
 from finance.variables import Variables, Querys
 from support.mixins import Emptying, Sizing, Partition, Logging
-from support.equations import Calculation, Equation, Variable
 from support.meta import RegistryMeta
 
 __version__ = "1.0.0"
@@ -23,52 +23,52 @@ __copyright__ = "Copyright 2024, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class TechnicalEquationMeta(RegistryMeta, type(Equation)): pass
-class TechnicalEquation(Equation, ABC, datatype=pd.Series, vectorize=False, metaclass=TechnicalEquationMeta):
-    x = Variable.Independent("x", "adjusted", np.float32, locator="adjusted")
-    s = Variable.Independent("s", "ticker", Date, locator="ticker")
-    t = Variable.Independent("t", "date", Date, locator="date")
-    dt = Variable.Constant("dt", "period", np.int32, locator="period")
+class TechnicalEquationMeta(RegistryMeta, type(calc.Equations.Table)): pass
+class TechnicalEquation(calc.Equations.Table, ABC, metaclass=TechnicalEquationMeta):
+    x = calc.Variables.Independent("x", "adjusted", np.float32, locator="adjusted")
+    s = calc.Variables.Independent("s", "ticker", Date, locator="ticker")
+    t = calc.Variables.Independent("t", "date", Date, locator="date")
+    dt = calc.Variables.Constant("dt", "period", np.int32, locator="period")
 
-    def execute(self, *args, **kwargs):
-        yield from super().execute(*args, **kwargs)
-        yield self.x()
-        yield self.s()
-        yield self.t()
-
-
-class BarsEquation(TechnicalEquation, register=Variables.Technical.BARS):
-    xo = Variable.Independent("xo", "open", np.float32, locator="open")
-    xc = Variable.Independent("xc", "close", np.float32, locator="close")
-    xh = Variable.Independent("xc", "high", np.float32, locator="high")
-    xl = Variable.Independent("xc", "low", np.float32, locator="low")
-
-    def execute(self, *args, **kwargs):
-        yield from super().execute(*args, **kwargs)
-        yield self.xo()
-        yield self.xc()
-        yield self.xh()
-        yield self.xl()
+#    def execute(self, *args, **kwargs):
+#        yield from super().execute(*args, **kwargs)
+#        yield self.x()
+#        yield self.s()
+#        yield self.t()
 
 
-class StatisticEquation(TechnicalEquation, register=Variables.Technical.STATISTIC):
-    δ = Variable.Dependent("δ", "volatility", np.float32, function=lambda x, *, dt: x.pct_change(1).rolling(dt).std())
-    μ = Variable.Dependent("μ", "trend", np.float32, function=lambda x, *, dt: x.pct_change(1).rolling(dt).mean())
+class BarsEquation(TechnicalEquation, signature="[xo,xc,xl,xh]->[xo,xc,xl,xh]", register=Variables.Technical.BARS):
+    xo = calc.Variables.Independent("xo", "open", np.float32, locator="open")
+    xc = calc.Variables.Independent("xc", "close", np.float32, locator="close")
+    xl = calc.Variables.Independent("xc", "low", np.float32, locator="low")
+    xh = calc.Variables.Independent("xc", "high", np.float32, locator="high")
 
-    def execute(self, *args, **kwargs):
-        yield from super().execute(*args, **kwargs)
-        yield self.μ()
-        yield self.δ()
+#    def execute(self, *args, **kwargs):
+#        yield from super().execute(*args, **kwargs)
+#        yield self.xo()
+#        yield self.xc()
+#        yield self.xh()
+#        yield self.xl()
 
 
-class StochasticEquation(TechnicalEquation, register=Variables.Technical.STOCHASTIC):
-    xk = Variable.Dependent("xk", "oscillator", np.float32, function=lambda x, xkl, xkh: (x - xkl) * 100 / (xkh - xkl))
-    xkh = Variable.Dependent("xkh", "highest", np.float32, function=lambda x, *, dt: x.rolling(dt).min())
-    xkl = Variable.Dependent("xkl", "lowest", np.float32, function=lambda x, *, dt: x.rolling(dt).max())
+class StatisticEquation(TechnicalEquation, signature="[x,dt]->[μ,δ]", register=Variables.Technical.STATISTIC):
+    δ = calc.Variables.Dependent("δ", "volatility", np.float32, function=lambda x, *, dt: x.pct_change(1).rolling(dt).std())
+    μ = calc.Variables.Dependent("μ", "trend", np.float32, function=lambda x, *, dt: x.pct_change(1).rolling(dt).mean())
 
-    def execute(self, *args, **kwargs):
-        yield from super().execute(*args, **kwargs)
-        yield self.xk()
+#    def execute(self, *args, **kwargs):
+#        yield from super().execute(*args, **kwargs)
+#        yield self.μ()
+#        yield self.δ()
+
+
+class StochasticEquation(TechnicalEquation, signature="[x,dt]->[xk]", register=Variables.Technical.STOCHASTIC):
+    xk = calc.Variables.Dependent("xk", "oscillator", np.float32, function=lambda x, xkl, xkh: (x - xkl) * 100 / (xkh - xkl))
+    xkh = calc.Variables.Dependent("xkh", "highest", np.float32, function=lambda x, *, dt: x.rolling(dt).min())
+    xkl = calc.Variables.Dependent("xkl", "lowest", np.float32, function=lambda x, *, dt: x.rolling(dt).max())
+
+#    def execute(self, *args, **kwargs):
+#        yield from super().execute(*args, **kwargs)
+#        yield self.xk()
 
 
 class TechnicalCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
