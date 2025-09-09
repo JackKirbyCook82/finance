@@ -12,7 +12,7 @@ from abc import ABC
 from scipy.stats import norm
 
 import calculations as calc
-from finance.variables import Variables, Querys
+from finance.concepts import Concepts, Querys
 from support.mixins import Emptying, Sizing, Partition, Logging
 
 __version__ = "1.0.0"
@@ -22,28 +22,28 @@ __copyright__ = "Copyright 2025, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class AnsatzFunction(calc.Equations.Numeric, signature="(α,β,γ,ξ,τ,r,w)->ϕ(σ,u,x)"):
-    a = lambda α, β: α * β
-    b = lambda α, γ, ξ, u, w: α - ξ * γ * (u - w) * 1j
-    c = lambda τ, b, d, f, g: (b - d) * τ - 2 * np.log(f / (1 - g))
-    d = lambda γ, b, u, w: np.sqrt(b ** 2 + γ ** 2 * ((u - w) ** 2 + (u - w) * 1j))
-    e = lambda τ, d: 1 - 1 / np.exp(d * τ)
-    f = lambda τ, d, g: 1 - g / np.exp(d * τ)
-    g = lambda b, d: (b - d) / (b + d)
-
-    A = lambda γ, τ, b, d, e, f, g: ((b - d) / γ**2) * ((b - d) * τ - 2 * np.log(f / (1 - g)))
-    B = lambda γ, τ, a, c, r, u, w: ((u - w) * 1j - int(not w)) * r * τ + (a / γ**2) * c
-    ϕ = lambda σ, A, B, u, w, x: np.exp(A + B * σ + ((u - w) * 1j - int(not w)) * x)
-
-class RiccatiIntegral(calc.Equations.Integral, bounds=(1e-8, 200), signature="(α,β,γ,ξ,τ,k,r,w)->Ψ(σ,x)"):
-    Ψ = lambda ϕ, k: lambda u: ϕ / (np.exp(u * 1j * np.log(k)) * u * 1j)
-    ϕ = lambda α, β, γ, ξ, σ, τ, r, w, x: lambda u: AnsatzFunction(α, β, γ, ξ, τ, r, w)(σ, u, x)
-
-class RiccatiFunction(calc.Equations.Numeric, signature=""):
-    Σx = lambda α, β, γ, ξ, σ, τ, k, r, x: RiccatiIntegral(α, β, γ, ξ, τ, 0, k, r)(σ, x)
-    Σk = lambda α, β, γ, ξ, σ, τ, k, r, x: RiccatiIntegral(α, β, γ, ξ, τ, 1, k, r)(σ, x)
-    X = lambda Σx: 0.5 + (1 / np.pi) * Σx
-    K = lambda Σk: 0.5 + (1 / np.pi) * Σk
+# class AnsatzFunction(calc.Equations.Numeric, signature="(α,β,γ,ξ,τ,r,w)->ϕ(σ,u,x)"):
+#     a = lambda α, β: α * β
+#     b = lambda α, γ, ξ, u, w: α - ξ * γ * (u - w) * 1j
+#     c = lambda τ, b, d, f, g: (b - d) * τ - 2 * np.log(f / (1 - g))
+#     d = lambda γ, b, u, w: np.sqrt(b ** 2 + γ ** 2 * ((u - w) ** 2 + (u - w) * 1j))
+#     e = lambda τ, d: 1 - 1 / np.exp(d * τ)
+#     f = lambda τ, d, g: 1 - g / np.exp(d * τ)
+#     g = lambda b, d: (b - d) / (b + d)
+#
+#     A = lambda γ, τ, b, d, e, f, g: ((b - d) / γ**2) * ((b - d) * τ - 2 * np.log(f / (1 - g)))
+#     B = lambda γ, τ, a, c, r, u, w: ((u - w) * 1j - int(not w)) * r * τ + (a / γ**2) * c
+#     ϕ = lambda σ, A, B, u, w, x: np.exp(A + B * σ + ((u - w) * 1j - int(not w)) * x)
+#
+# class RiccatiIntegral(calc.Equations.Integral, bounds=(1e-8, 200), signature="(α,β,γ,ξ,τ,k,r,w)->Ψ(σ,x)"):
+#     Ψ = lambda ϕ, k: lambda u: ϕ / (np.exp(u * 1j * np.log(k)) * u * 1j)
+#     ϕ = lambda α, β, γ, ξ, σ, τ, r, w, x: lambda u: AnsatzFunction(α, β, γ, ξ, τ, r, w)(σ, u, x)
+#
+# class RiccatiFunction(calc.Equations.Numeric, signature=""):
+#     Σx = lambda α, β, γ, ξ, σ, τ, k, r, x: RiccatiIntegral(α, β, γ, ξ, τ, 0, k, r)(σ, x)
+#     Σk = lambda α, β, γ, ξ, σ, τ, k, r, x: RiccatiIntegral(α, β, γ, ξ, τ, 1, k, r)(σ, x)
+#     X = lambda Σx: 0.5 + (1 / np.pi) * Σx
+#     K = lambda Σk: 0.5 + (1 / np.pi) * Σk
 
 
 class ValueEquation(calc.Equations.Table, ABC):
@@ -52,8 +52,8 @@ class ValueEquation(calc.Equations.Table, ABC):
     tτ = calc.Variables.Independent("tτ", "expire", np.datetime64, locator="expire")
     to = calc.Variables.Constant("to", "current", np.datetime64, locator="current")
 
-    i = calc.Variables.Independent("i", "option", Variables.Securities.Option, locator="option")
-    j = calc.Variables.Independent("j", "position", Variables.Securities.Position, locator="position")
+    i = calc.Variables.Independent("i", "option", Concepts.Securities.Option, locator="option")
+    j = calc.Variables.Independent("j", "position", Concepts.Securities.Position, locator="position")
     x = calc.Variables.Independent("x", "adjusted", np.float32, locator="adjusted")
     σ = calc.Variables.Independent("σ", "volatility", np.float32, locator="volatility")
     μ = calc.Variables.Independent("μ", "trend", np.float32, locator="trend")

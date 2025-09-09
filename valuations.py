@@ -13,7 +13,7 @@ from abc import ABC, ABCMeta
 from datetime import date as Date
 
 import calculations as calc
-from finance.variables import Variables, Querys, Securities
+from finance.concepts import Concepts, Querys, Securities
 from support.mixins import Emptying, Sizing, Partition, Logging
 from support.decorators import TypeDispatcher
 
@@ -45,7 +45,7 @@ class ValuationEquation(calc.Equations.Vector, ABC):
 #        yield self.qo()
 
 
-class PayoffEquation(ValuationEquation, signature="[yo,yl,yh,r,ρ,ε]->[wo,wl,wh,wb,vl]", analytic=Variables.Analytic.PAYOFF):
+class PayoffEquation(ValuationEquation, signature="[yo,yl,yh,r,ρ,ε]->[wo,wl,wh,wb,vl]", analytic=Concepts.Analytic.PAYOFF):
     vl = calc.Variables.Dependent("vl", "npv", np.float32, function=lambda wl, wo, τ, *, ρ: + np.divide(wl, np.power(ρ + 1, np.divide(τ, 365))) + wo)
     wk = calc.Variables.Dependent("wk", "breakeven", np.float32, function=lambda wl, τ, *, ρ: - np.divide(wl, np.power(ρ + 1, np.divide(τ, 365))))
     wh = calc.Variables.Dependent("wh", "maximum", np.float32, function=lambda yh, *, ε: yh * 100 - ε)
@@ -64,13 +64,13 @@ class PayoffEquation(ValuationEquation, signature="[yo,yl,yh,r,ρ,ε]->[wo,wl,wh
 #        yield self.vl()
 
 
-class UnderlyingEquation(ValuationEquation, signature="[xo,μo,δo]->[xo,μo,δ]", analytic=Variables.Analytic.UNDERLYING):
+class UnderlyingEquation(ValuationEquation, signature="[xo,μo,δo]->[xo,μo,δ]", analytic=Concepts.Analytic.UNDERLYING):
     xo = calc.Variables.Independent("xo", "underlying", np.float32, locator="underlying")
     δo = calc.Variables.Independent("δo", "volatility", np.float32, locator="volatility")
     μo = calc.Variables.Independent("μo", "trend", np.float32, locator="trend")
 
 
-class GreeksEquation(ValuationEquation, signature="[vo,Δo,Γo,Θo,Vo]->[vo,Δo,Γo,Θo,Vo]", analytic=Variables.Analytic.GREEKS):
+class GreeksEquation(ValuationEquation, signature="[vo,Δo,Γo,Θo,Vo]->[vo,Δo,Γo,Θo,Vo]", analytic=Concepts.Analytic.GREEKS):
     vo = calc.Variables.Independent("vo", "value", np.float32, locator="value")
     Δo = calc.Variables.Independent("Δo", "delta", np.float32, locator="delta")
     Γo = calc.Variables.Independent("Γo", "gamma", np.float32, locator="gamma")

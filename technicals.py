@@ -12,7 +12,7 @@ from abc import ABC
 from datetime import date as Date
 
 import calculations as calc
-from finance.variables import Variables, Querys
+from finance.concepts import Concepts, Querys
 from support.mixins import Emptying, Sizing, Partition, Logging
 from support.meta import RegistryMeta
 
@@ -37,7 +37,7 @@ class TechnicalEquation(calc.Equations.Table, ABC, metaclass=TechnicalEquationMe
 #        yield self.t()
 
 
-class BarsEquation(TechnicalEquation, signature="[xo,xc,xl,xh]->[xo,xc,xl,xh]", register=Variables.Technical.BARS):
+class BarsEquation(TechnicalEquation, signature="[xo,xc,xl,xh]->[xo,xc,xl,xh]", register=Concepts.Technical.BARS):
     xo = calc.Variables.Independent("xo", "open", np.float32, locator="open")
     xc = calc.Variables.Independent("xc", "close", np.float32, locator="close")
     xl = calc.Variables.Independent("xc", "low", np.float32, locator="low")
@@ -51,7 +51,7 @@ class BarsEquation(TechnicalEquation, signature="[xo,xc,xl,xh]->[xo,xc,xl,xh]", 
 #        yield self.xl()
 
 
-class StatisticEquation(TechnicalEquation, signature="[x,dt]->[μ,δ]", register=Variables.Technical.STATISTIC):
+class StatisticEquation(TechnicalEquation, signature="[x,dt]->[μ,δ]", register=Concepts.Technical.STATISTIC):
     δ = calc.Variables.Dependent("δ", "volatility", np.float32, function=lambda x, *, dt: x.pct_change(1).rolling(dt).std())
     μ = calc.Variables.Dependent("μ", "trend", np.float32, function=lambda x, *, dt: x.pct_change(1).rolling(dt).mean())
 
@@ -61,7 +61,7 @@ class StatisticEquation(TechnicalEquation, signature="[x,dt]->[μ,δ]", register
 #        yield self.δ()
 
 
-class StochasticEquation(TechnicalEquation, signature="[x,dt]->[xk]", register=Variables.Technical.STOCHASTIC):
+class StochasticEquation(TechnicalEquation, signature="[x,dt]->[xk]", register=Concepts.Technical.STOCHASTIC):
     xk = calc.Variables.Dependent("xk", "oscillator", np.float32, function=lambda x, xkl, xkh: (x - xkl) * 100 / (xkh - xkl))
     xkh = calc.Variables.Dependent("xkh", "highest", np.float32, function=lambda x, *, dt: x.rolling(dt).min())
     xkl = calc.Variables.Dependent("xkl", "lowest", np.float32, function=lambda x, *, dt: x.rolling(dt).max())
@@ -73,7 +73,7 @@ class StochasticEquation(TechnicalEquation, signature="[x,dt]->[xk]", register=V
 
 class TechnicalCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
     def __init__(self, *args, technicals, **kwargs):
-        assert all([technical in list(Variables.Technical) for technical in technicals])
+        assert all([technical in list(Concepts.Technical) for technical in technicals])
         super().__init__(*args, **kwargs)
         equations = [equation for technical, equation in iter(TechnicalEquation) if technical in technicals]
         self.__calculation = Calculation[pd.Series](*args, required=equations, **kwargs)

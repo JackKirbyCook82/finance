@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 from abc import ABC
 
-from finance.variables import Variables, Querys, Securities
+from finance.concepts import Concepts, Querys, Securities
 from support.mixins import Emptying, Sizing, Partition, Logging
 
 __version__ = "1.0.0"
@@ -71,7 +71,7 @@ class MarketCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcula
     def available(options, *args, **kwargs):
         assert isinstance(options, pd.DataFrame)
         function = lambda cols: str(Securities([cols["instrument"], cols["option"], cols["position"]]))
-        header = list(Querys.Settlement) + list(Variables.Securities.Security) + ["strike"]
+        header = list(Querys.Settlement) + list(Concepts.Securities.Security) + ["strike"]
         options = options[header + ["liquidity"]]
         try: options["security"] = options.apply(function, axis=1)
         except ValueError: options = pd.DataFrame(columns=list(options.columns) + ["security"])

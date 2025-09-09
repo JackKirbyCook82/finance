@@ -8,7 +8,7 @@ Created on Tues May 13 2025
 import numpy as np
 import pandas as pd
 
-from finance.variables import Querys, Variables
+from finance.concepts import Querys, Concepts
 from support.mixins import Emptying, Sizing, Partition, Logging
 
 __version__ = "1.0.0"
@@ -111,7 +111,7 @@ class SecurityCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
 
     @staticmethod
     def calculator(options, *args, **kwargs):
-        positions = {Variables.Securities.Position.LONG: "supply", Variables.Securities.Position.SHORT: "demand"}
+        positions = {Concepts.Securities.Position.LONG: "supply", Concepts.Securities.Position.SHORT: "demand"}
         for position, column in positions.items():
             existing = options.drop(columns=list(positions.values()), inplace=False)
             updated = options["supply"].rename("size")

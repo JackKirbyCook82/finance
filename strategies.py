@@ -15,7 +15,7 @@ from functools import reduce
 from collections import namedtuple as ntuple
 
 import calculations as calc
-from finance.variables import Querys, Variables, Strategies, Securities
+from finance.concepts import Querys, Concepts, Strategies, Securities
 from support.mixins import Emptying, Sizing, Partition, Logging
 
 __version__ = "1.0.0"
@@ -92,8 +92,8 @@ class CollarShortStrategyEquation(StrategyEquation, strategy=Strategies.Collars.
     qo = calc.Variables.Dependent("qo", "size", np.int32, function=lambda qcα, qpβ: np.minimum(qcα, qpβ))
 
 
-class PayoffEquation(StrategyEquation, signature="[kpα,kpβ,kcα,kcβ]->[xl,xh,xk,yl,yh,yk]", analytic=Variables.Analytic.PAYOFF):
-    mk = calc.Variables.Dependent("mk", "market", Enum, function=lambda kα, kβ: xr.where(kα < kβ, Variables.Market.BULL, xr.where(kα > kβ, Variables.Market.BEAR, Variables.Market.NEUTRAL)))
+class PayoffEquation(StrategyEquation, signature="[kpα,kpβ,kcα,kcβ]->[xl,xh,xk,yl,yh,yk]", analytic=Concepts.Analytic.PAYOFF):
+    mk = calc.Variables.Dependent("mk", "market", Enum, function=lambda kα, kβ: xr.where(kα < kβ, Concepts.Market.BULL, xr.where(kα > kβ, Concepts.Market.BEAR, Concepts.Market.NEUTRAL)))
     yk = calc.Variables.Dependent("yk", "breakeven", np.float32, function=lambda yo, yl, yh: xr.where(np.negative(yo) <= yh, xr.where(np.negative(yo) >= yl, np.negative(yo), np.NaN), np.NaN))
     xk = calc.Variables.Dependent("xk", "pivot", np.float32, function=lambda yk, yl, yh, mk, xl: xl + (yk - yl) * np.abs(mk.astype(int) + 1) / 2 + (yh - yk) * np.abs(mk.astype(int) - 1) / 2)
     xh = calc.Variables.Dependent("xh", "lower", np.float32, function=lambda kα, kβ: np.maximum(kα, kβ))
@@ -135,7 +135,7 @@ class CollarShortPayoffEquation(PayoffEquation, CollarShortStrategyEquation):
     kβ = calc.Variables.Dependent("kβ", "strike", np.float32, function=lambda kpβ: kpβ)
 
 
-class UnderlyingEquation(StrategyEquation, signature="[μpα,μpβ,μcα,μcβ,δpα,δpβ,δcα,δcβ]->[μo,δo]", analytic=Variables.Analytic.UNDERLYING):
+class UnderlyingEquation(StrategyEquation, signature="[μpα,μpβ,μcα,μcβ,δpα,δpβ,δcα,δcβ]->[μo,δo]", analytic=Concepts.Analytic.UNDERLYING):
     μpα = calc.Variables.Independent("μpα", "trend", np.float32, locator=StrategyLocator(Securities.Options.Puts.Long, "trend"))
     μpβ = calc.Variables.Independent("μpβ", "trend", np.float32, locator=StrategyLocator(Securities.Options.Puts.Short, "trend"))
     μcα = calc.Variables.Independent("μcα", "trend", np.float32, locator=StrategyLocator(Securities.Options.Calls.Long, "trend"))
@@ -169,7 +169,7 @@ class CollarShortUnderlyingEquation(UnderlyingEquation, CollarShortStrategyEquat
     δo = calc.Variables.Dependent("δo", "volatility", np.float32, function=lambda δcα, δpβ: np.divide(δcα + δpβ, 2))
 
 
-class GreeksEquation(StrategyEquation, signature="[vpα,vpβ,vcα,vcβ,Δpα,Δpβ,Δcα,Δcβ,Γpα,Γpβ,Γcα,Γcβ,Θpα,Θpβ,Θcα,Θcβ,Vpα,Vpβ,Vcα,Vcβ]->[vo,Δo,Γo,Θo,Vo]", analytic=Variables.Analytic.GREEKS):
+class GreeksEquation(StrategyEquation, signature="[vpα,vpβ,vcα,vcβ,Δpα,Δpβ,Δcα,Δcβ,Γpα,Γpβ,Γcα,Γcβ,Θpα,Θpβ,Θcα,Θcβ,Vpα,Vpβ,Vcα,Vcβ]->[vo,Δo,Γo,Θo,Vo]", analytic=Concepts.Analytic.GREEKS):
     vpα = calc.Variables.Independent("vpα", "value", np.float32, locator=StrategyLocator(Securities.Options.Puts.Long, "value"))
     vpβ = calc.Variables.Independent("vpβ", "value", np.float32, locator=StrategyLocator(Securities.Options.Puts.Short, "value"))
     vcα = calc.Variables.Independent("vcα", "value", np.float32, locator=StrategyLocator(Securities.Options.Calls.Long, "value"))
@@ -237,7 +237,7 @@ class CollarShortGreeksEquation(GreeksEquation, CollarShortStrategyEquation):
 class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
     def __init__(self, *args, strategies, analytics, **kwargs):
         assert isinstance(strategies, list) and all([value in list(Strategies) for value in list(strategies)])
-        assert isinstance(analytics, list) and all([value in list(Variables.Analytic) for value in list(analytics)])
+        assert isinstance(analytics, list) and all([value in list(Concepts.Analytic) for value in list(analytics)])
         super().__init__(*args, **kwargs)
         equations = {strategy: equations for strategy, equations in iter(StrategyEquation) if strategy in strategies}
         equations = {strategy: [equation for analytic, equation in equations.items() if analytic in analytics] for strategy, equations in equations.items()}
@@ -270,10 +270,10 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
     @staticmethod
     def unflatten(options, *args, **kwargs):
         assert isinstance(options, pd.DataFrame)
-        for security, dataframe in options.groupby(list(Variables.Securities.Security), sort=False):
+        for security, dataframe in options.groupby(list(Concepts.Securities.Security), sort=False):
             if dataframe.empty: continue
             security = Securities(security)
-            dataframe = dataframe.drop(columns=list(Variables.Securities.Security))
+            dataframe = dataframe.drop(columns=list(Concepts.Securities.Security))
             dataframe = dataframe.set_index(list(Querys.Settlement) + ["strike"], drop=True, inplace=False)
             dataset = xr.Dataset.from_dataframe(dataframe)
             dataset = reduce(lambda content, axis: content.squeeze(axis), list(Querys.Settlement), dataset)

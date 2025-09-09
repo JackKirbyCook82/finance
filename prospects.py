@@ -12,7 +12,7 @@ import pandas as pd
 from itertools import chain
 from functools import reduce
 
-from finance.variables import Variables, Querys, Securities
+from finance.concepts import Concepts, Querys, Securities
 from support.mixins import Emptying, Sizing, Partition, Logging
 from support.tables import Reader, Writer, Routine, Stacking, Layout
 from support.decorators import Decorator
@@ -41,7 +41,7 @@ class ProspectParameters(metaclass=ParameterMeta):
     columns = ["tau", "spot", "future", "npv", "liquidity", "priority", "status"]
     index = ["strategy"] + list(map(str, chain(Querys.Settlement, Securities.Options)))
     formatters = {"spot future npv": floating, "liquidity": integer, tuple(map(str, Securities.Options)): floating}
-    stacking = Stacking(axis="scenario", columns=["npv", "future", "spot"], layers=list(Variables.Valuations.Scenario))
+    stacking = Stacking(axis="scenario", columns=["npv", "future", "spot"], layers=list(Concepts.Valuations.Scenario))
     layout = Layout(width=250, space=10, columns=30, rows=30)
 
 
@@ -66,7 +66,7 @@ class ProspectCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
     def calculate(self, valuations, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame)
         valuations["liquidity"] = valuations.apply(self.liquidity, axis=1).apply(np.floor).astype(np.int32)
-        valuations["status"] = Variables.Markets.Status.PROSPECT
+        valuations["status"] = Concepts.Markets.Status.PROSPECT
         valuations["priority"] = valuations.apply(self.priority, axis=1)
         valuations = valuations.where(valuations["liquidity"] >= 1).dropna(how="all", inplace=False)
         valuations = valuations.sort_values("priority", axis=0, ascending=False, inplace=False, ignore_index=False)
@@ -97,8 +97,8 @@ class ProspectRoutine(Routine):
 
 class ProspectReader(Reader):
     def __init__(self, *args, status, **kwargs):
-        assert isinstance(status, (Variables.Markets.Status, list))
-        assert all([isinstance(value, Variables.Markets.Status) for value in status]) if isinstance(status, list) else True
+        assert isinstance(status, (Concepts.Markets.Status, list))
+        assert all([isinstance(value, Concepts.Markets.Status) for value in status]) if isinstance(status, list) else True
         super().__init__(*args, **kwargs)
         self.__status = [status] if not isinstance(status, list) else list(status)
 
