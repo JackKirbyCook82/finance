@@ -12,10 +12,10 @@ import xarray as xr
 from abc import ABC, ABCMeta
 from datetime import date as Date
 
-import calculations as calc
 from finance.concepts import Concepts, Querys, Securities
 from support.mixins import Emptying, Sizing, Partition, Logging
 from support.decorators import TypeDispatcher
+from calculations import Variables, Equations
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -24,58 +24,42 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class ValuationEquation(calc.Equations.Vector, ABC):
-    τ = calc.Variables.Dependent("τ", "tau", np.int32, function=lambda tτ, *, to: (tτ - to).days)
+class ValuationEquation(Equations.Vector, ABC):
+    τ = Variables.Dependent("τ", "tau", np.int32, function=lambda tτ, *, to: (tτ - to).days)
 
-    yo = calc.Variables.Independent("yo", "spot", np.float32, locator="spot")
-    qo = calc.Variables.Independent("qo", "size", np.float32, locator="size")
-    tτ = calc.Variables.Independent("tτ", "expire", Date, locator="expire")
-    to = calc.Variables.Constant("to", "current", Date, locator="current")
+    yo = Variables.Independent("yo", ("value", "spot"), np.float32, locator="spot")
+    qo = Variables.Independent("qo", "size", np.float32, locator="size")
+    tτ = Variables.Independent("tτ", "expire", Date, locator="expire")
+    to = Variables.Constant("to", "current", Date, locator="current")
 
-    r = calc.Variables.Constant("r", "interest", np.float32, locator="interest")
-    ρ = calc.Variables.Constant("ρ", "discount", np.float32, locator="discount")
-    ε = calc.Variables.Constant("ε", "fees", np.float32, locator="fees")
+    r = Variables.Constant("r", "interest", np.float32, locator="interest")
+    ρ = Variables.Constant("ρ", "discount", np.float32, locator="discount")
+    ε = Variables.Constant("ε", "fees", np.float32, locator="fees")
 
     def __init_subclass__(cls, *args, analytic, **kwargs):
         cls.analytic = analytic
 
-#    def execute(self, *args, **kwargs):
-#        yield from super().execute(*args, **kwargs)
-#        yield self.τ()
-#        yield self.qo()
 
+class PayoffEquation(ValuationEquation, analytic=Concepts.Analytic.PAYOFF):
+    vl = Variables.Dependent("vl", "npv", np.float32, function=lambda wl, wo, τ, *, ρ: + np.divide(wl, np.power(ρ + 1, np.divide(τ, 365))) + wo)
+    wk = Variables.Dependent("wk", "breakeven", np.float32, function=lambda wl, τ, *, ρ: - np.divide(wl, np.power(ρ + 1, np.divide(τ, 365))))
+    wh = Variables.Dependent("wh", "maximum", np.float32, function=lambda yh, *, ε: yh * 100 - ε)
+    wl = Variables.Dependent("wl", "minimum", np.float32, function=lambda yl, *, ε: yl * 100 - ε)
+    wo = Variables.Dependent("wo", "spot", np.float32, function=lambda yo, *, ε: yo * 100 - ε)
+    yh = Variables.Independent("yh", ("value", "maximum"), np.float32, locator="maximum")
+    yl = Variables.Independent("yl", ("value", "minimum"), np.float32, locator="minimum")
 
-class PayoffEquation(ValuationEquation, signature="[yo,yl,yh,r,ρ,ε]->[wo,wl,wh,wb,vl]", analytic=Concepts.Analytic.PAYOFF):
-    vl = calc.Variables.Dependent("vl", "npv", np.float32, function=lambda wl, wo, τ, *, ρ: + np.divide(wl, np.power(ρ + 1, np.divide(τ, 365))) + wo)
-    wk = calc.Variables.Dependent("wk", "breakeven", np.float32, function=lambda wl, τ, *, ρ: - np.divide(wl, np.power(ρ + 1, np.divide(τ, 365))))
-    wh = calc.Variables.Dependent("wh", "maximum", np.float32, function=lambda yh, *, ε: yh * 100 - ε)
-    wl = calc.Variables.Dependent("wl", "minimum", np.float32, function=lambda yl, *, ε: yl * 100 - ε)
-    wo = calc.Variables.Dependent("wo", "spot", np.float32, function=lambda yo, *, ε: yo * 100 - ε)
+class UnderlyingEquation(ValuationEquation, analytic=Concepts.Analytic.UNDERLYING):
+    xo = Variables.Independent("xo", "underlying", np.float32, locator="underlying")
+    δo = Variables.Independent("δo", "volatility", np.float32, locator="volatility")
+    μo = Variables.Independent("μo", "trend", np.float32, locator="trend")
 
-    yh = calc.Variables.Independent("yh", "maximum", np.float32, locator="maximum")
-    yl = calc.Variables.Independent("yl", "minimum", np.float32, locator="minimum")
-
-#    def execute(self, *args, **kwargs):
-#        yield from super().execute(*args, **kwargs)
-#        yield self.wo()
-#        yield self.wb()
-#        yield self.wl()
-#        yield self.wh()
-#        yield self.vl()
-
-
-class UnderlyingEquation(ValuationEquation, signature="[xo,μo,δo]->[xo,μo,δ]", analytic=Concepts.Analytic.UNDERLYING):
-    xo = calc.Variables.Independent("xo", "underlying", np.float32, locator="underlying")
-    δo = calc.Variables.Independent("δo", "volatility", np.float32, locator="volatility")
-    μo = calc.Variables.Independent("μo", "trend", np.float32, locator="trend")
-
-
-class GreeksEquation(ValuationEquation, signature="[vo,Δo,Γo,Θo,Vo]->[vo,Δo,Γo,Θo,Vo]", analytic=Concepts.Analytic.GREEKS):
-    vo = calc.Variables.Independent("vo", "value", np.float32, locator="value")
-    Δo = calc.Variables.Independent("Δo", "delta", np.float32, locator="delta")
-    Γo = calc.Variables.Independent("Γo", "gamma", np.float32, locator="gamma")
-    Θo = calc.Variables.Independent("Θo", "theta", np.float32, locator="theta")
-    Vo = calc.Variables.Independent("Vo", "vega", np.float32, locator="vega")
+class GreeksEquation(ValuationEquation, analytic=Concepts.Analytic.GREEKS):
+    vo = Variables.Independent("vo", "value", np.float32, locator="value")
+    Δo = Variables.Independent("Δo", "delta", np.float32, locator="delta")
+    Γo = Variables.Independent("Γo", "gamma", np.float32, locator="gamma")
+    Θo = Variables.Independent("Θo", "theta", np.float32, locator="theta")
+    Vo = Variables.Independent("Vo", "vega", np.float32, locator="vega")
 
 
 class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):

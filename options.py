@@ -11,9 +11,9 @@ import pandas as pd
 from abc import ABC
 from scipy.stats import norm
 
-import calculations as calc
 from finance.concepts import Concepts, Querys
 from support.mixins import Emptying, Sizing, Partition, Logging
+from calculations import Variables, Equations
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -46,46 +46,46 @@ __license__ = "MIT License"
 #     K = lambda Σk: 0.5 + (1 / np.pi) * Σk
 
 
-class ValueEquation(calc.Equations.Table, ABC):
-    τ = calc.Variables.Dependent("τ", "tau", np.float32, function=lambda to, tτ: (np.datetime64(tτ, "ns") - np.datetime64(to, "ns")) / np.timedelta64(364, 'D'))
+class ValueEquation(Equations.Table, ABC):
+    τ = Variables.Dependent("τ", "tau", np.float32, function=lambda to, tτ: (np.datetime64(tτ, "ns") - np.datetime64(to, "ns")) / np.timedelta64(364, 'D'))
 
-    tτ = calc.Variables.Independent("tτ", "expire", np.datetime64, locator="expire")
-    to = calc.Variables.Constant("to", "current", np.datetime64, locator="current")
+    tτ = Variables.Independent("tτ", "expire", np.datetime64, locator="expire")
+    to = Variables.Constant("to", "current", np.datetime64, locator="current")
 
-    i = calc.Variables.Independent("i", "option", Concepts.Securities.Option, locator="option")
-    j = calc.Variables.Independent("j", "position", Concepts.Securities.Position, locator="position")
-    x = calc.Variables.Independent("x", "adjusted", np.float32, locator="adjusted")
-    σ = calc.Variables.Independent("σ", "volatility", np.float32, locator="volatility")
-    μ = calc.Variables.Independent("μ", "trend", np.float32, locator="trend")
-    k = calc.Variables.Independent("k", "strike", np.float32, locator="strike")
-    r = calc.Variables.Constant("r", "interest", np.float32, locator="interest")
+    i = Variables.Independent("i", "option", Concepts.Securities.Option, locator="option")
+    j = Variables.Independent("j", "position", Concepts.Securities.Position, locator="position")
+    x = Variables.Independent("x", "adjusted", np.float32, locator="adjusted")
+    σ = Variables.Independent("σ", "volatility", np.float32, locator="volatility")
+    μ = Variables.Independent("μ", "trend", np.float32, locator="trend")
+    k = Variables.Independent("k", "strike", np.float32, locator="strike")
+    r = Variables.Constant("r", "interest", np.float32, locator="interest")
 
 class BlackScholesEquation(ValueEquation):
-    zx = calc.Variables.Dependent("zx", "underlying", np.float32, function=lambda zxk, zvt, zrt: zxk + zvt + zrt)
-    zk = calc.Variables.Dependent("zx", "strike", np.float32, function=lambda zxk, zvt, zrt: zxk - zvt + zrt)
+    zx = Variables.Dependent("zx", ("zscore", "itm"), np.float32, function=lambda zxk, zvt, zrt: zxk + zvt + zrt)
+    zk = Variables.Dependent("zx", ("zscore", "otm"), np.float32, function=lambda zxk, zvt, zrt: zxk - zvt + zrt)
 
-    zxk = calc.Variables.Dependent("zxk", "strike", np.float32, function=lambda x, k, σ, τ: np.log(x / k) / np.sqrt(τ) / σ)
-    zvt = calc.Variables.Dependent("zvt", "volatility", np.float32, function=lambda σ, τ: np.sqrt(τ) * σ / 2)
-    zrt = calc.Variables.Dependent("zrt", "interest", np.float32, function=lambda σ, r, τ: np.sqrt(τ) * r / σ)
+    zxk = Variables.Dependent("zxk", ("zscore", "strike"), np.float32, function=lambda x, k, σ, τ: np.log(x / k) / np.sqrt(τ) / σ)
+    zvt = Variables.Dependent("zvt", ("zscore", "volatility"), np.float32, function=lambda σ, τ: np.sqrt(τ) * σ / 2)
+    zrt = Variables.Dependent("zrt", ("zscore", "interest"), np.float32, function=lambda σ, r, τ: np.sqrt(τ) * r / σ)
 
 class BlackScholesCallEquation(BlackScholesEquation):
-    v = calc.Variables.Dependent("v", "value", np.float32, function=lambda x, k, zx, zk, r, τ: x * norm.cdf(+zx) - k * norm.cdf(+zk) / np.exp(r * τ))
+    v = Variables.Dependent("v", "value", np.float32, function=lambda x, k, zx, zk, r, τ: x * norm.cdf(+zx) - k * norm.cdf(+zk) / np.exp(r * τ))
 
 class BlackScholesPutEquation(BlackScholesEquation):
-    v = calc.Variables.Dependent("v", "value", np.float32, function=lambda x, k, zx, zk, r, τ: k * norm.cdf(-zk) / np.exp(r * τ) - x * norm.cdf(-zx))
+    v = Variables.Dependent("v", "value", np.float32, function=lambda x, k, zx, zk, r, τ: k * norm.cdf(-zk) / np.exp(r * τ) - x * norm.cdf(-zx))
 
 class HestonCallEquation(ValueEquation):
-    v = calc.Variables.Dependent("v", "value", np.float32, function=lambda Σk, Σx, k, x, r, τ: x * Σx - k * Σk / np.exp(r * τ))
+    v = Variables.Dependent("v", "value", np.float32, function=lambda Σk, Σx, k, x, r, τ: x * Σx - k * Σk / np.exp(r * τ))
 
 class HestonPutEquation(ValueEquation):
-    v = calc.Variables.Dependent("v", "value", np.float32, function=lambda Σk, Σx, k, x, r, τ: x * (Σx - 1) - k * (Σk - 1) / np.exp(r * τ))
+    v = Variables.Dependent("v", "value", np.float32, function=lambda Σk, Σx, k, x, r, τ: x * (Σx - 1) - k * (Σk - 1) / np.exp(r * τ))
 
-class GreekEquation(calc.Equations.Table, ABC):
-    Θ = calc.Variables.Dependent("Θ", "theta", np.float32, function=lambda zx, zk, x, k, r, σ, τ, i: - norm.cdf(zk * int(i)) * int(i) * k * r / np.exp(r * τ) - norm.pdf(zx) * x * σ / np.sqrt(τ) / 2)
-    P = calc.Variables.Dependent("P", "rho", np.float32, function=lambda zk, k, r, τ, i: + norm.cdf(zk * int(i)) * int(i) * k * τ / np.exp(r * τ))
-    Δ = calc.Variables.Dependent("Δ", "delta", np.float32, function=lambda zx, i: + norm.cdf(zx * int(i)) * int(i))
-    Γ = calc.Variables.Dependent("Γ", "gamma", np.float32, function=lambda zx, x, σ, τ: + norm.pdf(zx) / np.sqrt(τ) / σ / x)
-    V = calc.Variables.Dependent("V", "vega", np.float32, function=lambda zx, x, τ: + norm.pdf(zx) * np.sqrt(τ) * x)
+class GreekEquation(Equations.Table, ABC):
+    Θ = Variables.Dependent("Θ", "theta", np.float32, function=lambda zx, zk, x, k, r, σ, τ, i: - norm.cdf(zk * int(i)) * int(i) * k * r / np.exp(r * τ) - norm.pdf(zx) * x * σ / np.sqrt(τ) / 2)
+    P = Variables.Dependent("P", "rho", np.float32, function=lambda zk, k, r, τ, i: + norm.cdf(zk * int(i)) * int(i) * k * τ / np.exp(r * τ))
+    Δ = Variables.Dependent("Δ", "delta", np.float32, function=lambda zx, i: + norm.cdf(zx * int(i)) * int(i))
+    Γ = Variables.Dependent("Γ", "gamma", np.float32, function=lambda zx, x, σ, τ: + norm.pdf(zx) / np.sqrt(τ) / σ / x)
+    V = Variables.Dependent("V", "vega", np.float32, function=lambda zx, x, τ: + norm.pdf(zx) * np.sqrt(τ) * x)
 
 
 class GreekCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
