@@ -216,9 +216,7 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
         super().__init__(*args, **kwargs)
         equations = {strategy: equations for strategy, equations in iter(StrategyEquation) if strategy in strategies}
         equations = {strategy: [equation for analytic, equation in equations.items() if analytic in analytics] for strategy, equations in equations.items()}
-        equations = {strategy: StrategyEquationMeta("Equation", tuple(equations), {"strategy": strategy, "analytic": None}) for strategy, equations in equations.items()}
-        calculations = {strategy: Calculation[xr.DataArray](*args, equation=equation, **kwargs) for strategy, equation in equations.items()}
-        self.__calculations = calculations
+        self.__equations = {strategy: StrategyEquation + equations for strategy, equations in equations.items()}
 
     def execute(self, options, *args, **kwargs):
         assert isinstance(options, pd.DataFrame)
@@ -234,13 +232,15 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
         assert isinstance(options, pd.DataFrame)
         for settlement, dataframes in self.partition(options, by=Querys.Settlement):
             datasets = dict(self.unflatten(dataframes, *args, **kwargs))
-            for strategy, calculation in self.calculations.items():
+            for strategy, equation in self.equations.items():
                 if not all([option in datasets.keys() for option in strategy.options]): continue
-                strategies = calculation(datasets, *args, **kwargs)
-                assert isinstance(strategies, xr.Dataset)
-                strategies = strategies.assign_coords({"strategy": xr.Variable("strategy", [strategy]).squeeze("strategy")})
-                for field in list(Querys.Settlement): strategies = strategies.expand_dims(field)
-                yield settlement, strategy, strategies
+                strategies = equation(arguments=datasets, parameters={})
+
+#                strategies = calculation(datasets, *args, **kwargs)
+#                assert isinstance(strategies, xr.Dataset)
+#                strategies = strategies.assign_coords({"strategy": xr.Variable("strategy", [strategy]).squeeze("strategy")})
+#                for field in list(Querys.Settlement): strategies = strategies.expand_dims(field)
+#                yield settlement, strategy, strategies
 
     @staticmethod
     def unflatten(options, *args, **kwargs):
@@ -257,7 +257,7 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
             yield security, dataset
 
     @property
-    def calculations(self): return self.__calculations
+    def equations(self): return self.__equations
 
 
 

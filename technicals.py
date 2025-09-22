@@ -51,7 +51,7 @@ class TechnicalCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
         assert all([technical in list(Concepts.Technical) for technical in technicals])
         super().__init__(*args, **kwargs)
         equations = [equation for technical, equation in iter(TechnicalEquation) if technical in technicals]
-        self.__calculation = Calculation[pd.Series](*args, required=equations, **kwargs)
+        self.__equation = TechnicalEquation + equations
 
     def execute(self, bars, *args, **kwargs):
         assert isinstance(bars, pd.DataFrame)
@@ -72,17 +72,20 @@ class TechnicalCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
         technicals = technicals.reset_index(drop=True, inplace=False)
         return technicals
 
-    def calculator(self, bars, *args, **kwargs):
+    def calculator(self, bars, *args, period, **kwargs):
         assert isinstance(bars, list) and all([isinstance(dataframe, pd.DataFrame) for dataframe in bars])
         for dataframe in bars:
             assert (dataframe["ticker"].to_numpy()[0] == dataframe["ticker"]).all()
             dataframe = dataframe.sort_values("date", ascending=True, inplace=False)
-            technicals = self.calculation(dataframe, *args, **kwargs)
-            assert isinstance(technicals, pd.DataFrame)
-            yield technicals
+            parameters = dict(period=period)
+            equation = self.equation(arguments=bars, parameters=period)
+
+#            technicals = self.calculation(dataframe, *args, **kwargs)
+#            assert isinstance(technicals, pd.DataFrame)
+#            yield technicals
 
     @property
-    def calculation(self): return self.__calculation
+    def equation(self): return self.__equation
 
 
 

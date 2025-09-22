@@ -67,9 +67,7 @@ class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
         super().__init__(*args, **kwargs)
         equations = list(ValuationEquation.__subclasses__())
         equations = [equation for equation in equations if equation.analytic in analytics]
-        equation = ABCMeta("Equation", tuple(equations), {}, analytic=None)
-        calculation = Calculation[xr.DataArray](*args, equation=equation, **kwargs)
-        self.__calculation = calculation
+        self.__equation = ValuationEquation + equations
 
     def execute(self, strategies, *args, **kwargs):
         assert isinstance(strategies, (list, xr.Dataset))
@@ -97,13 +95,15 @@ class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
 
     @calculate.register(xr.Dataset)
     def dataset(self, strategies, *args, current, discount, interest, dividend, fees, **kwargs):
-        parameters = dict(current=current, discount=discount, interest=interest, dividend=dividend, fees=fees)
-        valuations = self.calculation(strategies, *args, **parameters, **kwargs)
-        valuations = valuations.to_dataframe().dropna(how="all", inplace=False)
-        valuations = valuations.reset_index(drop=False, inplace=False)
-        options = [option for option in list(map(str, Securities.Options)) if option not in valuations.columns]
-        for option in options: valuations[option] = np.NaN
-        return valuations
+        parameters = dict(current=current, discount=discount, interest=interest, fees=fees)
+        equation = self.equation(arguments=strategies, parameters=parameters)
+
+#        valuations = self.calculation(strategies, *args, **parameters, **kwargs)
+#        valuations = valuations.to_dataframe().dropna(how="all", inplace=False)
+#        valuations = valuations.reset_index(drop=False, inplace=False)
+#        options = [option for option in list(map(str, Securities.Options)) if option not in valuations.columns]
+#        for option in options: valuations[option] = np.NaN
+#        return valuations
 
     @property
     def calculation(self): return self.__calculation
