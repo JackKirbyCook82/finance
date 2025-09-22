@@ -64,6 +64,12 @@ class StrategyEquation(Equations.Array, ABC, metaclass=StrategyEquationMeta):
     qcα = Variables.Independent("qcα", ("call", "long", "size"), np.int32, locator=StrategyLocator(Securities.Options.Calls.Long, "size"))
     qcβ = Variables.Independent("qcβ", ("call", "short", "size"), np.int32, locator=StrategyLocator(Securities.Options.Calls.Short, "size"))
 
+    def execute(self, *args, **kwargs):
+        yield from super().execute(*args, **kwargs)
+        yield self.xo()
+        yield self.yo()
+        yield self.qo()
+
 
 class VerticalPutStrategyEquation(StrategyEquation, strategy=Strategies.Verticals.Put):
     xo = Variables.Dependent("xo", "underlying", np.float32, function=lambda xpα, xpβ: np.divide(xpα + xpβ, 2))
@@ -97,6 +103,12 @@ class PayoffEquation(StrategyEquation, analytic=Concepts.Analytic.PAYOFF):
     kpβ = Variables.Independent("kpβ", ("put", "short", "strike"), np.float32, locator=StrategyLocator(Securities.Options.Puts.Short, "strike"))
     kcα = Variables.Independent("kcα", ("call", "long", "strike"), np.float32, locator=StrategyLocator(Securities.Options.Calls.Long, "strike"))
     kcβ = Variables.Independent("kcβ", ("call", "short", "strike"), np.float32, locator=StrategyLocator(Securities.Options.Calls.Short, "strike"))
+
+    def execute(self, *args, **kwargs):
+        yield from super().execute(*args, **kwargs)
+        yield self.yh()
+        yield self.yk()
+        yield self.yl()
 
 
 class VerticalPutPayoffEquation(PayoffEquation, VerticalPutStrategyEquation):
@@ -134,6 +146,11 @@ class UnderlyingEquation(StrategyEquation, analytic=Concepts.Analytic.UNDERLYING
     δpβ = Variables.Independent("δpβ", ("put", "short", "volatility"), np.float32, locator=StrategyLocator(Securities.Options.Puts.Short, "volatility"))
     δcα = Variables.Independent("δcα", ("call", "long", "volatility"), np.float32, locator=StrategyLocator(Securities.Options.Calls.Long, "volatility"))
     δcβ = Variables.Independent("δcβ", ("call", "short", "volatility"), np.float32, locator=StrategyLocator(Securities.Options.Calls.Short, "volatility"))
+
+    def execute(self, *args, **kwargs):
+        yield from super().execute(*args, **kwargs)
+        yield self.μo()
+        yield self.δo()
 
 
 class VerticalPutUnderlyingEquation(UnderlyingEquation, VerticalPutStrategyEquation):
@@ -178,6 +195,14 @@ class GreeksEquation(StrategyEquation, analytic=Concepts.Analytic.GREEKS):
     Vpβ = Variables.Independent("Vpβ", ("put", "short", "vega"), np.float32, locator=StrategyLocator(Securities.Options.Puts.Short, "vega"))
     Vcα = Variables.Independent("Vcα", ("call", "long", "vega"), np.float32, locator=StrategyLocator(Securities.Options.Calls.Long, "vega"))
     Vcβ = Variables.Independent("Vcβ", ("call", "short", "vega"), np.float32, locator=StrategyLocator(Securities.Options.Calls.Short, "vega"))
+
+    def execute(self, *args, **kwargs):
+        yield from super().execute(*args, **kwargs)
+        yield self.vo()
+        yield self.Δo()
+        yield self.Γo()
+        yield self.Θo()
+        yield self.Vo()
 
 
 class VerticalPutGreeksEquation(GreeksEquation, VerticalPutStrategyEquation):

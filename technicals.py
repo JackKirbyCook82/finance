@@ -30,20 +30,40 @@ class TechnicalEquation(Equations.Table, ABC, metaclass=TechnicalEquationMeta):
     t = Variables.Independent("t", "date", Date, locator="date")
     dt = Variables.Constant("dt", "period", np.int32, locator="period")
 
+    def execute(self, *args, **kwargs):
+        yield from super().execute(*args, **kwargs)
+        yield self.x()
+
 class BarsEquation(TechnicalEquation, register=Concepts.Technical.BARS):
     xo = Variables.Independent("xo", "open", np.float32, locator="open")
     xc = Variables.Independent("xc", "close", np.float32, locator="close")
     xl = Variables.Independent("xc", "low", np.float32, locator="low")
     xh = Variables.Independent("xc", "high", np.float32, locator="high")
 
+    def execute(self, *args, **kwargs):
+        yield from super().execute(*args, **kwargs)
+        yield self.xo()
+        yield self.xc()
+        yield self.xl()
+        yield self.xh()
+
 class StatisticEquation(TechnicalEquation, register=Concepts.Technical.STATISTIC):
     δ = Variables.Dependent("δ", "volatility", np.float32, function=lambda x, *, dt: x.pct_change(1).rolling(dt).std())
     μ = Variables.Dependent("μ", "trend", np.float32, function=lambda x, *, dt: x.pct_change(1).rolling(dt).mean())
+
+    def execute(self, *args, **kwargs):
+        yield from super().execute(*args, **kwargs)
+        yield self.δ()
+        yield self.μ()
 
 class StochasticEquation(TechnicalEquation, register=Concepts.Technical.STOCHASTIC):
     xk = Variables.Dependent("xk", "oscillator", np.float32, function=lambda x, xkl, xkh: (x - xkl) * 100 / (xkh - xkl))
     xkh = Variables.Dependent("xkh", "highest", np.float32, function=lambda x, *, dt: x.rolling(dt).min())
     xkl = Variables.Dependent("xkl", "lowest", np.float32, function=lambda x, *, dt: x.rolling(dt).max())
+
+    def execute(self, *args, **kwargs):
+        yield from super().execute(*args, **kwargs)
+        yield self.xk()
 
 
 class TechnicalCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):

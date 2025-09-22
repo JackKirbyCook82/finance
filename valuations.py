@@ -39,6 +39,10 @@ class ValuationEquation(Equations.Vector, ABC):
     def __init_subclass__(cls, *args, analytic, **kwargs):
         cls.analytic = analytic
 
+    def execute(self, *args, **kwargs):
+        yield from super().execute(*args, **kwargs)
+        yield self.qo()
+
 
 class PayoffEquation(ValuationEquation, analytic=Concepts.Analytic.PAYOFF):
     vl = Variables.Dependent("vl", "npv", np.float32, function=lambda wl, wo, τ, *, ρ: + np.divide(wl, np.power(ρ + 1, np.divide(τ, 365))) + wo)
@@ -49,10 +53,24 @@ class PayoffEquation(ValuationEquation, analytic=Concepts.Analytic.PAYOFF):
     yh = Variables.Independent("yh", ("value", "maximum"), np.float32, locator="maximum")
     yl = Variables.Independent("yl", ("value", "minimum"), np.float32, locator="minimum")
 
+    def execute(self, *args, **kwargs):
+        yield from super().execute(*args, **kwargs)
+        yield self.vl()
+        yield self.wh()
+        yield self.wk()
+        yield self.wl()
+        yield self.wo()
+
 class UnderlyingEquation(ValuationEquation, analytic=Concepts.Analytic.UNDERLYING):
     xo = Variables.Independent("xo", "underlying", np.float32, locator="underlying")
     δo = Variables.Independent("δo", "volatility", np.float32, locator="volatility")
     μo = Variables.Independent("μo", "trend", np.float32, locator="trend")
+
+    def execute(self, *args, **kwargs):
+        yield from super().execute(*args, **kwargs)
+        yield self.xo()
+        yield self.δo()
+        yield self.μo()
 
 class GreeksEquation(ValuationEquation, analytic=Concepts.Analytic.GREEKS):
     vo = Variables.Independent("vo", "value", np.float32, locator="value")
@@ -60,6 +78,14 @@ class GreeksEquation(ValuationEquation, analytic=Concepts.Analytic.GREEKS):
     Γo = Variables.Independent("Γo", "gamma", np.float32, locator="gamma")
     Θo = Variables.Independent("Θo", "theta", np.float32, locator="theta")
     Vo = Variables.Independent("Vo", "vega", np.float32, locator="vega")
+
+    def execute(self, *args, **kwargs):
+        yield from super().execute(*args, **kwargs)
+        yield self.vo()
+        yield self.Δo()
+        yield self.Γo()
+        yield self.Θo()
+        yield self.Vo()
 
 
 class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
@@ -94,7 +120,7 @@ class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
         return valuations
 
     @calculate.register(xr.Dataset)
-    def dataset(self, strategies, *args, current, discount, interest, dividend, fees, **kwargs):
+    def dataset(self, strategies, *args, current, discount, interest, fees, **kwargs):
         parameters = dict(current=current, discount=discount, interest=interest, fees=fees)
         equation = self.equation(arguments=strategies, parameters=parameters)
 

@@ -36,6 +36,10 @@ class ValueEquation(Equations.Table, ABC):
     k = Variables.Independent("k", "strike", np.float32, locator="strike")
     r = Variables.Constant("r", "interest", np.float32, locator="interest")
 
+    def execute(self, *args, **kwargs):
+        yield from super().execute(*args, **kwargs)
+        yield self.τ()
+
 class BlackScholesEquation(ValueEquation):
     v = Variables.Dependent("v", "value", np.float32, function=lambda x, k, zx, zk, r, τ, i: x * norm.cdf(zx * int(i)) * int(i) - k * norm.cdf(zk * int(i)) * int(i) / np.exp(r * τ))
 
@@ -46,12 +50,24 @@ class BlackScholesEquation(ValueEquation):
     zvt = Variables.Dependent("zvt", ("zscore", "volatility"), np.float32, function=lambda σ, τ: np.sqrt(τ) * σ / 2)
     zrt = Variables.Dependent("zrt", ("zscore", "interest"), np.float32, function=lambda σ, r, τ: np.sqrt(τ) * r / σ)
 
+    def execute(self, *args, **kwargs):
+        yield from super().execute(*args, **kwargs)
+        yield self.v()
+
 class GreekEquation(Equations.Table, ABC):
     Θ = Variables.Dependent("Θ", "theta", np.float32, function=lambda zx, zk, x, k, r, σ, τ, i: - norm.cdf(zk * int(i)) * int(i) * k * r / np.exp(r * τ) - norm.pdf(zx) * x * σ / np.sqrt(τ) / 2)
     P = Variables.Dependent("P", "rho", np.float32, function=lambda zk, k, r, τ, i: + norm.cdf(zk * int(i)) * int(i) * k * τ / np.exp(r * τ))
     Δ = Variables.Dependent("Δ", "delta", np.float32, function=lambda zx, i: + norm.cdf(zx * int(i)) * int(i))
     Γ = Variables.Dependent("Γ", "gamma", np.float32, function=lambda zx, x, σ, τ: + norm.pdf(zx) / np.sqrt(τ) / σ / x)
     V = Variables.Dependent("V", "vega", np.float32, function=lambda zx, x, τ: + norm.pdf(zx) * np.sqrt(τ) * x)
+
+    def execute(self, *args, **kwargs):
+        yield from super().execute(*args, **kwargs)
+        yield self.Θ()
+        yield self.P()
+        yield self.Δ()
+        yield self.Γ()
+        yield self.V()
 
 
 class OptionCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
