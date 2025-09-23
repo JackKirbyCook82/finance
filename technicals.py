@@ -98,11 +98,10 @@ class TechnicalCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
             assert (dataframe["ticker"].to_numpy()[0] == dataframe["ticker"]).all()
             dataframe = dataframe.sort_values("date", ascending=True, inplace=False)
             parameters = dict(period=period)
-            equation = self.equation(arguments=bars, parameters=period)
-
-#            technicals = self.calculation(dataframe, *args, **kwargs)
-#            assert isinstance(technicals, pd.DataFrame)
-#            yield technicals
+            equation = self.equation(arguments=dataframe, parameters=parameters)
+            results = equation(*args, **kwargs)
+            assert isinstance(results, pd.DataFrame)
+            yield results
 
     @property
     def equation(self): return self.__equation

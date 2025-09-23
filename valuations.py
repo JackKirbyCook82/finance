@@ -123,13 +123,12 @@ class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
     def dataset(self, strategies, *args, current, discount, interest, fees, **kwargs):
         parameters = dict(current=current, discount=discount, interest=interest, fees=fees)
         equation = self.equation(arguments=strategies, parameters=parameters)
-
-#        valuations = self.calculation(strategies, *args, **parameters, **kwargs)
-#        valuations = valuations.to_dataframe().dropna(how="all", inplace=False)
-#        valuations = valuations.reset_index(drop=False, inplace=False)
-#        options = [option for option in list(map(str, Securities.Options)) if option not in valuations.columns]
-#        for option in options: valuations[option] = np.NaN
-#        return valuations
+        valuations = equation(*args, **kwargs)
+        valuations = valuations.to_dataframe().dropna(how="all", inplace=False)
+        valuations = valuations.reset_index(drop=False, inplace=False)
+        options = [option for option in list(map(str, Securities.Options)) if option not in valuations.columns]
+        for option in options: valuations[option] = np.NaN
+        return valuations
 
     @property
     def calculation(self): return self.__calculation

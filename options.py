@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Created on Fri May 23 2025
-@name:   Greeks Objects
+@name:   Option Objects
 @author: Jack Kirby Cook
 
 """
@@ -90,12 +90,11 @@ class OptionCalculator(Sizing, Emptying, Partition, Logging, title="Calculated")
         assert isinstance(options, pd.DataFrame)
         parameters = dict(current=current, interest=interest)
         equation = self.equation(arguments=options, parameters=parameters)
-
-#        greeks = self.calculation(options, *args, **parameters, **kwargs)
-#        assert isinstance(greeks, pd.DataFrame)
-#        options = pd.concat([options, greeks], axis=1)
-#        options = options.reset_index(drop=True, inplace=False)
-#        return options
+        results = equation(*args, **kwargs)
+        assert isinstance(results, pd.DataFrame)
+        options = pd.concat([options, results], axis=1)
+        options = options.reset_index(drop=True, inplace=False)
+        return options
 
     @property
     def equation(self): return self.__equation

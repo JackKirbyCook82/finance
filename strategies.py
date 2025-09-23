@@ -259,13 +259,12 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
             datasets = dict(self.unflatten(dataframes, *args, **kwargs))
             for strategy, equation in self.equations.items():
                 if not all([option in datasets.keys() for option in strategy.options]): continue
-                strategies = equation(arguments=datasets, parameters={})
-
-#                strategies = calculation(datasets, *args, **kwargs)
-#                assert isinstance(strategies, xr.Dataset)
-#                strategies = strategies.assign_coords({"strategy": xr.Variable("strategy", [strategy]).squeeze("strategy")})
-#                for field in list(Querys.Settlement): strategies = strategies.expand_dims(field)
-#                yield settlement, strategy, strategies
+                equation = equation(arguments=datasets, parameters={})
+                strategies = equation(*args, **kwargs)
+                assert isinstance(strategies, xr.Dataset)
+                strategies = strategies.assign_coords({"strategy": xr.Variable("strategy", [strategy]).squeeze("strategy")})
+                for field in list(Querys.Settlement): strategies = strategies.expand_dims(field)
+                yield settlement, strategy, strategies
 
     @staticmethod
     def unflatten(options, *args, **kwargs):
