@@ -260,6 +260,9 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
             for strategy, equation in self.equations.items():
                 if not all([option in datasets.keys() for option in strategy.options]): continue
                 equation = equation(arguments=datasets, parameters={})
+
+                raise Exception()
+
                 strategies = equation(*args, **kwargs)
                 assert isinstance(strategies, xr.Dataset)
                 strategies = strategies.assign_coords({"strategy": xr.Variable("strategy", [strategy]).squeeze("strategy")})

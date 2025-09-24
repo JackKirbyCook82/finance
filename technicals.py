@@ -37,8 +37,8 @@ class TechnicalEquation(Equations.Table, ABC, metaclass=TechnicalEquationMeta):
 class BarsEquation(TechnicalEquation, register=Concepts.Technical.BARS):
     xo = Variables.Independent("xo", "open", np.float32, locator="open")
     xc = Variables.Independent("xc", "close", np.float32, locator="close")
-    xl = Variables.Independent("xc", "low", np.float32, locator="low")
-    xh = Variables.Independent("xc", "high", np.float32, locator="high")
+    xl = Variables.Independent("xl", "low", np.float32, locator="low")
+    xh = Variables.Independent("xh", "high", np.float32, locator="high")
 
     def execute(self, *args, **kwargs):
         yield from super().execute(*args, **kwargs)
