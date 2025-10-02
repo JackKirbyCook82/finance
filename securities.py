@@ -57,6 +57,12 @@ class SecurityCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
         assert isinstance(stocks, pd.DataFrame) and isinstance(options, pd.DataFrame)
         assert isinstance(technicals, (pd.DataFrame, types.NoneType))
         if self.empty(options): return
+
+        print(stocks)
+        print(options)
+        print(technicals)
+        raise Exception()
+
         settlements = self.keys(options, by=Querys.Settlement)
         settlements = ",".join(list(map(str, settlements)))
         securities = self.calculate(stocks, options, *args, **kwargs)
