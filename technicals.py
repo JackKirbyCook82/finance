@@ -32,7 +32,9 @@ class TechnicalEquation(Equations.Table, ABC, metaclass=TechnicalEquationMeta):
 
     def execute(self, *args, **kwargs):
         yield from super().execute(*args, **kwargs)
+        yield self.s()
         yield self.x()
+        yield self.t()
 
 class BarsEquation(TechnicalEquation, register=Concepts.Technical.BARS):
     xo = Variables.Independent("xo", "open", np.float32, locator="open")

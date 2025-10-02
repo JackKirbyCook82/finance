@@ -12,11 +12,10 @@ import xarray as xr
 from abc import ABC
 from datetime import date as Date
 
-from finance.concepts import Concepts, Querys, Securities
+from finance.concepts import Querys, Securities
 from support.mixins import Emptying, Sizing, Partition, Logging
 from support.decorators import TypeDispatcher
-from support.meta import RegistryMeta
-from calculations import Variables, Equations
+from calculations import Variables, Equations, DomainError
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -25,8 +24,7 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class ValuationEquationMeta(RegistryMeta, type(Equations.Vector)): pass
-class ValuationEquation(Equations.Vector, ABC, metaclass=ValuationEquationMeta):
+class ValuationEquation(Equations.Vector, ABC):
     τ = Variables.Dependent("τ", "tau", np.int32, function=lambda tτ, *, to: (tτ - to).days)
 
     yo = Variables.Independent("yo", ("value", "spot"), np.float32, locator="spot")
@@ -43,7 +41,7 @@ class ValuationEquation(Equations.Vector, ABC, metaclass=ValuationEquationMeta):
         yield self.qo()
 
 
-class PayoffEquation(ValuationEquation, register=Concepts.Analytic.PAYOFF):
+class PayoffEquation(ValuationEquation):
     vl = Variables.Dependent("vl", "npv", np.float32, function=lambda wl, wo, τ, *, ρ: + np.divide(wl, np.power(ρ + 1, np.divide(τ, 365))) + wo)
     wk = Variables.Dependent("wk", "breakeven", np.float32, function=lambda wl, τ, *, ρ: - np.divide(wl, np.power(ρ + 1, np.divide(τ, 365))))
     wh = Variables.Dependent("wh", "maximum", np.float32, function=lambda yh, *, ε: yh * 100 - ε)
@@ -60,18 +58,18 @@ class PayoffEquation(ValuationEquation, register=Concepts.Analytic.PAYOFF):
         yield self.wl()
         yield self.wo()
 
-class UnderlyingEquation(ValuationEquation, register=Concepts.Analytic.UNDERLYING):
+class UnderlyingEquation(ValuationEquation):
     xo = Variables.Independent("xo", "underlying", np.float32, locator="underlying")
     δo = Variables.Independent("δo", "volatility", np.float32, locator="volatility")
     μo = Variables.Independent("μo", "trend", np.float32, locator="trend")
 
     def execute(self, *args, **kwargs):
         yield from super().execute(*args, **kwargs)
-        yield self.xo()
-        yield self.δo()
-        yield self.μo()
+        for attribute in str("xo,δo,μo").split(","):
+            try: getattr(self, attribute)()
+            except DomainError: pass
 
-class GreeksEquation(ValuationEquation, register=Concepts.Analytic.GREEKS):
+class AppraisalEquation(ValuationEquation):
     vo = Variables.Independent("vo", "value", np.float32, locator="value")
     Δo = Variables.Independent("Δo", "delta", np.float32, locator="delta")
     Γo = Variables.Independent("Γo", "gamma", np.float32, locator="gamma")
@@ -80,18 +78,15 @@ class GreeksEquation(ValuationEquation, register=Concepts.Analytic.GREEKS):
 
     def execute(self, *args, **kwargs):
         yield from super().execute(*args, **kwargs)
-        yield self.vo()
-        yield self.Δo()
-        yield self.Γo()
-        yield self.Θo()
-        yield self.Vo()
+        for attribute in str("vo,Δo,Γo,Θo,Vo").split(","):
+            try: getattr(self, attribute)()
+            except DomainError: pass
 
 
 class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
-    def __init__(self, *args, analytics, **kwargs):
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        equations = [equation for analytic, equation in iter(ValuationEquation) if analytic in analytics]
-        self.__equation = ValuationEquation + equations
+        self.__equation = ValuationEquation + list(ValuationEquation.__subclasses__())
 
     def execute(self, strategies, *args, **kwargs):
         assert isinstance(strategies, (list, xr.Dataset))
@@ -129,7 +124,7 @@ class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
         return valuations
 
     @property
-    def calculation(self): return self.__calculation
+    def equation(self): return self.__equation
 
 
 

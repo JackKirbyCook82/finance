@@ -24,7 +24,7 @@ __license__ = "MIT License"
 
 
 TechnicalConcept = Concept("Technical", ["BARS", "STATISTIC", "STOCHASTIC"], start=1)
-AnalyticConcept = Concept("Calculation", ["PAYOFF", "UNDERLYING", "GREEKS"], start=1)
+AppraisalConcept = Concept("Pricing", ["BLACKSCHOLES", "GREEKS"], start=1)
 InstrumentConcept = Concept("Instrument", ["EMPTY", "STOCK", "OPTION"], start=0)
 OptionConcept = Concept("Option", ["PUT", "EMPTY", "CALL"], start=-1)
 PositionConcept = Concept("Position", ["SHORT", "EMPTY", "LONG"], start=-1)
@@ -78,8 +78,9 @@ class Querys(Assembly): Symbol, Settlement, Contract = SymbolQuery, SettlementQu
 class Concepts(Assembly):
     class Securities(Assembly): Security, Instrument, Option, Position = SecurityConcepts, InstrumentConcept, OptionConcept, PositionConcept
     class Strategies(Assembly): Strategy, Spread = StrategyConcepts, SpreadConcept
-    class Markets(Assembly): Status, Term, Tenure, Action, Pricing, Quoting = StatusConcept, TermConcept, TenureConcept, ActionConcept, PricingConcept, QuotingConcept
-    Analytic = AnalyticConcept
+    class Markets(Assembly): Status, Term, Tenure, Action, Quoting = StatusConcept, TermConcept, TenureConcept, ActionConcept, QuotingConcept
+    Pricing = PricingConcept
+    Appraisal = AppraisalConcept
     Technical = TechnicalConcept
     Valuation = ValuationConcept
     Scenario = ScenarioConcept

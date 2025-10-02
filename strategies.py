@@ -16,7 +16,7 @@ from collections import namedtuple as ntuple
 
 from finance.concepts import Querys, Concepts, Strategies, Securities
 from support.mixins import Emptying, Sizing, Partition, Logging
-from calculations import Variables, Equations
+from calculations import Variables, Equations, DomainError
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -27,25 +27,24 @@ __license__ = "MIT License"
 
 class StrategyLocator(ntuple("Locator", "axis security")): pass
 class StrategyEquationMeta(type(Equations.Array), ABCMeta):
-    def __new__(mcs, name, bases, attrs, *args, analytic=None, strategy=None, **kwargs):
-        if bool(analytic): attrs = attrs | dict(analytic=analytic)
-        if bool(strategy): attrs = attrs | dict(strategy=strategy)
-        cls = super(StrategyEquationMeta, mcs).__new__(mcs, name, bases, attrs, *args, **kwargs)
-        return cls
-
-    def __iter__(cls): return iter(cls.registry.items())
-    def __init__(cls, name, bases, attrs, *args, **kwargs):
+    def __init__(cls, name, bases, attrs, *args, strategy=None, **kwargs):
         super(StrategyEquationMeta, cls).__init__(name, bases, attrs, *args, **kwargs)
-        analytic = kwargs.get("analytic", getattr(cls, "analytic", None))
-        strategy = kwargs.get("strategy", getattr(cls, "strategy", None))
-        if not any([type(base) is StrategyEquationMeta for base in bases]):
-            cls.__registry__ = dict()
-        elif bool(analytic) and bool(strategy):
-            cls.registry[strategy] = cls.registry.get(strategy, {})
-            cls.registry[strategy][analytic] = cls
+        cls.__strategy__ = getattr(cls, "__strategy__", None)
+        if not any([type(base) is StrategyEquationMeta for base in bases]): cls.__registry__ = dict()
+        elif cls.strategy is None and strategy is None: pass
+        elif cls.strategy is None and strategy is not None:
+            cls.registry[strategy] = list()
+            cls.strategy = strategy
+        elif cls.strategy is not None and strategy is None:
+            cls.registry[cls.strategy].append(cls)
+        else: raise ValueError(strategy)
 
     @property
     def registry(cls): return cls.__registry__
+    @property
+    def strategy(cls): return cls.__strategy__
+    @strategy.setter
+    def strategy(cls, strategy): cls.__strategy__ = strategy
 
 
 class StrategyEquation(Equations.Array, ABC, metaclass=StrategyEquationMeta):
@@ -92,7 +91,7 @@ class CollarShortStrategyEquation(StrategyEquation, strategy=Strategies.Collars.
     qo = Variables.Dependent("qo", "size", np.int32, function=lambda qcα, qpβ: np.minimum(qcα, qpβ))
 
 
-class PayoffEquation(StrategyEquation, analytic=Concepts.Analytic.PAYOFF):
+class PayoffEquation(StrategyEquation):
     mk = Variables.Dependent("mk", "market", Enum, function=lambda kα, kβ: xr.where(kα < kβ, Concepts.Market.BULL, xr.where(kα > kβ, Concepts.Market.BEAR, Concepts.Market.NEUTRAL)))
     yk = Variables.Dependent("yk", "breakeven", np.float32, function=lambda yo, yl, yh: xr.where(np.negative(yo) <= yh, xr.where(np.negative(yo) >= yl, np.negative(yo), np.NaN), np.NaN))
     xk = Variables.Dependent("xk", "pivot", np.float32, function=lambda yk, yl, yh, mk, xl: xl + (yk - yl) * np.abs(mk.astype(int) + 1) / 2 + (yh - yk) * np.abs(mk.astype(int) - 1) / 2)
@@ -136,7 +135,7 @@ class CollarShortPayoffEquation(PayoffEquation, CollarShortStrategyEquation):
     kβ = Variables.Dependent("kβ", ("short", "strike"), np.float32, function=lambda kpβ: kpβ)
 
 
-class UnderlyingEquation(StrategyEquation, analytic=Concepts.Analytic.UNDERLYING):
+class UnderlyingEquation(StrategyEquation):
     μpα = Variables.Independent("μpα", ("put", "long", "trend"), np.float32, locator=StrategyLocator(Securities.Options.Puts.Long, "trend"))
     μpβ = Variables.Independent("μpβ", ("put", "short", "trend"), np.float32, locator=StrategyLocator(Securities.Options.Puts.Short, "trend"))
     μcα = Variables.Independent("μcα", ("call", "long", "trend"), np.float32, locator=StrategyLocator(Securities.Options.Calls.Long, "trend"))
@@ -149,8 +148,9 @@ class UnderlyingEquation(StrategyEquation, analytic=Concepts.Analytic.UNDERLYING
 
     def execute(self, *args, **kwargs):
         yield from super().execute(*args, **kwargs)
-        yield self.μo()
-        yield self.δo()
+        for attribute in str("μo,δo").split(","):
+            try: getattr(self, attribute)()
+            except DomainError: pass
 
 
 class VerticalPutUnderlyingEquation(UnderlyingEquation, VerticalPutStrategyEquation):
@@ -170,7 +170,7 @@ class CollarShortUnderlyingEquation(UnderlyingEquation, CollarShortStrategyEquat
     δo = Variables.Dependent("δo", "volatility", np.float32, function=lambda δcα, δpβ: np.divide(δcα + δpβ, 2))
 
 
-class GreeksEquation(StrategyEquation, analytic=Concepts.Analytic.GREEKS):
+class AppraisalEquation(StrategyEquation):
     vpα = Variables.Independent("vpα", ("put", "long", "value"), np.float32, locator=StrategyLocator(Securities.Options.Puts.Long, "value"))
     vpβ = Variables.Independent("vpβ", ("put", "short", "value"), np.float32, locator=StrategyLocator(Securities.Options.Puts.Short, "value"))
     vcα = Variables.Independent("vcα", ("call", "long", "value"), np.float32, locator=StrategyLocator(Securities.Options.Calls.Long, "value"))
@@ -198,35 +198,33 @@ class GreeksEquation(StrategyEquation, analytic=Concepts.Analytic.GREEKS):
 
     def execute(self, *args, **kwargs):
         yield from super().execute(*args, **kwargs)
-        yield self.vo()
-        yield self.Δo()
-        yield self.Γo()
-        yield self.Θo()
-        yield self.Vo()
+        for attribute in str("vo,Δo,Γo,Θo,Vo").split(","):
+            try: getattr(self, attribute)()
+            except DomainError: pass
 
 
-class VerticalPutGreeksEquation(GreeksEquation, VerticalPutStrategyEquation):
+class VerticalPutAppraisalEquation(AppraisalEquation, VerticalPutStrategyEquation):
     vo = Variables.Dependent("vo", "value", np.float32, function=lambda vpα, vpβ: vpα + vpβ)
     Δo = Variables.Dependent("Δo", "delta", np.float32, function=lambda Δpα, Δpβ: Δpα + Δpβ)
     Γo = Variables.Dependent("Γo", "gamma", np.float32, function=lambda Γpα, Γpβ: Γpα + Γpβ)
     Θo = Variables.Dependent("Θo", "theta", np.float32, function=lambda Θpα, Θpβ: Θpα + Θpβ)
     Vo = Variables.Dependent("Vo", "vega", np.float32, function=lambda Vpα, Vpβ: Vpα + Vpβ)
 
-class VerticalCallGreeksEquation(GreeksEquation, VerticalCallStrategyEquation):
+class VerticalCallAppraisalEquation(AppraisalEquation, VerticalCallStrategyEquation):
     vo = Variables.Dependent("vo", "value", np.float32, function=lambda vcα, vcβ: vcα + vcβ)
     Δo = Variables.Dependent("Δo", "delta", np.float32, function=lambda Δcα, Δcβ: Δcα + Δcβ)
     Γo = Variables.Dependent("Γo", "gamma", np.float32, function=lambda Γcα, Γcβ: Γcα + Γcβ)
     Θo = Variables.Dependent("Θo", "theta", np.float32, function=lambda Θcα, Θcβ: Θcα + Θcβ)
     Vo = Variables.Dependent("Vo", "vega", np.float32, function=lambda Vcα, Vcβ: Vcα + Vcβ)
 
-class CollarLongGreeksEquation(GreeksEquation, CollarLongStrategyEquation):
+class CollarLongAppraisalEquation(AppraisalEquation, CollarLongStrategyEquation):
     vo = Variables.Dependent("vo", "value", np.float32, function=lambda vpα, vcβ: vpα + vcβ)
     Δo = Variables.Dependent("Δo", "delta", np.float32, function=lambda Δpα, Δcβ: Δpα + Δcβ + 1)
     Γo = Variables.Dependent("Γo", "gamma", np.float32, function=lambda Γpα, Γcβ: Γpα + Γcβ)
     Θo = Variables.Dependent("Θo", "theta", np.float32, function=lambda Θpα, Θcβ: Θpα + Θcβ)
     Vo = Variables.Dependent("Vo", "vega", np.float32, function=lambda Vpα, Vcβ: Vpα + Vcβ)
 
-class CollarShortGreeksEquation(GreeksEquation, CollarShortStrategyEquation):
+class CollarShortAppraisalEquation(AppraisalEquation, CollarShortStrategyEquation):
     vo = Variables.Dependent("vo", "value", np.float32, function=lambda vcα, vpβ: vcα + vpβ)
     Δo = Variables.Dependent("Δo", "delta", np.float32, function=lambda Δcα, Δpβ: Δcα + Δpβ - 1)
     Γo = Variables.Dependent("Γo", "gamma", np.float32, function=lambda Γcα, Γpβ: Γcα + Γpβ)
@@ -235,13 +233,12 @@ class CollarShortGreeksEquation(GreeksEquation, CollarShortStrategyEquation):
 
 
 class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
-    def __init__(self, *args, strategies, analytics, **kwargs):
+    def __init__(self, *args, strategies, **kwargs):
         assert isinstance(strategies, list) and all([value in list(Strategies) for value in list(strategies)])
-        assert isinstance(analytics, list) and all([value in list(Concepts.Analytic) for value in list(analytics)])
         super().__init__(*args, **kwargs)
-        equations = {strategy: equations for strategy, equations in iter(StrategyEquation) if strategy in strategies}
-        equations = {strategy: [equation for analytic, equation in equations.items() if analytic in analytics] for strategy, equations in equations.items()}
-        self.__equations = {strategy: StrategyEquation + equations for strategy, equations in equations.items()}
+        equations = {strategy: list(StrategyEquation.registry[strategy]) for strategy in strategies}
+        equations = {key: StrategyEquation + list(values) for key, values in equations.items()}
+        self.__equations = equations
 
     def execute(self, options, *args, **kwargs):
         assert isinstance(options, pd.DataFrame)
@@ -262,9 +259,6 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
                 equation = equation(arguments=datasets, parameters={})
                 strategies = equation(*args, **kwargs)
                 assert isinstance(strategies, xr.Dataset)
-
-                continue
-
                 strategies = strategies.assign_coords({"strategy": xr.Variable("strategy", [strategy]).squeeze("strategy")})
                 for field in list(Querys.Settlement): strategies = strategies.expand_dims(field)
                 yield settlement, strategy, strategies

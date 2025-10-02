@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Created on Fri May 23 2025
-@name:   Option Objects
+@name:   Appraisal Objects
 @author: Jack Kirby Cook
 
 """
@@ -13,16 +13,18 @@ from scipy.stats import norm
 
 from finance.concepts import Concepts, Querys
 from support.mixins import Emptying, Sizing, Partition, Logging
+from support.meta import RegistryMeta
 from calculations import Variables, Equations
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["OptionCalculator"]
+__all__ = ["AppraisalCalculator"]
 __copyright__ = "Copyright 2025, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class ValueEquation(Equations.Table, ABC):
+class AppraisalEquationMeta(RegistryMeta, type(Equations.Table)): pass
+class AppraisalEquation(Equations.Table, ABC, metaclass=AppraisalEquationMeta):
     τ = Variables.Dependent("τ", "tau", np.float32, function=lambda to, tτ: (np.datetime64(tτ, "ns") - np.datetime64(to, "ns")) / np.timedelta64(364, 'D'))
 
     tτ = Variables.Independent("tτ", "expire", np.datetime64, locator="expire")
@@ -40,7 +42,7 @@ class ValueEquation(Equations.Table, ABC):
         yield from super().execute(*args, **kwargs)
         yield self.τ()
 
-class BlackScholesEquation(ValueEquation):
+class BlackScholesEquation(AppraisalEquation, register=Concepts.Appraisal.BLACKSCHOLES):
     v = Variables.Dependent("v", "value", np.float32, function=lambda x, k, zx, zk, r, τ, i: x * norm.cdf(zx * int(i)) * int(i) - k * norm.cdf(zk * int(i)) * int(i) / np.exp(r * τ))
 
     zx = Variables.Dependent("zx", ("zscore", "itm"), np.float32, function=lambda zxk, zvt, zrt: zxk + zvt + zrt)
@@ -54,7 +56,7 @@ class BlackScholesEquation(ValueEquation):
         yield from super().execute(*args, **kwargs)
         yield self.v()
 
-class GreekEquation(Equations.Table, ABC):
+class GreekEquation(AppraisalEquation, register=Concepts.Appraisal.GREEKS):
     Θ = Variables.Dependent("Θ", "theta", np.float32, function=lambda zx, zk, x, k, r, σ, τ, i: - norm.cdf(zk * int(i)) * int(i) * k * r / np.exp(r * τ) - norm.pdf(zx) * x * σ / np.sqrt(τ) / 2)
     P = Variables.Dependent("P", "rho", np.float32, function=lambda zk, k, r, τ, i: + norm.cdf(zk * int(i)) * int(i) * k * τ / np.exp(r * τ))
     Δ = Variables.Dependent("Δ", "delta", np.float32, function=lambda zx, i: + norm.cdf(zx * int(i)) * int(i))
@@ -70,31 +72,32 @@ class GreekEquation(Equations.Table, ABC):
         yield self.V()
 
 
-class OptionCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
-    def __init__(self, *args, **kwargs):
+class AppraisalCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
+    def __init__(self, *args, appraisals, **kwargs):
         super().__init__(*args, **kwargs)
-        self.__equation = BlackScholesEquation + GreekEquation
+        equations = [equation for appraisal, equation in iter(AppraisalEquation) if appraisal in appraisals]
+        self.__equation = AppraisalEquation + equations
 
-    def execute(self, options, *args, **kwargs):
-        assert isinstance(options, pd.DataFrame)
-        if self.empty(options): return
-        querys = self.keys(options, by=Querys.Settlement)
+    def execute(self, securities, *args, **kwargs):
+        assert isinstance(securities, pd.DataFrame)
+        if self.empty(securities): return
+        querys = self.keys(securities, by=Querys.Settlement)
         querys = ",".join(list(map(str, querys)))
-        options = self.calculate(options, *args, **kwargs)
-        size = self.size(options)
+        securities = self.calculate(securities, *args, **kwargs)
+        size = self.size(securities)
         self.console(f"{str(querys)}[{int(size):.0f}]")
-        if self.empty(options): return
-        yield options
+        if self.empty(securities): return
+        yield securities
 
-    def calculate(self, options, *args, current, interest, **kwargs):
-        assert isinstance(options, pd.DataFrame)
+    def calculate(self, securities, *args, current, interest, **kwargs):
+        assert isinstance(securities, pd.DataFrame)
         parameters = dict(current=current, interest=interest)
-        equation = self.equation(arguments=options, parameters=parameters)
+        equation = self.equation(arguments=securities, parameters=parameters)
         results = equation(*args, **kwargs)
         assert isinstance(results, pd.DataFrame)
-        options = pd.concat([options, results], axis=1)
-        options = options.reset_index(drop=True, inplace=False)
-        return options
+        securities = pd.concat([securities, results], axis=1)
+        securities = securities.reset_index(drop=True, inplace=False)
+        return securities
 
     @property
     def equation(self): return self.__equation
