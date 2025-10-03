@@ -24,7 +24,7 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class ValuationEquation(Equations.Vector, ABC):
+class ValuationEquation(Equations.Vectorized.Array, ABC):
     τ = Variables.Dependent("τ", "tau", np.int32, function=lambda tτ, *, to: (tτ - to).days)
 
     yo = Variables.Independent("yo", ("value", "spot"), np.float32, locator="spot")

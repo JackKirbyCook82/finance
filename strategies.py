@@ -26,11 +26,12 @@ __license__ = "MIT License"
 
 
 class StrategyLocator(ntuple("Locator", "axis security")): pass
-class StrategyEquationMeta(type(Equations.Array), ABCMeta):
+class StrategyEquationMeta(type(Equations.UnVectorized.Array), ABCMeta):
     def __init__(cls, name, bases, attrs, *args, strategy=None, **kwargs):
-        super(StrategyEquationMeta, cls).__init__(name, bases, attrs, *args, **kwargs)
-        cls.__strategy__ = getattr(cls, "__strategy__", None)
-        if not any([type(base) is StrategyEquationMeta for base in bases]): cls.__registry__ = dict()
+        super(StrategyEquationMeta, cls).__init__(name, bases, attrs)
+        if not any([type(base) is StrategyEquationMeta for base in bases]):
+            cls.__registry__ = dict()
+            cls.__strategy__ = None
         elif cls.strategy is None and strategy is None: pass
         elif cls.strategy is None and strategy is not None:
             cls.registry[strategy] = list()
@@ -47,7 +48,7 @@ class StrategyEquationMeta(type(Equations.Array), ABCMeta):
     def strategy(cls, strategy): cls.__strategy__ = strategy
 
 
-class StrategyEquation(Equations.Array, ABC, metaclass=StrategyEquationMeta):
+class StrategyEquation(Equations.UnVectorized.Array, ABC, metaclass=StrategyEquationMeta):
     xpα = Variables.Independent("xpα", ("put", "long", "underlying"), np.float32, locator=StrategyLocator(Securities.Options.Puts.Long, "underlying"))
     xpβ = Variables.Independent("xpβ", ("put", "short", "underlying"), np.float32, locator=StrategyLocator(Securities.Options.Puts.Short, "underlying"))
     xcα = Variables.Independent("xcα", ("call", "long", "underlying"), np.float32, locator=StrategyLocator(Securities.Options.Calls.Long, "underlying"))
@@ -279,7 +280,6 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
 
     @property
     def equations(self): return self.__equations
-
 
 
 

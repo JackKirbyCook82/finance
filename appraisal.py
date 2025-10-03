@@ -8,7 +8,7 @@ Created on Fri May 23 2025
 
 import numpy as np
 import pandas as pd
-from abc import ABC
+from abc import ABC, ABCMeta
 from scipy.stats import norm
 
 from finance.concepts import Concepts, Querys
@@ -23,8 +23,8 @@ __copyright__ = "Copyright 2025, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class AppraisalEquationMeta(RegistryMeta, type(Equations.Table)): pass
-class AppraisalEquation(Equations.Table, ABC, metaclass=AppraisalEquationMeta):
+class AppraisalEquationMeta(RegistryMeta, type(Equations.Vectorized.Table), ABCMeta): pass
+class AppraisalEquation(Equations.Vectorized.Table, ABC, metaclass=AppraisalEquationMeta):
     τ = Variables.Dependent("τ", "tau", np.float32, function=lambda to, tτ: (np.datetime64(tτ, "ns") - np.datetime64(to, "ns")) / np.timedelta64(364, 'D'))
 
     tτ = Variables.Independent("tτ", "expire", np.datetime64, locator="expire")
@@ -39,8 +39,9 @@ class AppraisalEquation(Equations.Table, ABC, metaclass=AppraisalEquationMeta):
     r = Variables.Constant("r", "interest", np.float32, locator="interest")
 
     def execute(self, *args, **kwargs):
-        yield from super().execute(*args, **kwargs)
         yield self.τ()
+        yield from super().execute(*args, **kwargs)
+
 
 class BlackScholesEquation(AppraisalEquation, register=Concepts.Appraisal.BLACKSCHOLES):
     v = Variables.Dependent("v", "value", np.float32, function=lambda x, k, zx, zk, r, τ, i: x * norm.cdf(zx * int(i)) * int(i) - k * norm.cdf(zk * int(i)) * int(i) / np.exp(r * τ))
@@ -53,8 +54,8 @@ class BlackScholesEquation(AppraisalEquation, register=Concepts.Appraisal.BLACKS
     zrt = Variables.Dependent("zrt", ("zscore", "interest"), np.float32, function=lambda σ, r, τ: np.sqrt(τ) * r / σ)
 
     def execute(self, *args, **kwargs):
-        yield from super().execute(*args, **kwargs)
         yield self.v()
+        yield from super().execute(*args, **kwargs)
 
 class GreekEquation(AppraisalEquation, register=Concepts.Appraisal.GREEKS):
     Θ = Variables.Dependent("Θ", "theta", np.float32, function=lambda zx, zk, x, k, r, σ, τ, i: - norm.cdf(zk * int(i)) * int(i) * k * r / np.exp(r * τ) - norm.pdf(zx) * x * σ / np.sqrt(τ) / 2)
@@ -64,12 +65,12 @@ class GreekEquation(AppraisalEquation, register=Concepts.Appraisal.GREEKS):
     V = Variables.Dependent("V", "vega", np.float32, function=lambda zx, x, τ: + norm.pdf(zx) * np.sqrt(τ) * x)
 
     def execute(self, *args, **kwargs):
-        yield from super().execute(*args, **kwargs)
         yield self.Θ()
         yield self.P()
         yield self.Δ()
         yield self.Γ()
         yield self.V()
+        yield from super().execute(*args, **kwargs)
 
 
 class AppraisalCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):

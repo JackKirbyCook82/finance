@@ -8,7 +8,7 @@ Created on Fri Apr 19 2024
 
 import numpy as np
 import pandas as pd
-from abc import ABC
+from abc import ABC, ABCMeta
 from datetime import date as Date
 
 from finance.concepts import Concepts, Querys
@@ -23,8 +23,8 @@ __copyright__ = "Copyright 2024, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class TechnicalEquationMeta(RegistryMeta, type(Equations.Table)): pass
-class TechnicalEquation(Equations.Table, ABC, metaclass=TechnicalEquationMeta):
+class TechnicalEquationMeta(RegistryMeta, type(Equations.UnVectorized.Table), ABCMeta): pass
+class TechnicalEquation(Equations.UnVectorized.Table, ABC, metaclass=TechnicalEquationMeta):
     x = Variables.Independent("x", "adjusted", np.float32, locator="adjusted")
     s = Variables.Independent("s", "ticker", Date, locator="ticker")
     t = Variables.Independent("t", "date", Date, locator="date")

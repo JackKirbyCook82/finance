@@ -57,12 +57,6 @@ class SecurityCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
         assert isinstance(stocks, pd.DataFrame) and isinstance(options, pd.DataFrame)
         assert isinstance(technicals, (pd.DataFrame, types.NoneType))
         if self.empty(options): return
-
-        print(stocks)
-        print(options)
-        print(technicals)
-        raise Exception()
-
         settlements = self.keys(options, by=Querys.Settlement)
         settlements = ",".join(list(map(str, settlements)))
         securities = self.calculate(stocks, options, *args, **kwargs)
@@ -93,14 +87,14 @@ class SecurityCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
         positions = {Concepts.Securities.Position.LONG: "supply", Concepts.Securities.Position.SHORT: "demand"}
         pricing, sizing, greeks = ("ask", "bid"), ("supply", "demand"), ("value", "delta", "gamma", "theta", "rho", "vega")
         for position, column in positions.items():
-            spot = options["price"].apply(np.negative) * int(position)
+            spot = (options["price"].apply(np.negative) * int(position)).rename("spot")
             size = options[column].rename("size")
-            dataframe = pd.concat([options, spot, size])
+            dataframe = pd.concat([options, spot, size], axis=1)
             dataframe["position"] = position
             for greek in greeks:
                 try: dataframe[greek] = dataframe[greek] * int(position)
                 except KeyError: pass
-            dataframe = dataframe.drop(columns=pricing + sizing)
+            dataframe = dataframe.drop(columns=list(pricing + sizing))
             yield dataframe
 
     @staticmethod
