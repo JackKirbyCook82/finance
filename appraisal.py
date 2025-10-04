@@ -39,8 +39,8 @@ class AppraisalEquation(Equations.Vectorized.Table, ABC, metaclass=AppraisalEqua
     r = Variables.Constant("r", "interest", np.float32, locator="interest")
 
     def execute(self, *args, **kwargs):
-        yield self.τ()
         yield from super().execute(*args, **kwargs)
+        yield self.τ()
 
 
 class BlackScholesEquation(AppraisalEquation, register=Concepts.Appraisal.BLACKSCHOLES):
@@ -54,8 +54,8 @@ class BlackScholesEquation(AppraisalEquation, register=Concepts.Appraisal.BLACKS
     zrt = Variables.Dependent("zrt", ("zscore", "interest"), np.float32, function=lambda σ, r, τ: np.sqrt(τ) * r / σ)
 
     def execute(self, *args, **kwargs):
-        yield self.v()
         yield from super().execute(*args, **kwargs)
+        yield self.v()
 
 class GreekEquation(AppraisalEquation, register=Concepts.Appraisal.GREEKS):
     Θ = Variables.Dependent("Θ", "theta", np.float32, function=lambda zx, zk, x, k, r, σ, τ, i: - norm.cdf(zk * int(i)) * int(i) * k * r / np.exp(r * τ) - norm.pdf(zx) * x * σ / np.sqrt(τ) / 2)
@@ -65,12 +65,12 @@ class GreekEquation(AppraisalEquation, register=Concepts.Appraisal.GREEKS):
     V = Variables.Dependent("V", "vega", np.float32, function=lambda zx, x, τ: + norm.pdf(zx) * np.sqrt(τ) * x)
 
     def execute(self, *args, **kwargs):
+        yield from super().execute(*args, **kwargs)
         yield self.Θ()
         yield self.P()
         yield self.Δ()
         yield self.Γ()
         yield self.V()
-        yield from super().execute(*args, **kwargs)
 
 
 class AppraisalCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):

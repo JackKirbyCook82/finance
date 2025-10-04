@@ -244,6 +244,10 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
     def execute(self, options, *args, **kwargs):
         assert isinstance(options, pd.DataFrame)
         if self.empty(options): return
+
+        print(options)
+        raise Exception()
+
         generator = self.calculator(options, *args, **kwargs)
         for settlement, strategy, strategies in generator:
             size = self.size(strategies, "size")
