@@ -12,6 +12,7 @@ from abc import ABC
 
 from finance.concepts import Concepts, Querys, Securities
 from support.mixins import Emptying, Sizing, Partition, Logging
+from support.decorators import Signature
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -27,6 +28,7 @@ class MarketCalculator(Sizing, Emptying, Partition, Logging, ABC, title="Calcula
         self.__liquidity = liquidity
         self.__priority = priority
 
+    @Signature("valuations,options->valuations")
     def execute(self, valuations, options, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame) and isinstance(options, pd.DataFrame)
         if self.empty(valuations): return

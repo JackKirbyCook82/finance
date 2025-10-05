@@ -13,6 +13,7 @@ from datetime import date as Date
 
 from finance.concepts import Concepts, Querys
 from support.mixins import Emptying, Sizing, Partition, Logging
+from support.decorators import Signature
 from support.meta import RegistryMeta
 from calculations import Variables, Equations
 
@@ -75,6 +76,7 @@ class TechnicalCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
         equations = [equation for technical, equation in iter(TechnicalEquation) if technical in technicals]
         self.__equation = TechnicalEquation + equations
 
+    @Signature("bars->technicals")
     def execute(self, bars, *args, **kwargs):
         assert isinstance(bars, pd.DataFrame)
         if self.empty(bars): return

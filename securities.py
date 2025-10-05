@@ -12,6 +12,7 @@ import pandas as pd
 
 from finance.concepts import Querys, Concepts
 from support.mixins import Emptying, Sizing, Partition, Logging
+from support.decorators import Signature
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -53,6 +54,7 @@ class PricingCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"
 
 
 class SecurityCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
+    @Signature("stocks,options,technicals*->securities")
     def execute(self, stocks, options, technicals, *args, **kwargs):
         assert isinstance(stocks, pd.DataFrame) and isinstance(options, pd.DataFrame)
         assert isinstance(technicals, (pd.DataFrame, types.NoneType))

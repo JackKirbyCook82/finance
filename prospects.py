@@ -15,7 +15,7 @@ from functools import reduce
 from finance.concepts import Concepts, Querys, Securities
 from support.mixins import Emptying, Sizing, Partition, Logging
 from support.tables import Reader, Writer, Routine, Stacking, Layout
-from support.decorators import Decorator
+from support.decorators import Decorator, Signature
 from support.meta import ParameterMeta
 
 __version__ = "1.0.0"
@@ -52,6 +52,7 @@ class ProspectCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
         self.__liquidity = liquidity
         self.__priority = priority
 
+    @Signature("valuations->prospects")
     def execute(self, valuations, *args, **kwargs):
         assert isinstance(valuations, pd.DataFrame)
         if self.empty(valuations): return

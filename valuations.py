@@ -13,9 +13,10 @@ from abc import ABC
 from datetime import date as Date
 
 from finance.concepts import Querys, Securities
+from calculations import Variables, Equations, DomainError
 from support.mixins import Emptying, Sizing, Partition, Logging
 from support.decorators import TypeDispatcher
-from calculations import Variables, Equations, DomainError
+from support.decorators import Signature
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -88,6 +89,7 @@ class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
         super().__init__(*args, **kwargs)
         self.__equation = ValuationEquation + list(ValuationEquation.__subclasses__())
 
+    @Signature("strategies->valuations")
     def execute(self, strategies, *args, **kwargs):
         assert isinstance(strategies, (list, xr.Dataset))
         if self.empty(strategies, "size"): return

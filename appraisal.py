@@ -5,6 +5,7 @@ Created on Fri May 23 2025
 @author: Jack Kirby Cook
 
 """
+import types
 
 import numpy as np
 import pandas as pd
@@ -13,6 +14,7 @@ from scipy.stats import norm
 
 from finance.concepts import Concepts, Querys
 from support.mixins import Emptying, Sizing, Partition, Logging
+from support.decorators import Signature
 from support.meta import RegistryMeta
 from calculations import Variables, Equations
 
@@ -79,16 +81,19 @@ class AppraisalCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
         equations = [equation for appraisal, equation in iter(AppraisalEquation) if appraisal in appraisals]
         self.__equation = AppraisalEquation + equations
 
-    def execute(self, securities, *args, **kwargs):
-        assert isinstance(securities, pd.DataFrame)
-        if self.empty(securities): return
-        querys = self.keys(securities, by=Querys.Settlement)
+    @Signature("options,technicals*->options")
+    def execute(self, options, technicals, *args, **kwargs):
+        assert isinstance(options, pd.DataFrame)
+        assert isinstance(technicals, (pd.DataFrame, types.NoneType))
+        if self.empty(options): return
+        querys = self.keys(options, by=Querys.Settlement)
         querys = ",".join(list(map(str, querys)))
-        securities = self.calculate(securities, *args, **kwargs)
-        size = self.size(securities)
+        if technicals is not None: options = self.technicals(options, technicals, *args, **kwargs)
+        options = self.calculate(options, *args, **kwargs)
+        size = self.size(options)
         self.console(f"{str(querys)}[{int(size):.0f}]")
-        if self.empty(securities): return
-        yield securities
+        if self.empty(options): return
+        yield options
 
     def calculate(self, securities, *args, current, interest, **kwargs):
         assert isinstance(securities, pd.DataFrame)
@@ -99,6 +104,15 @@ class AppraisalCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
         securities = pd.concat([securities, results], axis=1)
         securities = securities.reset_index(drop=True, inplace=False)
         return securities
+
+    @staticmethod
+    def technicals(options, technicals, *args, **kwargs):
+        assert isinstance(options, pd.DataFrame) and isinstance(technicals, pd.DataFrame)
+        mask = technicals["date"] == technicals["date"].max()
+        technicals = technicals.where(mask).dropna(how="all", inplace=False)
+        technicals = technicals.drop(columns="date", inplace=False)
+        options = options.merge(technicals, how="left", on=list(Querys.Symbol), sort=False, suffixes=("", ""))
+        return options
 
     @property
     def equation(self): return self.__equation

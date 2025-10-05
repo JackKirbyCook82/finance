@@ -15,8 +15,9 @@ from functools import reduce
 from collections import namedtuple as ntuple
 
 from finance.concepts import Querys, Concepts, Strategies, Securities
-from support.mixins import Emptying, Sizing, Partition, Logging
 from calculations import Variables, Equations, DomainError
+from support.mixins import Emptying, Sizing, Partition, Logging
+from support.decorators import Signature
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -241,6 +242,7 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
         equations = {key: StrategyEquation + list(values) for key, values in equations.items()}
         self.__equations = equations
 
+    @Signature("options->strategies")
     def execute(self, options, *args, **kwargs):
         assert isinstance(options, pd.DataFrame)
         if self.empty(options): return
