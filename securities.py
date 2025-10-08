@@ -12,7 +12,6 @@ import pandas as pd
 
 from finance.concepts import Querys, Concepts
 from support.mixins import Emptying, Sizing, Partition, Logging
-from support.decorators import Signature
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -54,14 +53,13 @@ class PricingCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"
 
 
 class SecurityCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
-    @Signature("stocks,options,technicals*->securities")
-    def execute(self, stocks, options, technicals, *args, **kwargs):
+    def execute(self, stocks, options, technicals=None, /, **kwargs):
         assert isinstance(stocks, pd.DataFrame) and isinstance(options, pd.DataFrame)
         assert isinstance(technicals, (pd.DataFrame, types.NoneType))
         if self.empty(options): return
         settlements = self.keys(options, by=Querys.Settlement)
         settlements = ",".join(list(map(str, settlements)))
-        securities = self.calculate(stocks, options, *args, **kwargs)
+        securities = self.calculate(stocks, options, **kwargs)
         size = self.size(securities)
         self.console(f"{str(settlements)}[{int(size):.0f}]")
         if all([column in securities.columns for column in ("quoting", "timing")]):
@@ -70,7 +68,7 @@ class SecurityCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
             quoting = ",".join(list(quoting))
             timing = securities["timing"].min()
             self.console(f"{str(settlements)}[{quoting}|{timing:%Y-%m-%d %I:%M %p}]")
-        if technicals is not None: securities = self.technicals(securities, technicals, *args, **kwargs)
+        if technicals is not None: securities = self.technicals(securities, technicals, **kwargs)
         if self.empty(securities): return
         yield securities
 

@@ -13,10 +13,9 @@ from abc import ABC
 from datetime import date as Date
 
 from finance.concepts import Querys, Securities
-from calculations import Variables, Equations, DomainError
+from calculations import Variables, Equations, Errors
 from support.mixins import Emptying, Sizing, Partition, Logging
-from support.decorators import TypeDispatcher
-from support.decorators import Signature
+from support.decorators import Dispatchers
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -68,7 +67,7 @@ class UnderlyingEquation(ValuationEquation):
         yield from super().execute(*args, **kwargs)
         for attribute in str("xo,δo,μo").split(","):
             try: getattr(self, attribute)()
-            except DomainError: pass
+            except Errors.Domain: pass
 
 class AppraisalEquation(ValuationEquation):
     vo = Variables.Independent("vo", "value", np.float32, locator="value")
@@ -81,7 +80,7 @@ class AppraisalEquation(ValuationEquation):
         yield from super().execute(*args, **kwargs)
         for attribute in str("vo,Δo,Γo,Θo,Vo").split(","):
             try: getattr(self, attribute)()
-            except DomainError: pass
+            except Errors.Domain: pass
 
 
 class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
@@ -89,15 +88,14 @@ class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
         super().__init__(*args, **kwargs)
         self.__equation = ValuationEquation + list(ValuationEquation.__subclasses__())
 
-    @Signature("strategies->valuations")
-    def execute(self, strategies, *args, **kwargs):
+    def execute(self, strategies, /, **kwargs):
         assert isinstance(strategies, (list, xr.Dataset))
         if self.empty(strategies, "size"): return
 
         print(strategies)
         raise Exception()
 
-        generator = self.calculator(strategies, *args, **kwargs)
+        generator = self.calculator(strategies, **kwargs)
         for settlement, valuations in generator:
             size = self.size(valuations)
             self.console(f"{str(settlement)}[{int(size):.0f}]")
@@ -109,7 +107,7 @@ class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
             valuations = self.calculate(datasets, *args, **kwargs)
             yield settlement, valuations
 
-    @TypeDispatcher(locator=0)
+    @Dispatchers.Type(locator=0)
     def calculate(self, strategies, *args, **kwargs): raise TypeError(type(strategies))
     @calculate.register(list)
     def collection(self, strategies, *args, **kwargs):

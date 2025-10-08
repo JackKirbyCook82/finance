@@ -14,7 +14,6 @@ from scipy.stats import norm
 
 from finance.concepts import Concepts, Querys
 from support.mixins import Emptying, Sizing, Partition, Logging
-from support.decorators import Signature
 from support.meta import RegistryMeta
 from calculations import Variables, Equations
 
@@ -81,15 +80,14 @@ class AppraisalCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
         equations = [equation for appraisal, equation in iter(AppraisalEquation) if appraisal in appraisals]
         self.__equation = AppraisalEquation + equations
 
-    @Signature("options,technicals*->options")
-    def execute(self, options, technicals, *args, **kwargs):
+    def execute(self, options, technicals=None, /, **kwargs):
         assert isinstance(options, pd.DataFrame)
         assert isinstance(technicals, (pd.DataFrame, types.NoneType))
         if self.empty(options): return
         querys = self.keys(options, by=Querys.Settlement)
         querys = ",".join(list(map(str, querys)))
-        if technicals is not None: options = self.technicals(options, technicals, *args, **kwargs)
-        options = self.calculate(options, *args, **kwargs)
+        if technicals is not None: options = self.technicals(options, technicals, **kwargs)
+        options = self.calculate(options, **kwargs)
         size = self.size(options)
         self.console(f"{str(querys)}[{int(size):.0f}]")
         if self.empty(options): return

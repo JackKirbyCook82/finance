@@ -15,9 +15,8 @@ from functools import reduce
 from collections import namedtuple as ntuple
 
 from finance.concepts import Querys, Concepts, Strategies, Securities
-from calculations import Variables, Equations, DomainError
+from calculations import Variables, Equations, Errors
 from support.mixins import Emptying, Sizing, Partition, Logging
-from support.decorators import Signature
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -152,7 +151,7 @@ class UnderlyingEquation(StrategyEquation):
         yield from super().execute(*args, **kwargs)
         for attribute in str("μo,δo").split(","):
             try: getattr(self, attribute)()
-            except DomainError: pass
+            except Errors.Domain: pass
 
 
 class VerticalPutUnderlyingEquation(UnderlyingEquation, VerticalPutStrategyEquation):
@@ -202,7 +201,7 @@ class AppraisalEquation(StrategyEquation):
         yield from super().execute(*args, **kwargs)
         for attribute in str("vo,Δo,Γo,Θo,Vo").split(","):
             try: getattr(self, attribute)()
-            except DomainError: pass
+            except Errors.Domain: pass
 
 
 class VerticalPutAppraisalEquation(AppraisalEquation, VerticalPutStrategyEquation):
@@ -242,19 +241,21 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
         equations = {key: StrategyEquation + list(values) for key, values in equations.items()}
         self.__equations = equations
 
-    @Signature("options->strategies")
-    def execute(self, options, *args, **kwargs):
-        assert isinstance(options, pd.DataFrame)
-        if self.empty(options): return
+    def execute(self, securities, /, **kwargs):
+        assert isinstance(securities, pd.DataFrame)
+        if self.empty(securities): return
 
-        print(options)
-        raise Exception()
+        print(securities)
 
-        generator = self.calculator(options, *args, **kwargs)
+        generator = self.calculator(securities, **kwargs)
         for settlement, strategy, strategies in generator:
             size = self.size(strategies, "size")
             self.console(f"{str(settlement)}|{str(strategy)}[{int(size):.0f}]")
             if self.empty(strategies, "size"): return
+
+            print(strategies)
+            raise Exception()
+
             yield strategies
 
     def calculator(self, options, *args, **kwargs):
@@ -271,9 +272,9 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
                 yield settlement, strategy, strategies
 
     @staticmethod
-    def unflatten(options, *args, **kwargs):
-        assert isinstance(options, pd.DataFrame)
-        for security, dataframe in options.groupby(list(Concepts.Securities.Security), sort=False):
+    def unflatten(securities, *args, **kwargs):
+        assert isinstance(securities, pd.DataFrame)
+        for security, dataframe in securities.groupby(list(Concepts.Securities.Security), sort=False):
             if dataframe.empty: continue
             security = Securities(security)
             dataframe = dataframe.drop(columns=list(Concepts.Securities.Security))
