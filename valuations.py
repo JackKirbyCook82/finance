@@ -93,18 +93,11 @@ class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
     def execute(self, strategies, /, **kwargs):
         assert isinstance(strategies, (list, xr.Dataset))
         if self.empty(strategies, "size"): return
-
-        print(strategies)
-
         generator = self.calculator(strategies, **kwargs)
         for settlement, valuations in generator:
             size = self.size(valuations)
             self.console(f"{str(settlement)}[{int(size):.0f}]")
             if self.empty(valuations): return
-
-            print(valuations)
-            raise Exception()
-
             yield valuations
 
     def calculator(self, strategies, *args, **kwargs):
