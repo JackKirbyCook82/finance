@@ -150,8 +150,9 @@ class UnderlyingEquation(StrategyEquation):
     def execute(self, *args, **kwargs):
         yield from super().execute(*args, **kwargs)
         for attribute in str("μo,δo").split(","):
-            try: getattr(self, attribute)()
-            except Errors.Domain: pass
+            try: variable = getattr(self, attribute)
+            except Errors.Domain: continue
+            yield variable()
 
 
 class VerticalPutUnderlyingEquation(UnderlyingEquation, VerticalPutStrategyEquation):
@@ -200,8 +201,9 @@ class AppraisalEquation(StrategyEquation):
     def execute(self, *args, **kwargs):
         yield from super().execute(*args, **kwargs)
         for attribute in str("vo,Δo,Γo,Θo,Vo").split(","):
-            try: getattr(self, attribute)()
-            except Errors.Domain: pass
+            try: variable = getattr(self, attribute)
+            except Errors.Domain: continue
+            yield variable()
 
 
 class VerticalPutAppraisalEquation(AppraisalEquation, VerticalPutStrategyEquation):
@@ -244,18 +246,11 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
     def execute(self, securities, /, **kwargs):
         assert isinstance(securities, pd.DataFrame)
         if self.empty(securities): return
-
-        print(securities)
-
         generator = self.calculator(securities, **kwargs)
         for settlement, strategy, strategies in generator:
             size = self.size(strategies, "size")
             self.console(f"{str(settlement)}|{str(strategy)}[{int(size):.0f}]")
             if self.empty(strategies, "size"): return
-
-            print(strategies)
-            raise Exception()
-
             yield strategies
 
     def calculator(self, options, *args, **kwargs):

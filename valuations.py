@@ -66,8 +66,9 @@ class UnderlyingEquation(ValuationEquation):
     def execute(self, *args, **kwargs):
         yield from super().execute(*args, **kwargs)
         for attribute in str("xo,δo,μo").split(","):
-            try: getattr(self, attribute)()
-            except Errors.Domain: pass
+            try: variable = getattr(self, attribute)
+            except Errors.Domain: continue
+            yield variable()
 
 class AppraisalEquation(ValuationEquation):
     vo = Variables.Independent("vo", "value", np.float32, locator="value")
@@ -79,8 +80,9 @@ class AppraisalEquation(ValuationEquation):
     def execute(self, *args, **kwargs):
         yield from super().execute(*args, **kwargs)
         for attribute in str("vo,Δo,Γo,Θo,Vo").split(","):
-            try: getattr(self, attribute)()
-            except Errors.Domain: pass
+            try: variable = getattr(self, attribute)
+            except Errors.Domain: continue
+            yield variable()
 
 
 class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
@@ -93,13 +95,16 @@ class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
         if self.empty(strategies, "size"): return
 
         print(strategies)
-        raise Exception()
 
         generator = self.calculator(strategies, **kwargs)
         for settlement, valuations in generator:
             size = self.size(valuations)
             self.console(f"{str(settlement)}[{int(size):.0f}]")
             if self.empty(valuations): return
+
+            print(valuations)
+            raise Exception()
+
             yield valuations
 
     def calculator(self, strategies, *args, **kwargs):
