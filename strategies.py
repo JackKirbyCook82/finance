@@ -172,6 +172,36 @@ class CollarShortUnderlyingEquation(UnderlyingEquation, CollarShortStrategyEquat
     δo = Variables.Dependent("δo", "volatility", np.float32, function=lambda δcα, δpβ: np.divide(δcα + δpβ, 2))
 
 
+class ImpliedEquation(StrategyEquation):
+    ivpα = Variables.Independent("ivpα", ("put", "long", "implied"), np.float32, locator=StrategyLocator(Securities.Options.Puts.Long, "implied"))
+    ivpβ = Variables.Independent("ivpβ", ("put", "short", "implied"), np.float32, locator=StrategyLocator(Securities.Options.Puts.Short, "implied"))
+    ivcα = Variables.Independent("ivcα", ("call", "long", "implied"), np.float32, locator=StrategyLocator(Securities.Options.Calls.Long, "implied"))
+    ivcβ = Variables.Independent("ivcβ", ("call", "short", "implied"), np.float32, locator=StrategyLocator(Securities.Options.Calls.Short, "implied"))
+
+    def execute(self, *args, **kwargs):
+        yield from super().execute(*args, **kwargs)
+        for attribute in str("ivoα,ivoβ").split(","):
+            try: variable = getattr(self, attribute)
+            except Errors.Domain: continue
+            yield variable()
+
+class VerticalPutUnderlyingEquation(UnderlyingEquation, VerticalPutStrategyEquation):
+    ivα = Variables.Dependent("ivα", ("long", "implied"), np.float32, function=lambda ivpα: ivpα)
+    ivβ = Variables.Dependent("ivβ", ("short", "implied"), np.float32, function=lambda ivpβ: ivpβ)
+
+class VerticalCallUnderlyingEquation(UnderlyingEquation, VerticalCallStrategyEquation):
+    ivα = Variables.Dependent("ivα", ("long", "implied"), np.float32, function=lambda ivcα: ivcα)
+    ivβ = Variables.Dependent("ivβ", ("short", "implied"), np.float32, function=lambda ivcβ: ivcβ)
+
+class CollarLongUnderlyingEquation(UnderlyingEquation, CollarLongStrategyEquation):
+    ivα = Variables.Dependent("ivα", ("long", "implied"), np.float32, function=lambda ivpα: ivpα)
+    ivβ = Variables.Dependent("ivβ", ("short", "implied"), np.float32, function=lambda ivcβ: ivcβ)
+
+class CollarShortUnderlyingEquation(UnderlyingEquation, CollarShortStrategyEquation):
+    ivα = Variables.Dependent("ivα", ("long", "implied"), np.float32, function=lambda ivcα: ivcα)
+    ivβ = Variables.Dependent("ivβ", ("short", "implied"), np.float32, function=lambda ivpβ: ivpβ)
+
+
 class AppraisalEquation(StrategyEquation):
     vpα = Variables.Independent("vpα", ("put", "long", "value"), np.float32, locator=StrategyLocator(Securities.Options.Puts.Long, "value"))
     vpβ = Variables.Independent("vpβ", ("put", "short", "value"), np.float32, locator=StrategyLocator(Securities.Options.Puts.Short, "value"))
