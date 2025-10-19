@@ -64,11 +64,11 @@ class StrategyEquation(Equations.UnVectorized.Array, ABC, metaclass=StrategyEqua
     qcα = Variables.Independent("qcα", ("call", "long", "size"), np.int32, locator=StrategyLocator(Securities.Options.Calls.Long, "size"))
     qcβ = Variables.Independent("qcβ", ("call", "short", "size"), np.int32, locator=StrategyLocator(Securities.Options.Calls.Short, "size"))
 
-    def execute(self, *args, **kwargs):
-        yield from super().execute(*args, **kwargs)
-        yield self.xo()
-        yield self.yo()
-        yield self.qo()
+    def execute(self, options):
+        yield from super().execute(options)
+        yield self.xo(options)
+        yield self.yo(options)
+        yield self.qo(options)
 
 
 class VerticalPutStrategyEquation(StrategyEquation, strategy=Strategies.Verticals.Put):
@@ -104,11 +104,11 @@ class PayoffEquation(StrategyEquation):
     kcα = Variables.Independent("kcα", ("call", "long", "strike"), np.float32, locator=StrategyLocator(Securities.Options.Calls.Long, "strike"))
     kcβ = Variables.Independent("kcβ", ("call", "short", "strike"), np.float32, locator=StrategyLocator(Securities.Options.Calls.Short, "strike"))
 
-    def execute(self, *args, **kwargs):
-        yield from super().execute(*args, **kwargs)
-        yield self.yh()
-        yield self.yk()
-        yield self.yl()
+    def execute(self, options):
+        yield from super().execute(options)
+        yield self.yh(options)
+        yield self.yk(options)
+        yield self.yl(options)
 
 
 class VerticalPutPayoffEquation(PayoffEquation, VerticalPutStrategyEquation):
@@ -147,12 +147,12 @@ class UnderlyingEquation(StrategyEquation):
     δcα = Variables.Independent("δcα", ("call", "long", "volatility"), np.float32, locator=StrategyLocator(Securities.Options.Calls.Long, "volatility"))
     δcβ = Variables.Independent("δcβ", ("call", "short", "volatility"), np.float32, locator=StrategyLocator(Securities.Options.Calls.Short, "volatility"))
 
-    def execute(self, *args, **kwargs):
-        yield from super().execute(*args, **kwargs)
+    def execute(self, options):
+        yield from super().execute(options)
         for attribute in str("μo,δo").split(","):
             try: variable = getattr(self, attribute)
             except Errors.Domain: continue
-            yield variable()
+            yield variable(options)
 
 
 class VerticalPutUnderlyingEquation(UnderlyingEquation, VerticalPutStrategyEquation):
@@ -170,36 +170,6 @@ class CollarLongUnderlyingEquation(UnderlyingEquation, CollarLongStrategyEquatio
 class CollarShortUnderlyingEquation(UnderlyingEquation, CollarShortStrategyEquation):
     μo = Variables.Dependent("μo", "trend", np.float32, function=lambda μcα, μpβ: np.divide(μcα + μpβ, 2))
     δo = Variables.Dependent("δo", "volatility", np.float32, function=lambda δcα, δpβ: np.divide(δcα + δpβ, 2))
-
-
-class ImpliedEquation(StrategyEquation):
-    ivpα = Variables.Independent("ivpα", ("put", "long", "implied"), np.float32, locator=StrategyLocator(Securities.Options.Puts.Long, "implied"))
-    ivpβ = Variables.Independent("ivpβ", ("put", "short", "implied"), np.float32, locator=StrategyLocator(Securities.Options.Puts.Short, "implied"))
-    ivcα = Variables.Independent("ivcα", ("call", "long", "implied"), np.float32, locator=StrategyLocator(Securities.Options.Calls.Long, "implied"))
-    ivcβ = Variables.Independent("ivcβ", ("call", "short", "implied"), np.float32, locator=StrategyLocator(Securities.Options.Calls.Short, "implied"))
-
-    def execute(self, *args, **kwargs):
-        yield from super().execute(*args, **kwargs)
-        for attribute in str("ivoα,ivoβ").split(","):
-            try: variable = getattr(self, attribute)
-            except Errors.Domain: continue
-            yield variable()
-
-class VerticalPutUnderlyingEquation(UnderlyingEquation, VerticalPutStrategyEquation):
-    ivα = Variables.Dependent("ivα", ("long", "implied"), np.float32, function=lambda ivpα: ivpα)
-    ivβ = Variables.Dependent("ivβ", ("short", "implied"), np.float32, function=lambda ivpβ: ivpβ)
-
-class VerticalCallUnderlyingEquation(UnderlyingEquation, VerticalCallStrategyEquation):
-    ivα = Variables.Dependent("ivα", ("long", "implied"), np.float32, function=lambda ivcα: ivcα)
-    ivβ = Variables.Dependent("ivβ", ("short", "implied"), np.float32, function=lambda ivcβ: ivcβ)
-
-class CollarLongUnderlyingEquation(UnderlyingEquation, CollarLongStrategyEquation):
-    ivα = Variables.Dependent("ivα", ("long", "implied"), np.float32, function=lambda ivpα: ivpα)
-    ivβ = Variables.Dependent("ivβ", ("short", "implied"), np.float32, function=lambda ivcβ: ivcβ)
-
-class CollarShortUnderlyingEquation(UnderlyingEquation, CollarShortStrategyEquation):
-    ivα = Variables.Dependent("ivα", ("long", "implied"), np.float32, function=lambda ivcα: ivcα)
-    ivβ = Variables.Dependent("ivβ", ("short", "implied"), np.float32, function=lambda ivpβ: ivpβ)
 
 
 class AppraisalEquation(StrategyEquation):
@@ -228,12 +198,17 @@ class AppraisalEquation(StrategyEquation):
     Vcα = Variables.Independent("Vcα", ("call", "long", "vega"), np.float32, locator=StrategyLocator(Securities.Options.Calls.Long, "vega"))
     Vcβ = Variables.Independent("Vcβ", ("call", "short", "vega"), np.float32, locator=StrategyLocator(Securities.Options.Calls.Short, "vega"))
 
-    def execute(self, *args, **kwargs):
-        yield from super().execute(*args, **kwargs)
-        for attribute in str("vo,Δo,Γo,Θo,Vo").split(","):
+    λpα = Variables.Independent("λpα", ("put", "long", "implied"), np.float32, locator=StrategyLocator(Securities.Options.Puts.Long, "implied"))
+    λpβ = Variables.Independent("λpβ", ("put", "short", "implied"), np.float32, locator=StrategyLocator(Securities.Options.Puts.Short, "implied"))
+    λcα = Variables.Independent("λcα", ("call", "long", "implied"), np.float32, locator=StrategyLocator(Securities.Options.Calls.Long, "implied"))
+    λcβ = Variables.Independent("λcβ", ("call", "short", "implied"), np.float32, locator=StrategyLocator(Securities.Options.Calls.Short, "implied"))
+
+    def execute(self, options):
+        yield from super().execute(options)
+        for attribute in str("vo,Δo,Γo,Θo,Vo,λα,λβ").split(","):
             try: variable = getattr(self, attribute)
             except Errors.Domain: continue
-            yield variable()
+            yield variable(options)
 
 
 class VerticalPutAppraisalEquation(AppraisalEquation, VerticalPutStrategyEquation):
@@ -242,6 +217,8 @@ class VerticalPutAppraisalEquation(AppraisalEquation, VerticalPutStrategyEquatio
     Γo = Variables.Dependent("Γo", "gamma", np.float32, function=lambda Γpα, Γpβ: Γpα + Γpβ)
     Θo = Variables.Dependent("Θo", "theta", np.float32, function=lambda Θpα, Θpβ: Θpα + Θpβ)
     Vo = Variables.Dependent("Vo", "vega", np.float32, function=lambda Vpα, Vpβ: Vpα + Vpβ)
+    λα = Variables.Dependent("λα", "buying", np.float32, function=lambda λpα: λpα)
+    λβ = Variables.Dependent("λβ", "selling", np.float32, function=lambda λpβ: λpβ)
 
 class VerticalCallAppraisalEquation(AppraisalEquation, VerticalCallStrategyEquation):
     vo = Variables.Dependent("vo", "value", np.float32, function=lambda vcα, vcβ: vcα + vcβ)
@@ -249,6 +226,8 @@ class VerticalCallAppraisalEquation(AppraisalEquation, VerticalCallStrategyEquat
     Γo = Variables.Dependent("Γo", "gamma", np.float32, function=lambda Γcα, Γcβ: Γcα + Γcβ)
     Θo = Variables.Dependent("Θo", "theta", np.float32, function=lambda Θcα, Θcβ: Θcα + Θcβ)
     Vo = Variables.Dependent("Vo", "vega", np.float32, function=lambda Vcα, Vcβ: Vcα + Vcβ)
+    λα = Variables.Dependent("λα", "buying", np.float32, function=lambda λcα: λcα)
+    λβ = Variables.Dependent("λβ", "selling", np.float32, function=lambda λcβ: λcβ)
 
 class CollarLongAppraisalEquation(AppraisalEquation, CollarLongStrategyEquation):
     vo = Variables.Dependent("vo", "value", np.float32, function=lambda vpα, vcβ: vpα + vcβ)
@@ -256,6 +235,8 @@ class CollarLongAppraisalEquation(AppraisalEquation, CollarLongStrategyEquation)
     Γo = Variables.Dependent("Γo", "gamma", np.float32, function=lambda Γpα, Γcβ: Γpα + Γcβ)
     Θo = Variables.Dependent("Θo", "theta", np.float32, function=lambda Θpα, Θcβ: Θpα + Θcβ)
     Vo = Variables.Dependent("Vo", "vega", np.float32, function=lambda Vpα, Vcβ: Vpα + Vcβ)
+    λα = Variables.Dependent("λα", "buying", np.float32, function=lambda λpα: λpα)
+    λβ = Variables.Dependent("λβ", "selling", np.float32, function=lambda λcβ: λcβ)
 
 class CollarShortAppraisalEquation(AppraisalEquation, CollarShortStrategyEquation):
     vo = Variables.Dependent("vo", "value", np.float32, function=lambda vcα, vpβ: vcα + vpβ)
@@ -263,6 +244,8 @@ class CollarShortAppraisalEquation(AppraisalEquation, CollarShortStrategyEquatio
     Γo = Variables.Dependent("Γo", "gamma", np.float32, function=lambda Γcα, Γpβ: Γcα + Γpβ)
     Θo = Variables.Dependent("Θo", "theta", np.float32, function=lambda Θcα, Θpβ: Θcα + Θpβ)
     Vo = Variables.Dependent("Vo", "vega", np.float32, function=lambda Vcα, Vpβ: Vcα + Vpβ)
+    λα = Variables.Dependent("λα", "buying", np.float32, function=lambda λcα: λcα)
+    λβ = Variables.Dependent("λβ", "selling", np.float32, function=lambda λpβ: λpβ)
 
 
 class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
@@ -270,8 +253,9 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
         assert isinstance(strategies, list) and all([value in list(Strategies) for value in list(strategies)])
         super().__init__(*args, **kwargs)
         equations = {strategy: list(StrategyEquation.registry[strategy]) for strategy in strategies}
-        equations = {key: StrategyEquation + list(values) for key, values in equations.items()}
-        self.__equations = equations
+        equations = {strategy: StrategyEquation + list(contents) for strategy, contents in equations.items()}
+#        self.__equations = equations
+        self.__equations = {strategy: equation(*args, **kwargs) for strategy, equation in equations.items()}
 
     def execute(self, securities, /, **kwargs):
         assert isinstance(securities, pd.DataFrame)
@@ -289,8 +273,13 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
             datasets = dict(self.unflatten(dataframes, *args, **kwargs))
             for strategy, equation in self.equations.items():
                 if not all([option in datasets.keys() for option in strategy.options]): continue
-                equation = equation(arguments=datasets, parameters={})
-                strategies = equation(*args, **kwargs)
+#                equation = equation(arguments=datasets, parameters={})
+#                strategies = equation(*args, **kwargs)
+#                assert isinstance(strategies, xr.Dataset)
+#                strategies = strategies.assign_coords({"strategy": xr.Variable("strategy", [strategy]).squeeze("strategy")})
+#                for field in list(Querys.Settlement): strategies = strategies.expand_dims(field)
+#                yield settlement, strategy, strategies
+                strategies = self.equation(datasets)
                 assert isinstance(strategies, xr.Dataset)
                 strategies = strategies.assign_coords({"strategy": xr.Variable("strategy", [strategy]).squeeze("strategy")})
                 for field in list(Querys.Settlement): strategies = strategies.expand_dims(field)

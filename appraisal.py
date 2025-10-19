@@ -5,8 +5,8 @@ Created on Fri May 23 2025
 @author: Jack Kirby Cook
 
 """
-import types
 
+import types
 import numpy as np
 import pandas as pd
 from abc import ABC, ABCMeta
@@ -28,6 +28,13 @@ class AppraisalEquationMeta(RegistryMeta, type(Equations.Vectorized.Table), ABCM
 class AppraisalEquation(Equations.Vectorized.Table, ABC, metaclass=AppraisalEquationMeta):
     τ = Variables.Dependent("τ", "tau", np.float32, function=lambda to, tτ: (np.datetime64(tτ, "ns") - np.datetime64(to, "ns")) / np.timedelta64(364, 'D'))
 
+    zx = Variables.Dependent("zx", ("zscore", "itm"), np.float32, function=lambda zxk, zvt, zrt: zxk + zvt + zrt)
+    zk = Variables.Dependent("zk", ("zscore", "otm"), np.float32, function=lambda zxk, zvt, zrt: zxk - zvt + zrt)
+
+    zxk = Variables.Dependent("zxk", ("zscore", "strike"), np.float32, function=lambda x, k, σ, τ: np.log(x / k) / np.sqrt(τ) / σ)
+    zvt = Variables.Dependent("zvt", ("zscore", "volatility"), np.float32, function=lambda σ, τ: np.sqrt(τ) * σ / 2)
+    zrt = Variables.Dependent("zrt", ("zscore", "interest"), np.float32, function=lambda σ, r, τ: np.sqrt(τ) * r / σ)
+
     tτ = Variables.Independent("tτ", "expire", np.datetime64, locator="expire")
     to = Variables.Constant("to", "current", np.datetime64, locator="current")
 
@@ -39,46 +46,40 @@ class AppraisalEquation(Equations.Vectorized.Table, ABC, metaclass=AppraisalEqua
     k = Variables.Independent("k", "strike", np.float32, locator="strike")
     r = Variables.Constant("r", "interest", np.float32, locator="interest")
 
-    def execute(self, *args, **kwargs):
-        yield from super().execute(*args, **kwargs)
-        yield self.τ()
-
+    def execute(self, securities, /, current, interest):
+        yield from super().execute(securities, current=current, interest=interest)
+        yield self.τ(securities, current=current, interest=interest)
 
 class BlackScholesEquation(AppraisalEquation, register=Concepts.Appraisal.BLACKSCHOLES):
-    v = Variables.Dependent("v", "value", np.float32, function=lambda x, k, zx, zk, r, τ, i: x * norm.cdf(zx * int(i)) * int(i) - k * norm.cdf(zk * int(i)) * int(i) / np.exp(r * τ))
+    vo = Variables.Dependent("vo", "value", np.float32, function=lambda x, k, zx, zk, r, τ, i: x * norm.cdf(zx * int(i)) * int(i) - k * norm.cdf(zk * int(i)) * int(i) / np.exp(r * τ))
 
-    zx = Variables.Dependent("zx", ("zscore", "itm"), np.float32, function=lambda zxk, zvt, zrt: zxk + zvt + zrt)
-    zk = Variables.Dependent("zk", ("zscore", "otm"), np.float32, function=lambda zxk, zvt, zrt: zxk - zvt + zrt)
+    def execute(self, securities, /, current, interest):
+        yield from super().execute(securities, current=current, interest=interest)
+        yield self.vo(securities, current=current, interest=interest)
 
-    zxk = Variables.Dependent("zxk", ("zscore", "strike"), np.float32, function=lambda x, k, σ, τ: np.log(x / k) / np.sqrt(τ) / σ)
-    zvt = Variables.Dependent("zvt", ("zscore", "volatility"), np.float32, function=lambda σ, τ: np.sqrt(τ) * σ / 2)
-    zrt = Variables.Dependent("zrt", ("zscore", "interest"), np.float32, function=lambda σ, r, τ: np.sqrt(τ) * r / σ)
-
-    def execute(self, *args, **kwargs):
-        yield from super().execute(*args, **kwargs)
-        yield self.v()
 
 class GreekEquation(AppraisalEquation, register=Concepts.Appraisal.GREEKS):
-    Θ = Variables.Dependent("Θ", "theta", np.float32, function=lambda zx, zk, x, k, r, σ, τ, i: - norm.cdf(zk * int(i)) * int(i) * k * r / np.exp(r * τ) - norm.pdf(zx) * x * σ / np.sqrt(τ) / 2)
-    P = Variables.Dependent("P", "rho", np.float32, function=lambda zk, k, r, τ, i: + norm.cdf(zk * int(i)) * int(i) * k * τ / np.exp(r * τ))
-    Δ = Variables.Dependent("Δ", "delta", np.float32, function=lambda zx, i: + norm.cdf(zx * int(i)) * int(i))
-    Γ = Variables.Dependent("Γ", "gamma", np.float32, function=lambda zx, x, σ, τ: + norm.pdf(zx) / np.sqrt(τ) / σ / x)
-    V = Variables.Dependent("V", "vega", np.float32, function=lambda zx, x, τ: + norm.pdf(zx) * np.sqrt(τ) * x)
+    Θo = Variables.Dependent("Θo", "theta", np.float32, function=lambda zx, zk, x, k, r, σ, τ, i: - norm.cdf(zk * int(i)) * int(i) * k * r / np.exp(r * τ) - norm.pdf(zx) * x * σ / np.sqrt(τ) / 2)
+    Po = Variables.Dependent("Po", "rho", np.float32, function=lambda zk, k, r, τ, i: + norm.cdf(zk * int(i)) * int(i) * k * τ / np.exp(r * τ))
+    Δo = Variables.Dependent("Δo", "delta", np.float32, function=lambda zx, i: + norm.cdf(zx * int(i)) * int(i))
+    Γo = Variables.Dependent("Γo", "gamma", np.float32, function=lambda zx, x, σ, τ: + norm.pdf(zx) / np.sqrt(τ) / σ / x)
+    Vo = Variables.Dependent("Vo", "vega", np.float32, function=lambda zx, x, τ: + norm.pdf(zx) * np.sqrt(τ) * x)
 
-    def execute(self, *args, **kwargs):
-        yield from super().execute(*args, **kwargs)
-        yield self.Θ()
-        yield self.P()
-        yield self.Δ()
-        yield self.Γ()
-        yield self.V()
+    def execute(self, securities, /, current, interest):
+        yield from super().execute(securities, current=current, interest=interest)
+        yield self.Θo(securities, current=current, interest=interest)
+        yield self.Po(securities, current=current, interest=interest)
+        yield self.Δo(securities, current=current, interest=interest)
+        yield self.Γo(securities, current=current, interest=interest)
+        yield self.Vo(securities, current=current, interest=interest)
 
 
 class AppraisalCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
     def __init__(self, *args, appraisals, **kwargs):
         super().__init__(*args, **kwargs)
         equations = [equation for appraisal, equation in iter(AppraisalEquation) if appraisal in appraisals]
-        self.__equation = AppraisalEquation + equations
+#        self.__equation = (AppraisalEquation + equations)
+        self.__equation = (AppraisalEquation + equations)(*args, **kwargs)
 
     def execute(self, options, technicals=None, /, **kwargs):
         assert isinstance(options, pd.DataFrame)
@@ -95,13 +96,18 @@ class AppraisalCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
 
     def calculate(self, securities, *args, current, interest, **kwargs):
         assert isinstance(securities, pd.DataFrame)
-        parameters = dict(current=current, interest=interest)
-        equation = self.equation(arguments=securities, parameters=parameters)
-        results = equation(*args, **kwargs)
-        assert isinstance(results, pd.DataFrame)
-        securities = pd.concat([securities, results], axis=1)
-        securities = securities.reset_index(drop=True, inplace=False)
-        return securities
+ #       parameters = dict(current=current, interest=interest)
+ #       equation = self.equation(arguments=securities, parameters=parameters)
+ #       results = equation(*args, **kwargs)
+ #       assert isinstance(results, pd.DataFrame)
+ #       securities = pd.concat([securities, results], axis=1)
+ #       securities = securities.reset_index(drop=True, inplace=False)
+ #       return securities
+        appraisals = self.equation(securities, current=current, interest=interest)
+        assert isinstance(appraisals, pd.DataFrame)
+        appraisals = pd.concat([securities, appraisals], axis=1)
+        appraisals = appraisals.reset_index(drop=True, inplace=False)
+        yield appraisals
 
     @staticmethod
     def technicals(options, technicals, *args, **kwargs):

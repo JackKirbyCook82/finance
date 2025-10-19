@@ -85,7 +85,7 @@ class SecurityCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
     @staticmethod
     def calculator(options, *args, **kwargs):
         positions = {Concepts.Securities.Position.LONG: "supply", Concepts.Securities.Position.SHORT: "demand"}
-        pricing, sizing, greeks = ("ask", "bid"), ("supply", "demand"), ("value", "implied", "delta", "gamma", "theta", "rho", "vega")
+        pricing, sizing, greeks = ("ask", "bid"), ("supply", "demand"), ("value", "delta", "gamma", "theta", "rho", "vega", "implied")
         for position, column in positions.items():
             spot = (options["price"].apply(np.negative) * int(position)).rename("spot")
             size = options[column].rename("size")

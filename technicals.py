@@ -8,7 +8,9 @@ Created on Fri Apr 19 2024
 
 import numpy as np
 import pandas as pd
+from operator import add
 from abc import ABC, ABCMeta
+from functools import reduce
 from datetime import date as Date
 
 from finance.concepts import Concepts, Querys
@@ -30,11 +32,11 @@ class TechnicalEquation(Equations.UnVectorized.Table, ABC, metaclass=TechnicalEq
     t = Variables.Independent("t", "date", Date, locator="date")
     dt = Variables.Constant("dt", "period", np.int32, locator="period")
 
-    def execute(self, *args, **kwargs):
-        yield from super().execute(*args, **kwargs)
-        yield self.s()
-        yield self.x()
-        yield self.t()
+    def execute(self, bars, /, period):
+        yield from super().execute(bars, period=period)
+        yield self.s(bars, period=period)
+        yield self.x(bars, period=period)
+        yield self.t(bars, period=period)
 
 class BarsEquation(TechnicalEquation, register=Concepts.Technical.BARS):
     xo = Variables.Independent("xo", "open", np.float32, locator="open")
@@ -42,30 +44,30 @@ class BarsEquation(TechnicalEquation, register=Concepts.Technical.BARS):
     xl = Variables.Independent("xl", "low", np.float32, locator="low")
     xh = Variables.Independent("xh", "high", np.float32, locator="high")
 
-    def execute(self, *args, **kwargs):
-        yield from super().execute(*args, **kwargs)
-        yield self.xo()
-        yield self.xc()
-        yield self.xl()
-        yield self.xh()
+    def execute(self, bars, /, period):
+        yield from super().execute(bars, period=period)
+        yield self.xo(bars, period=period)
+        yield self.xc(bars, period=period)
+        yield self.xl(bars, period=period)
+        yield self.xh(bars, period=period)
 
 class StatisticEquation(TechnicalEquation, register=Concepts.Technical.STATISTIC):
     δ = Variables.Dependent("δ", "volatility", np.float32, function=lambda x, *, dt: x.pct_change(1).rolling(dt).std())
     μ = Variables.Dependent("μ", "trend", np.float32, function=lambda x, *, dt: x.pct_change(1).rolling(dt).mean())
 
-    def execute(self, *args, **kwargs):
-        yield from super().execute(*args, **kwargs)
-        yield self.δ()
-        yield self.μ()
+    def execute(self, bars, /, period):
+        yield from super().execute(bars, period=period)
+        yield self.δ(bars, period=period)
+        yield self.μ(bars, period=period)
 
 class StochasticEquation(TechnicalEquation, register=Concepts.Technical.STOCHASTIC):
     xk = Variables.Dependent("xk", "oscillator", np.float32, function=lambda x, xkl, xkh: (x - xkl) * 100 / (xkh - xkl))
     xkh = Variables.Dependent("xkh", "highest", np.float32, function=lambda x, *, dt: x.rolling(dt).min())
     xkl = Variables.Dependent("xkl", "lowest", np.float32, function=lambda x, *, dt: x.rolling(dt).max())
 
-    def execute(self, *args, **kwargs):
-        yield from super().execute(*args, **kwargs)
-        yield self.xk()
+    def execute(self, bars, /, period):
+        yield from super().execute(bars, period=period)
+        yield self.xk(bars, period=period)
 
 
 class TechnicalCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
@@ -73,7 +75,8 @@ class TechnicalCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
         assert all([technical in list(Concepts.Technical) for technical in technicals])
         super().__init__(*args, **kwargs)
         equations = [equation for technical, equation in iter(TechnicalEquation) if technical in technicals]
-        self.__equation = TechnicalEquation + equations
+#        self.__equation = (TechnicalEquation + equations)
+        self.__equation = (TechnicalEquation + equations)(*args, **kwargs)
 
     def execute(self, bars, /, **kwargs):
         assert isinstance(bars, pd.DataFrame)
@@ -99,11 +102,14 @@ class TechnicalCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
         for dataframe in bars:
             assert (dataframe["ticker"].to_numpy()[0] == dataframe["ticker"]).all()
             dataframe = dataframe.sort_values("date", ascending=True, inplace=False)
-            parameters = dict(period=period)
-            equation = self.equation(arguments=dataframe, parameters=parameters)
-            results = equation(*args, **kwargs)
-            assert isinstance(results, pd.DataFrame)
-            yield results
+#            parameters = dict(period=period)
+#            equation = self.equation(arguments=dataframe, parameters=parameters)
+#            results = equation(*args, **kwargs)
+#            assert isinstance(results, pd.DataFrame)
+#            yield results
+            technicals = self.equation(dataframe, period=period)
+            assert isinstance(technicals, pd.DataFrame)
+            yield technicals
 
     @property
     def equation(self): return self.__equation

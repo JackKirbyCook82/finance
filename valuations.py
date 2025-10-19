@@ -36,9 +36,9 @@ class ValuationEquation(Equations.Vectorized.Array, ABC):
     ρ = Variables.Constant("ρ", "discount", np.float32, locator="discount")
     ε = Variables.Constant("ε", "fees", np.float32, locator="fees")
 
-    def execute(self, *args, **kwargs):
-        yield from super().execute(*args, **kwargs)
-        yield self.qo()
+    def execute(self, strategies, /, current, discount, fees):
+        yield from super().execute(strategies, current=current, discount=discount, fees=fees)
+        yield self.qo(strategies, current=current, discount=discount, fees=fees)
 
 
 class PayoffEquation(ValuationEquation):
@@ -50,25 +50,27 @@ class PayoffEquation(ValuationEquation):
     yh = Variables.Independent("yh", ("value", "maximum"), np.float32, locator="maximum")
     yl = Variables.Independent("yl", ("value", "minimum"), np.float32, locator="minimum")
 
-    def execute(self, *args, **kwargs):
-        yield from super().execute(*args, **kwargs)
-        yield self.vl()
-        yield self.wh()
-        yield self.wk()
-        yield self.wl()
-        yield self.wo()
+    def execute(self, strategies, /, current, discount, fees):
+        yield from super().execute(strategies, current=current, discount=discount, fees=fees)
+        yield self.vl(strategies, current=current, discount=discount, fees=fees)
+        yield self.wh(strategies, current=current, discount=discount, fees=fees)
+        yield self.wk(strategies, current=current, discount=discount, fees=fees)
+        yield self.wl(strategies, current=current, discount=discount, fees=fees)
+        yield self.wo(strategies, current=current, discount=discount, fees=fees)
+
 
 class UnderlyingEquation(ValuationEquation):
     xo = Variables.Independent("xo", "underlying", np.float32, locator="underlying")
     δo = Variables.Independent("δo", "volatility", np.float32, locator="volatility")
     μo = Variables.Independent("μo", "trend", np.float32, locator="trend")
 
-    def execute(self, *args, **kwargs):
-        yield from super().execute(*args, **kwargs)
-        for attribute in str("xo,δo,μo").split(","):
+    def execute(self, strategies, /, current, discount, fees):
+        yield from super().execute(strategies, current=current, discount=discount, fees=fees)
+        for attribute in str("λα,λβ").split(","):
             try: variable = getattr(self, attribute)
             except Errors.Domain: continue
-            yield variable()
+            yield variable(strategies, current=current, discount=discount, fees=fees)
+
 
 class AppraisalEquation(ValuationEquation):
     vo = Variables.Independent("vo", "value", np.float32, locator="value")
@@ -76,19 +78,23 @@ class AppraisalEquation(ValuationEquation):
     Γo = Variables.Independent("Γo", "gamma", np.float32, locator="gamma")
     Θo = Variables.Independent("Θo", "theta", np.float32, locator="theta")
     Vo = Variables.Independent("Vo", "vega", np.float32, locator="vega")
+    λα = Variables.Independent("λα", "buying", np.float32, locator="buying")
+    λβ = Variables.Independent("λβ", "selling", np.float32, locator="selling")
 
-    def execute(self, *args, **kwargs):
-        yield from super().execute(*args, **kwargs)
-        for attribute in str("vo,Δo,Γo,Θo,Vo").split(","):
+    def execute(self, strategies, /, current, discount, fees):
+        yield from super().execute(strategies, current=current, discount=discount, fees=fees)
+        for attribute in str("vo,Δo,Γo,Θo,Vo,λα,λβ").split(","):
             try: variable = getattr(self, attribute)
             except Errors.Domain: continue
-            yield variable()
+            yield variable(strategies, current=current, discount=discount, fees=fees)
 
 
 class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.__equation = ValuationEquation + list(ValuationEquation.__subclasses__())
+        equation = ValuationEquation + list(ValuationEquation.__subclasses__())
+#        self.__equation = equation
+        self.__equation = equation(*args, **kwargs)
 
     def execute(self, strategies, /, **kwargs):
         assert isinstance(strategies, (list, xr.Dataset))
@@ -116,9 +122,15 @@ class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
 
     @calculate.register(xr.Dataset)
     def dataset(self, strategies, *args, current, discount, interest, fees, **kwargs):
-        parameters = dict(current=current, discount=discount, interest=interest, fees=fees)
-        equation = self.equation(arguments=strategies, parameters=parameters)
-        valuations = equation(*args, **kwargs)
+#        parameters = dict(current=current, discount=discount, interest=interest, fees=fees)
+#        equation = self.equation(arguments=strategies, parameters=parameters)
+#        valuations = equation(*args, **kwargs)
+#        valuations = valuations.to_dataframe().dropna(how="all", inplace=False)
+#        valuations = valuations.reset_index(drop=False, inplace=False)
+#        options = [option for option in list(map(str, Securities.Options)) if option not in valuations.columns]
+#        for option in options: valuations[option] = np.NaN
+#        return valuations
+        valuations = self.equation(strategies, current=current, discount=discount, fees=fees)
         valuations = valuations.to_dataframe().dropna(how="all", inplace=False)
         valuations = valuations.reset_index(drop=False, inplace=False)
         options = [option for option in list(map(str, Securities.Options)) if option not in valuations.columns]
