@@ -67,9 +67,9 @@ class UnderlyingEquation(ValuationEquation):
     def execute(self, strategies, /, current, discount, fees):
         yield from super().execute(strategies, current=current, discount=discount, fees=fees)
         for attribute in str("λα,λβ").split(","):
-            try: variable = getattr(self, attribute)
-            except Errors.Domain: continue
-            yield variable(strategies, current=current, discount=discount, fees=fees)
+            try: content = getattr(self, attribute)(strategies, current=current, discount=discount, fees=fees)
+            except Errors.Independent: continue
+            yield content
 
 
 class AppraisalEquation(ValuationEquation):
@@ -84,16 +84,15 @@ class AppraisalEquation(ValuationEquation):
     def execute(self, strategies, /, current, discount, fees):
         yield from super().execute(strategies, current=current, discount=discount, fees=fees)
         for attribute in str("vo,Δo,Γo,Θo,Vo,λα,λβ").split(","):
-            try: variable = getattr(self, attribute)
-            except Errors.Domain: continue
-            yield variable(strategies, current=current, discount=discount, fees=fees)
+            try: content = getattr(self, attribute)(strategies, current=current, discount=discount, fees=fees)
+            except Errors.Independent: continue
+            yield content
 
 
 class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         equation = ValuationEquation + list(ValuationEquation.__subclasses__())
-#        self.__equation = equation
         self.__equation = equation(*args, **kwargs)
 
     def execute(self, strategies, /, **kwargs):
@@ -122,15 +121,7 @@ class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
 
     @calculate.register(xr.Dataset)
     def dataset(self, strategies, *args, current, discount, interest, fees, **kwargs):
-#        parameters = dict(current=current, discount=discount, interest=interest, fees=fees)
-#        equation = self.equation(arguments=strategies, parameters=parameters)
-#        valuations = equation(*args, **kwargs)
-#        valuations = valuations.to_dataframe().dropna(how="all", inplace=False)
-#        valuations = valuations.reset_index(drop=False, inplace=False)
-#        options = [option for option in list(map(str, Securities.Options)) if option not in valuations.columns]
-#        for option in options: valuations[option] = np.NaN
-#        return valuations
-        valuations = self.equation(strategies, current=current, discount=discount, fees=fees)
+        valuations = self.equation(strategies, current=current, discount=discount, interest=interest, fees=fees)
         valuations = valuations.to_dataframe().dropna(how="all", inplace=False)
         valuations = valuations.reset_index(drop=False, inplace=False)
         options = [option for option in list(map(str, Securities.Options)) if option not in valuations.columns]

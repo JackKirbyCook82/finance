@@ -150,9 +150,9 @@ class UnderlyingEquation(StrategyEquation):
     def execute(self, options):
         yield from super().execute(options)
         for attribute in str("μo,δo").split(","):
-            try: variable = getattr(self, attribute)
-            except Errors.Domain: continue
-            yield variable(options)
+            try: content = getattr(self, attribute)(options)
+            except Errors.Independent: continue
+            yield content
 
 
 class VerticalPutUnderlyingEquation(UnderlyingEquation, VerticalPutStrategyEquation):
@@ -206,9 +206,9 @@ class AppraisalEquation(StrategyEquation):
     def execute(self, options):
         yield from super().execute(options)
         for attribute in str("vo,Δo,Γo,Θo,Vo,λα,λβ").split(","):
-            try: variable = getattr(self, attribute)
-            except Errors.Domain: continue
-            yield variable(options)
+            try: content = getattr(self, attribute)(options)
+            except Errors.Independent: continue
+            yield content
 
 
 class VerticalPutAppraisalEquation(AppraisalEquation, VerticalPutStrategyEquation):
@@ -254,7 +254,6 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
         super().__init__(*args, **kwargs)
         equations = {strategy: list(StrategyEquation.registry[strategy]) for strategy in strategies}
         equations = {strategy: StrategyEquation + list(contents) for strategy, contents in equations.items()}
-#        self.__equations = equations
         self.__equations = {strategy: equation(*args, **kwargs) for strategy, equation in equations.items()}
 
     def execute(self, securities, /, **kwargs):
@@ -273,12 +272,6 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
             datasets = dict(self.unflatten(dataframes, *args, **kwargs))
             for strategy, equation in self.equations.items():
                 if not all([option in datasets.keys() for option in strategy.options]): continue
-#                equation = equation(arguments=datasets, parameters={})
-#                strategies = equation(*args, **kwargs)
-#                assert isinstance(strategies, xr.Dataset)
-#                strategies = strategies.assign_coords({"strategy": xr.Variable("strategy", [strategy]).squeeze("strategy")})
-#                for field in list(Querys.Settlement): strategies = strategies.expand_dims(field)
-#                yield settlement, strategy, strategies
                 strategies = self.equation(datasets)
                 assert isinstance(strategies, xr.Dataset)
                 strategies = strategies.assign_coords({"strategy": xr.Variable("strategy", [strategy]).squeeze("strategy")})

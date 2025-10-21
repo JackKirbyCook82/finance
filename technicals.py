@@ -8,9 +8,7 @@ Created on Fri Apr 19 2024
 
 import numpy as np
 import pandas as pd
-from operator import add
 from abc import ABC, ABCMeta
-from functools import reduce
 from datetime import date as Date
 
 from finance.concepts import Concepts, Querys
@@ -75,7 +73,6 @@ class TechnicalCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
         assert all([technical in list(Concepts.Technical) for technical in technicals])
         super().__init__(*args, **kwargs)
         equations = [equation for technical, equation in iter(TechnicalEquation) if technical in technicals]
-#        self.__equation = (TechnicalEquation + equations)
         self.__equation = (TechnicalEquation + equations)(*args, **kwargs)
 
     def execute(self, bars, /, **kwargs):
@@ -102,11 +99,6 @@ class TechnicalCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
         for dataframe in bars:
             assert (dataframe["ticker"].to_numpy()[0] == dataframe["ticker"]).all()
             dataframe = dataframe.sort_values("date", ascending=True, inplace=False)
-#            parameters = dict(period=period)
-#            equation = self.equation(arguments=dataframe, parameters=parameters)
-#            results = equation(*args, **kwargs)
-#            assert isinstance(results, pd.DataFrame)
-#            yield results
             technicals = self.equation(dataframe, period=period)
             assert isinstance(technicals, pd.DataFrame)
             yield technicals

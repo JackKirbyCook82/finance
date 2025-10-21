@@ -78,7 +78,6 @@ class AppraisalCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
     def __init__(self, *args, appraisals, **kwargs):
         super().__init__(*args, **kwargs)
         equations = [equation for appraisal, equation in iter(AppraisalEquation) if appraisal in appraisals]
-#        self.__equation = (AppraisalEquation + equations)
         self.__equation = (AppraisalEquation + equations)(*args, **kwargs)
 
     def execute(self, options, technicals=None, /, **kwargs):
@@ -96,18 +95,11 @@ class AppraisalCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
 
     def calculate(self, securities, *args, current, interest, **kwargs):
         assert isinstance(securities, pd.DataFrame)
- #       parameters = dict(current=current, interest=interest)
- #       equation = self.equation(arguments=securities, parameters=parameters)
- #       results = equation(*args, **kwargs)
- #       assert isinstance(results, pd.DataFrame)
- #       securities = pd.concat([securities, results], axis=1)
- #       securities = securities.reset_index(drop=True, inplace=False)
- #       return securities
         appraisals = self.equation(securities, current=current, interest=interest)
         assert isinstance(appraisals, pd.DataFrame)
         appraisals = pd.concat([securities, appraisals], axis=1)
         appraisals = appraisals.reset_index(drop=True, inplace=False)
-        yield appraisals
+        return appraisals
 
     @staticmethod
     def technicals(options, technicals, *args, **kwargs):
