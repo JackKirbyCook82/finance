@@ -78,12 +78,12 @@ class AppraisalEquation(ValuationEquation):
     Γo = Variables.Independent("Γo", "gamma", np.float32, locator="gamma")
     Θo = Variables.Independent("Θo", "theta", np.float32, locator="theta")
     Vo = Variables.Independent("Vo", "vega", np.float32, locator="vega")
-    λα = Variables.Independent("λα", "buying", np.float32, locator="buying")
-    λβ = Variables.Independent("λβ", "selling", np.float32, locator="selling")
+#    λα = Variables.Independent("λα", "buying", np.float32, locator="buying")
+#    λβ = Variables.Independent("λβ", "selling", np.float32, locator="selling")
 
     def execute(self, strategies, /, current, discount, fees):
         yield from super().execute(strategies, current=current, discount=discount, fees=fees)
-        for attribute in str("vo,Δo,Γo,Θo,Vo,λα,λβ").split(","):
+        for attribute in str("vo,Δo,Γo,Θo,Vo").split(","):
             try: content = getattr(self, attribute)(strategies, current=current, discount=discount, fees=fees)
             except Errors.Independent: continue
             yield content

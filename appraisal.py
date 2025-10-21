@@ -46,9 +46,6 @@ class AppraisalEquation(Equations.Vectorized.Table, ABC, metaclass=AppraisalEqua
     k = Variables.Independent("k", "strike", np.float32, locator="strike")
     r = Variables.Constant("r", "interest", np.float32, locator="interest")
 
-    def execute(self, securities, /, current, interest):
-        yield from super().execute(securities, current=current, interest=interest)
-        yield self.τ(securities, current=current, interest=interest)
 
 class BlackScholesEquation(AppraisalEquation, register=Concepts.Appraisal.BLACKSCHOLES):
     vo = Variables.Dependent("vo", "value", np.float32, function=lambda x, k, zx, zk, r, τ, i: x * norm.cdf(zx * int(i)) * int(i) - k * norm.cdf(zk * int(i)) * int(i) / np.exp(r * τ))
@@ -72,6 +69,11 @@ class GreekEquation(AppraisalEquation, register=Concepts.Appraisal.GREEKS):
         yield self.Δo(securities, current=current, interest=interest)
         yield self.Γo(securities, current=current, interest=interest)
         yield self.Vo(securities, current=current, interest=interest)
+
+
+class ImpliedEquation(object, register=Concepts.Appraisal.IMPLIED):
+    def execute(self, securities, /, current, interest):
+        pass
 
 
 class AppraisalCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
