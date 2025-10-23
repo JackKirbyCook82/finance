@@ -15,7 +15,7 @@ from functools import reduce
 from collections import namedtuple as ntuple
 
 from finance.concepts import Querys, Concepts, Strategies, Securities
-from calculations import Variables, Equations, Errors
+from calculations import Equation, Variables, Algorithms, Computations
 from support.mixins import Emptying, Sizing, Partition, Logging
 
 __version__ = "1.0.0"
@@ -26,7 +26,7 @@ __license__ = "MIT License"
 
 
 class StrategyLocator(ntuple("Locator", "axis security")): pass
-class StrategyEquationMeta(type(Equations.UnVectorized.Array), ABCMeta):
+class StrategyEquationMeta(ABCMeta):
     def __init__(cls, name, bases, attrs, *args, strategy=None, **kwargs):
         super(StrategyEquationMeta, cls).__init__(name, bases, attrs)
         if not any([type(base) is StrategyEquationMeta for base in bases]):
@@ -48,7 +48,7 @@ class StrategyEquationMeta(type(Equations.UnVectorized.Array), ABCMeta):
     def strategy(cls, strategy): cls.__strategy__ = strategy
 
 
-class StrategyEquation(Equations.UnVectorized.Array, ABC, metaclass=StrategyEquationMeta):
+class StrategyEquation(ABC, metaclass=StrategyEquationMeta):
     xpα = Variables.Independent("xpα", ("put", "long", "underlying"), np.float32, locator=StrategyLocator(Securities.Options.Puts.Long, "underlying"))
     xpβ = Variables.Independent("xpβ", ("put", "short", "underlying"), np.float32, locator=StrategyLocator(Securities.Options.Puts.Short, "underlying"))
     xcα = Variables.Independent("xcα", ("call", "long", "underlying"), np.float32, locator=StrategyLocator(Securities.Options.Calls.Long, "underlying"))
@@ -272,7 +272,7 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
             datasets = dict(self.unflatten(dataframes, *args, **kwargs))
             for strategy, equation in self.equations.items():
                 if not all([option in datasets.keys() for option in strategy.options]): continue
-                strategies = self.equation(datasets)
+                strategies = equation(datasets)
                 assert isinstance(strategies, xr.Dataset)
                 strategies = strategies.assign_coords({"strategy": xr.Variable("strategy", [strategy]).squeeze("strategy")})
                 for field in list(Querys.Settlement): strategies = strategies.expand_dims(field)

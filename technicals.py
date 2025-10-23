@@ -8,13 +8,12 @@ Created on Fri Apr 19 2024
 
 import numpy as np
 import pandas as pd
-from abc import ABC, ABCMeta
+from abc import ABC
 from datetime import date as Date
 
 from finance.concepts import Concepts, Querys
+from calculations import Equation, Variables, Algorithms, Computations
 from support.mixins import Emptying, Sizing, Partition, Logging
-from support.meta import RegistryMeta
-from calculations import Variables, Equations
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -23,18 +22,18 @@ __copyright__ = "Copyright 2024, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class TechnicalEquationMeta(RegistryMeta, type(Equations.UnVectorized.Table), ABCMeta): pass
-class TechnicalEquation(Equations.UnVectorized.Table, ABC, metaclass=TechnicalEquationMeta):
+class TechnicalEquation(ABC):
     x = Variables.Independent("x", "adjusted", np.float32, locator="adjusted")
     s = Variables.Independent("s", "ticker", Date, locator="ticker")
     t = Variables.Independent("t", "date", Date, locator="date")
     dt = Variables.Constant("dt", "period", np.int32, locator="period")
 
     def execute(self, bars, /, period):
-        yield from super().execute(bars, period=period)
-        yield self.s(bars, period=period)
-        yield self.x(bars, period=period)
-        yield self.t(bars, period=period)
+        parameters = dict(period=period)
+        yield from super().execute(bars, **parameters)
+        yield self.s(bars, **parameters)
+        yield self.x(bars, **parameters)
+        yield self.t(bars, **parameters)
 
 class BarsEquation(TechnicalEquation, register=Concepts.Technical.BARS):
     xo = Variables.Independent("xo", "open", np.float32, locator="open")
@@ -43,20 +42,22 @@ class BarsEquation(TechnicalEquation, register=Concepts.Technical.BARS):
     xh = Variables.Independent("xh", "high", np.float32, locator="high")
 
     def execute(self, bars, /, period):
-        yield from super().execute(bars, period=period)
-        yield self.xo(bars, period=period)
-        yield self.xc(bars, period=period)
-        yield self.xl(bars, period=period)
-        yield self.xh(bars, period=period)
+        parameters = dict(period=period)
+        yield from super().execute(bars, **parameters)
+        yield self.xo(bars, **parameters)
+        yield self.xc(bars, **parameters)
+        yield self.xl(bars, **parameters)
+        yield self.xh(bars, **parameters)
 
 class StatisticEquation(TechnicalEquation, register=Concepts.Technical.STATISTIC):
     δ = Variables.Dependent("δ", "volatility", np.float32, function=lambda x, *, dt: x.pct_change(1).rolling(dt).std())
     μ = Variables.Dependent("μ", "trend", np.float32, function=lambda x, *, dt: x.pct_change(1).rolling(dt).mean())
 
     def execute(self, bars, /, period):
-        yield from super().execute(bars, period=period)
-        yield self.δ(bars, period=period)
-        yield self.μ(bars, period=period)
+        parameters = dict(period=period)
+        yield from super().execute(bars, **parameters)
+        yield self.δ(bars, **parameters)
+        yield self.μ(bars, **parameters)
 
 class StochasticEquation(TechnicalEquation, register=Concepts.Technical.STOCHASTIC):
     xk = Variables.Dependent("xk", "oscillator", np.float32, function=lambda x, xkl, xkh: (x - xkl) * 100 / (xkh - xkl))
@@ -64,8 +65,9 @@ class StochasticEquation(TechnicalEquation, register=Concepts.Technical.STOCHAST
     xkl = Variables.Dependent("xkl", "lowest", np.float32, function=lambda x, *, dt: x.rolling(dt).max())
 
     def execute(self, bars, /, period):
-        yield from super().execute(bars, period=period)
-        yield self.xk(bars, period=period)
+        parameters = dict(period=period)
+        yield from super().execute(bars, **parameters)
+        yield self.xk(bars, **parameters)
 
 
 class TechnicalCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):

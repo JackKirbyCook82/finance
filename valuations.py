@@ -13,7 +13,7 @@ from abc import ABC
 from datetime import date as Date
 
 from finance.concepts import Querys, Securities
-from calculations import Variables, Equations, Errors
+from calculations import Equation, Variables, Algorithms, Computations
 from support.mixins import Emptying, Sizing, Partition, Logging
 from support.decorators import Dispatchers
 
@@ -24,7 +24,7 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class ValuationEquation(Equations.Vectorized.Array, ABC):
+class ValuationEquation(ABC):
     τ = Variables.Dependent("τ", "tau", np.int32, function=lambda tτ, *, to: (tτ - to).days)
 
     yo = Variables.Independent("yo", ("value", "spot"), np.float32, locator="spot")
@@ -36,9 +36,10 @@ class ValuationEquation(Equations.Vectorized.Array, ABC):
     ρ = Variables.Constant("ρ", "discount", np.float32, locator="discount")
     ε = Variables.Constant("ε", "fees", np.float32, locator="fees")
 
-    def execute(self, strategies, /, current, discount, fees):
-        yield from super().execute(strategies, current=current, discount=discount, fees=fees)
-        yield self.qo(strategies, current=current, discount=discount, fees=fees)
+    def execute(self, strategies, /, current, interest, discount, fees):
+        parameters = dict(current=current, interest=interest, discount=discount, fees=fees)
+        yield from super().execute(strategies, **parameters)
+        yield self.qo(strategies, **parameters)
 
 
 class PayoffEquation(ValuationEquation):
@@ -50,13 +51,14 @@ class PayoffEquation(ValuationEquation):
     yh = Variables.Independent("yh", ("value", "maximum"), np.float32, locator="maximum")
     yl = Variables.Independent("yl", ("value", "minimum"), np.float32, locator="minimum")
 
-    def execute(self, strategies, /, current, discount, fees):
-        yield from super().execute(strategies, current=current, discount=discount, fees=fees)
-        yield self.vl(strategies, current=current, discount=discount, fees=fees)
-        yield self.wh(strategies, current=current, discount=discount, fees=fees)
-        yield self.wk(strategies, current=current, discount=discount, fees=fees)
-        yield self.wl(strategies, current=current, discount=discount, fees=fees)
-        yield self.wo(strategies, current=current, discount=discount, fees=fees)
+    def execute(self, strategies, /, current, interest, discount, fees):
+        parameters = dict(current=current, interest=interest, discount=discount, fees=fees)
+        yield from super().execute(strategies, **parameters)
+        yield self.vl(strategies, **parameters)
+        yield self.wh(strategies, **parameters)
+        yield self.wk(strategies, **parameters)
+        yield self.wl(strategies, **parameters)
+        yield self.wo(strategies, **parameters)
 
 
 class UnderlyingEquation(ValuationEquation):
@@ -64,10 +66,11 @@ class UnderlyingEquation(ValuationEquation):
     δo = Variables.Independent("δo", "volatility", np.float32, locator="volatility")
     μo = Variables.Independent("μo", "trend", np.float32, locator="trend")
 
-    def execute(self, strategies, /, current, discount, fees):
-        yield from super().execute(strategies, current=current, discount=discount, fees=fees)
-        for attribute in str("λα,λβ").split(","):
-            try: content = getattr(self, attribute)(strategies, current=current, discount=discount, fees=fees)
+    def execute(self, strategies, /, current, interest, discount, fees):
+        parameters = dict(current=current, interest=interest, discount=discount, fees=fees)
+        yield from super().execute(strategies, **parameters)
+        for attribute in str("xo,μo,δo").split(","):
+            try: content = getattr(self, attribute)(strategies, **parameters)
             except Errors.Independent: continue
             yield content
 
@@ -81,10 +84,10 @@ class AppraisalEquation(ValuationEquation):
 #    λα = Variables.Independent("λα", "buying", np.float32, locator="buying")
 #    λβ = Variables.Independent("λβ", "selling", np.float32, locator="selling")
 
-    def execute(self, strategies, /, current, discount, fees):
-        yield from super().execute(strategies, current=current, discount=discount, fees=fees)
+    def execute(self, strategies, /, current, interest, discount, fees):
+        yield from super().execute(strategies, current=current, interest=interest, discount=discount, fees=fees)
         for attribute in str("vo,Δo,Γo,Θo,Vo").split(","):
-            try: content = getattr(self, attribute)(strategies, current=current, discount=discount, fees=fees)
+            try: content = getattr(self, attribute)(strategies, current=current, interest=interest, discount=discount, fees=fees)
             except Errors.Independent: continue
             yield content
 

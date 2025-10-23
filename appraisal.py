@@ -9,13 +9,12 @@ Created on Fri May 23 2025
 import types
 import numpy as np
 import pandas as pd
-from abc import ABC, ABCMeta
+from abc import ABC
 from scipy.stats import norm
 
 from finance.concepts import Concepts, Querys
+from calculations import Equation, Variables, Algorithms, Computations
 from support.mixins import Emptying, Sizing, Partition, Logging
-from support.meta import RegistryMeta
-from calculations import Variables, Equations
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -24,8 +23,7 @@ __copyright__ = "Copyright 2025, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class AppraisalEquationMeta(RegistryMeta, type(Equations.Vectorized.Table), ABCMeta): pass
-class AppraisalEquation(Equations.Vectorized.Table, ABC, metaclass=AppraisalEquationMeta):
+class AppraisalEquation(ABC):
     τ = Variables.Dependent("τ", "tau", np.float32, function=lambda to, tτ: (np.datetime64(tτ, "ns") - np.datetime64(to, "ns")) / np.timedelta64(364, 'D'))
 
     zx = Variables.Dependent("zx", ("zscore", "itm"), np.float32, function=lambda zxk, zvt, zrt: zxk + zvt + zrt)
@@ -51,8 +49,9 @@ class BlackScholesEquation(AppraisalEquation, register=Concepts.Appraisal.BLACKS
     vo = Variables.Dependent("vo", "value", np.float32, function=lambda x, k, zx, zk, r, τ, i: x * norm.cdf(zx * int(i)) * int(i) - k * norm.cdf(zk * int(i)) * int(i) / np.exp(r * τ))
 
     def execute(self, securities, /, current, interest):
-        yield from super().execute(securities, current=current, interest=interest)
-        yield self.vo(securities, current=current, interest=interest)
+        parameters = dict(current=current, interest=interest)
+        yield from super().execute(securities, **parameters)
+        yield self.vo(securities, **parameters)
 
 
 class GreekEquation(AppraisalEquation, register=Concepts.Appraisal.GREEKS):
@@ -63,17 +62,13 @@ class GreekEquation(AppraisalEquation, register=Concepts.Appraisal.GREEKS):
     Vo = Variables.Dependent("Vo", "vega", np.float32, function=lambda zx, x, τ: + norm.pdf(zx) * np.sqrt(τ) * x)
 
     def execute(self, securities, /, current, interest):
-        yield from super().execute(securities, current=current, interest=interest)
-        yield self.Θo(securities, current=current, interest=interest)
-        yield self.Po(securities, current=current, interest=interest)
-        yield self.Δo(securities, current=current, interest=interest)
-        yield self.Γo(securities, current=current, interest=interest)
-        yield self.Vo(securities, current=current, interest=interest)
-
-
-class ImpliedEquation(object, register=Concepts.Appraisal.IMPLIED):
-    def execute(self, securities, /, current, interest):
-        pass
+        parameters = dict(current=current, interest=interest)
+        yield from super().execute(securities, **parameters)
+        yield self.Θo(securities, **parameters)
+        yield self.Po(securities, **parameters)
+        yield self.Δo(securities, **parameters)
+        yield self.Γo(securities, **parameters)
+        yield self.Vo(securities, **parameters)
 
 
 class AppraisalCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
