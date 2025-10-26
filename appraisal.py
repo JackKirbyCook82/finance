@@ -23,7 +23,7 @@ __copyright__ = "Copyright 2025, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class AppraisalEquation(ABC):
+class AppraisalEquation(Computations.Table, Equation, ABC, root=True):
     τ = Variables.Dependent("τ", "tau", np.float32, function=lambda to, tτ: (np.datetime64(tτ, "ns") - np.datetime64(to, "ns")) / np.timedelta64(364, 'D'))
 
     zx = Variables.Dependent("zx", ("zscore", "itm"), np.float32, function=lambda zxk, zvt, zrt: zxk + zvt + zrt)
@@ -31,7 +31,7 @@ class AppraisalEquation(ABC):
 
     zxk = Variables.Dependent("zxk", ("zscore", "strike"), np.float32, function=lambda x, k, σ, τ: np.log(x / k) / np.sqrt(τ) / σ)
     zvt = Variables.Dependent("zvt", ("zscore", "volatility"), np.float32, function=lambda σ, τ: np.sqrt(τ) * σ / 2)
-    zrt = Variables.Dependent("zrt", ("zscore", "interest"), np.float32, function=lambda σ, r, τ: np.sqrt(τ) * r / σ)
+    zrt = Variables.Dependent("zrt", ("zscore", "interest"), np.float32, function=lambda r, σ, τ: np.sqrt(τ) * r / σ)
 
     tτ = Variables.Independent("tτ", "expire", np.datetime64, locator="expire")
     to = Variables.Constant("to", "current", np.datetime64, locator="current")
@@ -45,21 +45,21 @@ class AppraisalEquation(ABC):
     r = Variables.Constant("r", "interest", np.float32, locator="interest")
 
 
-class BlackScholesEquation(AppraisalEquation, register=Concepts.Appraisal.BLACKSCHOLES):
-    vo = Variables.Dependent("vo", "value", np.float32, function=lambda x, k, zx, zk, r, τ, i: x * norm.cdf(zx * int(i)) * int(i) - k * norm.cdf(zk * int(i)) * int(i) / np.exp(r * τ))
+class BlackScholesEquation(Algorithms.Vectorized.Table, AppraisalEquation, ABC, register=Concepts.Appraisal.BLACKSCHOLES):
+    y = Variables.Dependent("y", "value", np.float32, function=lambda x, k, zx, zk, r, τ, i: x * norm.cdf(zx * int(i)) * int(i) - k * norm.cdf(zk * int(i)) * int(i) / np.exp(r * τ))
 
     def execute(self, securities, /, current, interest):
         parameters = dict(current=current, interest=interest)
         yield from super().execute(securities, **parameters)
-        yield self.vo(securities, **parameters)
+        yield self.yo(securities, **parameters)
 
 
-class GreekEquation(AppraisalEquation, register=Concepts.Appraisal.GREEKS):
-    Θo = Variables.Dependent("Θo", "theta", np.float32, function=lambda zx, zk, x, k, r, σ, τ, i: - norm.cdf(zk * int(i)) * int(i) * k * r / np.exp(r * τ) - norm.pdf(zx) * x * σ / np.sqrt(τ) / 2)
-    Po = Variables.Dependent("Po", "rho", np.float32, function=lambda zk, k, r, τ, i: + norm.cdf(zk * int(i)) * int(i) * k * τ / np.exp(r * τ))
-    Δo = Variables.Dependent("Δo", "delta", np.float32, function=lambda zx, i: + norm.cdf(zx * int(i)) * int(i))
-    Γo = Variables.Dependent("Γo", "gamma", np.float32, function=lambda zx, x, σ, τ: + norm.pdf(zx) / np.sqrt(τ) / σ / x)
-    Vo = Variables.Dependent("Vo", "vega", np.float32, function=lambda zx, x, τ: + norm.pdf(zx) * np.sqrt(τ) * x)
+class GreekEquation(Algorithms.Vectorized.Table, AppraisalEquation, ABC, register=Concepts.Appraisal.GREEKS):
+    Θ = Variables.Dependent("Θ", "theta", np.float32, function=lambda zx, zk, x, k, r, σ, τ, i: - norm.cdf(zk * int(i)) * int(i) * k * r / np.exp(r * τ) - norm.pdf(zx) * x * σ / np.sqrt(τ) / 2)
+    P = Variables.Dependent("P", "rho", np.float32, function=lambda zk, k, r, τ, i: + norm.cdf(zk * int(i)) * int(i) * k * τ / np.exp(r * τ))
+    Δ = Variables.Dependent("Δ", "delta", np.float32, function=lambda zx, i: + norm.cdf(zx * int(i)) * int(i))
+    Γ = Variables.Dependent("Γ", "gamma", np.float32, function=lambda zx, x, σ, τ: + norm.pdf(zx) / np.sqrt(τ) / σ / x)
+    V = Variables.Dependent("V", "vega", np.float32, function=lambda zx, x, τ: + norm.pdf(zx) * np.sqrt(τ) * x)
 
     def execute(self, securities, /, current, interest):
         parameters = dict(current=current, interest=interest)
@@ -84,6 +84,10 @@ class AppraisalCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
         querys = self.keys(options, by=Querys.Settlement)
         querys = ",".join(list(map(str, querys)))
         if technicals is not None: options = self.technicals(options, technicals, **kwargs)
+
+        print(options)
+        raise Exception()
+
         options = self.calculate(options, **kwargs)
         size = self.size(options)
         self.console(f"{str(querys)}[{int(size):.0f}]")

@@ -22,7 +22,7 @@ __copyright__ = "Copyright 2024, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class TechnicalEquation(ABC):
+class TechnicalEquation(Computations.Table, Algorithms.UnVectorized.Table, Equation, ABC, root=True):
     x = Variables.Independent("x", "adjusted", np.float32, locator="adjusted")
     s = Variables.Independent("s", "ticker", Date, locator="ticker")
     t = Variables.Independent("t", "date", Date, locator="date")
@@ -35,7 +35,7 @@ class TechnicalEquation(ABC):
         yield self.x(bars, **parameters)
         yield self.t(bars, **parameters)
 
-class BarsEquation(TechnicalEquation, register=Concepts.Technical.BARS):
+class BarsEquation(TechnicalEquation, ABC, register=Concepts.Technical.BARS):
     xo = Variables.Independent("xo", "open", np.float32, locator="open")
     xc = Variables.Independent("xc", "close", np.float32, locator="close")
     xl = Variables.Independent("xl", "low", np.float32, locator="low")
@@ -49,7 +49,7 @@ class BarsEquation(TechnicalEquation, register=Concepts.Technical.BARS):
         yield self.xl(bars, **parameters)
         yield self.xh(bars, **parameters)
 
-class StatisticEquation(TechnicalEquation, register=Concepts.Technical.STATISTIC):
+class StatisticEquation(TechnicalEquation, ABC, register=Concepts.Technical.STATISTIC):
     δ = Variables.Dependent("δ", "volatility", np.float32, function=lambda x, *, dt: x.pct_change(1).rolling(dt).std())
     μ = Variables.Dependent("μ", "trend", np.float32, function=lambda x, *, dt: x.pct_change(1).rolling(dt).mean())
 
@@ -59,7 +59,7 @@ class StatisticEquation(TechnicalEquation, register=Concepts.Technical.STATISTIC
         yield self.δ(bars, **parameters)
         yield self.μ(bars, **parameters)
 
-class StochasticEquation(TechnicalEquation, register=Concepts.Technical.STOCHASTIC):
+class StochasticEquation(TechnicalEquation, ABC, register=Concepts.Technical.STOCHASTIC):
     xk = Variables.Dependent("xk", "oscillator", np.float32, function=lambda x, xkl, xkh: (x - xkl) * 100 / (xkh - xkl))
     xkh = Variables.Dependent("xkh", "highest", np.float32, function=lambda x, *, dt: x.rolling(dt).min())
     xkl = Variables.Dependent("xkl", "lowest", np.float32, function=lambda x, *, dt: x.rolling(dt).max())
