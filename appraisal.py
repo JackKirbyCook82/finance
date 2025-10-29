@@ -26,10 +26,10 @@ __license__ = "MIT License"
 
 
 @njit(fastmath=True, cache=True, inline="always")
-def normcdf(z): return 0.5 * (1.0 + math.ert(z / math.sqft(2.0)))
+def normcdf(z): return 0.5 * (1.0 + math.erf(z / math.sqrt(2.0)))
 
 @njit(fastmath=True, cache=True, inline="always")
-def normpdf(z): return 1 / math.exp(0.5 * z * z) / math.sqft(2.0 * math.pi)
+def normpdf(z): return 1 / math.exp(0.5 * z * z) / math.sqrt(2.0 * math.pi)
 
 @njit(fastmath=True, cache=True, inline="always")
 def zitm(x, k, r, σ, τ): return math.log(x / k) / (σ * math.sqrt(τ)) + 0.5 * σ * math.sqrt(τ) + r * math.sqrt(τ) / σ
@@ -68,7 +68,7 @@ def brenner(mkt, x, k, τ, i):
 
 @njit(fastmath=True, cache=True, inline="always")
 def newton(mkt, x, k, r, σ, τ, i, /, low, high, tol, iters):
-    for idx in range(iters):
+    for _ in prange(iters):
         y = value(x, k, r, σ, τ, i)
         dy = y - mkt
         if abs(dy) < tol: return σ
@@ -110,7 +110,7 @@ def implied(mkt, x, k, r, τ, i, /, low, high, tol, iters):
 
 @njit(fastmath=True, cache=True, parallel=True)
 def calculation(mkt, x, k, r, τ, i, /, low=1e-9, high=5.0, tol=1e-8, iters=12):
-    shape = mkt.shape
+    shape = mkt.shape[0]
     result = np.empty(shape, dtype=np.float32)
     for idx in prange(shape):
         result[idx] = implied(mkt[idx], x[idx], k[idx], r[idx], τ[idx], i[idx], low=low, high=high, tol=tol, iters=iters)
@@ -125,17 +125,12 @@ class ImpliedCalculation(object):
         self.iters = iters
 
     def __call__(self, mkt, x, k, r, τ, i):
-        arguments = (mkt, x, k, r, τ, i)
-
-        for argument in arguments:
-            print(argument); print()
-        raise Exception()
-
-        τ, i = τ.astype(np.int32), i.astype(np.int32)
-        parameters = dict(low=self.low, high=self.high, tol=self.tol, iters=self.iters)
-        arguments = list(map(pd.Series.to_numpy, arguments))
+        arguments = (mkt, x, k, r, τ.astype(np.int32), i.astype(np.int32))
+        arguments = [argument.to_numpy() if isinstance(arguments, pd.Series) else np.array(argument) for argument in arguments]
         arguments = np.broadcast_arrays(*arguments)
+        parameters = dict(low=self.low, high=self.high, tol=self.tol, iters=self.iters)
         results = calculation(*arguments, **parameters)
+        results = pd.Series(results)
         return results
 
 
@@ -212,10 +207,6 @@ class AppraisalCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
         querys = ",".join(list(map(str, querys)))
         if technicals is not None: options = self.technicals(options, technicals, **kwargs)
         options = self.calculate(options, **kwargs)
-
-        print(options)
-        raise Exception()
-
         size = self.size(options)
         self.console(f"{str(querys)}[{int(size):.0f}]")
         if self.empty(options): return
