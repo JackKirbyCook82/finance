@@ -125,8 +125,13 @@ class ImpliedCalculation(object):
         self.iters = iters
 
     def __call__(self, mkt, x, k, r, τ, i):
-        τ, i = τ.astype(np.int32), i.astype(np.int32)
         arguments = (mkt, x, k, r, τ, i)
+
+        for argument in arguments:
+            print(argument); print()
+        raise Exception()
+
+        τ, i = τ.astype(np.int32), i.astype(np.int32)
         parameters = dict(low=self.low, high=self.high, tol=self.tol, iters=self.iters)
         arguments = list(map(pd.Series.to_numpy, arguments))
         arguments = np.broadcast_arrays(*arguments)
@@ -135,8 +140,6 @@ class ImpliedCalculation(object):
 
 
 class AppraisalEquation(Computations.Table, Equation, ABC, root=True):
-    τ = Variables.Dependent("τ", "tau", np.float32, function=lambda to, tτ: (np.datetime64(tτ, "ns") - np.datetime64(to, "ns")) / np.timedelta64(364, 'D'))
-
     zx = Variables.Dependent("zx", ("zscore", "itm"), np.float32, function=lambda zxk, zvt, zrt: zxk + zvt + zrt)
     zk = Variables.Dependent("zk", ("zscore", "otm"), np.float32, function=lambda zxk, zvt, zrt: zxk - zvt + zrt)
 
@@ -159,11 +162,12 @@ class AppraisalEquation(Computations.Table, Equation, ABC, root=True):
 
 class BlackScholesEquation(Algorithms.Vectorized.Table, AppraisalEquation, ABC, register=Concepts.Appraisal.BLACKSCHOLES):
     y = Variables.Dependent("y", "value", np.float32, function=lambda x, k, zx, zk, r, τ, i: x * norm.cdf(zx * int(i)) * int(i) - k * norm.cdf(zk * int(i)) * int(i) / np.exp(r * τ))
+    τ = Variables.Dependent("τ", "tau", np.float32, function=lambda to, tτ: (np.datetime64(tτ, "ns") - np.datetime64(to, "ns")) / np.timedelta64(364, 'D'))
 
-    def execute(self, securities, /, current, interest):
+    def execute(self, options, /, current, interest):
         parameters = dict(current=current, interest=interest)
-        yield from super().execute(securities, **parameters)
-        yield self.yo(securities, **parameters)
+        yield from super().execute(options, **parameters)
+        yield self.y(options, **parameters)
 
 
 class GreekEquation(Algorithms.Vectorized.Table, AppraisalEquation, ABC, register=Concepts.Appraisal.GREEKS):
@@ -172,31 +176,33 @@ class GreekEquation(Algorithms.Vectorized.Table, AppraisalEquation, ABC, registe
     Δ = Variables.Dependent("Δ", "delta", np.float32, function=lambda zx, i: + norm.cdf(zx * int(i)) * int(i))
     Γ = Variables.Dependent("Γ", "gamma", np.float32, function=lambda zx, x, σ, τ: + norm.pdf(zx) / np.sqrt(τ) / σ / x)
     V = Variables.Dependent("V", "vega", np.float32, function=lambda zx, x, τ: + norm.pdf(zx) * np.sqrt(τ) * x)
+    τ = Variables.Dependent("τ", "tau", np.float32, function=lambda to, tτ: (np.datetime64(tτ, "ns") - np.datetime64(to, "ns")) / np.timedelta64(364, 'D'))
 
-    def execute(self, securities, /, current, interest):
+    def execute(self, options, /, current, interest):
         parameters = dict(current=current, interest=interest)
-        yield from super().execute(securities, **parameters)
-        yield self.Θo(securities, **parameters)
-        yield self.Po(securities, **parameters)
-        yield self.Δo(securities, **parameters)
-        yield self.Γo(securities, **parameters)
-        yield self.Vo(securities, **parameters)
+        yield from super().execute(options, **parameters)
+        yield self.Θ(options, **parameters)
+        yield self.P(options, **parameters)
+        yield self.Δ(options, **parameters)
+        yield self.Γ(options, **parameters)
+        yield self.V(options, **parameters)
 
 
 class ImpliedEquation(Algorithms.UnVectorized.Table, AppraisalEquation, ABC, register=Concepts.Appraisal.IMPLIED):
     λ = Variables.Dependent("λ", "implied", np.float32, function=lambda mkt, x, k, r, τ, i: ImpliedCalculation(low=1e-9, high=5.0, tol=1e-8, iters=12)(mkt, x, k, r, τ, i))
+    τ = Variables.Dependent("τ", "tau", np.int32, function=lambda to, tτ: (pd.to_datetime(tτ) - pd.to_datetime(to)).dt.days)
 
-    def execute(self, securities, /, current, interest):
+    def execute(self, options, /, current, interest):
         parameters = dict(current=current, interest=interest)
-        yield from super().execute(securities, **parameters)
-        yield self.λ(securities, **parameters)
+        yield from super().execute(options, **parameters)
+        yield self.λ(options, **parameters)
 
 
 class AppraisalCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
     def __init__(self, *args, appraisals, **kwargs):
         super().__init__(*args, **kwargs)
-        equations = [equation for appraisal, equation in iter(AppraisalEquation) if appraisal in appraisals]
-        self.__equation = (AppraisalEquation + equations)(*args, **kwargs)
+        equations = {appraisal: equation(*args, **kwargs) for appraisal, equation in iter(AppraisalEquation) if appraisal in appraisals}
+        self.__equations = list(equations.values())
 
     def execute(self, options, technicals=None, /, **kwargs):
         assert isinstance(options, pd.DataFrame)
@@ -205,23 +211,29 @@ class AppraisalCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
         querys = self.keys(options, by=Querys.Settlement)
         querys = ",".join(list(map(str, querys)))
         if technicals is not None: options = self.technicals(options, technicals, **kwargs)
+        options = self.calculate(options, **kwargs)
 
         print(options)
         raise Exception()
 
-        options = self.calculate(options, **kwargs)
         size = self.size(options)
         self.console(f"{str(querys)}[{int(size):.0f}]")
         if self.empty(options): return
         yield options
 
-    def calculate(self, securities, *args, current, interest, **kwargs):
-        assert isinstance(securities, pd.DataFrame)
-        appraisals = self.equation(securities, current=current, interest=interest)
-        assert isinstance(appraisals, pd.DataFrame)
-        appraisals = pd.concat([securities, appraisals], axis=1)
+    def calculate(self, options, *args, **kwargs):
+        assert isinstance(options, pd.DataFrame)
+        appraisals = list(self.calculator(options, *args, **kwargs))
+        appraisals = pd.concat([options] + appraisals, axis=1)
         appraisals = appraisals.reset_index(drop=True, inplace=False)
         return appraisals
+
+    def calculator(self, options, *args, current, interest, **kwargs):
+        assert isinstance(options, pd.DataFrame)
+        for equation in self.equations:
+            appraisals = equation(options, current=current, interest=interest)
+            assert isinstance(appraisals, pd.DataFrame)
+            yield appraisals
 
     @staticmethod
     def technicals(options, technicals, *args, **kwargs):
@@ -233,7 +245,7 @@ class AppraisalCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
         return options
 
     @property
-    def equation(self): return self.__equation
+    def equations(self): return self.__equations
 
 
 

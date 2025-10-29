@@ -95,7 +95,7 @@ class AppraisalEquation(ValuationEquation, ABC):
 class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        equation = ValuationEquation + list(ValuationEquation.__subclasses__())
+        equation = ValuationEquation & list(ValuationEquation.__subclasses__())
         self.__equation = equation(*args, **kwargs)
 
     def execute(self, strategies, /, **kwargs):

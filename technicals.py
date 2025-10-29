@@ -75,7 +75,7 @@ class TechnicalCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
         assert all([technical in list(Concepts.Technical) for technical in technicals])
         super().__init__(*args, **kwargs)
         equations = [equation for technical, equation in iter(TechnicalEquation) if technical in technicals]
-        self.__equation = (TechnicalEquation + equations)(*args, **kwargs)
+        self.__equation = (TechnicalEquation & equations)(*args, **kwargs)
 
     def execute(self, bars, /, **kwargs):
         assert isinstance(bars, pd.DataFrame)

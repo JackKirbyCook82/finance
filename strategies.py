@@ -212,7 +212,7 @@ class AppraisalEquation(StrategyEquation, ABC):
 
 
 class VerticalPutAppraisalEquation(AppraisalEquation, VerticalPutStrategyEquation, ABC):
-    yo = Variables.Dependent("yo", "value", np.float32, function=lambda vpα, vpβ: vpα + vpβ)
+    yo = Variables.Dependent("yo", "value", np.float32, function=lambda ypα, ypβ: ypα + ypβ)
     Δo = Variables.Dependent("Δo", "delta", np.float32, function=lambda Δpα, Δpβ: Δpα + Δpβ)
     Γo = Variables.Dependent("Γo", "gamma", np.float32, function=lambda Γpα, Γpβ: Γpα + Γpβ)
     Θo = Variables.Dependent("Θo", "theta", np.float32, function=lambda Θpα, Θpβ: Θpα + Θpβ)
@@ -221,7 +221,7 @@ class VerticalPutAppraisalEquation(AppraisalEquation, VerticalPutStrategyEquatio
 #    λβ = Variables.Dependent("λβ", "selling", np.float32, function=lambda λpβ: λpβ)
 
 class VerticalCallAppraisalEquation(AppraisalEquation, VerticalCallStrategyEquation, ABC):
-    yo = Variables.Dependent("yo", "value", np.float32, function=lambda vcα, vcβ: vcα + vcβ)
+    yo = Variables.Dependent("yo", "value", np.float32, function=lambda ycα, ycβ: ycα + ycβ)
     Δo = Variables.Dependent("Δo", "delta", np.float32, function=lambda Δcα, Δcβ: Δcα + Δcβ)
     Γo = Variables.Dependent("Γo", "gamma", np.float32, function=lambda Γcα, Γcβ: Γcα + Γcβ)
     Θo = Variables.Dependent("Θo", "theta", np.float32, function=lambda Θcα, Θcβ: Θcα + Θcβ)
@@ -230,7 +230,7 @@ class VerticalCallAppraisalEquation(AppraisalEquation, VerticalCallStrategyEquat
 #    λβ = Variables.Dependent("λβ", "selling", np.float32, function=lambda λcβ: λcβ)
 
 class CollarLongAppraisalEquation(AppraisalEquation, CollarLongStrategyEquation, ABC):
-    yo = Variables.Dependent("yo", "value", np.float32, function=lambda vpα, vcβ: vpα + vcβ)
+    yo = Variables.Dependent("yo", "value", np.float32, function=lambda ypα, ycβ: ypα + ycβ)
     Δo = Variables.Dependent("Δo", "delta", np.float32, function=lambda Δpα, Δcβ: Δpα + Δcβ + 1)
     Γo = Variables.Dependent("Γo", "gamma", np.float32, function=lambda Γpα, Γcβ: Γpα + Γcβ)
     Θo = Variables.Dependent("Θo", "theta", np.float32, function=lambda Θpα, Θcβ: Θpα + Θcβ)
@@ -239,7 +239,7 @@ class CollarLongAppraisalEquation(AppraisalEquation, CollarLongStrategyEquation,
 #    λβ = Variables.Dependent("λβ", "selling", np.float32, function=lambda λcβ: λcβ)
 
 class CollarShortAppraisalEquation(AppraisalEquation, CollarShortStrategyEquation, ABC):
-    yo = Variables.Dependent("yo", "value", np.float32, function=lambda vcα, vpβ: vcα + vpβ)
+    yo = Variables.Dependent("yo", "value", np.float32, function=lambda ycα, ypβ: ycα + ypβ)
     Δo = Variables.Dependent("Δo", "delta", np.float32, function=lambda Δcα, Δpβ: Δcα + Δpβ - 1)
     Γo = Variables.Dependent("Γo", "gamma", np.float32, function=lambda Γcα, Γpβ: Γcα + Γpβ)
     Θo = Variables.Dependent("Θo", "theta", np.float32, function=lambda Θcα, Θpβ: Θcα + Θpβ)
@@ -253,7 +253,7 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
         assert isinstance(strategies, list) and all([value in list(Strategies) for value in list(strategies)])
         super().__init__(*args, **kwargs)
         equations = {strategy: list(StrategyEquation.registry[strategy]) for strategy in strategies}
-        equations = {strategy: StrategyEquation + list(contents) for strategy, contents in equations.items()}
+        equations = {strategy: StrategyEquation & list(contents) for strategy, contents in equations.items()}
         self.__equations = {strategy: equation(*args, **kwargs) for strategy, equation in equations.items()}
 
     def execute(self, securities, /, **kwargs):

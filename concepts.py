@@ -24,7 +24,7 @@ __license__ = "MIT License"
 
 
 TechnicalConcept = Concept("Technical", ["BARS", "STATISTIC", "STOCHASTIC"], start=1)
-AppraisalConcept = Concept("Pricing", ["BLACKSCHOLES", "GREEKS", "IMPLIED"], start=1)
+AppraisalConcept = Concept("Appraisal", ["BLACKSCHOLES", "GREEKS", "IMPLIED"], start=1)
 InstrumentConcept = Concept("Instrument", ["EMPTY", "STOCK", "OPTION"], start=0)
 OptionConcept = Concept("Option", ["PUT", "EMPTY", "CALL"], start=-1)
 PositionConcept = Concept("Position", ["SHORT", "EMPTY", "LONG"], start=-1)
