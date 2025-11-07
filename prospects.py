@@ -26,9 +26,14 @@ class ProspectCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
         self.__liquidity = liquidity
         self.__priority = priority
 
-    def execute(self, valuations, /, **kwargs):
-        assert isinstance(valuations, pd.DataFrame)
+    def execute(self, securities, valuations, /, **kwargs):
+        assert isinstance(securities, pd.DataFrame) and isinstance(valuations, pd.DataFrame)
         if self.empty(valuations): return
+
+        print(securities)
+        print(valuations)
+        raise Exception()
+
         settlements = self.keys(valuations, by=Querys.Settlement)
         settlements = ",".join(list(map(str, settlements)))
         prospects = self.calculate(valuations, **kwargs)

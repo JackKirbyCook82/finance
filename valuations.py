@@ -44,7 +44,7 @@ class ValuationEquation(Computations.Array, Algorithms.Vectorized.Array, Equatio
 
 class PayoffEquation(ValuationEquation, ABC):
     vl = Variables.Dependent("vl", "npv", np.float32, function=lambda ul, uo, τ, *, ρ: + np.divide(ul, np.power(ρ + 1, np.divide(τ, 365))) + uo)
-    uk = Variables.Dependent("uk", "breakeven", np.float32, function=lambda ul, τ, *, ρ: - np.divide(ul, np.power(ρ + 1, np.divide(τ, 365))))
+#    uk = Variables.Dependent("uk", "breakeven", np.float32, function=lambda ul, τ, *, ρ: - np.divide(ul, np.power(ρ + 1, np.divide(τ, 365))))
     uh = Variables.Dependent("uh", "maximum", np.float32, function=lambda wh, *, ε: wh * 100 - ε)
     ul = Variables.Dependent("ul", "minimum", np.float32, function=lambda wl, *, ε: wl * 100 - ε)
     uo = Variables.Dependent("uo", "spot", np.float32, function=lambda wo, *, ε: wo * 100 - ε)
@@ -55,10 +55,10 @@ class PayoffEquation(ValuationEquation, ABC):
         parameters = dict(current=current, interest=interest, discount=discount, fees=fees)
         yield from super().execute(strategies, **parameters)
         yield self.vl(strategies, **parameters)
-        yield self.wh(strategies, **parameters)
-        yield self.wk(strategies, **parameters)
-        yield self.wl(strategies, **parameters)
-        yield self.wo(strategies, **parameters)
+        yield self.uh(strategies, **parameters)
+        yield self.uk(strategies, **parameters)
+        yield self.ul(strategies, **parameters)
+        yield self.uo(strategies, **parameters)
 
 
 class UnderlyingEquation(ValuationEquation, ABC):
@@ -81,8 +81,6 @@ class AppraisalEquation(ValuationEquation, ABC):
     Γo = Variables.Independent("Γo", "gamma", np.float32, locator="gamma")
     Θo = Variables.Independent("Θo", "theta", np.float32, locator="theta")
     Vo = Variables.Independent("Vo", "vega", np.float32, locator="vega")
-#    λα = Variables.Independent("λα", "buying", np.float32, locator="buying")
-#    λβ = Variables.Independent("λβ", "selling", np.float32, locator="selling")
 
     def execute(self, strategies, /, current, interest, discount, fees):
         yield from super().execute(strategies, current=current, interest=interest, discount=discount, fees=fees)
