@@ -56,7 +56,7 @@ class PayoffEquation(ValuationEquation, ABC):
         yield from super().execute(strategies, **parameters)
         yield self.vl(strategies, **parameters)
         yield self.uh(strategies, **parameters)
-        yield self.uk(strategies, **parameters)
+#        yield self.uk(strategies, **parameters)
         yield self.ul(strategies, **parameters)
         yield self.uo(strategies, **parameters)
 
