@@ -88,15 +88,15 @@ class TechnicalCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
         if self.empty(technicals): return
         yield technicals
 
-    def calculate(self, bars, *args, **kwargs):
+    def calculate(self, bars, /, **kwargs):
         assert isinstance(bars, pd.DataFrame)
         bars = list(self.values(bars, by=Querys.Symbol))
-        technicals = list(self.calculator(bars, *args, **kwargs))
+        technicals = list(self.calculator(bars, **kwargs))
         technicals = pd.concat(technicals, axis=0)
         technicals = technicals.reset_index(drop=True, inplace=False)
         return technicals
 
-    def calculator(self, bars, *args, period, **kwargs):
+    def calculator(self, bars, /, period, **kwargs):
         assert isinstance(bars, list) and all([isinstance(dataframe, pd.DataFrame) for dataframe in bars])
         for dataframe in bars:
             assert (dataframe["ticker"].to_numpy()[0] == dataframe["ticker"]).all()

@@ -48,10 +48,10 @@ class BlackScholesEquation(AppraisalEquation, ABC, register=Concepts.Appraisal.B
     y = Variables.Dependent("y", "value", np.float32, function=lambda x, k, zx, zk, r, τ, i: x * norm.cdf(zx * int(i)) * int(i) - k * norm.cdf(zk * int(i)) * int(i) / np.exp(r * τ))
     τ = Variables.Dependent("τ", "tau", np.float32, function=lambda to, tτ: (np.datetime64(tτ, "ns") - np.datetime64(to, "ns")) / np.timedelta64(364, 'D'))
 
-    def execute(self, options, /, current, interest):
+    def execute(self, contents, /, current, interest):
         parameters = dict(current=current, interest=interest)
-        yield from super().execute(options, **parameters)
-        yield self.y(options, **parameters)
+        yield from super().execute(contents, **parameters)
+        yield self.y(contents, **parameters)
 
 
 class GreekEquation(AppraisalEquation, ABC, register=Concepts.Appraisal.GREEKS):
@@ -62,14 +62,14 @@ class GreekEquation(AppraisalEquation, ABC, register=Concepts.Appraisal.GREEKS):
     V = Variables.Dependent("V", "vega", np.float32, function=lambda zx, x, τ: + norm.pdf(zx) * np.sqrt(τ) * x)
     τ = Variables.Dependent("τ", "tau", np.float32, function=lambda to, tτ: (np.datetime64(tτ, "ns") - np.datetime64(to, "ns")) / np.timedelta64(364, 'D'))
 
-    def execute(self, options, /, current, interest):
+    def execute(self, contents, /, current, interest):
         parameters = dict(current=current, interest=interest)
-        yield from super().execute(options, **parameters)
-        yield self.Θ(options, **parameters)
-        yield self.P(options, **parameters)
-        yield self.Δ(options, **parameters)
-        yield self.Γ(options, **parameters)
-        yield self.V(options, **parameters)
+        yield from super().execute(contents, **parameters)
+        yield self.Θ(contents, **parameters)
+        yield self.P(contents, **parameters)
+        yield self.Δ(contents, **parameters)
+        yield self.Γ(contents, **parameters)
+        yield self.V(contents, **parameters)
 
 
 class AppraisalCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
@@ -78,41 +78,41 @@ class AppraisalCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
         equations = {appraisal: equation(*args, **kwargs) for appraisal, equation in iter(AppraisalEquation) if appraisal in appraisals}
         self.__equations = list(equations.values())
 
-    def execute(self, options, technicals=None, /, **kwargs):
-        assert isinstance(options, pd.DataFrame)
+    def execute(self, contents, /, technicals=None, **kwargs):
+        assert isinstance(contents, pd.DataFrame)
         assert isinstance(technicals, (pd.DataFrame, types.NoneType))
-        if self.empty(options): return
-        querys = self.keys(options, by=Querys.Settlement)
+        if self.empty(contents): return
+        querys = self.keys(contents, by=Querys.Settlement)
         querys = ",".join(list(map(str, querys)))
-        if technicals is not None: options = self.technicals(options, technicals, **kwargs)
-        options = self.calculate(options, **kwargs)
-        size = self.size(options)
+        if technicals is not None: contents = self.technicals(contents, technicals, **kwargs)
+        results = self.calculate(contents, **kwargs)
+        size = self.size(results)
         self.console(f"{str(querys)}[{int(size):.0f}]")
-        if self.empty(options): return
-        yield options
+        if self.empty(results): return
+        yield results
 
-    def calculate(self, options, *args, **kwargs):
-        assert isinstance(options, pd.DataFrame)
-        appraisals = list(self.calculator(options, *args, **kwargs))
-        results = pd.concat([options] + appraisals, axis=1)
+    def calculate(self, contents, /, **kwargs):
+        assert isinstance(contents, pd.DataFrame)
+        appraisals = list(self.calculator(contents, **kwargs))
+        results = pd.concat([contents] + appraisals, axis=1)
         results = results.reset_index(drop=True, inplace=False)
         return results
 
-    def calculator(self, options, *args, current, interest, **kwargs):
-        assert isinstance(options, pd.DataFrame)
+    def calculator(self, contents, /, current, interest, **kwargs):
+        assert isinstance(contents, pd.DataFrame)
         for equation in self.equations:
-            appraisals = equation(options, current=current, interest=interest)
+            appraisals = equation(contents, current=current, interest=interest)
             assert isinstance(appraisals, pd.DataFrame)
             yield appraisals
 
     @staticmethod
-    def technicals(options, technicals, *args, **kwargs):
-        assert isinstance(options, pd.DataFrame) and isinstance(technicals, pd.DataFrame)
+    def technicals(contents, technicals, /, **kwargs):
+        assert isinstance(contents, pd.DataFrame) and isinstance(technicals, pd.DataFrame)
         mask = technicals["date"] == technicals["date"].max()
         technicals = technicals.where(mask).dropna(how="all", inplace=False)
         technicals = technicals.drop(columns="date", inplace=False)
-        options = options.merge(technicals, how="left", on=list(Querys.Symbol), sort=False, suffixes=("", ""))
-        return options
+        contents = contents.merge(technicals, how="left", on=list(Querys.Symbol), sort=False, suffixes=("", ""))
+        return contents
 
     @property
     def equations(self): return self.__equations

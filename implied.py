@@ -7,6 +7,7 @@ Created on Fri May 23 2025
 """
 
 import math
+import types
 import numpy as np
 import pandas as pd
 from abc import ABC
@@ -116,10 +117,10 @@ def calculation(mkt, x, k, r, τ, i, /, low=1e-9, high=5.0, tol=1e-8, iters=12):
 
 class ImpliedFunction(object):
     def __init__(self, /, low, high, tol, iters):
-        self.low = low
-        self.high = high
-        self.tol = tol
         self.iters = iters
+        self.high = high
+        self.low = low
+        self.tol = tol
 
     def __call__(self, mkt, x, k, r, τ, i):
         arguments = (mkt, x, k, r, τ.astype(np.int32), i.astype(np.int32))
@@ -145,10 +146,10 @@ class ImpliedEquation(Computations.Table, Algorithms.UnVectorized.Table, Equatio
     k = Variables.Independent("k", "strike", np.float32, locator="strike")
     r = Variables.Constant("r", "interest", np.float32, locator="interest")
 
-    def execute(self, securities, /, current, interest):
+    def execute(self, contents, /, current, interest):
         parameters = dict(current=current, interest=interest)
-        yield from super().execute(securities, **parameters)
-        yield self.λ(securities, **parameters)
+        yield from super().execute(contents, **parameters)
+        yield self.λ(contents, **parameters)
 
 
 class ImpliedCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
@@ -156,22 +157,22 @@ class ImpliedCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"
         super().__init__(*args, **kwargs)
         self.__equation = ImpliedEquation(*args, **kwargs)
 
-    def execute(self, securities, /, **kwargs):
-        assert isinstance(securities, pd.DataFrame)
-        if self.empty(securities): return
-        querys = self.keys(securities, by=Querys.Settlement)
+    def execute(self, contents, /, **kwargs):
+        assert isinstance(contents, (pd.DataFrame, types.NoneType))
+        if self.empty(contents): return
+        querys = self.keys(contents, by=Querys.Settlement)
         querys = ",".join(list(map(str, querys)))
-        securities = self.calculate(securities, **kwargs)
-        size = self.size(securities)
+        results = self.calculate(contents, **kwargs)
+        size = self.size(results)
         self.console(f"{str(querys)}[{int(size):.0f}]")
-        if self.empty(securities): return
-        yield securities
+        if self.empty(results): return
+        yield results
 
-    def calculate(self, securities, *args, current, interest, **kwargs):
-        assert isinstance(securities, pd.DataFrame)
-        implications = self.equation(securities, current=current, interest=interest)
+    def calculate(self, contents, /, current, interest, **kwargs):
+        assert isinstance(contents, pd.DataFrame)
+        implications = self.equation(contents, current=current, interest=interest)
         assert isinstance(implications, pd.DataFrame)
-        results = pd.concat([securities, implications], axis=1)
+        results = pd.concat([contents, implications], axis=1)
         results = results.reset_index(drop=True, inplace=False)
         return results
 

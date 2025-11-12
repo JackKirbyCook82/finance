@@ -253,10 +253,10 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
             if self.empty(strategies, "size"): return
             yield strategies
 
-    def calculator(self, options, *args, **kwargs):
+    def calculator(self, options, /, **kwargs):
         assert isinstance(options, pd.DataFrame)
         for settlement, dataframes in self.partition(options, by=Querys.Settlement):
-            datasets = dict(self.unflatten(dataframes, *args, **kwargs))
+            datasets = dict(self.unflatten(dataframes, **kwargs))
             for strategy, equation in self.equations.items():
                 if not all([option in datasets.keys() for option in strategy.options]): continue
                 strategies = equation(datasets)
@@ -266,7 +266,7 @@ class StrategyCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
                 yield settlement, strategy, strategies
 
     @staticmethod
-    def unflatten(securities, *args, **kwargs):
+    def unflatten(securities, /, **kwargs):
         assert isinstance(securities, pd.DataFrame)
         for security, dataframe in securities.groupby(list(Concepts.Securities.Security), sort=False):
             if dataframe.empty: continue

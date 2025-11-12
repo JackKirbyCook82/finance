@@ -29,18 +29,18 @@ class PricingCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"
         super().__init__(*args, **kwargs)
         self.__pricing = pricing
 
-    def execute(self, securities, *args, **kwargs):
-        assert isinstance(securities, pd.DataFrame)
-        if self.empty(securities): return
-        querys = self.keys(securities, by=self.query)
+    def execute(self, contents, /, **kwargs):
+        assert isinstance(contents, pd.DataFrame)
+        if self.empty(contents): return
+        querys = self.keys(contents, by=self.query)
         querys = ",".join(list(map(str, querys)))
-        securities = self.calculate(securities, *args, **kwargs)
-        size = self.size(securities)
+        results = self.calculate(contents, **kwargs)
+        size = self.size(results)
         self.console(f"{str(querys)}[{int(size):.0f}]")
-        if self.empty(securities): return
-        yield securities
+        if self.empty(results): return
+        yield results
 
-    def calculate(self, securities, *args, **kwargs):
+    def calculate(self, securities, /, **kwargs):
         assert isinstance(securities, pd.DataFrame)
         pricing = securities.apply(self.pricing, axis=1).rename("price")
         securities = pd.concat([securities, pricing], axis=1)
@@ -53,7 +53,7 @@ class PricingCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"
 
 
 class SecurityCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
-    def execute(self, stocks, options, technicals=None, /, **kwargs):
+    def execute(self, stocks, options, /, technicals=None, **kwargs):
         assert isinstance(stocks, pd.DataFrame) and isinstance(options, pd.DataFrame)
         assert isinstance(technicals, (pd.DataFrame, types.NoneType))
         if self.empty(options): return
@@ -72,18 +72,18 @@ class SecurityCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
         if self.empty(securities): return
         yield securities
 
-    def calculate(self, stocks, options, *args, **kwargs):
+    def calculate(self, stocks, options, /, **kwargs):
         assert isinstance(stocks, pd.DataFrame) and isinstance(options, pd.DataFrame)
         underlying = stocks.apply(lambda series: series["price"], axis=1).rename("underlying")
         stocks = pd.concat([stocks[list(Querys.Symbol)], underlying], axis=1)
         options = options.merge(stocks, how="left", on=list(Querys.Symbol), sort=False, suffixes=("", ""))
-        options = list(self.calculator(options, *args, **kwargs))
+        options = list(self.calculator(options, **kwargs))
         options = pd.concat(options, axis=0)
         options = options.reset_index(drop=True, inplace=False)
         return options
 
     @staticmethod
-    def calculator(options, *args, **kwargs):
+    def calculator(options, /, **kwargs):
         positions = {Concepts.Securities.Position.LONG: "supply", Concepts.Securities.Position.SHORT: "demand"}
         pricing, sizing, greeks = ("ask", "bid"), ("supply", "demand"), ("value", "delta", "gamma", "theta", "rho", "vega", "implied")
         for position, column in positions.items():
@@ -98,7 +98,7 @@ class SecurityCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
             yield dataframe
 
     @staticmethod
-    def technicals(securities, technicals, *args, **kwargs):
+    def technicals(securities, technicals, /, **kwargs):
         assert isinstance(securities, pd.DataFrame) and isinstance(technicals, pd.DataFrame)
         mask = technicals["date"] == technicals["date"].max()
         technicals = technicals.where(mask).dropna(how="all", inplace=False)

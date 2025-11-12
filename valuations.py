@@ -106,22 +106,22 @@ class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
             if self.empty(valuations): return
             yield valuations
 
-    def calculator(self, strategies, *args, **kwargs):
+    def calculator(self, strategies, /, **kwargs):
         for settlement, datasets in self.partition(strategies, by=Querys.Settlement):
-            valuations = self.calculate(datasets, *args, **kwargs)
+            valuations = self.calculate(datasets, **kwargs)
             yield settlement, valuations
 
     @Dispatchers.Type(locator=0)
-    def calculate(self, strategies, *args, **kwargs): raise TypeError(type(strategies))
+    def calculate(self, strategies, /, **kwargs): raise TypeError(type(strategies))
     @calculate.register(list)
-    def collection(self, strategies, *args, **kwargs):
-        valuations = [self.calculate(dataset, *args, **kwargs) for dataset in strategies]
+    def collection(self, strategies, /, **kwargs):
+        valuations = [self.calculate(dataset, **kwargs) for dataset in strategies]
         valuations = pd.concat(valuations, axis=0)
         valuations = valuations.reset_index(drop=True, inplace=False)
         return valuations
 
     @calculate.register(xr.Dataset)
-    def dataset(self, strategies, *args, current, discount, interest, fees, **kwargs):
+    def dataset(self, strategies, /, current, discount, interest, fees, **kwargs):
         valuations = self.equation(strategies, current=current, discount=discount, interest=interest, fees=fees)
         valuations = valuations.to_dataframe().dropna(how="all", inplace=False)
         valuations = valuations.reset_index(drop=False, inplace=False)

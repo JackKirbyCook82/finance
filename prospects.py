@@ -8,9 +8,8 @@ Created on Thurs Nov 21 2024
 
 import numpy as np
 import pandas as pd
-from collections import namedtuple as ntuple
 
-from finance.concepts import Concepts, Querys, Securities
+from finance.concepts import Concepts, Querys
 from support.mixins import Emptying, Sizing, Partition, Logging
 
 __version__ = "1.0.0"
@@ -27,27 +26,9 @@ class ProspectCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
         self.__liquidity = liquidity
         self.__priority = priority
 
-    def execute(self, securities, valuations, /, **kwargs):
-        assert isinstance(securities, pd.DataFrame) and isinstance(valuations, pd.DataFrame)
+    def execute(self, valuations, /, **kwargs):
+        assert isinstance(valuations, pd.DataFrame)
         if self.empty(valuations): return
-
-        Columns = ntuple("Columns", "contract security option valuation")
-        columns = Columns(list(map(str, Querys.Contract)), list(map(str, Concepts.Securities.Security)), list(map(str, Securities.Options)), [])
-        columns = Columns(columns.contract, columns.security, columns.option, [column for column in valuations.columns if column not in columns.option])
-        dataframe = valuations.melt(id_vars=columns.valuation, value_vars=columns.option, var_name="security", value_name="strike")
-        dataframe[columns.security] = dataframe["security"].str.split("|", expand=True)
-        dataframe = dataframe.drop(columns=["security"]).dropna(subset=["strike"])
-        dataframe = dataframe[columns.security + ["strike"] + columns.contract]
-        dataframe = dataframe.loc[:, ~dataframe.columns.duplicated()]
-        dataframe[columns.security] = dataframe[columns.security].astype(str)
-        securities = securities.assign(**securities[columns.security].astype(str).to_dict())
-        overlap = list(set(securities.columns) & set(dataframe.columns))
-        securities = securities.merge(dataframe[overlap], on=overlap, how="inner")
-
-        print(valuations, "\n")
-        print(securities)
-        raise Exception()
-
         settlements = self.keys(valuations, by=Querys.Settlement)
         settlements = ",".join(list(map(str, settlements)))
         prospects = self.calculate(valuations, **kwargs)
@@ -56,7 +37,7 @@ class ProspectCalculator(Sizing, Emptying, Partition, Logging, title="Calculated
         if self.empty(prospects): return
         yield prospects
 
-    def calculate(self, valuations, *args, **kwargs):
+    def calculate(self, valuations, /, **kwargs):
         assert isinstance(valuations, pd.DataFrame)
         valuations["liquidity"] = valuations.apply(self.liquidity, axis=1).apply(np.floor)
         valuations["priority"] = valuations.apply(self.priority, axis=1)
