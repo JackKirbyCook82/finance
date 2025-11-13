@@ -140,7 +140,7 @@ class ImpliedEquation(Computations.Table, Algorithms.UnVectorized.Table, Equatio
     tτ = Variables.Independent("tτ", "expire", np.datetime64, locator="expire")
     to = Variables.Constant("to", "current", np.datetime64, locator="current")
 
-    x = Variables.Independent("x", "underlying", np.float32, locator="underlying")
+    x = Variables.Independent("x", "adjusted", np.float32, locator="adjusted")
     i = Variables.Independent("i", "option", Concepts.Securities.Option, locator="option")
     j = Variables.Independent("j", "position", Concepts.Securities.Position, locator="position")
     k = Variables.Independent("k", "strike", np.float32, locator="strike")

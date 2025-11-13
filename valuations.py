@@ -44,7 +44,7 @@ class ValuationEquation(Computations.Array, Algorithms.Vectorized.Array, Equatio
 
 class PayoffEquation(ValuationEquation, ABC):
     vl = Variables.Dependent("vl", "npv", np.float32, function=lambda ul, uo, τ, *, ρ: + np.divide(ul, np.power(ρ + 1, np.divide(τ, 365))) + uo)
-#    uk = Variables.Dependent("uk", "breakeven", np.float32, function=lambda ul, τ, *, ρ: - np.divide(ul, np.power(ρ + 1, np.divide(τ, 365))))
+    uk = Variables.Dependent("uk", "breakeven", np.float32, function=lambda ul, τ, *, ρ: - np.divide(ul, np.power(ρ + 1, np.divide(τ, 365))))
     uh = Variables.Dependent("uh", "maximum", np.float32, function=lambda wh, *, ε: wh * 100 - ε)
     ul = Variables.Dependent("ul", "minimum", np.float32, function=lambda wl, *, ε: wl * 100 - ε)
     uo = Variables.Dependent("uo", "spot", np.float32, function=lambda wo, *, ε: wo * 100 - ε)
@@ -56,7 +56,7 @@ class PayoffEquation(ValuationEquation, ABC):
         yield from super().execute(strategies, **parameters)
         yield self.vl(strategies, **parameters)
         yield self.uh(strategies, **parameters)
-#        yield self.uk(strategies, **parameters)
+        yield self.uk(strategies, **parameters)
         yield self.ul(strategies, **parameters)
         yield self.uo(strategies, **parameters)
 
