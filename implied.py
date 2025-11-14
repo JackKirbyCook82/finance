@@ -85,18 +85,25 @@ def bisection(mkt, x, k, r, τ, i, /, low, high, tol):
     yh = value(x, k, r, σh, τ, i) - mkt
     while yl * yh > 0.0 and σh < 10.0:
         σh = min(2.0 * σh, 10.0)
-        yh = value(x, k, r, σl, τ, i) - mkt
+        yh = value(x, k, r, σh, τ, i) - mkt
     if yl * yh > 0.0: return math.nan
     for idx in range(100):
         σm = 0.5 * (σl + σh)
         ym = value(x, k, r, σm, τ, i) - mkt
         if abs(ym) < tol or (σh - σl) < 1e-12: return σm
-        if yl * yh <= 0.0: σh = σm; yh = ym
+        if yl * ym <= 0.0: σh = σm; yh = ym
         else: σl = σm; yl = ym
     return 0.5 * (σl + σh)
 
+@njit(fastmath=True, cache=True, inline="always")
+def residual(mkt, x, k, r, τ, i):
+    yl, yh = boundary(x, k, r, τ, i)
+    if mkt < yl - 1e-12: return mkt - yl
+    elif mkt > yh + 1e-12: return mkt - yh
+    else: return 0.0
+
 @njit(fastmath=True, cache=True)
-def implied(mkt, x, k, r, τ, i, /, low, high, tol, iters):
+def strict(mkt, x, k, r, τ, i, /, low, high, tol, iters):
     if τ <= 0.0: return math.nan
     yl, yh = boundary(x, k, r, τ, i)
     if mkt < yl - 1e-12 or mkt > yh + 1e-12: return math.nan
@@ -104,15 +111,35 @@ def implied(mkt, x, k, r, τ, i, /, low, high, tol, iters):
     σ = newton(mkt, x, k, r, σ, τ, i, low=low, high=high, tol=tol, iters=iters)
     if not math.isnan(σ): return σ
     σ = bisection(mkt, x, k, r, τ, i, low=low, high=high, tol=tol)
-    return σ
+    ε = residual(mkt, x, k, r, τ, i)
+    return σ, ε
 
-@njit(fastmath=True, cache=True, parallel=True)
-def calculation(mkt, x, k, r, τ, i, /, low=1e-9, high=5.0, tol=1e-8, iters=12):
-    shape = mkt.shape[0]
-    result = np.empty(shape, dtype=np.float32)
-    for idx in prange(shape):
-        result[idx] = implied(mkt[idx], x[idx], k[idx], r[idx], τ[idx], i[idx], low=low, high=high, tol=tol, iters=iters)
-    return result
+@njit(fastmath=True, cache=True)
+def clipped(mkt, x, k, r, τ, i, /, low, high, tol, iters):
+    if τ <= 0.0: return math.nan
+    yl, yh = boundary(x, k, r, τ, i)
+    if mkt < yl - 1e-12: return low
+    elif mkt > yh + 1e-12: return high
+    σ = brenner(mkt, x, k, τ, i)
+    σ = newton(mkt, x, k, r, σ, τ, i, low=low, high=high, tol=tol, iters=iters)
+    if not math.isnan(σ): return σ
+    σ = bisection(mkt, x, k, r, τ, i, low=low, high=high, tol=tol)
+    ε = residual(mkt, x, k, r, τ, i)
+    return σ, ε
+
+@njit(fasthmath=True, cache=True)
+def fitted(mkt, x, k, r, τ, i, /, low, high, tol, iters):
+    pass
+
+
+# @njit(fastmath=True, cache=True, parallel=True)
+# def calculation(mkt, x, k, r, τ, i, /, low=1e-9, high=5.0, tol=1e-8, iters=12):
+#     shape = mkt.shape[0]
+#     σ, ε = np.empty(shape, dtype=np.float32), np.empty(shape, dtype=np.float32)
+#     for idx in prange(shape):
+#         σ[idx] = implied(mkt[idx], x[idx], k[idx], r[idx], τ[idx], i[idx], low=low, high=high, tol=tol, iters=iters)
+#         ε[idx] = residual(mkt[idx], x[idx], k[idx], r[idx], τ[idx], i[idx])
+#     return σ, ε
 
 
 class ImpliedFunction(object):
