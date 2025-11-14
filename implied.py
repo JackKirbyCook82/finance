@@ -96,6 +96,27 @@ def bisection(mkt, x, k, r, τ, i, /, low, high, tol):
     return 0.5 * (σl + σh)
 
 @njit(fastmath=True, cache=True, inline="always")
+def ternary(mkt, x, k, r, τ, i, /, low, high, tol, iters):
+    σl, σh = low, high
+    for _ in prange(iters):
+        σml = σl + (σh - σl) / 3.0
+        σmh = σh - (σh - σl) / 3.0
+        yml = abs(value(x, k, r, σml, τ, i) - mkt)
+        ymh = abs(value(x, k, r, σmh, τ, i) - mkt)
+        if yml < ymh: σh = σmh
+        else: σl = σml
+        if (σh - σl) < tol: break
+    return 0.5 * (σl + σh)
+
+@njit(fastmath=True, cache=True, inline="always")
+def volatility(mkt, x, k, r, τ, i, /, low, high, tol, iters):
+    σ = brenner(mkt, x, k, τ, i)
+    σ = newton(mkt, x, k, r, σ, τ, i, low=low, high=high, tol=tol, iters=iters)
+    if not math.isnan(σ): return σ
+    σ = bisection(mkt, x, k, r, τ, i, low=low, high=high, tol=tol)
+    return σ
+
+@njit(fastmath=True, cache=True, inline="always")
 def residual(mkt, x, k, r, τ, i):
     yl, yh = boundary(x, k, r, τ, i)
     if mkt < yl - 1e-12: return mkt - yl
@@ -106,11 +127,8 @@ def residual(mkt, x, k, r, τ, i):
 def strict(mkt, x, k, r, τ, i, /, low, high, tol, iters):
     if τ <= 0.0: return math.nan
     yl, yh = boundary(x, k, r, τ, i)
-    if mkt < yl - 1e-12 or mkt > yh + 1e-12: return math.nan
-    σ = brenner(mkt, x, k, τ, i)
-    σ = newton(mkt, x, k, r, σ, τ, i, low=low, high=high, tol=tol, iters=iters)
-    if not math.isnan(σ): return σ
-    σ = bisection(mkt, x, k, r, τ, i, low=low, high=high, tol=tol)
+    if mkt < yl - 1e-12 or mkt > yh + 1e-12: σ = math.nan
+    else: σ = volatility(mkt, x, k, r, τ, i, low=low, high=high, tol=tol, iters=iters)
     ε = residual(mkt, x, k, r, τ, i)
     return σ, ε
 
@@ -118,18 +136,23 @@ def strict(mkt, x, k, r, τ, i, /, low, high, tol, iters):
 def clipped(mkt, x, k, r, τ, i, /, low, high, tol, iters):
     if τ <= 0.0: return math.nan
     yl, yh = boundary(x, k, r, τ, i)
-    if mkt < yl - 1e-12: return low
-    elif mkt > yh + 1e-12: return high
-    σ = brenner(mkt, x, k, τ, i)
-    σ = newton(mkt, x, k, r, σ, τ, i, low=low, high=high, tol=tol, iters=iters)
-    if not math.isnan(σ): return σ
-    σ = bisection(mkt, x, k, r, τ, i, low=low, high=high, tol=tol)
+    if mkt < yl - 1e-12:  σ = low
+    elif mkt > yh + 1e-12: σ = high
+    else: σ = volatility(mkt, x, k, r, τ, i, low=low, high=high, tol=tol, iters=iters)
     ε = residual(mkt, x, k, r, τ, i)
     return σ, ε
 
-@njit(fasthmath=True, cache=True)
+@njit(fastmath=True, cache=True)
 def fitted(mkt, x, k, r, τ, i, /, low, high, tol, iters):
-    pass
+    if τ <= 0.0: return math.nan
+    yl, yh = boundary(x, k, r, τ, i)
+    if (mkt >= yl - 1e-12) and (mkt <= yh + 1e-12):
+        σ = ternary(mkt, x, k, r, τ, i, low=low, high=high, tol=tol, iters=iters)
+        ε = residual(mkt, x, k, r, τ, i)
+    else:
+        σ = volatility(mkt, x, k, r, τ, i, low=low, high=high, tol=tol, iters=iters)
+        ε = value(x, k, r, σ, τ, i) - mkt
+    return σ, ε
 
 
 # @njit(fastmath=True, cache=True, parallel=True)
