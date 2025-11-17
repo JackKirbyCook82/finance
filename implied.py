@@ -10,12 +10,13 @@ import math
 import types
 import numpy as np
 import pandas as pd
-from abc import ABC
+from enum import IntEnum
 from numba import njit, prange
+from abc import ABC, abstractmethod
 
 from finance.concepts import Concepts, Querys
 from calculations import Equation, Variables, Algorithms, Computations
-from support.mixins import Emptying, Sizing, Partition, Logging
+from support.mixins import Emptying, Sizing, Partition, Logging, Naming
 
 __author__ = "Jack Kirby Cook"
 __all__ = ["ImpliedCalculator"]
@@ -27,7 +28,7 @@ __license__ = "MIT License"
 def normcdf(z): return 0.5 * (1.0 + math.erf(z / math.sqrt(2.0)))
 
 @njit(fastmath=True, cache=True, inline="always")
-def normpdf(z): return 1 / math.exp(0.5 * z * z) / math.sqrt(2.0 * math.pi)
+def normpdf(z): return math.exp(-0.5 * z * z) / math.sqrt(2.0 * math.pi)
 
 @njit(fastmath=True, cache=True, inline="always")
 def zitm(x, k, r, σ, τ): return math.log(x / k) / (σ * math.sqrt(τ)) + 0.5 * σ * math.sqrt(τ) + r * math.sqrt(τ) / σ
@@ -51,6 +52,7 @@ def vega(x, k, r, σ, τ):
 def boundary(x, k, r, τ, i):
     if i == +1: yl = max(0.0, x - k / math.exp(r * τ)); yh = x
     elif i == -1: yl = max(0.0, k / math.exp(r * τ) - x); yh = k / math.exp(r * τ)
+    else: return math.nan, math.nan
     return yl, yh
 
 @njit(fastmath=True, cache=True, inline="always")
@@ -71,6 +73,8 @@ def newton(mkt, x, k, r, σ, τ, i, /, low, high, tol, iters):
         dy = y - mkt
         if abs(dy) < tol: return σ
         dσy = vega(x, k, r, σ, τ)
+        if dσy <= 1e-12 or not math.isfinite(dσy):
+            return math.nan
         dσ = dy / dσy
         if not math.isfinite(σ - dσ): return math.nan
         if not (low < σ - dσ < high): return math.nan
@@ -96,7 +100,15 @@ def bisection(mkt, x, k, r, τ, i, /, low, high, tol):
     return 0.5 * (σl + σh)
 
 @njit(fastmath=True, cache=True, inline="always")
-def ternary(mkt, x, k, r, τ, i, /, low, high, tol, iters):
+def volatility(mkt, x, k, r, τ, i, /, low, high, tol, iters):
+    σ = brenner(mkt, x, k, τ, i)
+    σ = newton(mkt, x, k, r, σ, τ, i, low=low, high=high, tol=tol, iters=iters)
+    if not math.isnan(σ): return σ
+    σ = bisection(mkt, x, k, r, τ, i, low=low, high=high, tol=tol)
+    return σ
+
+@njit(fastmath=True, cache=True, inline="always")
+def fitted(mkt, x, k, r, τ, i, /, low, high, tol, iters):
     σl, σh = low, high
     for _ in prange(iters):
         σml = σl + (σh - σl) / 3.0
@@ -109,14 +121,6 @@ def ternary(mkt, x, k, r, τ, i, /, low, high, tol, iters):
     return 0.5 * (σl + σh)
 
 @njit(fastmath=True, cache=True, inline="always")
-def volatility(mkt, x, k, r, τ, i, /, low, high, tol, iters):
-    σ = brenner(mkt, x, k, τ, i)
-    σ = newton(mkt, x, k, r, σ, τ, i, low=low, high=high, tol=tol, iters=iters)
-    if not math.isnan(σ): return σ
-    σ = bisection(mkt, x, k, r, τ, i, low=low, high=high, tol=tol)
-    return σ
-
-@njit(fastmath=True, cache=True, inline="always")
 def residual(mkt, x, k, r, τ, i):
     yl, yh = boundary(x, k, r, τ, i)
     if mkt < yl - 1e-12: return mkt - yl
@@ -124,66 +128,116 @@ def residual(mkt, x, k, r, τ, i):
     else: return 0.0
 
 @njit(fastmath=True, cache=True)
-def strict(mkt, x, k, r, τ, i, /, low, high, tol, iters):
+def implied_strict(mkt, x, k, r, τ, i, /, low, high, tol, iters):
     if τ <= 0.0: return math.nan
     yl, yh = boundary(x, k, r, τ, i)
-    if mkt < yl - 1e-12 or mkt > yh + 1e-12: σ = math.nan
+    if mkt < yl - 1e-12:  σ = math.nan
+    elif mkt > yh + 1e-12: σ = math.nan
     else: σ = volatility(mkt, x, k, r, τ, i, low=low, high=high, tol=tol, iters=iters)
-    ε = residual(mkt, x, k, r, τ, i)
-    return σ, ε
+    return σ
 
 @njit(fastmath=True, cache=True)
-def clipped(mkt, x, k, r, τ, i, /, low, high, tol, iters):
+def implied_clipped(mkt, x, k, r, τ, i, /, low, high, tol, iters):
     if τ <= 0.0: return math.nan
     yl, yh = boundary(x, k, r, τ, i)
     if mkt < yl - 1e-12:  σ = low
     elif mkt > yh + 1e-12: σ = high
     else: σ = volatility(mkt, x, k, r, τ, i, low=low, high=high, tol=tol, iters=iters)
-    ε = residual(mkt, x, k, r, τ, i)
-    return σ, ε
+    return σ
 
 @njit(fastmath=True, cache=True)
-def fitted(mkt, x, k, r, τ, i, /, low, high, tol, iters):
+def implied_fitted(mkt, x, k, r, τ, i, /, low, high, tol, iters):
     if τ <= 0.0: return math.nan
     yl, yh = boundary(x, k, r, τ, i)
-    if (mkt >= yl - 1e-12) and (mkt <= yh + 1e-12):
-        σ = ternary(mkt, x, k, r, τ, i, low=low, high=high, tol=tol, iters=iters)
-        ε = residual(mkt, x, k, r, τ, i)
-    else:
-        σ = volatility(mkt, x, k, r, τ, i, low=low, high=high, tol=tol, iters=iters)
+    if mkt < yl - 1e-12:  σ = fitted(mkt, x, k, r, τ, i, low=low, high=high, tol=tol, iters=iters)
+    elif mkt > yh + 1e-12: σ = fitted(mkt, x, k, r, τ, i, low=low, high=high, tol=tol, iters=iters)
+    else: σ = volatility(mkt, x, k, r, τ, i, low=low, high=high, tol=tol, iters=iters)
+    return σ
+
+@njit(fastmath=True, cache=True)
+def residual_strict(mkt, x, k, r, τ, i, /, low, high, tol, iters):
+    if τ <= 0.0: return math.nan
+    ε = residual(mkt, x, k, r, τ, i)
+    return ε
+
+@njit(fastmath=True, cache=True)
+def residual_clipped(mkt, x, k, r, τ, i, /, low, high, tol, iters):
+    if τ <= 0.0: return math.nan
+    ε = residual(mkt, x, k, r, τ, i)
+    return ε
+
+@njit(fastmath=True, cache=True)
+def residual_fitted(mkt, x, k, r, τ, i, /, low, high, tol, iters):
+    if τ <= 0.0: return math.nan
+    yl, yh = boundary(x, k, r, τ, i)
+    if mkt < yl - 1e-12:
+        σ = fitted(mkt, x, k, r, τ, i, low=low, high=high, tol=tol, iters=iters)
         ε = value(x, k, r, σ, τ, i) - mkt
-    return σ, ε
+    elif mkt > yh + 1e-12:
+        σ = fitted(mkt, x, k, r, τ, i, low=low, high=high, tol=tol, iters=iters)
+        ε = value(x, k, r, σ, τ, i) - mkt
+    else: ε = residual(mkt, x, k, r, τ, i)
+    return ε
+
+@njit(fastmath=True, cache=True, parallel=True)
+def volatility_calculation(mkt, x, k, r, τ, i, /, mode=0, low=1e-9, high=5.0, tol=1e-8, iters=12):
+    shape = mkt.shape[0]
+    σ = np.empty(shape, dtype=np.float64)
+    if mode == 0:
+        for idx in prange(shape):
+            σ[idx] = implied_strict(mkt[idx], x[idx], k[idx], r[idx], τ[idx], i[idx], low=low, high=high, tol=tol, iters=iters)
+    elif mode == 1:
+        for idx in prange(shape):
+            σ[idx] = implied_clipped(mkt[idx], x[idx], k[idx], r[idx], τ[idx], i[idx], low=low, high=high, tol=tol, iters=iters)
+    elif mode == 2:
+        for idx in prange(shape):
+            σ[idx] = implied_fitted(mkt[idx], x[idx], k[idx], r[idx], τ[idx], i[idx], low=low, high=high, tol=tol, iters=iters)
+    else:
+        for idx in prange(shape): σ[idx] = math.nan
+    return σ
+
+@njit(fastmath=True, cache=True, parallel=True)
+def residual_calculation(mkt, x, k, r, τ, i, /, mode=0, low=1e-9, high=5.0, tol=1e-8, iters=12):
+    shape = mkt.shape[0]
+    ε = np.empty(shape, dtype=np.float64)
+    if mode == 0:
+        for idx in prange(shape):
+            ε[idx] = residual_strict(mkt[idx], x[idx], k[idx], r[idx], τ[idx], i[idx], low=low, high=high, tol=tol, iters=iters)
+    elif mode == 1:
+        for idx in prange(shape):
+            ε[idx] = residual_clipped(mkt[idx], x[idx], k[idx], r[idx], τ[idx], i[idx], low=low, high=high, tol=tol, iters=iters)
+    elif mode == 2:
+        for idx in prange(shape):
+            ε[idx] = residual_fitted(mkt[idx], x[idx], k[idx], r[idx], τ[idx], i[idx], low=low, high=high, tol=tol, iters=iters)
+    else:
+        for idx in prange(shape): ε[idx] = math.nan
+    return ε
 
 
-# @njit(fastmath=True, cache=True, parallel=True)
-# def calculation(mkt, x, k, r, τ, i, /, low=1e-9, high=5.0, tol=1e-8, iters=12):
-#     shape = mkt.shape[0]
-#     σ, ε = np.empty(shape, dtype=np.float32), np.empty(shape, dtype=np.float32)
-#     for idx in prange(shape):
-#         σ[idx] = implied(mkt[idx], x[idx], k[idx], r[idx], τ[idx], i[idx], low=low, high=high, tol=tol, iters=iters)
-#         ε[idx] = residual(mkt[idx], x[idx], k[idx], r[idx], τ[idx], i[idx])
-#     return σ, ε
-
-
-class ImpliedFunction(object):
-    def __init__(self, /, low, high, tol, iters):
-        self.iters = iters
-        self.high = high
-        self.low = low
-        self.tol = tol
-
+class ImpliedMode(IntEnum): STRICT, CLIPPED, FITTED = 0, 1, 2
+class Calculation(Naming, ABC, fields=["mode", "low", "high", "tol", "iters"]):
     def __call__(self, mkt, x, k, r, τ, i):
         arguments = (mkt, x, k, r, τ.astype(np.int32), i.astype(np.int32))
         arguments = [argument.to_numpy() if isinstance(arguments, pd.Series) else np.array(argument) for argument in arguments]
         arguments = np.broadcast_arrays(*arguments)
-        parameters = dict(low=self.low, high=self.high, tol=self.tol, iters=self.iters)
-        results = calculation(*arguments, **parameters)
+        parameters = dict(mode=int(self.mode), low=self.low, high=self.high, tol=self.tol, iters=self.iters)
+        results = self.execute(*arguments, **parameters)
         results = pd.Series(results)
         return results
 
+    @abstractmethod
+    def execute(self, *arguments, **parameters): pass
+
+class ImpliedCalculation(Calculation):
+    def execute(self, *arguments, **parameters): return volatility_calculation(*arguments, **parameters)
+
+class ResidualCalculation(Calculation):
+    def execute(self, *arguments, **parameters): return residual_calculation(*arguments, **parameters)
+
 
 class ImpliedEquation(Computations.Table, Algorithms.UnVectorized.Table, Equation, ABC):
-    λ = Variables.Dependent("λ", "implied", np.float32, function=ImpliedFunction(low=1e-9, high=5.0, tol=1e-8, iters=12))
+    λ = Variables.Dependent("λ", "implied", np.float32, function=ImpliedCalculation(mode=ImpliedMode.FITTED, low=1e-9, high=5.0, tol=1e-8, iters=12))
+    ε = Variables.Dependent("ε", "residual", np.float32, function=ResidualCalculation(mode=ImpliedMode.FITTED, low=1e-9, high=5.0, tol=1e-8, iters=12))
     τ = Variables.Dependent("τ", "tau", np.int32, function=lambda to, tτ: (pd.to_datetime(tτ) - pd.to_datetime(to)).dt.days)
 
     mkt = Variables.Independent("mkt", "price", np.float32, locator="price")
@@ -200,6 +254,7 @@ class ImpliedEquation(Computations.Table, Algorithms.UnVectorized.Table, Equatio
         parameters = dict(current=current, interest=interest)
         yield from super().execute(contents, **parameters)
         yield self.λ(contents, **parameters)
+        yield self.ε(contents, **parameters)
 
 
 class ImpliedCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
