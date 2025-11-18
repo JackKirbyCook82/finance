@@ -25,7 +25,7 @@ __license__ = "MIT License"
 
 
 class ValuationEquation(Computations.Array, Algorithms.Vectorized.Array, Equation, ABC, root=True):
-    τ = Variables.Dependent("τ", "tau", np.int32, function=lambda tτ, *, to: (tτ - to).days)
+    τ = Variables.Dependent("τ", "tau", np.float32, function=lambda tτ, *, to: (tτ - to).days / 365)
 
     wo = Variables.Independent("wo", ("value", "spot"), np.float32, locator="spot")
     qo = Variables.Independent("qo", "size", np.float32, locator="size")
@@ -43,8 +43,8 @@ class ValuationEquation(Computations.Array, Algorithms.Vectorized.Array, Equatio
 
 
 class PayoffEquation(ValuationEquation, ABC):
-    vl = Variables.Dependent("vl", "npv", np.float32, function=lambda ul, uo, τ, *, ρ: + np.divide(ul, np.power(ρ + 1, np.divide(τ, 365))) + uo)
-    uk = Variables.Dependent("uk", "breakeven", np.float32, function=lambda ul, τ, *, ρ: - np.divide(ul, np.power(ρ + 1, np.divide(τ, 365))))
+    vl = Variables.Dependent("vl", "npv", np.float32, function=lambda ul, uo, τ, *, ρ: + np.divide(ul, np.power(ρ + 1, τ)) + uo)
+    uk = Variables.Dependent("uk", "breakeven", np.float32, function=lambda ul, τ, *, ρ: - np.divide(ul, np.power(ρ + 1, τ)))
     uh = Variables.Dependent("uh", "maximum", np.float32, function=lambda wh, *, ε: wh * 100 - ε)
     ul = Variables.Dependent("ul", "minimum", np.float32, function=lambda wl, *, ε: wl * 100 - ε)
     uo = Variables.Dependent("uo", "spot", np.float32, function=lambda wo, *, ε: wo * 100 - ε)
