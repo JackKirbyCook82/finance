@@ -53,34 +53,27 @@ def boundary(x, k, r, τ, i):
     assert i == +1 or i == -1
     if i == +1: yl = max(0.0, x - k / math.exp(r * τ)); yh = x
     elif i == -1: yl = max(0.0, k / math.exp(r * τ) - x); yh = k / math.exp(r * τ)
-    else: return math.nan, math.nan
     return yl, yh
 
 @njit(fastmath=True, cache=True, inline="always")
 def adaptive(x, k, τ):
-    τmn, vmn = 1.0 / 365.0, 3 * 3
-    τ = max(τmn, τ)
-    s = abs(math.log(x / k))
-    vmx = vmn + 1 * s
-    σmx = math.sqrt(vmx / τ)
-    σmx = min(σmx, 20.0)
-    assert σmx != math.nan
+    vmx = (3 * 3) + 1 * abs(math.log(x / k))
+    τmx = max(τ, 1.0 / 365.0)
+    σmx = min(math.sqrt(vmx / τmx), 20.0)
     return σmx
 
 @njit(fastmath=True, cache=True, inline="always")
 def brenner(mkt, x, k, τ, i):
     vτ = max(i * (x - k), 0.0)
-    dy = mkt - vτ
-    if dy < 1e-12: dy = 1e-12
-    if x < 1e-12: x = 1e-12
+    dy = max(mkt - vτ, 1e-12)
+    x = max(x, 1e-12)
     σ = math.sqrt(2.0 * math.pi / τ) * (dy / x)
-    if σ < 0.05: σ = 0.05
-    elif σ > 1.0: σ = 1.0
+    σ = max(min(σ, 1), 0.05)
     return σ
 
 @njit(fastmath=True, cache=True, inline="always")
 def newton(mkt, x, k, r, σ, τ, i, /, low, high, tol, iters):
-    for _ in prange(iters):
+    for _ in range(iters):
         y = value(x, k, r, σ, τ, i)
         dy = y - mkt
         if abs(dy) < tol: return σ
@@ -96,15 +89,15 @@ def newton(mkt, x, k, r, σ, τ, i, /, low, high, tol, iters):
 @njit(fastmath=True, cache=True, inline="always")
 def bisection(mkt, x, k, r, τ, i, /, low, high, tol):
     σl, σh, σmx = low, high, adaptive(x, k, τ)
-    if σh > σmx: σh = σmx
+    σh = min(σh, σmx)
     yl = value(x, k, r, σl, τ, i) - mkt
     yh = value(x, k, r, σh, τ, i) - mkt
     while yl * yh > 0.0 and σh < σmx:
         σh = 2.0 * σh
-        if σh > σmx: σh = σmx
+        σh = min(σh, σmx)
         yh = value(x, k, r, σh, τ, i) - mkt
     if yl * yh > 0.0: return math.nan
-    for _ in prange(100):
+    for _ in range(100):
         σm = 0.5 * (σl + σh)
         ym = value(x, k, r, σm, τ, i) - mkt
         if abs(ym) < tol or (σh - σl) < 1e-12: return σm
@@ -118,22 +111,19 @@ def volatility(mkt, x, k, r, τ, i, /, low, high, tol, iters):
     σ = brenner(mkt, x, k, τ, i)
     σ = newton(mkt, x, k, r, σ, τ, i, low=low, high=high, tol=tol, iters=iters)
     if not math.isnan(σ): return σ
-    σ = bisection(mkt, x, k, r, τ, i, low=low, high=high, tol=tol)
-    return σ
+    return bisection(mkt, x, k, r, τ, i, low=low, high=high, tol=tol)
 
 @njit(fastmath=True, cache=True, inline="always")
 def clipped(mkt, x, k, τ, yl, yh, /, low, high):
     vl, vh = mkt - yl, yh - mkt
-    σ = adaptive(x, k, τ)
-    if σ > high: σ = high
-    if vl <= vh: σ = low
-    return σ
+    if vl <= vh: return low
+    return min(high, adaptive(x, k, τ))
 
 @njit(fastmath=True, cache=True, inline="always")
 def fitted(mkt, x, k, r, τ, i, /, low, high, tol, iters):
     assert i == 1 or i == -1
     σl, σh = low, high
-    for _ in prange(iters):
+    for _ in range(iters):
         σml = σl + (σh - σl) / 3.0
         σmh = σh - (σh - σl) / 3.0
         yml = abs(value(x, k, r, σml, τ, i) - mkt)
@@ -196,6 +186,7 @@ def residual_clipped(mkt, x, k, r, τ, i, /, low, high, tol, iters):
 def residual_fitted(mkt, x, k, r, τ, i, /, low, high, tol, iters):
     if τ <= 0.0: return math.nan
     yl, yh = boundary(x, k, r, τ, i)
+    high = min(high, adaptive(x, k, τ))
     if mkt < yl - 1e-12:
         σ = fitted(mkt, x, k, r, τ, i, low=low, high=high, tol=tol, iters=iters)
         ε = value(x, k, r, σ, τ, i) - mkt
