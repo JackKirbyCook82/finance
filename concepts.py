@@ -23,7 +23,7 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-TechnicalConcept = Concept("Technical", ["BARS", "STATISTIC", "STOCHASTIC"], start=1)
+TechnicalConcept = Concept("Technical", ["BARS", "STATS", "SMA", "EMA", "MACD", "RSI", "SO", "OBV", "VWAP", "BB", "ATR"], start=1)
 AppraisalConcept = Concept("Appraisal", ["BLACKSCHOLES", "GREEKS"], start=1)
 InstrumentConcept = Concept("Instrument", ["EMPTY", "STOCK", "OPTION"], start=0)
 OptionConcept = Concept("Option", ["PUT", "EMPTY", "CALL"], start=-1)
