@@ -24,32 +24,33 @@ __copyright__ = "Copyright 2023, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class ValuationEquation(Computations.Array, Algorithms.Vectorized.Array, Equation, ABC, root=True):
-    τ = Variables.Dependent("τ", "tau", np.float32, function=lambda tτ, *, to: (tτ - to).days / 365)
-
-    wo = Variables.Independent("wo", ("value", "spot"), np.float32, locator="spot")
-    qo = Variables.Independent("qo", "size", np.float32, locator="size")
-    tτ = Variables.Independent("tτ", "expire", Date, locator="expire")
-    to = Variables.Constant("to", "current", Date, locator="current")
-
-    r = Variables.Constant("r", "interest", np.float32, locator="interest")
-    ρ = Variables.Constant("ρ", "discount", np.float32, locator="discount")
-    ε = Variables.Constant("ε", "fees", np.float32, locator="fees")
-
-    def execute(self, strategies, /, current, interest, discount, fees):
-        parameters = dict(current=current, interest=interest, discount=discount, fees=fees)
-        yield from super().execute(strategies, **parameters)
-        yield self.qo(strategies, **parameters)
-
-
-class PayoffEquation(ValuationEquation, ABC):
+class ValuationEquation(Computations.Array, Algorithms.Vectorized.Array, Equation, ABC):
     vl = Variables.Dependent("vl", "npv", np.float32, function=lambda ul, uo, τ, *, ρ: + np.divide(ul, np.power(ρ + 1, τ)) + uo)
     uk = Variables.Dependent("uk", "breakeven", np.float32, function=lambda ul, τ, *, ρ: - np.divide(ul, np.power(ρ + 1, τ)))
     uh = Variables.Dependent("uh", "maximum", np.float32, function=lambda wh, *, ε: wh * 100 - ε)
     ul = Variables.Dependent("ul", "minimum", np.float32, function=lambda wl, *, ε: wl * 100 - ε)
     uo = Variables.Dependent("uo", "spot", np.float32, function=lambda wo, *, ε: wo * 100 - ε)
+    τ = Variables.Dependent("τ", "tau", np.float32, function=lambda tτ, *, to: (tτ - to).days / 365)
+
+    yo = Variables.Independent("yo", "value", np.float32, locator="value")
+    Δo = Variables.Independent("Δo", "delta", np.float32, locator="delta")
+    Γo = Variables.Independent("Γo", "gamma", np.float32, locator="gamma")
+    Θo = Variables.Independent("Θo", "theta", np.float32, locator="theta")
+    Vo = Variables.Independent("Vo", "vega", np.float32, locator="vega")
+
     wh = Variables.Independent("wh", ("value", "maximum"), np.float32, locator="maximum")
     wl = Variables.Independent("wl", ("value", "minimum"), np.float32, locator="minimum")
+    wo = Variables.Independent("wo", ("value", "spot"), np.float32, locator="spot")
+    xo = Variables.Independent("xo", "underlying", np.float32, locator="underlying")
+    δo = Variables.Independent("δo", "volatility", np.float32, locator="volatility")
+    μo = Variables.Independent("μo", "trend", np.float32, locator="trend")
+    qo = Variables.Independent("qo", "size", np.float32, locator="size")
+
+    tτ = Variables.Independent("tτ", "expire", Date, locator="expire")
+    to = Variables.Constant("to", "current", Date, locator="current")
+    r = Variables.Constant("r", "interest", np.float32, locator="interest")
+    ρ = Variables.Constant("ρ", "discount", np.float32, locator="discount")
+    ε = Variables.Constant("ε", "fees", np.float32, locator="fees")
 
     def execute(self, strategies, /, current, interest, discount, fees):
         parameters = dict(current=current, interest=interest, discount=discount, fees=fees)
@@ -59,33 +60,13 @@ class PayoffEquation(ValuationEquation, ABC):
         yield self.uk(strategies, **parameters)
         yield self.ul(strategies, **parameters)
         yield self.uo(strategies, **parameters)
-
-
-class UnderlyingEquation(ValuationEquation, ABC):
-    xo = Variables.Independent("xo", "underlying", np.float32, locator="underlying")
-    δo = Variables.Independent("δo", "volatility", np.float32, locator="volatility")
-    μo = Variables.Independent("μo", "trend", np.float32, locator="trend")
-
-    def execute(self, strategies, /, current, interest, discount, fees):
-        parameters = dict(current=current, interest=interest, discount=discount, fees=fees)
-        yield from super().execute(strategies, **parameters)
-        for attribute in str("xo,μo,δo").split(","):
-            try: content = getattr(self, attribute)(strategies, **parameters)
-            except Errors.Independent: continue
-            yield content
-
-
-class AppraisalEquation(ValuationEquation, ABC):
-    yo = Variables.Independent("yo", "value", np.float32, locator="value")
-    Δo = Variables.Independent("Δo", "delta", np.float32, locator="delta")
-    Γo = Variables.Independent("Γo", "gamma", np.float32, locator="gamma")
-    Θo = Variables.Independent("Θo", "theta", np.float32, locator="theta")
-    Vo = Variables.Independent("Vo", "vega", np.float32, locator="vega")
-
-    def execute(self, strategies, /, current, interest, discount, fees):
-        yield from super().execute(strategies, current=current, interest=interest, discount=discount, fees=fees)
+        yield self.qo(strategies, **parameters)
         for attribute in str("yo,Δo,Γo,Θo,Vo").split(","):
             try: content = getattr(self, attribute)(strategies, current=current, interest=interest, discount=discount, fees=fees)
+            except Errors.Independent: continue
+            yield content
+        for attribute in str("xo,μo,δo").split(","):
+            try: content = getattr(self, attribute)(strategies, **parameters)
             except Errors.Independent: continue
             yield content
 
@@ -93,8 +74,7 @@ class AppraisalEquation(ValuationEquation, ABC):
 class ValuationCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        equation = ValuationEquation & list(ValuationEquation.__subclasses__())
-        self.__equation = equation(*args, **kwargs)
+        self.__equation = ValuationEquation(*args, **kwargs)
 
     def execute(self, strategies, /, **kwargs):
         assert isinstance(strategies, (list, xr.Dataset))

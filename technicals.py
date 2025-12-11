@@ -41,9 +41,7 @@ class TechnicalEquation(Computations.Table, Algorithms.UnVectorized.Table, Equat
         parameters = dict(period=period)
         yield from super().execute(bars, **parameters)
         yield self.s(bars, **parameters)
-        yield self.x(bars, **parameters)
         yield self.t(bars, **parameters)
-        yield self.v(bars, **parameters)
 
 class BarsEquation(TechnicalEquation, ABC, register=Concepts.Technical.BARS):
     def execute(self, bars, /, **kwargs):
@@ -52,6 +50,8 @@ class BarsEquation(TechnicalEquation, ABC, register=Concepts.Technical.BARS):
         yield self.xc(bars)
         yield self.xl(bars)
         yield self.xh(bars)
+        yield self.x(bars)
+        yield self.v(bars)
 
 class StatsEquation(TechnicalEquation, ABC, register=Concepts.Technical.STATS):
     δ = Variables.Dependent("δ", "volatility", np.float32, function=lambda xr, *, dt: xr.rolling(dt).std())
@@ -62,6 +62,7 @@ class StatsEquation(TechnicalEquation, ABC, register=Concepts.Technical.STATS):
         yield from super().execute(bars, **parameters, **kwargs)
         yield self.δ(bars, **parameters)
         yield self.μ(bars, **parameters)
+        yield self.x(bars, **parameters)
 
 class SMAEquation(TechnicalEquation, ABC, register=Concepts.Technical.SMA):
     sma = Variables.Dependent("sma", "SMA", np.float32, function=lambda x, *, dt: x.rolling(window=dt).mean())
@@ -102,7 +103,7 @@ class RSIEquation(TechnicalEquation, ABC, register=Concepts.Technical.RSI):
 
     def execute(self, bars, **kwargs):
         yield from super().execute(bars, **kwargs)
-        yield self.ris(bars)
+        yield self.rsi(bars)
 
 class BBEquation(TechnicalEquation, ABC, register=Concepts.Technical.BB):
     sma20 = Variables.Dependent("sma20", "SMA20", np.float32, function=lambda x: x.rolling(window=20).mean())
@@ -126,6 +127,7 @@ class MFIEquation(TechnicalEquation, ABC, register=Concepts.Technical.MFI):
     def execute(self, bars, **kwargs):
         yield from super().execute(bars, **kwargs)
         yield self.mfi(bars)
+        yield self.v(bars)
 
 
 class TechnicalCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):

@@ -24,6 +24,8 @@ __license__ = "MIT License"
 
 
 class AppraisalEquation(Computations.Table, Algorithms.Vectorized.Table, Equation, ABC, root=True):
+    τ = Variables.Dependent("τ", "tau", np.float32, function=lambda to, tτ: (np.datetime64(tτ, "ns") - np.datetime64(to, "ns")) / np.timedelta64(364, 'D'))
+
     zx = Variables.Dependent("zx", ("zscore", "itm"), np.float32, function=lambda zxk, zvt, zrt: zxk + zvt + zrt)
     zk = Variables.Dependent("zk", ("zscore", "otm"), np.float32, function=lambda zxk, zvt, zrt: zxk - zvt + zrt)
 
@@ -46,7 +48,6 @@ class AppraisalEquation(Computations.Table, Algorithms.Vectorized.Table, Equatio
 
 class BlackScholesEquation(AppraisalEquation, ABC, register=Concepts.Appraisal.BLACKSCHOLES):
     y = Variables.Dependent("y", "value", np.float32, function=lambda x, k, zx, zk, r, τ, i: x * norm.cdf(zx * int(i)) * int(i) - k * norm.cdf(zk * int(i)) * int(i) / np.exp(r * τ))
-    τ = Variables.Dependent("τ", "tau", np.float32, function=lambda to, tτ: (np.datetime64(tτ, "ns") - np.datetime64(to, "ns")) / np.timedelta64(364, 'D'))
 
     def execute(self, contents, /, current, interest):
         parameters = dict(current=current, interest=interest)
@@ -60,7 +61,6 @@ class GreekEquation(AppraisalEquation, ABC, register=Concepts.Appraisal.GREEKS):
     Δ = Variables.Dependent("Δ", "delta", np.float32, function=lambda zx, i: + norm.cdf(zx * int(i)) * int(i))
     Γ = Variables.Dependent("Γ", "gamma", np.float32, function=lambda zx, x, σ, τ: + norm.pdf(zx) / np.sqrt(τ) / σ / x)
     V = Variables.Dependent("V", "vega", np.float32, function=lambda zx, x, τ: + norm.pdf(zx) * np.sqrt(τ) * x)
-    τ = Variables.Dependent("τ", "tau", np.float32, function=lambda to, tτ: (np.datetime64(tτ, "ns") - np.datetime64(to, "ns")) / np.timedelta64(364, 'D'))
 
     def execute(self, contents, /, current, interest):
         parameters = dict(current=current, interest=interest)
@@ -74,9 +74,9 @@ class GreekEquation(AppraisalEquation, ABC, register=Concepts.Appraisal.GREEKS):
 
 class AppraisalCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
     def __init__(self, *args, appraisals, **kwargs):
+        assert isinstance(appraisals, list) and all([value in list(Concepts.Appraisal) for value in list(appraisals)])
         super().__init__(*args, **kwargs)
-        equations = {appraisal: equation(*args, **kwargs) for appraisal, equation in iter(AppraisalEquation) if appraisal in appraisals}
-        self.__equations = list(equations.values())
+        self.__equations = {appraisal: equation(*args, **kwargs) for appraisal, equation in iter(AppraisalEquation) if appraisal in appraisals}
 
     def execute(self, contents, /, technicals=None, **kwargs):
         assert isinstance(contents, pd.DataFrame)
@@ -93,17 +93,17 @@ class AppraisalCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
 
     def calculate(self, contents, /, **kwargs):
         assert isinstance(contents, pd.DataFrame)
-        appraisals = list(self.calculator(contents, **kwargs))
-        results = pd.concat([contents] + appraisals, axis=1)
+        appraisals = dict(self.calculator(contents, **kwargs))
+        results = pd.concat([contents] + list(appraisals.values()), axis=1)
         results = results.reset_index(drop=True, inplace=False)
         return results
 
     def calculator(self, contents, /, current, interest, **kwargs):
         assert isinstance(contents, pd.DataFrame)
-        for equation in self.equations:
+        for appraisal, equation in self.equations.items():
             appraisals = equation(contents, current=current, interest=interest)
             assert isinstance(appraisals, pd.DataFrame)
-            yield appraisals
+            yield appraisal, appraisals
 
     @staticmethod
     def technicals(contents, technicals, /, **kwargs):
