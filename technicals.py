@@ -14,15 +14,16 @@ from datetime import date as Date
 from finance.concepts import Concepts, Querys
 from calculations import Equation, Variables, Algorithms, Computations
 from support.mixins import Emptying, Sizing, Partition, Logging
+from support.meta import AttributeMeta
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["TechnicalCalculator"]
+__all__ = ["TechnicalCalculator", "TechnicalEquation"]
 __copyright__ = "Copyright 2024, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class TechnicalEquation(Computations.Table, Algorithms.UnVectorized.Table, Equation, ABC, root=True):
+class TechnicalEquation(Computations.Table, Algorithms.UnVectorized.Table, Equation, ABC, metaclass=AttributeMeta):
     xr = Variables.Dependent("xr", "return", np.float32, function=lambda x: x.pct_change(1))
     dx = Variables.Dependent("dx", "change", np.float32, function=lambda x: x.diff())
 
@@ -43,7 +44,7 @@ class TechnicalEquation(Computations.Table, Algorithms.UnVectorized.Table, Equat
         yield self.s(bars, **parameters)
         yield self.t(bars, **parameters)
 
-class BarsEquation(TechnicalEquation, ABC, register=Concepts.Technical.BARS):
+class BarsEquation(TechnicalEquation, ABC, attribute="BARS"):
     def execute(self, bars, /, **kwargs):
         yield from super().execute(bars, **kwargs)
         yield self.xo(bars)
@@ -53,7 +54,10 @@ class BarsEquation(TechnicalEquation, ABC, register=Concepts.Technical.BARS):
         yield self.x(bars)
         yield self.v(bars)
 
-class StatsEquation(TechnicalEquation, ABC, register=Concepts.Technical.STATS):
+class PeriodEquation(TechnicalEquation, ABC):
+    pass
+
+class StatsEquation(PeriodEquation, ABC, attribute="STATS"):
     δ = Variables.Dependent("δ", "volatility", np.float32, function=lambda xr, *, dt: xr.rolling(dt).std())
     μ = Variables.Dependent("μ", "trend", np.float32, function=lambda xr, *, dt: xr.rolling(dt).mean())
 
@@ -64,7 +68,7 @@ class StatsEquation(TechnicalEquation, ABC, register=Concepts.Technical.STATS):
         yield self.μ(bars, **parameters)
         yield self.x(bars, **parameters)
 
-class SMAEquation(TechnicalEquation, ABC, register=Concepts.Technical.SMA):
+class SMAEquation(PeriodEquation, ABC, attribute="SMA"):
     sma = Variables.Dependent("sma", "SMA", np.float32, function=lambda x, *, dt: x.rolling(window=dt).mean())
 
     def execute(self, bars, /, period, **kwargs):
@@ -72,7 +76,7 @@ class SMAEquation(TechnicalEquation, ABC, register=Concepts.Technical.SMA):
         yield from super().execute(bars, **parameters, **kwargs)
         yield self.sma(bars, **parameters)
 
-class EMAEquation(TechnicalEquation, ABC, register=Concepts.Technical.EMA):
+class EMAEquation(PeriodEquation, ABC, attribute="EMA"):
     ema = Variables.Dependent("ema", "EMA", np.float32, function=lambda x, *, dt: x.ewm(span=dt, adjust=False).mean())
 
     def execute(self, bars, /, period, **kwargs):
@@ -80,7 +84,7 @@ class EMAEquation(TechnicalEquation, ABC, register=Concepts.Technical.EMA):
         yield from super().execute(bars, **parameters, **kwargs)
         yield self.ema(bars, **parameters)
 
-class MACDEquation(TechnicalEquation, ABC, register=Concepts.Technical.MACD):
+class MACDEquation(TechnicalEquation, ABC, attribute="MACD"):
     ema12 = Variables.Dependent("ema12", "EMA12", np.float32, function=lambda x: x.ewm(span=12, adjust=False).mean())
     ema26 = Variables.Dependent("ema26", "EMA26", np.float32, function=lambda x: x.ewm(span=26, adjust=False).mean())
     macd = Variables.Dependent("macd", "MACD", np.float32, function=lambda ema12, ema26: ema12 - ema26)
@@ -93,7 +97,7 @@ class MACDEquation(TechnicalEquation, ABC, register=Concepts.Technical.MACD):
         yield self.sign(bars)
         yield self.hist(bars)
 
-class RSIEquation(TechnicalEquation, ABC, register=Concepts.Technical.RSI):
+class RSIEquation(TechnicalEquation, ABC, attribute="RSI"):
     gain = Variables.Dependent("gain", "GAIN", np.float32, function=lambda dx: dx.where(dx > 0, 0))
     loss = Variables.Dependent("loss", "LOSS", np.float32, function=lambda dx: dx.where(dx < 0, 0))
     smg14 = Variables.Dependent("smg14", "SMG14", np.float32, function=lambda gain: gain.rolling(window=14).mean())
@@ -105,7 +109,7 @@ class RSIEquation(TechnicalEquation, ABC, register=Concepts.Technical.RSI):
         yield from super().execute(bars, **kwargs)
         yield self.rsi(bars)
 
-class BBEquation(TechnicalEquation, ABC, register=Concepts.Technical.BB):
+class BBEquation(TechnicalEquation, ABC, attribute="BB"):
     sma20 = Variables.Dependent("sma20", "SMA20", np.float32, function=lambda x: x.rolling(window=20).mean())
     smd20 = Variables.Dependent("smd20", "SMD20", np.float32, function=lambda x: x.rolling(window=20).std())
     bbh = Variables.Dependent("bbh", "BBH", np.float32, function=lambda sma20, smd20: sma20 + 2 * smd20)
@@ -116,7 +120,7 @@ class BBEquation(TechnicalEquation, ABC, register=Concepts.Technical.BB):
         yield self.bbh(bars)
         yield self.bbl(bars)
 
-class MFIEquation(TechnicalEquation, ABC, register=Concepts.Technical.MFI):
+class MFIEquation(TechnicalEquation, ABC, attribute="MFI"):
     typ = Variables.Dependent("typ", "TYP", np.float32, function=lambda xc, xl, xh: (xc + xl + xh) / 3)
     rmf = Variables.Dependent("rmf", "RMF", np.float32, function=lambda typ, v: typ * v)
     pmf = Variables.Dependent("pmf", "PMF", np.float32, function=lambda typ, rmf: np.where(typ > 0, rmf.diff(), 0))
@@ -134,8 +138,8 @@ class TechnicalCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
     def __init__(self, *args, technicals, **kwargs):
         assert all([technical in list(Concepts.Technical) for technical in technicals])
         super().__init__(*args, **kwargs)
-        equations = [equation for technical, equation in iter(TechnicalEquation) if technical in technicals]
-        self.__equation = (TechnicalEquation & equations)(*args, **kwargs)
+#        equations = [equation for technical, equation in iter(TechnicalEquation) if technical in technicals]
+#        self.__equation = (TechnicalEquation & equations)(*args, **kwargs)
 
     def execute(self, bars, /, **kwargs):
         assert isinstance(bars, pd.DataFrame)

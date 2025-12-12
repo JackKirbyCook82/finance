@@ -15,6 +15,7 @@ from scipy.stats import norm
 from finance.concepts import Concepts, Querys
 from calculations import Equation, Variables, Algorithms, Computations
 from support.mixins import Emptying, Sizing, Partition, Logging
+from support.meta import RegistryMeta
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -23,7 +24,7 @@ __copyright__ = "Copyright 2025, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class AppraisalEquation(Computations.Table, Algorithms.Vectorized.Table, Equation, ABC, root=True):
+class AppraisalEquation(Computations.Table, Algorithms.Vectorized.Table, Equation, ABC, metaclass=RegistryMeta):
     τ = Variables.Dependent("τ", "tau", np.float32, function=lambda to, tτ: (np.datetime64(tτ, "ns") - np.datetime64(to, "ns")) / np.timedelta64(364, 'D'))
 
     zx = Variables.Dependent("zx", ("zscore", "itm"), np.float32, function=lambda zxk, zvt, zrt: zxk + zvt + zrt)

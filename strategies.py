@@ -9,14 +9,15 @@ Created on Weds Jul 19 2023
 import numpy as np
 import pandas as pd
 import xarray as xr
+from abc import ABC
 from enum import Enum
-from abc import ABC, ABCMeta
 from functools import reduce
 from collections import namedtuple as ntuple
 
 from finance.concepts import Querys, Concepts, Strategies, Securities
 from calculations import Equation, Variables, Algorithms, Computations, Errors
 from support.mixins import Emptying, Sizing, Partition, Logging
+from support.meta import RegistryMeta
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -26,7 +27,7 @@ __license__ = "MIT License"
 
 
 class StrategyLocator(ntuple("Locator", "axis security")): pass
-class StrategyEquation(Computations.Array, Algorithms.UnVectorized.Array, Equation, ABC, root=True):
+class StrategyEquation(Computations.Array, Algorithms.UnVectorized.Array, Equation, ABC, metaclass=RegistryMeta):
     mk = Variables.Dependent("mk", "market", Enum, function=lambda kα, kβ: xr.where(kα < kβ, Concepts.Market.BULL, xr.where(kα > kβ, Concepts.Market.BEAR, Concepts.Market.NEUTRAL)))
     wk = Variables.Dependent("wk", "breakeven", np.float32, function=lambda wo, wl, wh: xr.where(np.negative(wo) <= wh, xr.where(np.negative(wo) >= wl, np.negative(wo), np.NaN), np.NaN))
     xk = Variables.Dependent("xk", "pivot", np.float32, function=lambda wk, wl, wh, mk, xl: xl + (wk - wl) * np.abs(mk.astype(int) + 1) / 2 + (wh - wk) * np.abs(mk.astype(int) - 1) / 2)
