@@ -9,7 +9,7 @@ Created on Fri May 23 2025
 import types
 import numpy as np
 import pandas as pd
-from abc import ABC
+from abc import ABC, ABCMeta
 from scipy.stats import norm
 
 from finance.concepts import Concepts, Querys
@@ -24,7 +24,8 @@ __copyright__ = "Copyright 2025, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class AppraisalEquation(Computations.Table, Algorithms.Vectorized.Table, Equation, ABC, metaclass=RegistryMeta):
+class AppraisalEquationMeta(RegistryMeta, type(Equation), ABCMeta): pass
+class AppraisalEquation(Computations.Table, Algorithms.Vectorized.Table, Equation, ABC, metaclass=AppraisalEquationMeta):
     τ = Variables.Dependent("τ", "tau", np.float32, function=lambda to, tτ: (np.datetime64(tτ, "ns") - np.datetime64(to, "ns")) / np.timedelta64(364, 'D'))
 
     zx = Variables.Dependent("zx", ("zscore", "itm"), np.float32, function=lambda zxk, zvt, zrt: zxk + zvt + zrt)

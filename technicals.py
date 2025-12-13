@@ -8,7 +8,7 @@ Created on Fri Apr 19 2024
 
 import numpy as np
 import pandas as pd
-from abc import ABC
+from abc import ABC, ABCMeta
 from datetime import date as Date
 
 from finance.concepts import Querys
@@ -23,7 +23,8 @@ __copyright__ = "Copyright 2024, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class TechnicalEquation(Computations.Table, Algorithms.UnVectorized.Table, Equation, ABC, metaclass=AttributeMeta):
+class TechnicalEquationMeta(AttributeMeta, type(Equation), ABCMeta): pass
+class TechnicalEquation(Computations.Table, Algorithms.UnVectorized.Table, Equation, ABC, metaclass=TechnicalEquationMeta):
     xr = Variables.Dependent("xr", "return", np.float32, function=lambda x: x.pct_change(1))
     dx = Variables.Dependent("dx", "change", np.float32, function=lambda x: x.diff())
 
@@ -36,6 +37,11 @@ class TechnicalEquation(Computations.Table, Algorithms.UnVectorized.Table, Equat
     v = Variables.Independent("v", "volume", np.int64, locator="volume")
     s = Variables.Independent("s", "ticker", Date, locator="ticker")
     t = Variables.Independent("t", "date", Date, locator="date")
+    dt = Variables.Constant("dt", "period", np.int32, locator="period")
+
+    def __init__(self, *args, period=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.period = period
 
     def execute(self, bars, /, **kwargs):
         yield from super().execute(bars)
@@ -52,16 +58,7 @@ class BarsEquation(TechnicalEquation, ABC, attribute="BARS"):
         yield self.x(bars)
         yield self.v(bars)
 
-
-class PeriodEquation(TechnicalEquation, ABC):
-    dt = Variables.Constant("dt", "period", np.int32, locator="period")
-
-    def __init__(self, *args, period, **kwargs):
-        assert isinstance(period, int) and period > 0
-        super().__init__(*args, **kwargs)
-        self.period = period
-
-class StatsEquation(PeriodEquation, ABC, attribute="STATS"):
+class StatsEquation(TechnicalEquation, ABC, attribute="STATS"):
     δ = Variables.Dependent("δ", "volatility", np.float32, function=lambda xr, *, dt: xr.rolling(dt).std())
     μ = Variables.Dependent("μ", "trend", np.float32, function=lambda xr, *, dt: xr.rolling(dt).mean())
 
@@ -70,9 +67,9 @@ class StatsEquation(PeriodEquation, ABC, attribute="STATS"):
         parameters = dict(period=self.period)
         yield self.δ(bars, **parameters)
         yield self.μ(bars, **parameters)
-        yield self.x(bars, **parameters)
+        yield self.x(bars)
 
-class SMAEquation(PeriodEquation, ABC, attribute="SMA"):
+class SMAEquation(TechnicalEquation, ABC, attribute="SMA"):
     sma = Variables.Dependent("sma", "SMA", np.float32, function=lambda x, *, dt: x.rolling(window=dt).mean())
 
     def execute(self, bars, /, **kwargs):
@@ -80,14 +77,13 @@ class SMAEquation(PeriodEquation, ABC, attribute="SMA"):
         parameters = dict(period=self.period)
         yield self.sma(bars, **parameters)
 
-class EMAEquation(PeriodEquation, ABC, attribute="EMA"):
+class EMAEquation(TechnicalEquation, ABC, attribute="EMA"):
     ema = Variables.Dependent("ema", "EMA", np.float32, function=lambda x, *, dt: x.ewm(span=dt, adjust=False).mean())
 
     def execute(self, bars, /, **kwargs):
         yield from super().execute(bars, **kwargs)
         parameters = dict(period=self.period)
         yield self.ema(bars, **parameters)
-
 
 class MACDEquation(TechnicalEquation, ABC, attribute="MACD"):
     ema12 = Variables.Dependent("ema12", "EMA12", np.float32, function=lambda x: x.ewm(span=12, adjust=False).mean())
@@ -105,37 +101,40 @@ class MACDEquation(TechnicalEquation, ABC, attribute="MACD"):
 class RSIEquation(TechnicalEquation, ABC, attribute="RSI"):
     gain = Variables.Dependent("gain", "GAIN", np.float32, function=lambda dx: dx.where(dx > 0, 0))
     loss = Variables.Dependent("loss", "LOSS", np.float32, function=lambda dx: dx.where(dx < 0, 0))
-    smg14 = Variables.Dependent("smg14", "SMG14", np.float32, function=lambda gain: gain.rolling(window=14).mean())
-    sml14 = Variables.Dependent("sml14", "SML14", np.float32, function=lambda loss: loss.rolling(window=14).mean())
+    smg14 = Variables.Dependent("smg14", "SMG14", np.float32, function=lambda gain, dt: gain.rolling(window=dt).mean())
+    sml14 = Variables.Dependent("sml14", "SML14", np.float32, function=lambda loss, dt: loss.rolling(window=dt).mean())
     rs = Variables.Dependent("rs", "RS", np.float32, function=lambda smg14, sml14: smg14 / sml14)
     rsi = Variables.Dependent("rsi", "RSI", np.float32, function=lambda rs: 100 - (100 / (1 + rs)))
 
     def execute(self, bars, **kwargs):
         yield from super().execute(bars, **kwargs)
-        yield self.rsi(bars)
+        parameters = dict(period=self.period)
+        yield self.rsi(bars, **parameters)
 
 class BBEquation(TechnicalEquation, ABC, attribute="BB"):
-    sma20 = Variables.Dependent("sma20", "SMA20", np.float32, function=lambda x: x.rolling(window=20).mean())
-    smd20 = Variables.Dependent("smd20", "SMD20", np.float32, function=lambda x: x.rolling(window=20).std())
+    sma20 = Variables.Dependent("sma20", "SMA20", np.float32, function=lambda x, dt: x.rolling(window=dt).mean())
+    smd20 = Variables.Dependent("smd20", "SMD20", np.float32, function=lambda x, dt: x.rolling(window=dt).std())
     bbh = Variables.Dependent("bbh", "BBH", np.float32, function=lambda sma20, smd20: sma20 + 2 * smd20)
     bbl = Variables.Dependent("bbl", "BBL", np.float32, function=lambda sma20, smd20: sma20 - 2 * smd20)
 
     def execute(self, bars, **kwargs):
         yield from super().execute(bars, **kwargs)
-        yield self.bbh(bars)
-        yield self.bbl(bars)
+        parameters = dict(period=self.period)
+        yield self.bbh(bars, **parameters)
+        yield self.bbl(bars, **parameters)
 
 class MFIEquation(TechnicalEquation, ABC, attribute="MFI"):
     typ = Variables.Dependent("typ", "TYP", np.float32, function=lambda xc, xl, xh: (xc + xl + xh) / 3)
     rmf = Variables.Dependent("rmf", "RMF", np.float32, function=lambda typ, v: typ * v)
     pmf = Variables.Dependent("pmf", "PMF", np.float32, function=lambda typ, rmf: np.where(typ > 0, rmf.diff(), 0))
     nmf = Variables.Dependent("nmf", "NMF", np.float32, function=lambda typ, rmf: np.where(typ < 0, rmf.diff(), 0))
-    mfr = Variables.Dependent("mfi", "MFI", np.float32, function=lambda pmf, nmf: pmf.rolling(14).sum() / nmf.rolling(14).sum())
+    mfr = Variables.Dependent("mfr", "MFI", np.float32, function=lambda pmf, nmf, dt: pmf.rolling(dt).sum() / nmf.rolling(dt).sum())
     mfi = Variables.Dependent("mfi", "MFI", np.float32, function=lambda mfr: 100 - (100 / (1 + mfr)))
 
     def execute(self, bars, **kwargs):
         yield from super().execute(bars, **kwargs)
-        yield self.mfi(bars)
+        parameters = dict(period=self.period)
+        yield self.mfi(bars, **parameters)
         yield self.v(bars)
 
 
