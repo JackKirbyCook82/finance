@@ -126,8 +126,8 @@ class BBEquation(TechnicalEquation, ABC, attribute="BB"):
 class MFIEquation(TechnicalEquation, ABC, attribute="MFI"):
     typ = Variables.Dependent("typ", "TYP", np.float32, function=lambda xc, xl, xh: (xc + xl + xh) / 3)
     rmf = Variables.Dependent("rmf", "RMF", np.float32, function=lambda typ, v: typ * v)
-    pmf = Variables.Dependent("pmf", "PMF", np.float32, function=lambda typ, rmf: np.where(typ > 0, rmf.diff(), 0))
-    nmf = Variables.Dependent("nmf", "NMF", np.float32, function=lambda typ, rmf: np.where(typ < 0, rmf.diff(), 0))
+    pmf = Variables.Dependent("pmf", "PMF", np.float32, function=lambda typ, rmf: rmf.where(typ > 0, 0).diff())
+    nmf = Variables.Dependent("nmf", "NMF", np.float32, function=lambda typ, rmf: rmf.where(typ > 0, 0).diff())
     mfr = Variables.Dependent("mfr", "MFI", np.float32, function=lambda pmf, nmf, dt: pmf.rolling(dt).sum() / nmf.rolling(dt).sum())
     mfi = Variables.Dependent("mfi", "MFI", np.float32, function=lambda mfr: 100 - (100 / (1 + mfr)))
 
@@ -171,6 +171,7 @@ class TechnicalCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
             technicals = [equation(dataframe) for equation in self.equations]
             assert all([isinstance(technical, pd.DataFrame) for technical in technicals])
             technicals = pd.concat(technicals, axis=1)
+            technicals = technicals.loc[:, ~technicals.columns.duplicated()]
             yield technicals
 
     @property
