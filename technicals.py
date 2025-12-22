@@ -8,8 +8,10 @@ Created on Fri Apr 19 2024
 
 import numpy as np
 import pandas as pd
+from enum import Enum
 from abc import ABC, ABCMeta
 from datetime import date as Date
+from types import SimpleNamespace
 
 from finance.concepts import Querys
 from calculations import Equation, Variables, Algorithms, Computations
@@ -48,7 +50,15 @@ class TechnicalEquation(Computations.Table, Algorithms.UnVectorized.Table, Equat
         yield self.s(bars)
         yield self.t(bars)
 
-class BarsEquation(TechnicalEquation, ABC, attribute="BARS"):
+
+class StateEquations(TechnicalEquation, ABC): pass
+class TrendEquations(TechnicalEquation, ABC): pass
+class MomentumEquations(TechnicalEquation, ABC): pass
+class VolatilityEquations(TechnicalEquation, ABC): pass
+class VolumeEquations(TechnicalEquation, ABC): pass
+
+
+class BarsEquation(StateEquations, ABC, attribute="BARS"):
     def execute(self, bars, /, **kwargs):
         yield from super().execute(bars, **kwargs)
         yield self.xo(bars)
@@ -58,7 +68,7 @@ class BarsEquation(TechnicalEquation, ABC, attribute="BARS"):
         yield self.x(bars)
         yield self.v(bars)
 
-class StatsEquation(TechnicalEquation, ABC, attribute="STATS"):
+class StatsEquation(StateEquations, ABC, attribute="STATS"):
     δ = Variables.Dependent("δ", "volatility", np.float32, function=lambda xr, *, dt: xr.rolling(dt).std())
     μ = Variables.Dependent("μ", "trend", np.float32, function=lambda xr, *, dt: xr.rolling(dt).mean())
 
@@ -69,7 +79,8 @@ class StatsEquation(TechnicalEquation, ABC, attribute="STATS"):
         yield self.μ(bars, **parameters)
         yield self.x(bars)
 
-class SMAEquation(TechnicalEquation, ABC, attribute="SMA"):
+
+class SMAEquation(TrendEquations, ABC, attribute="SMA"):
     sma = Variables.Dependent("sma", "SMA", np.float32, function=lambda x, *, dt: x.rolling(window=dt).mean())
 
     def execute(self, bars, /, **kwargs):
@@ -77,7 +88,7 @@ class SMAEquation(TechnicalEquation, ABC, attribute="SMA"):
         parameters = dict(period=self.period)
         yield self.sma(bars, **parameters)
 
-class EMAEquation(TechnicalEquation, ABC, attribute="EMA"):
+class EMAEquation(TrendEquations, ABC, attribute="EMA"):
     ema = Variables.Dependent("ema", "EMA", np.float32, function=lambda x, *, dt: x.ewm(span=dt, min_periods=dt, adjust=False).mean())
 
     def execute(self, bars, /, **kwargs):
@@ -85,7 +96,7 @@ class EMAEquation(TechnicalEquation, ABC, attribute="EMA"):
         parameters = dict(period=self.period)
         yield self.ema(bars, **parameters)
 
-class MACDEquation(TechnicalEquation, ABC, attribute="MACD"):
+class MACDEquation(TrendEquations, ABC, attribute="MACD"):
     ema12 = Variables.Dependent("ema12", "EMA12", np.float32, function=lambda x: x.ewm(span=12, min_periods=12, adjust=False).mean())
     ema26 = Variables.Dependent("ema26", "EMA26", np.float32, function=lambda x: x.ewm(span=26, min_periods=26, adjust=False).mean())
     macd = Variables.Dependent("macd", "MACD", np.float32, function=lambda ema12, ema26: ema12 - ema26)
@@ -98,11 +109,12 @@ class MACDEquation(TechnicalEquation, ABC, attribute="MACD"):
         yield self.sign(bars)
         yield self.hist(bars)
 
-class RSIEquation(TechnicalEquation, ABC, attribute="RSI"):
+
+class RSIEquation(MomentumEquations, ABC, attribute="RSI"):
     gain = Variables.Dependent("gain", "GAIN", np.float32, function=lambda dx: dx.where(dx > 0, 0))
     loss = Variables.Dependent("loss", "LOSS", np.float32, function=lambda dx: dx.where(dx < 0, 0))
-    smg14 = Variables.Dependent("smg14", "SMG14", np.float32, function=lambda gain, dt: gain.rolling(window=dt).mean())
-    sml14 = Variables.Dependent("sml14", "SML14", np.float32, function=lambda loss, dt: loss.rolling(window=dt).mean())
+    smg14 = Variables.Dependent("smg14", "SMG14", np.float32, function=lambda gain, *, dt: gain.rolling(window=dt).mean())
+    sml14 = Variables.Dependent("sml14", "SML14", np.float32, function=lambda loss, *, dt: loss.rolling(window=dt).mean())
     rs = Variables.Dependent("rs", "RS", np.float32, function=lambda smg14, sml14: smg14 / sml14)
     rsi = Variables.Dependent("rsi", "RSI", np.float32, function=lambda rs: 100 - (100 / (1 + rs)))
 
@@ -111,9 +123,10 @@ class RSIEquation(TechnicalEquation, ABC, attribute="RSI"):
         parameters = dict(period=self.period)
         yield self.rsi(bars, **parameters)
 
-class BBEquation(TechnicalEquation, ABC, attribute="BB"):
-    sma20 = Variables.Dependent("sma20", "SMA20", np.float32, function=lambda x, dt: x.rolling(window=dt).mean())
-    smd20 = Variables.Dependent("smd20", "SMD20", np.float32, function=lambda x, dt: x.rolling(window=dt).std())
+
+class BBEquation(VolatilityEquations, ABC, attribute="BB"):
+    sma20 = Variables.Dependent("sma20", "SMA20", np.float32, function=lambda x, *, dt: x.rolling(window=dt).mean())
+    smd20 = Variables.Dependent("smd20", "SMD20", np.float32, function=lambda x, *, dt: x.rolling(window=dt).std())
     bbh = Variables.Dependent("bbh", "BBH", np.float32, function=lambda sma20, smd20: sma20 + 2 * smd20)
     bbl = Variables.Dependent("bbl", "BBL", np.float32, function=lambda sma20, smd20: sma20 - 2 * smd20)
 
@@ -123,12 +136,25 @@ class BBEquation(TechnicalEquation, ABC, attribute="BB"):
         yield self.bbh(bars, **parameters)
         yield self.bbl(bars, **parameters)
 
-class MFIEquation(TechnicalEquation, ABC, attribute="MFI"):
+class ATREquation(VolatilityEquations, ABC, attribute="ATR"):
+    xhl = Variables.Dependent("xhl", "XHL", np.float32, function=lambda xh, xl: xh - xl)
+    xhc = Variables.Dependent("xhc", "XHC", np.float32, function=lambda xc, xh: (xh - xc.shift(1)).abs())
+    xlc = Variables.Dependent("xlc", "XLC", np.float32, function=lambda xc, xl: (xl - xc.shift(1)).abs())
+    xtr = Variables.Dependent("xtr", "XTR", np.float32, function=lambda xhl, xhc, xlc: pd.concat([xhl, xhc, xlc], axis=1).max(axis=1))
+    atr = Variables.Dependent("atr", "ATR", np.float32, function=lambda xtr, *, dt: xtr.ewm(alpha=1/dt, adjust=False).mean())
+
+    def execute(self, bars, **kwargs):
+        yield from super().execute(bars, **kwargs)
+        parameters = dict(period=self.period)
+        yield self.atr(bars, **parameters)
+
+
+class MFIEquation(VolumeEquations, ABC, attribute="MFI"):
     typ = Variables.Dependent("typ", "TYP", np.float32, function=lambda xc, xl, xh: (xc + xl + xh) / 3)
     rmf = Variables.Dependent("rmf", "RMF", np.float32, function=lambda typ, v: typ * v)
     pmf = Variables.Dependent("pmf", "PMF", np.float32, function=lambda typ, rmf: rmf.where(typ.diff() > 0, 0))
     nmf = Variables.Dependent("nmf", "NMF", np.float32, function=lambda typ, rmf: rmf.where(typ.diff() < 0, 0))
-    mfr = Variables.Dependent("mfr", "MFI", np.float32, function=lambda pmf, nmf, dt: pmf.rolling(dt).sum() / nmf.rolling(dt).sum())
+    mfr = Variables.Dependent("mfr", "MFI", np.float32, function=lambda pmf, nmf, *, dt: pmf.rolling(dt).sum() / nmf.rolling(dt).sum())
     mfi = Variables.Dependent("mfi", "MFI", np.float32, function=lambda mfr: 100 - (100 / (1 + mfr)))
 
     def execute(self, bars, **kwargs):
@@ -137,15 +163,25 @@ class MFIEquation(TechnicalEquation, ABC, attribute="MFI"):
         yield self.mfi(bars, **parameters)
         yield self.v(bars)
 
-class CMFEquation(TechnicalEquation, ABC, attribute="CMF"):
+class CMFEquation(VolumeEquations, ABC, attribute="CMF"):
     mfm = Variables.Dependent("mfm", "MFM", np.float32, function=lambda xc, xl, xh: (((xc - xl) - (xh - xc)) / (xh - xl)).replace([np.inf, -np.inf], 0).fillna(0))
     mfv = Variables.Dependent("mfv", "MFV", np.float32, function=lambda mfm, v: mfm * v)
-    cmf = Variables.Dependent("cmf", "CMF", np.float32, function=lambda mfv, v, dt: mfv.rolling(window=dt).sum() / v.rolling(window=dt).sum())
+    cmf = Variables.Dependent("cmf", "CMF", np.float32, function=lambda mfv, v, *, dt: mfv.rolling(window=dt).sum() / v.rolling(window=dt).sum())
 
     def execute(self, bars, **kwargs):
         yield from super().execute(bars, **kwargs)
         parameters = dict(period=self.period)
         yield self.cmf(bars, **parameters)
+        yield self.v(bars)
+
+class OBVEquation(VolumeEquations, ABC, attribute="OBV"):
+    rvf = Variables.Dependent("rvf", "RVF", np.float32, function=lambda dx, v: (np.sign(dx) * v).fillna(0).cumsum())
+    mvf = Variables.Dependent("mvf", "MVF", np.float32, function=lambda rvf: rvf.abs().max())
+    obv = Variables.Dependent("obv", "OBV", np.float32, function=lambda rvf, mvf: 100 * rvf / mvf)
+
+    def execute(self, bars, **kwargs):
+        yield from super().execute(bars, **kwargs)
+        yield self.obv(bars)
         yield self.v(bars)
 
 
@@ -189,4 +225,98 @@ class TechnicalCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
     def equations(self): return self.__equations
 
 
+class TrendLineCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
+    def __init__(self, *args, period, threshold, window, **kwargs):
+        assert isinstance(period, int) and period > 0 and period % 2 != 0
+        super().__init__(*args, **kwargs)
+        self.__threshold = threshold
+        self.__period = period
+        self.__window = window
+
+    def execute(self, technicals, /, **kwargs):
+        assert isinstance(technicals, pd.DataFrame)
+        if self.empty(technicals): return
+
+        close = technicals["close"]
+        threshold = technicals["ATR"]
+        pivots = self.pivots(close, period=self.period)
+        pivots = self.filters(pivots, threshold=threshold)
+        trendlines = self.trendlines(pivots, window=self.window)
+
+    @staticmethod
+    def pivots(series, /, period):
+        assert isinstance(series, pd.Series)
+        high = series.where(series.eq(series.rolling(period, center=True).max())).shift(period // 2)
+        low = series.where(series.eq(series.rolling(period, center=True).min())).shift(period // 2)
+        high = high.rename(f"{series.name}H")
+        low = low.rename(f"{series.name}L")
+        pivoted = SimpleNamespace(high=high, low=low)
+        return pivoted
+
+    @staticmethod
+    def filters(series, /, threshold):
+        assert isinstance(series, SimpleNamespace) and all([isinstance(value, pd.Series) for value in vars(series).values()])
+        assert len(series.high) == len(series.low)
+        size = min(len(series.high), len(series.low))
+        Pivots = Enum("Pivot", [("HIGH", 1), ("LOW", 2)])
+        array = np.full(size, np.NaN, dtype=float)
+        filtered = SimpleNamespace(high=array.copy(), low=array)
+        unfiltered = SimpleNamespace(high=series.high, low=series.low)
+        last = SimpleNamespace(high=np.NaN, low=np.NaN)
+        pivot = np.NaN
+        for index in range(size):
+            criteria = threshold.iloc[index] if isinstance(threshold, pd.Series) else float(threshold)
+            if not np.isnan(unfiltered.high.iloc[index]) and (np.isnan(last.low) or abs(unfiltered.high.iloc[index] - last.low) >= criteria):
+                if pivot != Pivots.HIGH or np.isnan(last.high) or unfiltered.high.iloc[index] > last.high:
+                    filtered.high[index] = last.high = unfiltered.high.iloc[index]
+                    pivot = Pivots.HIGH
+            if not np.isnan(unfiltered.low.iloc[index]) and (np.isnan(last.high) or abs(last.high - unfiltered.low.iloc[index]) >= criteria):
+                if pivot != Pivots.LOW or np.isnan(last.low) or unfiltered.low.iloc[index] < last.low:
+                    filtered.low[index] = last.low = unfiltered.low.iloc[index]
+                    pivot = Pivots.LOW
+        high = pd.Series(filtered.high, index=series.high.index, name=series.high.name)
+        low = pd.Series(filtered.low, index=series.low.index, name=series.low.name)
+        filtered = SimpleNamespace(high=high, low=low)
+        return filtered
+
+    @staticmethod
+    def trendlines(series, /, window):
+        assert isinstance(series, SimpleNamespace) and all([isinstance(value, pd.Series) for value in vars(series).values()])
+        assert len(series.high) == len(series.low)
+        size = min(len(series.high), len(series.low))
+        indexes = np.arange(size)
+        array = np.full(size, np.NaN, dtype=float)
+        trendlines = SimpleNamespace(support=array.copy(), resistance=array)
+        points = SimpleNamespace(support=[], resistance=[])
+        for index in range(size):
+            value = SimpleNamespace(support=series.low.iloc[index], resistance=series.high.iloc[index])
+            if not np.isnan(value.support):
+                point = SimpleNamespace(x=index, y=float(value.support))
+                points.support.append(point)
+                if len(points.support) > window: points.support.pop(0)
+            if not np.isnan(value.resistance):
+                point = SimpleNamespace(x=index, y=float(value.resistance))
+                points.resistance.append(point)
+                if len(points.resistance) > window: points.resistance.pop(0)
+            if len(points.support) >= 2:
+                x = np.array([point.x for point in points.support], dtype=float)
+                y = np.array([point.y for point in points.support], dtype=float)
+                a, b = np.polyfit(x, y, 1)
+                trendlines.support[index] = a * indexes[index] + b
+            if len(points.resistance) >= 2:
+                x = np.array([point.x for point in points.resistance], dtype=float)
+                y = np.array([point.y for point in points.resistance], dtype=float)
+                a, b = np.polyfit(x, y, 1)
+                trendlines.resistance[index] = a * indexes[index] + b
+        support = pd.Series(trendlines.support).rename(f"{series.support.name}SPT")
+        resistance = pd.Series(trendlines.resistance).rename(f"{series.resistance.name}RST")
+        trendlines = SimpleNamespace(support=support, resistance=resistance)
+        return trendlines
+
+    @property
+    def threshold(self): return self.__threshold
+    @property
+    def period(self): return self.__period
+    @property
+    def window(self): return self.__window
 
