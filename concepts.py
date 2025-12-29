@@ -37,6 +37,11 @@ PricingConcept = Concept("Pricing", ["AGGRESSIVE", "PASSIVE", "MODERATE"], start
 QuotingConcept = Concept("Quoting", ["CLOSING", "DELAYED", "REALTIME"], start=1)
 MarketConcept = Concept("Market", ["BEAR", "NEUTRAL", "BULL"], start=-1)
 ActionConcept = Concept("Action", ["BUY", "SELL"], start=1)
+StateConcept = Concept("State", ["BARS", "STATS"], start=1)
+TrendConcept = Concept("Trend", ["SMA", "EMA", "MACD"], start=1)
+MomentumConcept = Concept("Momentum", ["RSI"], start=1)
+VolatilityConcept = Concept("Volatility", ["BB", "ATR"], start=1)
+VolumeConcept = Concept("Volume", ["MFI", "CMF", "OBV"], start=1)
 
 SecurityConcepts = Concepts("Security", ["instrument", "option", "position"])
 StrategyConcepts = Concepts("Strategy", ["spread", "option", "position"], {"stocks", "options"})
@@ -78,9 +83,9 @@ class Concepts(Assembly):
     class Securities(Assembly): Security, Instrument, Option, Position = SecurityConcepts, InstrumentConcept, OptionConcept, PositionConcept
     class Strategies(Assembly): Strategy, Spread = StrategyConcepts, SpreadConcept
     class Markets(Assembly): Status, Term, Tenure, Action, Quoting = StatusConcept, TermConcept, TenureConcept, ActionConcept, QuotingConcept
+    class Technicals(Assembly): State, Trend, Momentum, Volatility, Volume = StateConcept, TrendConcept, MomentumConcept, VolatilityConcept, VolumeConcept
     Pricing = PricingConcept
     Appraisal = AppraisalConcept
-    Technical = TechnicalConcept
     Valuation = ValuationConcept
     Scenario = ScenarioConcept
     Market = MarketConcept

@@ -21,12 +21,12 @@ __license__ = "MIT License"
 
 
 class TrendlineCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
-    def __init__(self, *args, period, threshold, window, **kwargs):
-        assert isinstance(period, int) and period > 0 and period % 2 != 0
+    def __init__(self, *args, window, threshold, period, **kwargs):
+        assert isinstance(window, int) and window > 0 and window % 2 != 0
         super().__init__(*args, **kwargs)
         self.__threshold = threshold
-        self.__period = period
         self.__window = window
+        self.__period = period
 
     def execute(self, technicals, /, **kwargs):
         assert isinstance(technicals, pd.DataFrame)
@@ -35,11 +35,14 @@ class TrendlineCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
         with pd.option_context("display.max_rows", 30, "display.max_columns", 30):
             print(technicals)
 
+        return
+        yield
+
     @staticmethod
-    def pivots(series, /, period):
+    def pivots(series, /, window):
         assert isinstance(series, pd.Series)
-        high = series.where(series.eq(series.rolling(period, center=True).max())).shift(period // 2)
-        low = series.where(series.eq(series.rolling(period, center=True).min())).shift(period // 2)
+        high = series.where(series.eq(series.rolling(window, center=True).max())).shift(window // 2)
+        low = series.where(series.eq(series.rolling(window, center=True).min())).shift(window // 2)
         high = high.rename(f"{series.name}H")
         low = low.rename(f"{series.name}L")
         pivoted = SimpleNamespace(high=high, low=low)
@@ -72,7 +75,7 @@ class TrendlineCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
         return filtered
 
     @staticmethod
-    def trendlines(series, /, window):
+    def trendlines(series, /, period):
         assert isinstance(series, SimpleNamespace) and all([isinstance(value, pd.Series) for value in vars(series).values()])
         assert len(series.high) == len(series.low)
         size = min(len(series.high), len(series.low))
@@ -85,11 +88,11 @@ class TrendlineCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
             if not np.isnan(value.support):
                 point = SimpleNamespace(x=index, y=float(value.support))
                 points.support.append(point)
-                if len(points.support) > window: points.support.pop(0)
+                if len(points.support) > period: points.support.pop(0)
             if not np.isnan(value.resistance):
                 point = SimpleNamespace(x=index, y=float(value.resistance))
                 points.resistance.append(point)
-                if len(points.resistance) > window: points.resistance.pop(0)
+                if len(points.resistance) > period: points.resistance.pop(0)
             if len(points.support) >= 2:
                 x = np.array([point.x for point in points.support], dtype=float)
                 y = np.array([point.y for point in points.support], dtype=float)

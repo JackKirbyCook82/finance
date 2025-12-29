@@ -47,6 +47,8 @@ class TechnicalEquation(Computations.Table, Algorithms.UnVectorized.Table, Equat
         yield from super().execute(bars)
         yield self.s(bars)
         yield self.t(bars)
+        yield self.x(bars)
+        yield self.v(bars)
 
 
 class StateEquations(TechnicalEquation, ABC): pass
@@ -159,7 +161,6 @@ class MFIEquation(VolumeEquations, ABC, attribute="MFI"):
         yield from super().execute(bars, **kwargs)
         parameters = dict(period=self.period)
         yield self.mfi(bars, **parameters)
-        yield self.v(bars)
 
 class CMFEquation(VolumeEquations, ABC, attribute="CMF"):
     mfm = Variables.Dependent("mfm", "MFM", np.float32, function=lambda xc, xl, xh: (((xc - xl) - (xh - xc)) / (xh - xl)).replace([np.inf, -np.inf], 0).fillna(0))
@@ -170,7 +171,6 @@ class CMFEquation(VolumeEquations, ABC, attribute="CMF"):
         yield from super().execute(bars, **kwargs)
         parameters = dict(period=self.period)
         yield self.cmf(bars, **parameters)
-        yield self.v(bars)
 
 class OBVEquation(VolumeEquations, ABC, attribute="OBV"):
     rvf = Variables.Dependent("rvf", "RVF", np.float32, function=lambda dx, v: (np.sign(dx) * v).fillna(0).cumsum())
@@ -180,7 +180,6 @@ class OBVEquation(VolumeEquations, ABC, attribute="OBV"):
     def execute(self, bars, **kwargs):
         yield from super().execute(bars, **kwargs)
         yield self.obv(bars)
-        yield self.v(bars)
 
 
 class TechnicalCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
