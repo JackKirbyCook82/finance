@@ -11,6 +11,7 @@ import pandas as pd
 from enum import Enum
 from types import SimpleNamespace
 
+from finance.concepts import Querys
 from support.mixins import Emptying, Sizing, Partition, Logging
 
 __version__ = "1.0.0"
@@ -21,35 +22,45 @@ __license__ = "MIT License"
 
 
 class TrendlineCalculator(Sizing, Emptying, Partition, Logging, title="Calculated"):
-    def __init__(self, *args, window, threshold, period, **kwargs):
+    def __init__(self, *args, indicator, window, threshold, period, **kwargs):
         assert isinstance(window, int) and window > 0 and window % 2 != 0
         super().__init__(*args, **kwargs)
+        self.__indicator = str(indicator).upper()
         self.__threshold = threshold
         self.__window = window
         self.__period = period
 
     def execute(self, technicals, /, **kwargs):
-        assert isinstance(technicals, pd.DataFrame)
+        assert isinstance(technicals, pd.DataFrame) and self.indicator in technicals.columns
         if self.empty(technicals): return
+        symbols = self.keys(technicals, by=Querys.Symbol)
+        symbols = ",".join(list(map(str, symbols)))
+        technicals = self.calculate(technicals, **kwargs)
+        size = self.size(technicals)
+        self.console(f"{str(symbols)}[{int(size):.0f}]")
+        if self.empty(technicals): return
+        yield technicals
 
-        with pd.option_context("display.max_rows", 30, "display.max_columns", 30):
-            print(technicals)
-
-        return
-        yield
+    def calculate(self, technicals, /, **kwargs):
+        assert isinstance(technicals, pd.DataFrame)
+        pivots = self.pivots(technicals[self.indicator], indicator=self.indicator, window=self.window)
+        pivots = self.filters(pivots, indicator=self.indicator, threshold=self.threshold)
+        trendlines = self.trendlines(pivots, indicator=self.indicator, period=self.period)
+        technicals = pd.concat([technicals, trendlines.support, trendlines.resistance], axis=1)
+        return technicals
 
     @staticmethod
-    def pivots(series, /, window):
+    def pivots(series, /, indicator, window):
         assert isinstance(series, pd.Series)
         high = series.where(series.eq(series.rolling(window, center=True).max())).shift(window // 2)
         low = series.where(series.eq(series.rolling(window, center=True).min())).shift(window // 2)
-        high = high.rename(f"{series.name}H")
-        low = low.rename(f"{series.name}L")
+        high = high.rename(f"{indicator}H")
+        low = low.rename(f"{indicator}L")
         pivoted = SimpleNamespace(high=high, low=low)
         return pivoted
 
     @staticmethod
-    def filters(series, /, threshold):
+    def filters(series, /, indicator, threshold):
         assert isinstance(series, SimpleNamespace) and all([isinstance(value, pd.Series) for value in vars(series).values()])
         assert len(series.high) == len(series.low)
         size = min(len(series.high), len(series.low))
@@ -69,13 +80,13 @@ class TrendlineCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
                 if pivot != Pivots.LOW or np.isnan(last.low) or unfiltered.low.iloc[index] < last.low:
                     filtered.low[index] = last.low = unfiltered.low.iloc[index]
                     pivot = Pivots.LOW
-        high = pd.Series(filtered.high, index=series.high.index, name=series.high.name)
-        low = pd.Series(filtered.low, index=series.low.index, name=series.low.name)
+        high = pd.Series(filtered.high, index=series.high.index, name=f"{indicator}H")
+        low = pd.Series(filtered.low, index=series.low.index, name=f"{indicator}L")
         filtered = SimpleNamespace(high=high, low=low)
         return filtered
 
     @staticmethod
-    def trendlines(series, /, period):
+    def trendlines(series, /, indicator, period):
         assert isinstance(series, SimpleNamespace) and all([isinstance(value, pd.Series) for value in vars(series).values()])
         assert len(series.high) == len(series.low)
         size = min(len(series.high), len(series.low))
@@ -103,11 +114,13 @@ class TrendlineCalculator(Sizing, Emptying, Partition, Logging, title="Calculate
                 y = np.array([point.y for point in points.resistance], dtype=float)
                 a, b = np.polyfit(x, y, 1)
                 trendlines.resistance[index] = a * indexes[index] + b
-        support = pd.Series(trendlines.support).rename(f"{series.support.name}SPT")
-        resistance = pd.Series(trendlines.resistance).rename(f"{series.resistance.name}RST")
+        support = pd.Series(trendlines.support).rename(f"{indicator}SPT")
+        resistance = pd.Series(trendlines.resistance).rename(f"{indicator}RST")
         trendlines = SimpleNamespace(support=support, resistance=resistance)
         return trendlines
 
+    @property
+    def indicator(self): return self.__indicator
     @property
     def threshold(self): return self.__threshold
     @property

@@ -8,7 +8,6 @@ Created on Sat Dec 13 2025
 
 import pandas as pd
 
-from finance.concepts import Querys
 from support.mixins import Emptying, Sizing, Partition, Logging
 
 __version__ = "1.0.0"
@@ -24,30 +23,14 @@ class BackTestingCalculator(Sizing, Emptying, Partition, Logging, title="Calcula
 
     def execute(self, technicals, /, **kwargs):
         assert isinstance(technicals, pd.DataFrame)
-        if self.empty(technicals): return
-        symbols = self.keys(technicals, by=Querys.Symbol)
-        symbols = ",".join(list(map(str, symbols)))
-        backtesting = self.calculate(technicals, **kwargs)
-        size = self.size(backtesting)
-        self.console(f"{str(symbols)}[{int(size):.0f}]")
-        if self.empty(backtesting): return
-        yield backtesting
 
-    def calculate(self, technicals, /, **kwargs):
-        assert isinstance(technicals, pd.DataFrame)
-        technicals = list(self.values(technicals, by=Querys.Symbol))
-        backtesting = list(self.calculator(technicals, **kwargs))
-        backtesting = pd.concat(backtesting, axis=0)
-        backtesting = backtesting.reset_index(drop=True, inplace=False)
-        return backtesting
+        with pd.option_context('display.max_rows', 100, 'display.max_columns', None, 'display.min_rows', 75, 'display.float_format', '{:.2f}'.format):
+            print(technicals)
+            raise Exception()
 
-    def calculator(self, technicals, /, **kwargs):
-        assert isinstance(technicals, list) and all([isinstance(dataframe, pd.DataFrame) for dataframe in technicals])
-        for dataframe in technicals:
-            assert (dataframe["ticker"].to_numpy()[0] == dataframe["ticker"]).all()
-            dataframe = dataframe.sort_values("date", ascending=True, inplace=False)
+        return
+        yield
 
-            with pd.option_context('display.max_rows', 100, 'display.max_columns', None, 'display.min_rows', 75, 'display.float_format', '{:.2f}'.format):
-                print(dataframe)
-                raise Exception()
+
+
 
