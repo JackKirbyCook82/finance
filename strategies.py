@@ -108,7 +108,7 @@ class StrategyEquation(Computations.Array, Algorithms.UnVectorized.Array, Equati
             yield content
 
 
-class VerticalPutStrategyEquation(StrategyEquation, ABC, strategy=Strategies.Verticals.Put):
+class VerticalPutStrategyEquation(StrategyEquation, ABC, register=Strategies.Verticals.Put):
     wh = Variables.Dependent("wh", "maximum", np.float32, function=lambda kpα, kpβ: np.maximum(kpα - kpβ, 0))
     wl = Variables.Dependent("wl", "minimum", np.float32, function=lambda kpα, kpβ: np.minimum(kpα - kpβ, 0))
     kα = Variables.Dependent("kα", ("long", "strike"), np.float32, function=lambda kpα: kpα)
@@ -126,7 +126,7 @@ class VerticalPutStrategyEquation(StrategyEquation, ABC, strategy=Strategies.Ver
     Θo = Variables.Dependent("Θo", "theta", np.float32, function=lambda Θpα, Θpβ: Θpα + Θpβ)
     Vo = Variables.Dependent("Vo", "vega", np.float32, function=lambda Vpα, Vpβ: Vpα + Vpβ)
 
-class VerticalCallStrategyEquation(StrategyEquation, ABC, strategy=Strategies.Verticals.Call):
+class VerticalCallStrategyEquation(StrategyEquation, ABC, register=Strategies.Verticals.Call):
     wh = Variables.Dependent("wh", "maximum", np.float32, function=lambda kcα, kcβ: np.maximum(kcβ - kcα, 0))
     wl = Variables.Dependent("wl", "minimum", np.float32, function=lambda kcα, kcβ: np.minimum(kcβ - kcα, 0))
     kα = Variables.Dependent("kα", ("long", "strike"), np.float32, function=lambda kcα: kcα)
@@ -144,7 +144,7 @@ class VerticalCallStrategyEquation(StrategyEquation, ABC, strategy=Strategies.Ve
     Θo = Variables.Dependent("Θo", "theta", np.float32, function=lambda Θcα, Θcβ: Θcα + Θcβ)
     Vo = Variables.Dependent("Vo", "vega", np.float32, function=lambda Vcα, Vcβ: Vcα + Vcβ)
 
-class CollarLongStrategyEquation(StrategyEquation, ABC, strategy=Strategies.Collars.Long):
+class CollarLongStrategyEquation(StrategyEquation, ABC, register=Strategies.Collars.Long):
     wh = Variables.Dependent("wh", "maximum", np.float32, function=lambda kpα, kcβ: + np.maximum(kpα, kcβ))
     wl = Variables.Dependent("wl", "minimum", np.float32, function=lambda kpα, kcβ: + np.minimum(kpα, kcβ))
     kα = Variables.Dependent("kα", ("long", "strike"), np.float32, function=lambda kpα: kpα)
@@ -162,7 +162,7 @@ class CollarLongStrategyEquation(StrategyEquation, ABC, strategy=Strategies.Coll
     Θo = Variables.Dependent("Θo", "theta", np.float32, function=lambda Θpα, Θcβ: Θpα + Θcβ)
     Vo = Variables.Dependent("Vo", "vega", np.float32, function=lambda Vpα, Vcβ: Vpα + Vcβ)
 
-class CollarShortStrategyEquation(StrategyEquation, ABC, strategy=Strategies.Collars.Short):
+class CollarShortStrategyEquation(StrategyEquation, ABC, register=Strategies.Collars.Short):
     wh = Variables.Dependent("wh", "maximum", np.float32, function=lambda kcα, kpβ: - np.minimum(kcα, kpβ))
     wl = Variables.Dependent("wl", "minimum", np.float32, function=lambda kcα, kpβ: - np.maximum(kcα, kpβ))
     kα = Variables.Dependent("kα", ("long", "strike"), np.float32, function=lambda kcα: kcα)
