@@ -34,7 +34,7 @@ StatusConcept = Concept("Status", ["PROSPECT", "PENDING", "OBSOLETE", "ABANDONED
 TermConcept = Concept("Terms", ["MARKET", "LIMIT", "STOP", "STOPLIMIT", "LIMITDEBIT", "LIMITCREDIT"], start=1)
 TenureConcept = Concept("Tenure", ["DAY", "STANDING", "OPENING", "CLOSING", "IMMEDIATE", "FILLKILL"], start=1)
 PricingConcept = Concept("Pricing", ["AGGRESSIVE", "PASSIVE", "MODERATE"], start=1)
-QuotingConcept = Concept("Quoting", ["CLOSING", "DELAYED", "REALTIME"], start=1)
+QuotingConcept = Concept("Quoting", ["LIVE", "FROZEN", "DELAYED"], start=1)
 MarketConcept = Concept("Market", ["BEAR", "NEUTRAL", "BULL"], start=-1)
 ActionConcept = Concept("Action", ["BUY", "SELL"], start=1)
 StateConcept = Concept("State", ["BARS", "STATS"], start=1)
