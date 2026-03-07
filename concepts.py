@@ -43,7 +43,7 @@ MomentumConcept = Concept("Momentum", ["RSI"], start=1)
 VolatilityConcept = Concept("Volatility", ["BB", "ATR"], start=1)
 VolumeConcept = Concept("Volume", ["MFI", "CMF", "OBV"], start=1)
 
-SecurityConcepts = Concepts("Security", ["instrument", "option", "position"], {})
+SecurityConcepts = Concepts("Security", ["instrument", "option", "position"], set())
 StrategyConcepts = Concepts("Strategy", ["spread", "option", "position"], {"stocks", "options"})
 
 TickerField = Field("ticker", str)
