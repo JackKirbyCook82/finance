@@ -11,15 +11,16 @@ import datetime
 import regex as re
 import numpy as np
 from enum import Enum
+from functools import singledispatchmethod
+from collections import namedtuple as ntuple
 
 from support.concepts import Assembly, Concepts, Concept
 from support.querys import Field, Query
-from support.mixins import Naming
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["Concepts", "Querys", "Securities", "Strategies", "OSI"]
-__copyright__ = "Copyright 2023, Jack Kirby Cook"
+__all__ = ["Concepts", "Querys", "Securities", "Strategies", "OptionOSI"]
+__copyright__ = "Copyright 2026, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
@@ -100,14 +101,15 @@ class Strategies(Assembly):
     class Collars(Assembly): Long = CollarLongStrategy; Short = CollarShortStrategy
 
 
-class OSI(Naming, fields=["ticker", "expire", "option", "strike"]):
+class OptionOSI(ntuple("OSI", ["ticker", "expire", "option", "strike"])):
     def __new__(cls, contents):
-        if isinstance(contents, list): mapping = {field: content for field, content in zip(cls.fields, contents)}
-        elif isinstance(contents, dict): mapping = {field: contents[field] for field in cls.fields}
+        if isinstance(contents, list): mapping = {field: content for field, content in zip(cls._fields, contents)}
+        elif isinstance(contents, dict): mapping = {field: contents[field] for field in cls._fields}
         elif isinstance(contents, ContractQuery): mapping = dict(list(contents))
         elif isinstance(contents, str): mapping = cls.parse(contents)
         else: raise TypeError(type(contents))
-        return super().__new__(cls, **mapping)
+        values = [mapping.get(field, None) for field in cls._fields]
+        return super().__new__(cls, *values)
 
     def __str__(self):
         ticker = str(self.ticker).upper()
@@ -119,15 +121,32 @@ class OSI(Naming, fields=["ticker", "expire", "option", "strike"]):
         strike = [function(value) for function, value in zip([right, left], strike)]
         return "".join([str(ticker), str(expire), str(option)] + strike)
 
+    def items(self): return self._asdict().items()
+    def values(self): return self._asdict().values()
+    def keys(self): return self._asdict().keys()
+
+    @singledispatchmethod
     @classmethod
-    def parse(cls, string):
+    def parse(cls, contents): raise TypeError(type(contents))
+
+    @parse.register(dict)
+    @classmethod
+    def parse(cls, contents): return [contents.get(field, None) for field in cls._fields]
+
+    @parse.register(ContractQuery)
+    @classmethod
+    def parse(cls, contents): return cls.parse(dict(contents))
+
+    @parse.register(str)
+    @classmethod
+    def parse(cls, contents):
         pattern = "^(?P<ticker>[A-Z]*)(?P<expire>[0-9]*)(?P<option>[PC]{1})(?P<strike>[0-9]*)$"
-        values = re.search(pattern, string).groupdict()
+        values = re.search(pattern, contents).groupdict()
         ticker = str(values["ticker"]).upper()
         expire = datetime.datetime.strptime(str(values["expire"]), "%y%m%d").date()
         option = {str(option).upper()[0]: option for option in OptionConcept}[str(values["option"])]
         strike = float(".".join([str(values["strike"])[:5], str(values["strike"])[5:]]))
         strike = np.round(float(strike), 3)
-        return dict(ticker=ticker, expire=expire, option=option, strike=strike)
-
+        mapping = dict(ticker=ticker, expire=expire, option=option, strike=strike)
+        return cls.parse(mapping)
 
