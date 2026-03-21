@@ -103,13 +103,11 @@ class Strategies(Assembly):
 
 class OptionOSI(ntuple("OSI", ["ticker", "expire", "option", "strike"])):
     def __new__(cls, contents):
-        if isinstance(contents, list): mapping = {field: content for field, content in zip(cls._fields, contents)}
-        elif isinstance(contents, dict): mapping = {field: contents[field] for field in cls._fields}
-        elif isinstance(contents, ContractQuery): mapping = dict(list(contents))
-        elif isinstance(contents, str): mapping = cls.parse(contents)
+        if isinstance(contents, ContractQuery): contents = dict(contents.items())
+        if isinstance(contents, dict): contents = [contents[field] for field in cls._fields]
+        elif isinstance(contents, str): contents = cls.parse(contents)
         else: raise TypeError(type(contents))
-        values = [mapping.get(field, None) for field in cls._fields]
-        return super().__new__(cls, *values)
+        return super().__new__(cls, *contents)
 
     def __str__(self):
         ticker = str(self.ticker).upper()
@@ -125,19 +123,6 @@ class OptionOSI(ntuple("OSI", ["ticker", "expire", "option", "strike"])):
     def values(self): return self._asdict().values()
     def keys(self): return self._asdict().keys()
 
-    @singledispatchmethod
-    @classmethod
-    def parse(cls, contents): raise TypeError(type(contents))
-
-    @parse.register(dict)
-    @classmethod
-    def parse(cls, contents): return [contents.get(field, None) for field in cls._fields]
-
-    @parse.register(ContractQuery)
-    @classmethod
-    def parse(cls, contents): return cls.parse(dict(contents))
-
-    @parse.register(str)
     @classmethod
     def parse(cls, contents):
         pattern = "^(?P<ticker>[A-Z]*)(?P<expire>[0-9]*)(?P<option>[PC]{1})(?P<strike>[0-9]*)$"
@@ -147,6 +132,6 @@ class OptionOSI(ntuple("OSI", ["ticker", "expire", "option", "strike"])):
         option = {str(option).upper()[0]: option for option in OptionConcept}[str(values["option"])]
         strike = float(".".join([str(values["strike"])[:5], str(values["strike"])[5:]]))
         strike = np.round(float(strike), 3)
-        mapping = dict(ticker=ticker, expire=expire, option=option, strike=strike)
-        return cls.parse(mapping)
+        return [ticker, expire, option, strike]
+
 
