@@ -6,48 +6,19 @@ Created on Mon Mar 23 2026
 
 """
 
-import math
 import numpy as np
 import pandas as pd
-from numba import njit, prange
 from datetime import date as Date
 
-from finance.concepts import Concepts
+from concepts import Concepts
+from support.concepts import DateRange
 from support.mixins import Logging
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["SanityFilter", "ViabilityFilter"]
+__all__ = ["SanityFilter", "ViabilityFilter", "OptionCalculator"]
 __copyright__ = "Copyright 2026, Jack Kirby Cook"
 __license__ = "MIT License"
-
-
-@njit(fastmath=False, cache=True, inline="always")
-def normcdf(z): return 0.5 * (1.0 + math.erf(z / math.sqrt(2.0)))
-
-@njit(fastmath=True, cache=True, inline="always")
-def normpdf(z): return math.exp(-0.5 * z * z) / math.sqrt(2.0 * math.pi)
-
-@njit(fastmath=True, cache=True, inline="always")
-def zitm(x, k, r, σ, τ): return math.log(x / k) / (σ * math.sqrt(τ)) + 0.5 * σ * math.sqrt(τ) + r * math.sqrt(τ) / σ
-
-@njit(fastmath=True, cache=True, inline="always")
-def zotm(x, k, r, σ, τ): return math.log(x / k) / (σ * math.sqrt(τ)) - 0.5 * σ * math.sqrt(τ) + r * math.sqrt(τ) / σ
-
-@njit(fastmath=False, cache=True, inline="always")
-def value(x, k, r, σ, τ, i):
-    zx = zitm(x, k, r, σ, τ)
-    zk = zotm(x, k, r, σ, τ)
-    return x * normcdf(zx * i) * i - k * normcdf(zk * i) * i / math.exp(r * τ)
-
-
-class OptionEquation(object):
-    tau = lambda expire: (expire - pd.Timestamp(Date.today())).dt.days
-    factor = lambda tau, * interest: 1 / np.exp(tau * interest)
-    money = lambda strike, underlying: strike / underlying
-    mean = lambda bid, ask, demand, supply: (bid * demand + ask * supply)
-    median = lambda bid, ask: (bid + ask) / 2
-    spread = lambda bid, ask: ask - bid
 
 
 class OptionFilter(Logging):
@@ -63,9 +34,11 @@ class OptionFilter(Logging):
         return filtered
 
     def alert(self, unfiltered, filtered):
+        instrument = str(Concepts.Securities.Instrument.OPTION).title()
         tickers = "|".join(list(unfiltered["ticker"].unique()))
-        instrument = str(Concepts.Securities.Instrument.STOCK).title()
-        self.console("Filtered", f"{str(instrument)}[{str(tickers)}, {len(unfiltered)|len(filtered)}]")
+        expires = DateRange(list(unfiltered["expire"].unique()))
+        expires = f"{expires.min.strftime('%Y%m%d')}->{expires.max.strftime('%Y%m%d')}"
+        self.console("Filtered", f"{str(instrument)}[{str(tickers)}, {str(expires)}, {len(unfiltered):.0f}|{len(filtered):.0f}]")
 
     @property
     def mask(self): return self.__mask
@@ -91,6 +64,38 @@ class ViabilityFilter(Logging):
         demand = lambda options: options["demand"] >= int(size)
         criteria = [spread, supply, demand]
         super().__init__(*args, criteria=criteria, **kwargs)
+
+
+class OptionEquations(object):
+    tau = lambda expire: (expire - pd.Timestamp(Date.today())).dt.days / 365
+    discount = lambda tau, *, interest: 1 / np.exp(tau * interest)
+    intrinsic = lambda strike, underlying, option: max((underlying - strike) * int(option), 0) * int(option)
+    moneyness = lambda strike, underlying: strike / underlying
+    mean = lambda bid, ask, demand, supply: (bid * demand + ask * supply)
+    median = lambda bid, ask: (bid + ask) / 2
+    spread = lambda bid, ask: ask - bid
+
+
+class OptionCalculator(Logging):
+    def __call__(self, *args, options, interest, **kwargs):
+        assert isinstance(options, pd.DataFrame)
+        tau = OptionEquations.tau(options["expire"])
+        discount = OptionEquations.discount(options["tau"], interest=interest)
+        intrinsic = OptionEquations.intrinsic(options["strike"], options["underlying"], options["option"])
+        moneyness = OptionEquations.moneyness(options["strike"], options["underlying"])
+        mean = OptionEquations.mean(options["bid"], options["ask"], options["demand"], options["supply"])
+        median = OptionEquations.median(options["bid"], options["ask"])
+        spread = OptionEquations.spread(options["bid"], options["ask"])
+        options = pd.concat([options, tau, discount, intrinsic, moneyness, mean, median, spread], axis=1)
+        self.alert(options)
+        return options
+
+    def alert(self, options):
+        instrument = str(Concepts.Securities.Instrument.OPTION).title()
+        tickers = "|".join(list(options["ticker"].unique()))
+        expires = DateRange(list(options["expire"].unique()))
+        expires = f"{expires.min.strftime('%Y%m%d')}->{expires.max.strftime('%Y%m%d')}"
+        self.console("Filtered", f"{str(instrument)}[{str(tickers)}, {str(expires)}, {len(options):.0f}]")
 
 
 

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Created on Sun Jan 28 2024
-@name:   Finance Variable Objects
+@name:   Finance Concept Objects
 @author: Jack Kirby Cook
 
 """
@@ -11,7 +11,6 @@ import datetime
 import regex as re
 import numpy as np
 from enum import Enum
-from functools import singledispatchmethod
 from collections import namedtuple as ntuple
 
 from support.concepts import Assembly, Concepts, Concept
