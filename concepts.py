@@ -7,11 +7,12 @@ Created on Sun Jan 28 2024
 """
 
 import numbers
-import datetime
 import regex as re
 import numpy as np
 from enum import Enum
-from collections import namedtuple as ntuple
+from datetime import date as Date
+from datetime import datetime as Datetime
+from dataclasses import dataclass, asdict, fields
 
 from support.concepts import Assembly, Concepts, Concept
 from support.querys import Field, Query
@@ -100,37 +101,41 @@ class Strategies(Assembly):
     class Collars(Assembly): Long = CollarLongStrategy; Short = CollarShortStrategy
 
 
-class OptionOSI(ntuple("OSI", ["ticker", "expire", "option", "strike"])):
-    def __new__(cls, contents):
+@dataclass(frozen=True)
+class OptionOSI:
+    ticker: str; expire: Date; option: Enum; strike: float
+
+    @classmethod
+    def create(cls, contents):
         if isinstance(contents, ContractQuery): contents = dict(contents.items())
-        if isinstance(contents, dict): contents = [contents[field] for field in cls._fields]
-        elif isinstance(contents, str): contents = cls.parse(contents)
+        if isinstance(contents, dict): return cls(**{field.name: contents[field.name] for field in fields(cls)})
+        elif isinstance(contents, str): return cls(*cls.parse(contents))
+        elif isinstance(contents, (list, tuple)): return cls(*contents)
         else: raise TypeError(type(contents))
-        return super().__new__(cls, *contents)
 
     def __str__(self):
-        ticker = str(self.ticker).upper()
-        expire = str(self.expire.strftime("%y%m%d"))
+        ticker = self.ticker.upper()
+        expire = self.expire.strftime("%y%m%d")
         option = str(self.option).upper()[0]
-        strike = str(self.strike).split(".")
-        right = lambda value: str(value).rjust(5, "0")
-        left = lambda value: str(value.ljust(3, "0"))
-        strike = [function(value) for function, value in zip([right, left], strike)]
-        return "".join([str(ticker), str(expire), str(option)] + strike)
+        strike = f"{self.strike:.3f}"
+        left, right = strike.split(".")
+        right = right.rjust(5, "0")
+        left = left.ljust(3, "0")
+        return f"{ticker}{expire}{option}{right}{left}"
 
-    def items(self): return self._asdict().items()
-    def values(self): return self._asdict().values()
-    def keys(self): return self._asdict().keys()
+    def items(self): return asdict(self).items()
+    def values(self): return asdict(self).values()
+    def keys(self): return asdict(self).keys()
 
     @classmethod
     def parse(cls, contents):
-        pattern = "^(?P<ticker>[A-Z]*)(?P<expire>[0-9]*)(?P<option>[PC]{1})(?P<strike>[0-9]*)$"
+        pattern = r"^(?P<ticker>[A-Z]*)(?P<expire>[0-9]*)(?P<option>[PC]{1})(?P<strike>[0-9]*)$"
         values = re.search(pattern, contents).groupdict()
-        ticker = str(values["ticker"]).upper()
-        expire = datetime.datetime.strptime(str(values["expire"]), "%y%m%d").date()
+        ticker = values["ticker"].upper()
+        expire = Datetime.strptime(values["expire"], "%y%m%d").date()
         option = {str(option).upper()[0]: option for option in OptionConcept}[str(values["option"])]
-        strike = float(".".join([str(values["strike"])[:5], str(values["strike"])[5:]]))
-        strike = np.round(float(strike), 3)
+        strike = values["strike"]
+        strike = float(".".join([strike[:5], strike[5:]]))
+        strike = float(np.round(strike, 3))
         return [ticker, expire, option, strike]
-
 

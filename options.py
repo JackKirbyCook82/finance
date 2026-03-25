@@ -11,6 +11,7 @@ import pandas as pd
 from datetime import date as Date
 
 from concepts import Concepts
+from support.calculations import Calculation
 from support.concepts import DateRange
 from support.mixins import Logging
 
@@ -36,7 +37,7 @@ class OptionFilter(Logging):
     def alert(self, unfiltered, filtered):
         instrument = str(Concepts.Securities.Instrument.OPTION).title()
         tickers = "|".join(list(unfiltered["ticker"].unique()))
-        expires = DateRange(list(unfiltered["expire"].unique()))
+        expires = DateRange.create(list(unfiltered["expire"].unique()))
         expires = f"{expires.min.strftime('%Y%m%d')}->{expires.max.strftime('%Y%m%d')}"
         self.console("Filtered", f"{str(instrument)}[{str(tickers)}, {str(expires)}, {len(unfiltered):.0f}|{len(filtered):.0f}]")
 
@@ -66,7 +67,7 @@ class ViabilityFilter(Logging):
         super().__init__(*args, criteria=criteria, **kwargs)
 
 
-class OptionEquations(object):
+class OptionCalculator(Calculation, Logging):
     tau = lambda expire: (expire - pd.Timestamp(Date.today())).dt.days / 365
     discount = lambda tau, *, interest: 1 / np.exp(tau * interest)
     intrinsic = lambda strike, underlying, option: max((underlying - strike) * int(option), 0) * int(option)
@@ -75,25 +76,16 @@ class OptionEquations(object):
     median = lambda bid, ask: (bid + ask) / 2
     spread = lambda bid, ask: ask - bid
 
-
-class OptionCalculator(Logging):
     def __call__(self, *args, options, interest, **kwargs):
         assert isinstance(options, pd.DataFrame)
-        tau = OptionEquations.tau(options["expire"])
-        discount = OptionEquations.discount(options["tau"], interest=interest)
-        intrinsic = OptionEquations.intrinsic(options["strike"], options["underlying"], options["option"])
-        moneyness = OptionEquations.moneyness(options["strike"], options["underlying"])
-        mean = OptionEquations.mean(options["bid"], options["ask"], options["demand"], options["supply"])
-        median = OptionEquations.median(options["bid"], options["ask"])
-        spread = OptionEquations.spread(options["bid"], options["ask"])
-        options = pd.concat([options, tau, discount, intrinsic, moneyness, mean, median, spread], axis=1)
+        options = self.calculate(options, interest=interest)
         self.alert(options)
         return options
 
     def alert(self, options):
         instrument = str(Concepts.Securities.Instrument.OPTION).title()
         tickers = "|".join(list(options["ticker"].unique()))
-        expires = DateRange(list(options["expire"].unique()))
+        expires = DateRange.create(list(options["expire"].unique()))
         expires = f"{expires.min.strftime('%Y%m%d')}->{expires.max.strftime('%Y%m%d')}"
         self.console("Filtered", f"{str(instrument)}[{str(tickers)}, {str(expires)}, {len(options):.0f}]")
 
