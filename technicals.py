@@ -14,7 +14,7 @@ from support.mixins import Logging
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = []
+__all__ = ["TechnicalCalculator"]
 __copyright__ = "Copyright 2026, Jack Kirby Cook"
 __license__ = "MIT License"
 
@@ -25,14 +25,20 @@ class TechnicalCalculator(Calculation, Logging):
 
     def __call__(self, *args, bars, period, **kwargs):
         assert isinstance(bars, pd.DataFrame)
-        technicals = self.calculate(bars, period=period)
-        technicals = pd.concat([bars, technicals], axis=1)
-        self.alert(technicals)
-        return technicals
 
-    def alert(self, technicals):
+        # SEPARATE DATAFRAME BY TICKERS AND SORT DATE BY ASCENDING
+
+    def alert(self, tickers, size):
         instrument = str(Concepts.Securities.Instrument.STOCK).title()
-        tickers = "|".join(list(technicals["ticker"].unique()))
-        self.console("Calculated", f"{str(instrument)}[{str(tickers)}, {len(technicals):.0f}]")
+        tickers = '|'.join(list(tickers))
+        self.console("Calculated", f"{str(instrument)}[{str(tickers)}, {int(size):.0f}]")
+
+
+class StateEquations(TechnicalCalculator): pass
+class TrendEquations(TechnicalCalculator): pass
+class MomentumEquations(TechnicalCalculator): pass
+class VolatilityEquations(TechnicalCalculator): pass
+class VolumeEquations(TechnicalCalculator): pass
+
 
 
