@@ -87,7 +87,7 @@ class OptionCalculator(Calculation, Logging):
         tickers = "|".join(list(options["ticker"].unique()))
         expires = DateRange.create(list(options["expire"].unique()))
         expires = f"{expires.min.strftime('%Y%m%d')}->{expires.max.strftime('%Y%m%d')}"
-        self.console("Filtered", f"{str(instrument)}[{str(tickers)}, {str(expires)}, {len(options):.0f}]")
+        self.console("Calculated", f"{str(instrument)}[{str(tickers)}, {str(expires)}, {len(options):.0f}]")
 
 
 
