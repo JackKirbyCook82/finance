@@ -48,8 +48,8 @@ SecurityConcepts = Concepts("Security", ["instrument", "option", "position"], se
 StrategyConcepts = Concepts("Strategy", ["spread", "option", "position"], {"stocks", "options"})
 
 TickerField = Field("ticker", str)
-DateField = Field("date", datetime.date, formatting="%Y%m%d")
-ExpireField = Field("expire", datetime.date, formatting="%Y%m%d")
+DateField = Field("date", Date, formatting="%Y%m%d")
+ExpireField = Field("expire", Date, formatting="%Y%m%d")
 StrikeField = Field("strike", numbers.Number, digits=2)
 PriceField = Field("price", numbers.Number, digits=2)
 AskField = Field("ask", numbers.Number, digits=2)

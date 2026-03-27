@@ -6,11 +6,12 @@ Created on Mon Mar 23 2026
 
 """
 
+import types
 import numpy as np
 import pandas as pd
 from datetime import date as Date
 
-from concepts import Concepts
+from finance.concepts import Concepts
 from support.calculations import Calculation
 from support.concepts import DateRange
 from support.mixins import Logging
@@ -45,9 +46,8 @@ class OptionFilter(Logging):
     def mask(self): return self.__mask
 
 
-class SanityFilter(Logging):
+class SanityFilter(OptionFilter):
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
         spread = lambda options: options["ask"] > options["bid"]
         supply = lambda options: options["supply"].notna() & (options["supply"] >= 1)
         demand = lambda options: options["demand"].notna() & (options["demand"] >= 1)
@@ -57,7 +57,7 @@ class SanityFilter(Logging):
         super().__init__(*args, criteria=criteria, **kwargs)
 
 
-class ViabilityFilter(Logging):
+class ViabilityFilter(OptionFilter):
     def __init__(self, *args, spread=0.25, size=2, **kwargs):
         assert isinstance(spread, (int, float)) and isinstance(size, int)
         spread = lambda options: (options["ask"] - options["bid"]) * 2 / (options["ask"] + options["bid"]) <= float(spread)
@@ -76,9 +76,17 @@ class OptionCalculator(Calculation, Logging):
     median = lambda bid, ask: (bid + ask) / 2
     spread = lambda bid, ask: ask - bid
 
+    def __init__(self, *args, pricing, **kwargs):
+        assert callable(pricing) or issubclass(pricing, types.NoneType)
+        super().__init__(*args, **kwargs)
+        self.__pricing = pricing
+
     def __call__(self, *args, options, interest, **kwargs):
         assert isinstance(options, pd.DataFrame)
-        options = self.calculate(options, interest=interest)
+        if bool(options.empty): return options
+        calculated = self.calculate(options, interest=interest)
+        options = pd.concat([options, calculated], axis=1)
+        if bool(self.pricing): options["price"] = self.pricing(options)
         self.alert(options)
         return options
 
@@ -89,5 +97,7 @@ class OptionCalculator(Calculation, Logging):
         expires = f"{expires.min.strftime('%Y%m%d')}->{expires.max.strftime('%Y%m%d')}"
         self.console("Calculated", f"{str(instrument)}[{str(tickers)}, {str(expires)}, {len(options):.0f}]")
 
+    @property
+    def pricing(self): return self.__pricing
 
 

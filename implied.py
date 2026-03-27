@@ -13,7 +13,7 @@ from numba import njit
 from types import SimpleNamespace
 from collections import OrderedDict as ODict
 
-from equations import Equations
+from finance.equations import Equations
 from finance.concepts import Concepts
 from support.mixins import Logging
 from support.concepts import DateRange
