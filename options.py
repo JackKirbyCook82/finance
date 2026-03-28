@@ -39,7 +39,7 @@ class OptionFilter(Logging):
         instrument = str(Concepts.Securities.Instrument.OPTION).title()
         tickers = "|".join(list(unfiltered["ticker"].unique()))
         expires = DateRange.create(list(unfiltered["expire"].unique()))
-        expires = f"{expires.min.strftime('%Y%m%d')}->{expires.max.strftime('%Y%m%d')}"
+        expires = f"{expires.minimum.strftime('%Y%m%d')}->{expires.maximum.strftime('%Y%m%d')}"
         self.console("Filtered", f"{str(instrument)}[{str(tickers)}, {str(expires)}, {len(unfiltered):.0f}|{len(filtered):.0f}]")
 
     @property
