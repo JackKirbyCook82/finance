@@ -101,6 +101,10 @@ class Strategies(Assembly):
     class Collars(Assembly): Long = CollarLongStrategy; Short = CollarShortStrategy
 
 
+class OSIError(Exception): pass
+class OSIParseError(OSIError): pass
+class OSICreateError(OSIError): pass
+
 @dataclass(frozen=True)
 class OptionOSI:
     ticker: str; expire: Date; option: Enum; strike: float
@@ -111,17 +115,15 @@ class OptionOSI:
         if isinstance(contents, dict): return cls(**{field.name: contents[field.name] for field in fields(cls)})
         elif isinstance(contents, str): return cls(*cls.parse(contents))
         elif isinstance(contents, (list, tuple)): return cls(*contents)
-        else: raise TypeError(type(contents))
+        else: raise OSICreateError()
 
     def __str__(self):
         ticker = self.ticker.upper()
         expire = self.expire.strftime("%y%m%d")
         option = str(self.option).upper()[0]
-        strike = f"{self.strike:.3f}"
-        left, right = strike.split(".")
-        right = right.rjust(5, "0")
-        left = left.ljust(3, "0")
-        return f"{ticker}{expire}{option}{right}{left}"
+        strike_int = int(round(self.strike * 1000))
+        strike = f"{strike_int:08d}"
+        return f"{ticker}{expire}{option}{strike}"
 
     def items(self): return asdict(self).items()
     def values(self): return asdict(self).values()
@@ -129,13 +131,13 @@ class OptionOSI:
 
     @classmethod
     def parse(cls, contents):
-        pattern = r"^(?P<ticker>[A-Z]*)(?P<expire>[0-9]*)(?P<option>[PC]{1})(?P<strike>[0-9]*)$"
-        values = re.search(pattern, contents).groupdict()
+        pattern = r"^(?P<ticker>[A-Z]+)(?P<expire>\d{6})(?P<option>[PC])(?P<strike>\d{8})$"
+        match = re.search(pattern, contents)
+        if not match: raise OSIParseError()
+        values = match.groupdict()
         ticker = values["ticker"].upper()
         expire = Datetime.strptime(values["expire"], "%y%m%d").date()
-        option = {str(option).upper()[0]: option for option in OptionConcept}[str(values["option"])]
-        strike = values["strike"]
-        strike = float(".".join([strike[:5], strike[5:]]))
-        strike = float(np.round(strike, 3))
+        option = {str(option).upper()[0]: option for option in OptionConcept}[values["option"]]
+        strike = int(values["strike"]) / 1000.0
         return [ticker, expire, option, strike]
 

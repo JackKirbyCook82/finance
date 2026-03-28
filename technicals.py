@@ -10,7 +10,7 @@ import types
 import numpy as np
 import pandas as pd
 
-from concepts import Concepts
+from finance.concepts import Concepts
 from support.calculations import Calculation
 from support.meta import RegistryMeta
 from support.mixins import Logging
@@ -34,7 +34,7 @@ class TechnicalCalculatorMeta(type(Calculation), RegistryMeta):
 
 
 class TechnicalCalculator(Calculation, Logging, metaclass=TechnicalCalculatorMeta):
-    pctgains = lambda adjusted: adjusted.pct_changes(1)
+    pctgains = lambda adjusted: adjusted.pct_change(1)
     netgains = lambda adjusted: adjusted.diff()
 
     def __call__(self, *args, bars, period, **kwargs):
@@ -49,7 +49,6 @@ class TechnicalCalculator(Calculation, Logging, metaclass=TechnicalCalculatorMet
         for ticker, bars in bars.groupby("ticker"):
             bars = bars.sort_values(by="date", ascending=True)
             technicals = self.calculate(bars, period=period)
-            technicals = pd.concat([bars, technicals], axis=1)
             self.alert(ticker, len(technicals))
             yield technicals
 
@@ -72,7 +71,7 @@ class SMACalculator(TrendCalculator, register=Concepts.Technicals.Trend.SMA):
 class EMACalculator(TrendCalculator, register=Concepts.Technicals.Trend.EMA):
     ema = lambda adjusted, *, period: adjusted.ewm(span=period, min_periods=period, adjust=False).mean()
 
-class MACDCalculator(TrendCalculator, variables=["macd", "sign", "hist"]):
+class MACDCalculator(TrendCalculator, variables=["macd", "sign", "hist"], register=Concepts.Technicals.Trend.MACD):
     ema12 = lambda adjusted: adjusted.ewm(span=12, min_periods=12, adjust=False).mean()
     ema26 = lambda adjusted: adjusted.ewm(span=26, min_periods=26, adjust=False).mean()
     macd = lambda ema12, ema26: ema12 - ema26
