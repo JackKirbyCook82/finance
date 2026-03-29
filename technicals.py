@@ -9,6 +9,7 @@ Created on Thurs Mar 26 2026
 import types
 import numpy as np
 import pandas as pd
+from abc import ABC
 
 from finance.concepts import Concepts
 from support.calculations import Calculation
@@ -33,28 +34,30 @@ class TechnicalCalculatorMeta(type(Calculation), RegistryMeta):
         return instance
 
 
-class TechnicalCalculator(Calculation, Logging, metaclass=TechnicalCalculatorMeta):
+class TechnicalCalculator(Calculation, Logging, ABC, metaclass=TechnicalCalculatorMeta):
     pctgains = lambda adjusted: adjusted.pct_change(1)
     netgains = lambda adjusted: adjusted.diff()
 
-    def __call__(self, *args, bars, period, **kwargs):
+    def __call__(self, bars, *args, **kwargs):
         assert isinstance(bars, pd.DataFrame)
-        technicals = self.calculator(*args, bars=bars, period=period, **kwargs)
+        if bool(bars.empty): return bars
+        technicals = self.calculator(bars, *args, **kwargs)
         technicals = pd.concat(list(technicals), axis=0)
         technicals = technicals.sort_values(by=["ticker", "date"], ascending=[True, False], inplace=False)
         return technicals
 
-    def calculator(self, *args, bars, period, **kwargs):
+    def calculator(self, bars, *args, **kwargs):
         bars["date"] = pd.to_datetime(bars["date"])
         for ticker, bars in bars.groupby("ticker"):
             bars = bars.sort_values(by="date", ascending=True)
-            technicals = self.calculate(bars, period=period)
-            self.alert(ticker, len(technicals))
+            technicals = self.calculate(bars, *args, **kwargs)
+            self.alert(technicals)
             yield technicals
 
-    def alert(self, ticker, size):
+    def alert(self, dataframe):
         instrument = str(Concepts.Securities.Instrument.STOCK).title()
-        self.console("Calculated", f"{str(instrument)}[{str(ticker)}, {int(size):.0f}]")
+        tickers = "|".join(list(dataframe["ticker"].unique()))
+        self.console("Calculated", f"{str(instrument)}[{str(tickers)}, {len(dataframe):.0f}]")
 
 
 class StateCalculator(TechnicalCalculator): pass

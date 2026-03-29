@@ -64,26 +64,26 @@ class ImpliedCalculator(Logging):
         self.__variables = variables
         self.__method = method
 
-    def __call__(self, *args, options, interest, **kwargs):
+    def __call__(self, options, *args, interest, **kwargs):
         assert isinstance(options, pd.DataFrame)
+        if bool(options.empty): return options
         y = options["price"].to_numpy(np.float64)
         x = options["underlying"].to_numpy(np.float64)
         k = options["strike"].to_numpy(np.float64)
         τ = options["tau"].to_numpy(np.float64)
-        σ = options["volatility"].to_numpy(np.float64)
         i = options["option"].apply(int).to_numpy(np.float64)
         implied = list(calculation(y, x, k, τ, i, float(interest), len(options), int(self.method), **self.hyperparams))
-        implied = dict(zip(self.variables.outlet.values(), implied))
+        implied = dict(zip(self.streams.outlet.values(), implied))
         options = pd.concat([options, implied], axis=1)
         self.alert(options)
         return options
 
-    def alert(self, options):
+    def alert(self, dataframe):
         instrument = str(Concepts.Securities.Instrument.OPTION).title()
-        tickers = "|".join(list(options["ticker"].unique()))
-        expires = DateRange.create(list(options["expire"].unique()))
+        tickers = "|".join(list(dataframe["ticker"].unique()))
+        expires = DateRange.create(list(dataframe["expire"].unique()))
         expires = f"{expires.min.strftime('%Y%m%d')}->{expires.max.strftime('%Y%m%d')}"
-        self.console("Filtered", f"{str(instrument)}[{str(tickers)}, {str(expires)}, {len(options):.0f}]")
+        self.console("Filtered", f"{str(instrument)}[{str(tickers)}, {str(expires)}, {len(dataframe):.0f}]")
 
     @property
     def hyperparams(self): return self.__hyperparams

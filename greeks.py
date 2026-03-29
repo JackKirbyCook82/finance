@@ -68,25 +68,26 @@ class GreekCalculator(Logging):
         variables = SimpleNamespace(inlet=inlet, outlet=outlet)
         self.__variables = variables
 
-    def __call__(self, *args, options, interest, **kwargs):
+    def __call__(self, options, *args, interest, **kwargs):
         assert isinstance(options, pd.DataFrame)
+        if bool(options.empty): return options
         x = options["underlying"].to_numpy(np.float64)
         k = options["strike"].to_numpy(np.float64)
         τ = options["tau"].to_numpy(np.float64)
         σ = options["volatility"].to_numpy(np.float64)
         i = options["option"].apply(int).to_numpy(np.float64)
         greeks = list(calculation(x, k, τ, σ, i, float(interest), len(options)))
-        greeks = dict(zip(self.variables.outlet.values(), greeks))
+        greeks = dict(zip(self.streams.outlet.values(), greeks))
         options = pd.concat([options, greeks], axis=1)
         self.alert(options)
         return options
 
-    def alert(self, options):
+    def alert(self, dataframe):
         instrument = str(Concepts.Securities.Instrument.OPTION).title()
-        tickers = "|".join(list(options["ticker"].unique()))
-        expires = DateRange.create(list(options["expire"].unique()))
+        tickers = "|".join(list(dataframe["ticker"].unique()))
+        expires = DateRange.create(list(dataframe["expire"].unique()))
         expires = f"{expires.min.strftime('%Y%m%d')}->{expires.max.strftime('%Y%m%d')}"
-        self.console("Filtered", f"{str(instrument)}[{str(tickers)}, {str(expires)}, {len(options):.0f}]")
+        self.console("Filtered", f"{str(instrument)}[{str(tickers)}, {str(expires)}, {len(dataframe):.0f}]")
 
     @property
     def variables(self): return self.__variables
