@@ -6,7 +6,6 @@ Created on Thurs Mar 26 2026
 
 """
 
-import types
 import numpy as np
 import pandas as pd
 from abc import ABC
@@ -24,9 +23,8 @@ __license__ = "MIT License"
 
 
 class TechnicalCalculatorMeta(type(Calculation), RegistryMeta):
-    def __call__(cls, *args, technicals=None, **kwargs):
-        assert isinstance(technicals, (list, types.NoneType))
-        if technicals is None: return super(TechnicalCalculatorMeta, cls).__call__(*args, **kwargs)
+    def __call__(cls, *args, technicals, **kwargs):
+        assert isinstance(technicals, list)
         subclasses = [cls[technical] for technical in technicals]
         bases = tuple(subclasses + [cls])
         newcls = type(cls.__name__, bases, {})
@@ -34,7 +32,7 @@ class TechnicalCalculatorMeta(type(Calculation), RegistryMeta):
         return instance
 
 
-class TechnicalCalculator(Calculation, Logging, ABC, metaclass=TechnicalCalculatorMeta):
+class TechnicalCalculator(Calculation, Logging, ABC, variables=["ticker", "date", "adjusted"], metaclass=TechnicalCalculatorMeta):
     pctgains = lambda adjusted: adjusted.pct_change(1)
     netgains = lambda adjusted: adjusted.diff()
 
@@ -61,7 +59,7 @@ class TechnicalCalculator(Calculation, Logging, ABC, metaclass=TechnicalCalculat
 
 
 class StateCalculator(TechnicalCalculator): pass
-class BarsCalculator(StateCalculator, variables=["ticker", "date", "adjusted"], register=Concepts.Technicals.State.BARS): pass
+class BarsCalculator(StateCalculator, register=Concepts.Technicals.State.BARS): pass
 class StatsCalculator(StateCalculator, register=Concepts.Technicals.State.STATS):
     volatility = lambda pctgains, *, period: pctgains.rolling(period).std()
     trend = lambda pctgains, *, period: pctgains.rolling(period).mean()
