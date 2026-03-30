@@ -60,20 +60,20 @@ class ViabilityFilter(OptionFilter, variables=["viability"]):
 
 class OptionCalculator(Calculation, Logging):
     tau = lambda expire: (pd.to_datetime(expire) - pd.Timestamp(Date.today())).dt.days / 365
-    discount = lambda tau, *, interest: 1 / np.exp(tau * interest)
+    discount = lambda tau, *, interest: np.exp(-tau * interest)
     intrinsic = lambda strike, underlying, option: (np.maximum((underlying - strike) * option.astype(int), 0) * option.astype(int))
     moneyness = lambda strike, underlying: strike / underlying
-    pricing = lambda mean, median: (mean + median) / 2
-    mean = lambda bid, ask, demand, supply: (bid * demand + ask * supply)
+    price = lambda mean, median: (mean + median) / 2
+    mean = lambda bid, ask, demand, supply: (bid * demand + ask * supply) / (demand + supply)
     median = lambda bid, ask: (bid + ask) / 2
     spread = lambda bid, ask: ask - bid
 
     def __call__(self, options, *args, **kwargs):
         assert isinstance(options, pd.DataFrame)
         if bool(options.empty): return options
-        calculated = self.calculate(options, *args, **kwargs)
-        calculated = pd.concat([options, calculated], axis=0)
-        return calculated
+        options = self.calculate(options, *args, **kwargs)
+        self.alert(options)
+        return options
 
     def alert(self, dataframe):
         instrument = str(Concepts.Securities.Instrument.OPTION).title()
