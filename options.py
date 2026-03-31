@@ -28,11 +28,12 @@ class OptionFilter(Calculation, Logging, ABC):
         assert isinstance(options, pd.DataFrame)
         if bool(options.empty): return options
         mask = self.calculate(options, *args, **kwargs)
-        filtered = options.where(mask.squeeze())
-        filtered = filtered.dropna(how="all", inplace=False)
-        filtered = filtered.reset_index(drop=True, inplace=False)
-        self.alert(options, len(options), len(filtered))
-        return filtered
+        previous = len(options.index)
+        options = options.where(mask.squeeze())
+        options = options.dropna(how="all", inplace=False)
+        options = options.reset_index(drop=True, inplace=False)
+        self.alert(options, int(previous), len(options))
+        return options
 
     def alert(self, dataframe, previous, post):
         instrument = str(Concepts.Securities.Instrument.OPTION).title()
@@ -71,7 +72,8 @@ class OptionCalculator(Calculation, Logging):
     def __call__(self, options, *args, **kwargs):
         assert isinstance(options, pd.DataFrame)
         if bool(options.empty): return options
-        options = self.calculate(options, *args, **kwargs)
+        calculated = self.calculate(options, *args, **kwargs)
+        options = pd.concat([options, calculated], axis=1)
         self.alert(options)
         return options
 

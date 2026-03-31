@@ -49,6 +49,7 @@ class TechnicalCalculator(Calculation, Logging, ABC, variables=["ticker", "date"
         for ticker, bars in bars.groupby("ticker"):
             bars = bars.sort_values(by="date", ascending=True)
             technicals = self.calculate(bars, *args, **kwargs)
+            if bool(technicals.empty): continue
             self.alert(technicals)
             yield technicals
 
