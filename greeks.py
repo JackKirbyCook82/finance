@@ -24,20 +24,18 @@ __copyright__ = "Copyright 2026, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-value = Equations.Greeks.Value
-delta = Equations.Greeks.Delta
-gamma = Equations.Greeks.Gamma
-theta = Equations.Greeks.Theta
-rho = Equations.Greeks.Rho
-vega = Equations.Greeks.Vega
-vomma = Equations.Greeks.Vomma
-vanna = Equations.Greeks.Vanna
-charm = Equations.Greeks.Charm
+delta = Equations.Greeks.Primary.Delta
+gamma = Equations.Greeks.Primary.Gamma
+theta = Equations.Greeks.Primary.Theta
+rho = Equations.Greeks.Primary.Rho
+vega = Equations.Greeks.Primary.Vega
+vomma = Equations.Greeks.Secondary.Vomma
+vanna = Equations.Greeks.Secondary.Vanna
+charm = Equations.Greeks.Secondary.Charm
 
 
 @njit(cache=True)
 def calculation(x, k, τ, σ, i, r, n):
-    y = np.empty(n, dtype=np.float64)
     Δ = np.empty(n, dtype=np.float64)  # Delta, Δ = dy/dx
     Γ = np.empty(n, dtype=np.float64)  # Gamma, Γ = d²y/dx²
     Θ = np.empty(n, dtype=np.float64)  # Theta, Θ = dy/dτ
@@ -48,7 +46,6 @@ def calculation(x, k, τ, σ, i, r, n):
     Χ = np.empty(n, dtype=np.float64)  # Charm, Χ = d²y/dx*dτ
 
     for idx in range(n):
-        y[idx] = value(x[idx], k[idx], τ[idx], σ[idx], i[idx], r)
         Δ[idx] = delta(x[idx], k[idx], τ[idx], σ[idx], i[idx], r)
         Γ[idx] = gamma(x[idx], k[idx], τ[idx], σ[idx], i[idx], r)
         Θ[idx] = theta(x[idx], k[idx], τ[idx], σ[idx], i[idx], r)
@@ -64,7 +61,7 @@ class GreekCalculator(Logging):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         inlet = ODict(x="underlying", k="strike", τ="tau", σ="volatility", i="option", r="interest")
-        outlet = ODict(y="value", Δ="delta", Γ="gamma", Θ="theta", Ρ="rho", V="vega", Φ="vomma", Ψ="vanna", Χ="charm")
+        outlet = ODict(Δ="delta", Γ="gamma", Θ="theta", Ρ="rho", V="vega", Φ="vomma", Ψ="vanna", Χ="charm")
         variables = SimpleNamespace(inlet=inlet, outlet=outlet)
         self.__variables = variables
 

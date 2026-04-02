@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Created on Tues Mar 24 2026
-@name:   Implied Objects
+@name:   Volatility Objects
 @author: Jack Kirby Cook
 
 """
@@ -25,15 +25,6 @@ __copyright__ = "Copyright 2026, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-Method = Enum("Method", {"STRICT": 0, "CLIPPED": 1, "FITTED": 2})
-implied_strict = Equations.Volatility.Strict.Implied
-implied_clipped = Equations.Volatility.Clipped.Implied
-implied_fitted = Equations.Volatility.Fitted.Implied
-residual_strict = Equations.Volatility.Strict.Residual
-residual_clipped = Equations.Volatility.Clipped.Residual
-residual_fitted = Equations.Volatility.Fitted.Residual
-
-
 @njit(cache=True)
 def calculation(y, x, k, τ, i, r, n, m, /, low=1e-4, high=5.0, tol=1e-10, iters=100):
     σ = np.empty(n, dtype=np.float64)  # Implied Volatility
@@ -55,14 +46,13 @@ def calculation(y, x, k, τ, i, r, n, m, /, low=1e-4, high=5.0, tol=1e-10, iters
 
 
 class ImpliedCalculator(Logging):
-    def __init__(self, *args, method=Method.STRICT, low=1e-4, high=5.0, tol=1e-10, iters=100, **kwargs):
+    def __init__(self, *args, low=1e-4, high=5.0, tol=1e-10, iters=100, **kwargs):
         super().__init__(*args, **kwargs)
         inlet = ODict(y="price", x="underlying", k="strike", τ="tau", i="option", r="interest")
         outlet = ODict(σ="volatility", ε="residual")
         variables = SimpleNamespace(inlet=inlet, outlet=outlet)
         self.__hyperparams = dict(low=low, high=high, tol=tol, iters=iters)
         self.__variables = variables
-        self.__method = method
 
     def __call__(self, options, *args, interest, **kwargs):
         assert isinstance(options, pd.DataFrame)
@@ -89,8 +79,6 @@ class ImpliedCalculator(Logging):
     def hyperparams(self): return self.__hyperparams
     @property
     def variables(self): return self.__variables
-    @property
-    def method(self): return self.__method
 
 
 

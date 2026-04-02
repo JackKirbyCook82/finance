@@ -26,7 +26,27 @@ def normpdf(z): return math.exp(-0.5 * z * z) / math.sqrt(2.0 * math.pi)
 def discount(r, τ): return math.exp(-r * τ)
 
 @njit(cache=True, inline="always")
-def error(y, x, k, τ, σ, i, r): return value(x, k, τ, σ, i, r) - y
+def zitm(x, k, τ, σ, r):
+    if x <= 0.0 or k <= 0.0 or σ <= 0.0 or τ <= 0.0: return math.nan
+    fτσ = σ * math.sqrt(τ)
+    return (math.log(x / k) + (r + 0.5 * σ * σ) * τ) / fτσ
+
+@njit(cache=True, inline="always")
+def zotm(x, k, τ, σ, r):
+    if x <= 0.0 or k <= 0.0 or σ <= 0.0 or τ <= 0.0: return math.nan
+    fτσ = σ * math.sqrt(τ)
+    return zitm(x, k, τ, σ, r) - fτσ
+
+@njit(cache=True, inline="always")
+def blackscholes(x, k, τ, σ, i, r):
+    if not valid(x, k, τ, i) or σ <= 0.0 or not math.isfinite(σ): return math.nan
+    zx = zitm(x, k, τ, σ, r)
+    zk = zx - σ * math.sqrt(τ)
+    dcf = discount(r, τ)
+    return i * (x * normcdf(i * zx) - k * dcf * normcdf(i * zk))
+
+@njit(cache=True, inline="always")
+def error(y, x, k, τ, σ, i, r): return blackscholes(x, k, τ, σ, i, r) - y
 
 @njit(cache=True, inline="always")
 def intrinsic(x, k, τ, i, r):
@@ -43,43 +63,12 @@ def boundary(x, k, τ, i, r):
     elif i == -1: yl = max(0.0, k * dcf - x); yh = k * dcf
     return yl, yh
 
-@njit(cache=True)
-def boundary_residual(y, x, k, τ, i, r):
-    """ ε < 0:  intrinsic arbitrage,
-        ε = 0:  no arbitrage,
-        ε > 0:  volatility arbitrage """
-    if not valid(x, k, τ, i): return math.nan
-    yl, yh = boundary(x, k, τ, i, r)
-    if y < yl - 1e-10: return y - yl
-    if y > yh + 1e-10: return y - yh
-    return 0.0
-
 @njit(cache=True, inline="always")
 def valid(x, k, τ, i):
     positive = (x > 0.0 and k > 0.0 and τ > 0.0)
     option = (i == 1 or i == -1)
     finite = (math.isfinite(x) and math.isfinite(k) and math.isfinite(τ))
     return positive and option and finite
-
-@njit(cache=True, inline="always")
-def zitm(x, k, τ, σ, r):
-    if x <= 0.0 or k <= 0.0 or σ <= 0.0 or τ <= 0.0: return math.nan
-    fτσ = σ * math.sqrt(τ)
-    return (math.log(x / k) + (r + 0.5 * σ * σ) * τ) / fτσ
-
-@njit(cache=True, inline="always")
-def zotm(x, k, τ, σ, r):
-    if x <= 0.0 or k <= 0.0 or σ <= 0.0 or τ <= 0.0: return math.nan
-    fτσ = σ * math.sqrt(τ)
-    return zitm(x, k, τ, σ, r) - fτσ
-
-@njit(cache=True, inline="always")
-def value(x, k, τ, σ, i, r):
-    if not valid(x, k, τ, i) or σ <= 0.0 or not math.isfinite(σ): return math.nan
-    zx = zitm(x, k, τ, σ, r)
-    zk = zx - σ * math.sqrt(τ)
-    dcf = discount(r, τ)
-    return i * (x * normcdf(i * zx) - k * dcf * normcdf(i * zk))
 
 @njit(cache=True, inline="always")
 def delta(x, k, τ, σ, i, r):
@@ -169,7 +158,7 @@ def brenner(y, x, k, τ, i, r, /, low, high):
 def newton(y, x, k, τ, i, r, /, low, high, tol, iters):
     σ = brenner(y, x, k, τ, i, r, low, high)
     for _ in range(iters):
-        err = value(x, k, τ, σ, i, r) - y
+        err = error(y, x, k, τ, σ, i, r)
         if abs(err) <= tol: return σ
         dydσ = vega(x, k, τ, σ, i, r)
         if not math.isfinite(dydσ) or dydσ <= 1e-12: return math.nan
@@ -205,21 +194,21 @@ def bisection(y, x, k, τ, i, r, /, low, high, tol, iters):
     return 0.5 * (a + b)
 
 @njit(cache=True)
-def fitted(y, x, k, τ, i, r, /, low, high, tol, iters):
+def fitting(y, x, k, τ, i, r, /, low, high, tol, iters):
     assert i == 1 or i == -1
     σl, σh = low, high
     for _ in range(iters):
         σml = σl + (σh - σl) / 3.0
         σmh = σh - (σh - σl) / 3.0
-        yml = abs(value(x, k, τ, σml, i, r) - y)   
-        ymh = abs(value(x, k, τ, σmh, i, r) - y)
+        yml = abs(error(y, x, k, τ, σml, i, r))
+        ymh = abs(error(y, x, k, τ, σmh, i, r))
         if yml < ymh: σh = σmh
         else: σl = σml
         if (σh - σl) < tol: break
     return 0.5 * (σl + σh)
 
 @njit(cache=True)
-def volatility(y, x, k, τ, i, r, /, low, high, tol, iters):
+def implied(y, x, k, τ, i, r, /, low, high, tol, iters):
     if not valid(x, k, τ, i) or low <= 0.0 or high <= low: return math.nan
     yl, yh = boundary(x, k, τ, i, r)
     if y < yl - tol or y > yh + tol: return math.nan
@@ -230,49 +219,34 @@ def volatility(y, x, k, τ, i, r, /, low, high, tol, iters):
     return bisection(y, x, k, τ, i, r, low=low, high=σh, tol=tol, iters=max(100, iters))
 
 @njit(cache=True)
-def implied_strict(y, x, k, τ, i, r, /, low=1e-4, high=5.0, tol=1e-10, iters=100):
-    return volatility(y, x, k, τ, i, r, low=low, high=high, tol=tol, iters=iters)
-
-@njit(cache=True)
-def implied_clipped(y, x, k, τ, i, r, /, low=1e-4, high=5.0, tol=1e-10, iters=100):
-    if not valid(x, k, τ, i) or low <= 0.0 or high <= low: return math.nan
+def unboundedness(y, x, k, τ, i, r):
+    """ market price vs feasible boundary
+        ε < 0:  market price to cheap,
+        ε = 0:  no market price,
+        ε > 0:  market price to expensive """
+    if not valid(x, k, τ, i): return math.nan
     yl, yh = boundary(x, k, τ, i, r)
-    σh = min(high, adaptive(x, k, τ))
-    if y < yl - tol: return low
-    if y > yh + tol: return σh
-    σ = volatility(y, x, k, τ, i, r, low=low, high=σh, tol=tol, iters=iters)
-    if math.isfinite(σ): return σ
-    return low if (y - yl) <= (yh - y) else σh
+    if y < yl - 1e-10: return y - yl
+    if y > yh + 1e-10: return y - yh
+    return 0.0
 
 @njit(cache=True)
-def implied_fitted(y, x, k, τ, i, r, /, low=1e-4, high=5.0, tol=1e-10, iters=100):
-    if not valid(x, k, τ, i) or low <= 0.0 or high <= low: return math.nan
-    σh = min(high, adaptive(x, k, τ))
-    σ = volatility(y, x, k, τ, i, r, low=low, high=σh, tol=tol, iters=iters)
-    if math.isfinite(σ): return σ
-    return fitted(y, x, k, τ, i, r, low=low, high=σh, tol=tol, iters=iters)
-
-
-# @njit(cache=True)
-# def residual_strict(y, x, k, τ, i, r, /, low=1e-4, high=5.0, tol=1e-10, iters=100):
-#     return residual(y, x, k, τ, i, r)
-
-# @njit(cache=True)
-# def residual_clipped(y, x, k, τ, i, r, /, low=1e-4, high=5.0, tol=1e-10, iters=100):
-#     return residual(y, x, k, τ, i, r)
-
-# @njit(cache=True)
-# def residual_fitted(y, x, k, τ, i, r, low=1e-4, high=5.0, tol=1e-10, iters=100):
-#     if not valid(x, k, τ, i) or low <= 0.0 or high <= low: return math.nan
-#     σ = implied_fitted(y, x, k, τ, i, r, low=low, high=high, tol=tol, iters=iters)
-#     if not math.isfinite(σ): return math.nan
- #    return value(x, k, τ, σ, i, r) - y
+def mispricing(y, x, k, τ, σ, i, r):
+    """ market price vs valuation w/ implied volatility
+        ε < 0:  valuation(implied volatility) > market price,
+        ε = 0:  valuation(implied volatility) = market price,
+        ε > 0:  valuation(implied volatility) < market price """
+    if not valid(x, k, τ, i): return math.nan
+    if not math.isfinite(σ): return math.nan
+    return error(x, k, τ, σ, i, r)
 
 
 class Equations:
-    class Greeks: Value, Delta, Gamma, Theta, Rho, Vega, Vomma, Vanna, Charm = value, delta, gamma, theta, rho, vega, vomma, vanna, charm
-    class Volatility:
-        pass
+    class Valuation: BlackScholes = blackscholes
+    class Volatility: Implied = implied
+    class Greeks:
+        class Primary: Delta, Gamma, Theta, Rho, Vega = delta, gamma, theta, rho, vega
+        class Secondary: Vomma, Vanna, Charm = vomma, vanna, charm
 
 
 
