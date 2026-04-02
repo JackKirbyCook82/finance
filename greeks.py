@@ -48,15 +48,15 @@ def calculation(x, k, τ, σ, i, r, n):
     Χ = np.empty(n, dtype=np.float64)  # Charm, Χ = d²y/dx*dτ
 
     for idx in range(n):
-        y[idx] = value(x[idx], k[idx], σ[idx], τ[idx], i[idx], r)
-        Δ[idx] = delta(x[idx], k[idx], σ[idx], τ[idx], i[idx], r)
-        Γ[idx] = gamma(x[idx], k[idx], σ[idx], τ[idx], i[idx], r)
-        Θ[idx] = theta(x[idx], k[idx], σ[idx], τ[idx], i[idx], r)
-        Ρ[idx] = rho(x[idx], k[idx], σ[idx], τ[idx], i[idx], r)
-        V[idx] = vega(x[idx], k[idx], σ[idx], τ[idx], i[idx], r)
-        Φ[idx] = vomma(x[idx], k[idx], σ[idx], τ[idx], i[idx], r)
-        Ψ[idx] = vanna(x[idx], k[idx], σ[idx], τ[idx], i[idx], r)
-        Χ[idx] = charm(x[idx], k[idx], σ[idx], τ[idx], i[idx], r)
+        y[idx] = value(x[idx], k[idx], τ[idx], σ[idx], i[idx], r)
+        Δ[idx] = delta(x[idx], k[idx], τ[idx], σ[idx], i[idx], r)
+        Γ[idx] = gamma(x[idx], k[idx], τ[idx], σ[idx], i[idx], r)
+        Θ[idx] = theta(x[idx], k[idx], τ[idx], σ[idx], i[idx], r)
+        Ρ[idx] = rho(x[idx], k[idx], τ[idx], σ[idx], i[idx], r)
+        V[idx] = vega(x[idx], k[idx], τ[idx], σ[idx], i[idx], r)
+        Φ[idx] = vomma(x[idx], k[idx], τ[idx], σ[idx], i[idx], r)
+        Ψ[idx] = vanna(x[idx], k[idx], τ[idx], σ[idx], i[idx], r)
+        Χ[idx] = charm(x[idx], k[idx], τ[idx], σ[idx], i[idx], r)
     return y, Δ, Γ, Θ, Ρ, V, Φ, Ψ, Χ
 
 
@@ -77,8 +77,8 @@ class GreekCalculator(Logging):
         σ = options["volatility"].to_numpy(np.float64)
         i = options["option"].apply(int).to_numpy(np.float64)
         greeks = list(calculation(x, k, τ, σ, i, float(interest), len(options)))
-        greeks = dict(zip(self.streams.outlet.values(), greeks))
-        options = pd.concat([options, greeks], axis=1)
+        greeks = dict(zip(self.variables.outlet.values(), greeks))
+        options = pd.concat([options,  pd.DataFrame(greeks)], axis=1)
         self.alert(options)
         return options
 
@@ -86,7 +86,7 @@ class GreekCalculator(Logging):
         instrument = str(Concepts.Securities.Instrument.OPTION).title()
         tickers = "|".join(list(dataframe["ticker"].unique()))
         expires = DateRange.create(list(dataframe["expire"].unique()))
-        expires = f"{expires.min.strftime('%Y%m%d')}->{expires.max.strftime('%Y%m%d')}"
+        expires = f"{expires.minimum.strftime('%Y%m%d')}->{expires.maximum.strftime('%Y%m%d')}"
         self.console("Filtered", f"{str(instrument)}[{str(tickers)}, {str(expires)}, {len(dataframe):.0f}]")
 
     @property

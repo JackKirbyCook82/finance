@@ -160,7 +160,7 @@ def newton(y, x, k, τ, i, r, /, low, high, tol, iters):
     for _ in range(iters):
         err = value(x, k, τ, σ, i, r) - y
         if abs(err) <= tol: return σ
-        d2ydx2 = vega(x, k, r, σ, τ)
+        d2ydx2 = vega(x, k, τ, σ, i, r)
         if not math.isfinite(d2ydx2) or d2ydx2 <= 1e-12: return math.nan
         step = err / d2ydx2
         limit = 0.5 * max(σ, 0.10)

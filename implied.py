@@ -73,8 +73,8 @@ class ImpliedCalculator(Logging):
         τ = options["tau"].to_numpy(np.float64)
         i = options["option"].apply(int).to_numpy(np.float64)
         implied = list(calculation(y, x, k, τ, i, float(interest), len(options), int(self.method), **self.hyperparams))
-        implied = dict(zip(self.streams.outlet.values(), implied))
-        options = pd.concat([options, implied], axis=1)
+        implied = dict(zip(self.variables.outlet.values(), implied))
+        options = pd.concat([options, pd.DataFrame(implied)], axis=1)
         self.alert(options)
         return options
 
@@ -82,7 +82,7 @@ class ImpliedCalculator(Logging):
         instrument = str(Concepts.Securities.Instrument.OPTION).title()
         tickers = "|".join(list(dataframe["ticker"].unique()))
         expires = DateRange.create(list(dataframe["expire"].unique()))
-        expires = f"{expires.min.strftime('%Y%m%d')}->{expires.max.strftime('%Y%m%d')}"
+        expires = f"{expires.minimum.strftime('%Y%m%d')}->{expires.maximum.strftime('%Y%m%d')}"
         self.console("Filtered", f"{str(instrument)}[{str(tickers)}, {str(expires)}, {len(dataframe):.0f}]")
 
     @property
