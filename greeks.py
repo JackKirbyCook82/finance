@@ -84,7 +84,7 @@ class GreekCalculator(Logging):
         tickers = "|".join(list(dataframe["ticker"].unique()))
         expires = DateRange.create(list(dataframe["expire"].unique()))
         expires = f"{expires.minimum.strftime('%Y%m%d')}->{expires.maximum.strftime('%Y%m%d')}"
-        self.console("Filtered", f"{str(instrument)}[{str(tickers)}, {str(expires)}, {len(dataframe):.0f}]")
+        self.console("Calculated", f"{str(instrument)}[{str(tickers)}, {str(expires)}, {len(dataframe):.0f}]")
 
     @property
     def variables(self): return self.__variables
