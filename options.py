@@ -64,7 +64,6 @@ class OptionCalculator(Calculation, Logging):
     discount = lambda tau, *, interest: np.exp(-tau * interest)
     intrinsic = lambda strike, underlying, option: (np.maximum((underlying - strike) * option.astype(int), 0) * option.astype(int))
     moneyness = lambda strike, underlying: strike / underlying
-    price = lambda mean, median: (mean + median) / 2
     mean = lambda bid, ask, demand, supply: (bid * demand + ask * supply) / (demand + supply)
     median = lambda bid, ask: (bid + ask) / 2
     spread = lambda bid, ask: ask - bid

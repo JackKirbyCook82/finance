@@ -67,7 +67,7 @@ class ImpliedCalculator(Logging):
     def __call__(self, options, *args, interest, **kwargs):
         assert isinstance(options, pd.DataFrame)
         if bool(options.empty): return options
-        y = options["price"].to_numpy(np.float64)
+        y = options["median"].to_numpy(np.float64)
         x = options["underlying"].to_numpy(np.float64)
         k = options["strike"].to_numpy(np.float64)
         τ = options["tau"].to_numpy(np.float64)

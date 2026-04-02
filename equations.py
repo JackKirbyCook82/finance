@@ -43,6 +43,17 @@ def boundary(x, k, τ, i, r):
     elif i == -1: yl = max(0.0, k * dcf - x); yh = k * dcf
     return yl, yh
 
+@njit(cache=True)
+def boundary_residual(y, x, k, τ, i, r):
+    """ ε < 0:  intrinsic arbitrage,
+        ε = 0:  no arbitrage,
+        ε > 0:  volatility arbitrage """
+    if not valid(x, k, τ, i): return math.nan
+    yl, yh = boundary(x, k, τ, i, r)
+    if y < yl - 1e-10: return y - yl
+    if y > yh + 1e-10: return y - yh
+    return 0.0
+
 @njit(cache=True, inline="always")
 def valid(x, k, τ, i):
     positive = (x > 0.0 and k > 0.0 and τ > 0.0)
@@ -160,9 +171,9 @@ def newton(y, x, k, τ, i, r, /, low, high, tol, iters):
     for _ in range(iters):
         err = value(x, k, τ, σ, i, r) - y
         if abs(err) <= tol: return σ
-        d2ydx2 = vega(x, k, τ, σ, i, r)
-        if not math.isfinite(d2ydx2) or d2ydx2 <= 1e-12: return math.nan
-        step = err / d2ydx2
+        dydσ = vega(x, k, τ, σ, i, r)
+        if not math.isfinite(dydσ) or dydσ <= 1e-12: return math.nan
+        step = err / dydσ
         limit = 0.5 * max(σ, 0.10)
         if step > limit: step = limit
         elif step < -limit: step = -limit
@@ -219,14 +230,6 @@ def volatility(y, x, k, τ, i, r, /, low, high, tol, iters):
     return bisection(y, x, k, τ, i, r, low=low, high=σh, tol=tol, iters=max(100, iters))
 
 @njit(cache=True)
-def residual(y, x, k, τ, i, r):
-    if not valid(x, k, τ, i): return math.nan
-    yl, yh = boundary(x, k, τ, i, r)
-    if y < yl - 1e-10: return y - yl
-    if y > yh + 1e-10: return y - yh
-    return 0.0
-
-@njit(cache=True)
 def implied_strict(y, x, k, τ, i, r, /, low=1e-4, high=5.0, tol=1e-10, iters=100):
     return volatility(y, x, k, τ, i, r, low=low, high=high, tol=tol, iters=iters)
 
@@ -250,28 +253,26 @@ def implied_fitted(y, x, k, τ, i, r, /, low=1e-4, high=5.0, tol=1e-10, iters=10
     return fitted(y, x, k, τ, i, r, low=low, high=σh, tol=tol, iters=iters)
 
 
-@njit(cache=True)
-def residual_strict(y, x, k, τ, i, r, /, low=1e-4, high=5.0, tol=1e-10, iters=100):
-    return residual(y, x, k, τ, i, r)
+# @njit(cache=True)
+# def residual_strict(y, x, k, τ, i, r, /, low=1e-4, high=5.0, tol=1e-10, iters=100):
+#     return residual(y, x, k, τ, i, r)
 
-@njit(cache=True)
-def residual_clipped(y, x, k, τ, i, r, /, low=1e-4, high=5.0, tol=1e-10, iters=100):
-    return residual(y, x, k, τ, i, r)
+# @njit(cache=True)
+# def residual_clipped(y, x, k, τ, i, r, /, low=1e-4, high=5.0, tol=1e-10, iters=100):
+#     return residual(y, x, k, τ, i, r)
 
-@njit(cache=True)
-def residual_fitted(y, x, k, τ, i, r, low=1e-4, high=5.0, tol=1e-10, iters=100):
-    if not valid(x, k, τ, i) or low <= 0.0 or high <= low: return math.nan
-    σ = implied_fitted(y, x, k, τ, i, r, low=low, high=high, tol=tol, iters=iters)
-    if not math.isfinite(σ): return math.nan
-    return value(x, k, τ, σ, i, r) - y          
+# @njit(cache=True)
+# def residual_fitted(y, x, k, τ, i, r, low=1e-4, high=5.0, tol=1e-10, iters=100):
+#     if not valid(x, k, τ, i) or low <= 0.0 or high <= low: return math.nan
+#     σ = implied_fitted(y, x, k, τ, i, r, low=low, high=high, tol=tol, iters=iters)
+#     if not math.isfinite(σ): return math.nan
+ #    return value(x, k, τ, σ, i, r) - y
 
 
 class Equations:
     class Greeks: Value, Delta, Gamma, Theta, Rho, Vega, Vomma, Vanna, Charm = value, delta, gamma, theta, rho, vega, vomma, vanna, charm
     class Volatility:
-        class Strict: Implied, Residual = implied_strict, residual_strict
-        class Clipped: Implied, Residual = implied_clipped, residual_clipped
-        class Fitted: Implied, Residual = implied_fitted, residual_fitted
+        pass
 
 
 
