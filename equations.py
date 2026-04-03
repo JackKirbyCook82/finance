@@ -220,10 +220,10 @@ def implied(y, x, k, τ, i, r, /, low, high, tol, iters):
 
 @njit(cache=True)
 def unboundedness(y, x, k, τ, i, r):
-    """ market price vs feasible boundary
+    """ market price vs feasible boundary,
         ε < 0:  market price to cheap,
         ε = 0:  no market price,
-        ε > 0:  market price to expensive """
+        ε > 0:  market price to expensive. """
     if not valid(x, k, τ, i): return math.nan
     yl, yh = boundary(x, k, τ, i, r)
     if y < yl - 1e-10: return y - yl
@@ -232,13 +232,13 @@ def unboundedness(y, x, k, τ, i, r):
 
 @njit(cache=True)
 def mispricing(y, x, k, τ, σ, i, r):
-    """ market price vs valuation w/ implied volatility
+    """ market price vs valuation w/ implied volatility,
         ε < 0:  valuation(implied volatility) > market price,
         ε = 0:  valuation(implied volatility) = market price,
-        ε > 0:  valuation(implied volatility) < market price """
+        ε > 0:  valuation(implied volatility) < market price. """
     if not valid(x, k, τ, i): return math.nan
     if not math.isfinite(σ): return math.nan
-    return error(x, k, τ, σ, i, r)
+    return error(y, x, k, τ, σ, i, r)
 
 
 class Equations:

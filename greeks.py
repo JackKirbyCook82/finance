@@ -54,7 +54,7 @@ def calculation(x, k, τ, σ, i, r, n):
         Φ[idx] = vomma(x[idx], k[idx], τ[idx], σ[idx], i[idx], r)
         Ψ[idx] = vanna(x[idx], k[idx], τ[idx], σ[idx], i[idx], r)
         Χ[idx] = charm(x[idx], k[idx], τ[idx], σ[idx], i[idx], r)
-    return y, Δ, Γ, Θ, Ρ, V, Φ, Ψ, Χ
+    return Δ, Γ, Θ, Ρ, V, Φ, Ψ, Χ
 
 
 class GreekCalculator(Logging):
@@ -68,11 +68,11 @@ class GreekCalculator(Logging):
     def __call__(self, options, *args, interest, **kwargs):
         assert isinstance(options, pd.DataFrame)
         if bool(options.empty): return options
-        x = options["underlying"].to_numpy(np.float64)
-        k = options["strike"].to_numpy(np.float64)
-        τ = options["tau"].to_numpy(np.float64)
-        σ = options["volatility"].to_numpy(np.float64)
-        i = options["option"].apply(int).to_numpy(np.float64)
+        x = options["underlying"].to_numpy(np.float64)  # Market Stock Price
+        k = options["strike"].to_numpy(np.float64)  # Option Strike
+        τ = options["tau"].to_numpy(np.float64)  # Option DTE
+        σ = options["implied"].to_numpy(np.float64)  # Implied Volatility
+        i = options["option"].apply(int).to_numpy(np.float64)  # Option Type
         greeks = list(calculation(x, k, τ, σ, i, float(interest), len(options)))
         greeks = dict(zip(self.variables.outlet.values(), greeks))
         options = pd.concat([options,  pd.DataFrame(greeks)], axis=1)

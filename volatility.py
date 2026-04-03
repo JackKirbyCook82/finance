@@ -47,11 +47,11 @@ class VolatilityCalculator(Logging):
     def __call__(self, options, *args, interest, **kwargs):
         assert isinstance(options, pd.DataFrame)
         if bool(options.empty): return options
-        y = options["median"].to_numpy(np.float64)
-        x = options["underlying"].to_numpy(np.float64)
-        k = options["strike"].to_numpy(np.float64)
-        τ = options["tau"].to_numpy(np.float64)
-        i = options["option"].apply(int).to_numpy(np.float64)
+        y = options["median"].to_numpy(np.float64)  # Market Option Price
+        x = options["underlying"].to_numpy(np.float64)  # Market Stock Price
+        k = options["strike"].to_numpy(np.float64)  # Option Strike
+        τ = options["tau"].to_numpy(np.float64)  # Option DTE
+        i = options["option"].apply(int).to_numpy(np.float64)  # Option Type
         volatility = [calculation(y, x, k, τ, i, float(interest), len(options), **self.hyperparams)]
         volatility = dict(zip(self.variables.outlet.values(), volatility))
         options = pd.concat([options, pd.DataFrame(volatility)], axis=1)

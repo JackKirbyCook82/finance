@@ -6,7 +6,16 @@ Created on Tues Mar 24 2026
 
 """
 
+import numpy as np
+import pandas as pd
+from numba import njit
+from types import SimpleNamespace
+from collections import OrderedDict as ODict
+
+from finance.equations import Equations
+from finance.concepts import Concepts
 from support.mixins import Logging
+from support.concepts import DateRange
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -15,8 +24,47 @@ __copyright__ = "Copyright 2026, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class ValuationCalculator(Logging):
-    pass
+blackscholes = Equations.Valuation.BlackScholes
 
+
+@njit(cache=True)
+def calculation(x, k, τ, σ, i, r, n):
+    y = np.empty(n, dtype=np.float64)  # Black Scholes Valuation
+    for idx in range(n):
+        y[idx] = blackscholes(x[idx], k[idx], τ[idx], σ[idx], i[idx], r)
+    return y
+
+
+class ValuationCalculator(Logging):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        inlet = ODict(x="underlying", k="strike", τ="tau", σ="volatility", i="option", r="interest")
+        outlet = ODict(y="value")
+        variables = SimpleNamespace(inlet=inlet, outlet=outlet)
+        self.__variables = variables
+
+    def __call__(self, options, *args, interest, **kwargs):
+        assert isinstance(options, pd.DataFrame)
+        if bool(options.empty): return options
+        x = options["underlying"].to_numpy(np.float64)  # Market Stock Price
+        k = options["strike"].to_numpy(np.float64)  # Option Strike Price
+        τ = options["tau"].to_numpy(np.float64)  # Option DTE
+        σ = options["volatility"].to_numpy(np.float64)  # Historical Volatility
+        i = options["option"].apply(int).to_numpy(np.float64)  # Option Type
+        valuations = list(calculation(x, k, τ, σ, i, float(interest), len(options)))
+        valuations = dict(zip(self.variables.outlet.values(), valuations))
+        options = pd.concat([options, pd.DataFrame(valuations)], axis=1)
+        self.alert(options)
+        return options
+
+    def alert(self, dataframe):
+        instrument = str(Concepts.Securities.Instrument.OPTION).title()
+        tickers = "|".join(list(dataframe["ticker"].unique()))
+        expires = DateRange.create(list(dataframe["expire"].unique()))
+        expires = f"{expires.minimum.strftime('%Y%m%d')}->{expires.maximum.strftime('%Y%m%d')}"
+        self.console("Calculated", f"{str(instrument)}[{str(tickers)}, {str(expires)}, {len(dataframe):.0f}]")
+
+    @property
+    def variables(self): return self.__variables
 
 
