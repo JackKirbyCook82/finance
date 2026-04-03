@@ -35,17 +35,17 @@ charm = Equations.Greeks.Secondary.Charm
 
 
 @njit(cache=True)
-def calculation(x, k, τ, σ, i, r, n):
-    Δ = np.empty(n, dtype=np.float64)  # Delta, Δ = dy/dx
-    Γ = np.empty(n, dtype=np.float64)  # Gamma, Γ = d²y/dx²
-    Θ = np.empty(n, dtype=np.float64)  # Theta, Θ = dy/dτ
-    Ρ = np.empty(n, dtype=np.float64)  # Rho, Ρ = dy/dr
-    V = np.empty(n, dtype=np.float64)  # Vega, V = dy/dσ
-    Φ = np.empty(n, dtype=np.float64)  # Vomma, Φ = d²y/dσ²
-    Ψ = np.empty(n, dtype=np.float64)  # Vanna, Ψ = d²y/dx*dσ
-    Χ = np.empty(n, dtype=np.float64)  # Charm, Χ = d²y/dx*dτ
+def calculation(x, k, τ, σ, i, r):
+    Δ = np.empty(len(x), dtype=np.float64)  # Delta, Δ = dy/dx
+    Γ = np.empty(len(x), dtype=np.float64)  # Gamma, Γ = d²y/dx²
+    Θ = np.empty(len(x), dtype=np.float64)  # Theta, Θ = dy/dτ
+    Ρ = np.empty(len(x), dtype=np.float64)  # Rho, Ρ = dy/dr
+    V = np.empty(len(x), dtype=np.float64)  # Vega, V = dy/dσ
+    Φ = np.empty(len(x), dtype=np.float64)  # Vomma, Φ = d²y/dσ²
+    Ψ = np.empty(len(x), dtype=np.float64)  # Vanna, Ψ = d²y/dx*dσ
+    Χ = np.empty(len(x), dtype=np.float64)  # Charm, Χ = d²y/dx*dτ
 
-    for idx in range(n):
+    for idx in range(len(x)):
         Δ[idx] = delta(x[idx], k[idx], τ[idx], σ[idx], i[idx], r)
         Γ[idx] = gamma(x[idx], k[idx], τ[idx], σ[idx], i[idx], r)
         Θ[idx] = theta(x[idx], k[idx], τ[idx], σ[idx], i[idx], r)
@@ -72,8 +72,8 @@ class GreekCalculator(Logging):
         k = options["strike"].to_numpy(np.float64)  # Option Strike
         τ = options["tau"].to_numpy(np.float64)  # Option DTE
         σ = options["implied"].to_numpy(np.float64)  # Implied Volatility
-        i = options["option"].apply(int).to_numpy(np.float64)  # Option Type
-        greeks = list(calculation(x, k, τ, σ, i, float(interest), len(options)))
+        i = options["option"].apply(int).to_numpy(np.int8)  # Option Type
+        greeks = list(calculation(x, k, τ, σ, i, float(interest)))
         greeks = dict(zip(self.variables.outlet.values(), greeks))
         options = pd.concat([options,  pd.DataFrame(greeks)], axis=1)
         self.alert(options)

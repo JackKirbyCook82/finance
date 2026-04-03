@@ -9,8 +9,6 @@ Created on Tues Mar 24 2026
 import numpy as np
 import pandas as pd
 from numba import njit
-from types import SimpleNamespace
-from collections import OrderedDict as ODict
 
 from finance.equations import Equations
 from finance.concepts import Concepts
@@ -28,9 +26,9 @@ implied = Equations.Volatility.Implied
 
 
 @njit(cache=True)
-def calculation(y, x, k, τ, i, r, n, /, low=1e-4, high=5.0, tol=1e-10, iters=100):
-    σ = np.empty(n, dtype=np.float64)  # Implied Volatility
-    for idx in range(n):
+def calculation(y, x, k, τ, i, r, /, low=1e-4, high=5.0, tol=1e-10, iters=100):
+    σ = np.empty(len(y), dtype=np.float64)  # Implied Volatility
+    for idx in range(len(y)):
         σ[idx] = implied(y[idx], x[idx], k[idx], τ[idx], i[idx], r, low=low, high=high, tol=tol, iters=iters)
     return σ
 
@@ -38,11 +36,7 @@ def calculation(y, x, k, τ, i, r, n, /, low=1e-4, high=5.0, tol=1e-10, iters=10
 class VolatilityCalculator(Logging):
     def __init__(self, *args, low=1e-4, high=5.0, tol=1e-10, iters=100, **kwargs):
         super().__init__(*args, **kwargs)
-        inlet = ODict(y="price", x="underlying", k="strike", τ="tau", i="option", r="interest")
-        outlet = ODict(σ="implied")
-        variables = SimpleNamespace(inlet=inlet, outlet=outlet)
         self.__hyperparams = dict(low=low, high=high, tol=tol, iters=iters)
-        self.__variables = variables
 
     def __call__(self, options, *args, interest, **kwargs):
         assert isinstance(options, pd.DataFrame)
@@ -51,10 +45,8 @@ class VolatilityCalculator(Logging):
         x = options["underlying"].to_numpy(np.float64)  # Market Stock Price
         k = options["strike"].to_numpy(np.float64)  # Option Strike
         τ = options["tau"].to_numpy(np.float64)  # Option DTE
-        i = options["option"].apply(int).to_numpy(np.float64)  # Option Type
-        volatility = [calculation(y, x, k, τ, i, float(interest), len(options), **self.hyperparams)]
-        volatility = dict(zip(self.variables.outlet.values(), volatility))
-        options = pd.concat([options, pd.DataFrame(volatility)], axis=1)
+        i = options["option"].apply(int).to_numpy(np.int8)  # Option Type
+        options["implied"] = calculation(y, x, k, τ, i, float(interest), **self.hyperparams)
         self.alert(options)
         return options
 
@@ -67,8 +59,6 @@ class VolatilityCalculator(Logging):
 
     @property
     def hyperparams(self): return self.__hyperparams
-    @property
-    def variables(self): return self.__variables
 
 
 

@@ -9,8 +9,6 @@ Created on Tues Mar 24 2026
 import numpy as np
 import pandas as pd
 from numba import njit
-from types import SimpleNamespace
-from collections import OrderedDict as ODict
 
 from finance.equations import Equations
 from finance.concepts import Concepts
@@ -28,21 +26,14 @@ blackscholes = Equations.Valuation.BlackScholes
 
 
 @njit(cache=True)
-def calculation(x, k, τ, σ, i, r, n):
-    y = np.empty(n, dtype=np.float64)  # Black Scholes Valuation
-    for idx in range(n):
+def calculation(x, k, τ, σ, i, r):
+    y = np.empty(len(x), dtype=np.float64)  # Black Scholes Valuation
+    for idx in range(len(x)):
         y[idx] = blackscholes(x[idx], k[idx], τ[idx], σ[idx], i[idx], r)
     return y
 
 
 class ValuationCalculator(Logging):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        inlet = ODict(x="underlying", k="strike", τ="tau", σ="volatility", i="option", r="interest")
-        outlet = ODict(y="value")
-        variables = SimpleNamespace(inlet=inlet, outlet=outlet)
-        self.__variables = variables
-
     def __call__(self, options, *args, interest, **kwargs):
         assert isinstance(options, pd.DataFrame)
         if bool(options.empty): return options
@@ -50,10 +41,8 @@ class ValuationCalculator(Logging):
         k = options["strike"].to_numpy(np.float64)  # Option Strike Price
         τ = options["tau"].to_numpy(np.float64)  # Option DTE
         σ = options["volatility"].to_numpy(np.float64)  # Historical Volatility
-        i = options["option"].apply(int).to_numpy(np.float64)  # Option Type
-        valuations = list(calculation(x, k, τ, σ, i, float(interest), len(options)))
-        valuations = dict(zip(self.variables.outlet.values(), valuations))
-        options = pd.concat([options, pd.DataFrame(valuations)], axis=1)
+        i = options["option"].apply(int).to_numpy(np.int8)  # Option Type
+        options["valuation"] = calculation(x, k, τ, σ, i, float(interest))
         self.alert(options)
         return options
 
@@ -64,7 +53,5 @@ class ValuationCalculator(Logging):
         expires = f"{expires.minimum.strftime('%Y%m%d')}->{expires.maximum.strftime('%Y%m%d')}"
         self.console("Calculated", f"{str(instrument)}[{str(tickers)}, {str(expires)}, {len(dataframe):.0f}]")
 
-    @property
-    def variables(self): return self.__variables
 
 
