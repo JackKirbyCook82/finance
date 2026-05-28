@@ -6,14 +6,16 @@ Created on Weds May 27 2026
 
 """
 
+import regex as re
+import pandas as pd
 from abc import ABC
-from enum import IntEnum
 from decimal import Decimal
+from enum import Enum, IntEnum
 from typing import Callable, Any
 from types import SimpleNamespace
 from datetime import date as Date
 from datetime import datetime as Datetime
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, asdict, fields
 
 from support.decorators import Dispatchers
 from support.custom import DateRange
@@ -21,7 +23,7 @@ from support.mixins import Logging
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["Alerting", "Querys", "Concepts", "Variables"]
+__all__ = ["Alerting", "OSI", "Querys", "Concepts", "Variables"]
 __copyright__ = "Copyright 2026, Jack Kirby Cook"
 __license__ = "MIT License"
 
@@ -57,6 +59,7 @@ class ConceptEnum(IntEnum):
         else: return cls(string)
 
 
+class Technical(ConceptEnum): BARS, STATS, SMA, EMA, MACD, RSI, BB, ATR, MFI, CMF, OBV = range(11)
 class Spread(ConceptEnum): EMPTY, VERTICAL, COLLAR, FLY, CALENDAR, CONDOR = range(6)
 class Instrument(ConceptEnum): EMPTY, STOCK, OPTION, SPREAD = range(4)
 class Option(ConceptEnum): PUT, EMPTY, CALL = range(-1, 1, 1)
@@ -148,8 +151,50 @@ Securities = Variables([StockLongSecurity, StockShortSecurity, OptionPutLongSecu
 Strategies = Variables([Vertical, Condor])
 
 Querys = SimpleNamespace(symbol=SymbolQuery, trade=TradeQuery, quote=QuoteQuery, history=HistoryQuery, settlement=SettlementQuery, contract=ContractQuery)
-Concepts = SimpleNamespace(spread=Spread, instrument=Instrument, option=Option, position=Position, terms=Terms, action=Action)
+Concepts = SimpleNamespace(technical=Technical, spread=Spread, instrument=Instrument, option=Option, position=Position, terms=Terms, action=Action)
 Variables = SimpleNamespace(securities=Securities, strategies=Strategies)
+
+
+class OSIError(Exception): pass
+class OSIParseError(OSIError): pass
+class OSICreateError(OSIError): pass
+
+@dataclass(frozen=True)
+class OSI:
+    ticker: str; expire: Date; option: Enum; strike: float
+
+    @classmethod
+    def create(cls, contents):
+        if isinstance(contents, Querys.Contract): contents = dict(contents.items())
+        if isinstance(contents, pd.Series): contents = contents.to_dict()
+        if isinstance(contents, dict): return cls(**{field.name: contents[field.name] for field in fields(cls)})
+        elif isinstance(contents, str): return cls(*cls.parse(contents))
+        elif isinstance(contents, (list, tuple)): return cls(*contents)
+        else: raise OSICreateError()
+
+    def __str__(self):
+        ticker = self.ticker.upper()
+        expire = self.expire.strftime("%y%m%d")
+        option = str(self.option).upper()[0]
+        strike_int = int(round(self.strike * 1000))
+        strike = f"{strike_int:08d}"
+        return f"{ticker}{expire}{option}{strike}"
+
+    def items(self): return asdict(self).items()
+    def values(self): return asdict(self).values()
+    def keys(self): return asdict(self).keys()
+
+    @classmethod
+    def parse(cls, contents):
+        pattern = r"^(?P<ticker>[A-Z]+)(?P<expire>\d{6})(?P<option>[PC])(?P<strike>\d{8})$"
+        match = re.search(pattern, contents)
+        if not match: raise OSIParseError()
+        values = match.groupdict()
+        ticker = values["ticker"].upper()
+        expire = Datetime.strptime(values["expire"], "%y%m%d").date()
+        option = {str(option).upper()[0]: option for option in Concepts.Option}[values["option"]]
+        strike = int(values["strike"]) / 1000.0
+        return [ticker, expire, option, strike]
 
 
 class Alerting(Logging):
