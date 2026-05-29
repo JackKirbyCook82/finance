@@ -62,6 +62,7 @@ class Instrument(ConceptEnum): EMPTY, STOCK, OPTION, SPREAD = range(4)
 class Option(ConceptEnum): PUT, EMPTY, CALL = range(-1, 2)
 class Position(ConceptEnum): SHORT, EMPTY, LONG = range(-1, 2)
 class Terms(ConceptEnum): MARKET, LIMIT, STOP = range(3)
+class Tenure(ConceptEnum): DAY, GTC = range(2)
 class Action(ConceptEnum): BUY, SELL = range(2)
 
 
@@ -277,9 +278,9 @@ class Alerting(Logging):
         self.console(str(title), f"{str(instrument).title()}[{str(tickers)}, {str(expires)}, {str(sizes)}]")
 
 
-Querys = SimpleNamespace(symbol=SymbolQuery, trade=TradeQuery, quote=QuoteQuery, history=HistoryQuery, settlement=SettlementQuery, contract=ContractQuery)
-Concepts = SimpleNamespace(technical=Technical, spread=Spread, instrument=Instrument, option=Option, position=Position, terms=Terms, action=Action)
-Variables = SimpleNamespace(securities=Securities, strategies=Strategies)
+Querys = SimpleNamespace(Symbol=SymbolQuery, Trade=TradeQuery, Quote=QuoteQuery, History=HistoryQuery, Settlement=SettlementQuery, Contract=ContractQuery)
+Concepts = SimpleNamespace(Technical=Technical, Spread=Spread, Instrument=Instrument, Option=Option, Position=Position, Terms=Terms, Tenure=Tenure, Action=Action)
+Variables = SimpleNamespace(Securities=Securities, Strategies=Strategies)
 
 
 
