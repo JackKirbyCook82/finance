@@ -23,7 +23,7 @@ from support.mixins import Logging
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["Alerting", "OSI", "Querys", "Concepts", "Variables"]
+__all__ = ["Alerting", "OSI", "Querys", "Enumerations", "Specifications"]
 __copyright__ = "Copyright 2026, Jack Kirby Cook"
 __license__ = "MIT License"
 
@@ -41,33 +41,30 @@ def date_parser(value):
     else: return Datetime.strptime(str(value), "%Y%m%d").date()
 
 
-class ConceptEnum(IntEnum):
-    def __str__(self): return str(self.name.lower())
-
-    @classmethod
-    def create(cls, value):
-        if isinstance(value, cls): return value
-        if isinstance(value, int): return cls(value)
+class Enumeration(IntEnum):
+    def _missing_(cls, value):
         if isinstance(value, str):
             string = value.upper().replace(" ", "").replace("_", "")
-            if str(string).lstrip("-").isdigit(): return cls(int(string))
+            if str(string).lstrip("-").isdigit():
+                return cls(int(string))
             for member in cls:
-                if member.name.replace("_", "") == string: return member
-        raise ValueError(value)
+                if member.name.replace("_", "") == string:
+                    return member
+        return None
 
 
-class Technical(ConceptEnum): BARS, STATS, SMA, EMA, MACD, RSI, BB, ATR, MFI, CMF, OBV = range(11)
-class Spread(ConceptEnum): EMPTY, VERTICAL, COLLAR, FLY, CALENDAR, CONDOR = range(6)
-class Instrument(ConceptEnum): EMPTY, STOCK, OPTION, SPREAD = range(4)
-class Option(ConceptEnum): PUT, EMPTY, CALL = range(-1, 2)
-class Position(ConceptEnum): SHORT, EMPTY, LONG = range(-1, 2)
-class Terms(ConceptEnum): MARKET, LIMIT, STOP = range(3)
-class Tenure(ConceptEnum): DAY, GTC = range(2)
-class Action(ConceptEnum): BUY, SELL = range(2)
+class Technical(Enumeration): BARS, STATS, SMA, EMA, MACD, RSI, BB, ATR, MFI, CMF, OBV = range(11)
+class Spread(Enumeration): EMPTY, VERTICAL, COLLAR, FLY, CALENDAR, CONDOR = range(6)
+class Instrument(Enumeration): EMPTY, STOCK, OPTION, SPREAD = range(4)
+class Option(Enumeration): PUT, EMPTY, CALL = range(-1, 2)
+class Position(Enumeration): SHORT, EMPTY, LONG = range(-1, 2)
+class Terms(Enumeration): MARKET, LIMIT, STOP = range(3)
+class Tenure(Enumeration): DAY, GTC = range(2)
+class Action(Enumeration): BUY, SELL = range(2)
 
 
 @dataclass(frozen=True, slots=True)
-class ConceptDataclass(ABC):
+class Specification(ABC):
     delimiter: ClassVar[str] = "|"
 
     def __str__(self): return self.delimiter.join(str(value) for value in self.key)
@@ -79,7 +76,7 @@ class ConceptDataclass(ABC):
 
 
 @dataclass(frozen=True, slots=True)
-class Security(ConceptDataclass):
+class Security(Specification):
     instrument: Instrument; option: Option.EMPTY; position: Position.EMPTY
 
     @property
@@ -87,7 +84,7 @@ class Security(ConceptDataclass):
 
 
 @dataclass(frozen=True, slots=True)
-class Strategy(ConceptDataclass):
+class Strategy(Specification):
     spread: Spread; option: Option.EMPTY; position: Position.EMPTY
 
     @property
@@ -107,13 +104,28 @@ CondorLongStrategy = Strategy(Spread.CONDOR, Option.EMPTY, Position.LONG)
 CondorShortStrategy = Strategy(Spread.CONDOR, Option.EMPTY, Position.SHORT)
 
 
+class Registry(set):
+    def __call__(self, value):
+        if isinstance(value, Specification): return self.bykey()[tuple(value)]
+        elif isinstance(value, str): return self.bystr()[str(value.lower())]
+        elif isinstance(value, tuple): return self.bykey()[tuple(value)]
+        else: raise TypeError(type(value))
+
+    def bystr(self): return {str(member): member for member in self}
+    def bykey(self): return {member.key: member for member in self}
+
+
+Securities = Registry([StockLongSecurity, StockShortSecurity, OptionPutLongSecurity, OptionPutShortSecurity, OptionCallLongSecurity, OptionCallShortSecurity])
+Strategies = Registry([VerticalPutStrategy, VerticalCallStrategy, CondorLongStrategy, CondorShortStrategy,])
+
+
 class FieldsError(Exception): pass
 class FieldsMissingError(FieldsError): pass
 class FieldsExcessiveError(FieldsError): pass
 
 
 @dataclass(frozen=True, slots=True)
-class FieldDataclass:
+class Field:
     name: str
     parser: Callable[[Any], Any] = lambda value: value
     formatter: Callable[[Any], str] = str
@@ -132,29 +144,29 @@ class FieldDataclass:
         return self.parser(string)
 
 
-InstrumentField = FieldDataclass("instrument", enum_parser(Instrument), str)
-OptionField = FieldDataclass("option", enum_parser(Option), str)
-PositionField = FieldDataclass("position", enum_parser(Position), str)
+InstrumentField = Field("instrument", enum_parser(Instrument), str)
+OptionField = Field("option", enum_parser(Option), str)
+PositionField = Field("position", enum_parser(Position), str)
 
-TickerField = FieldDataclass("ticker", str, str)
-DateField = FieldDataclass("date", date_parser, date_formatter)
-ExpireField = FieldDataclass("expire", date_parser, date_formatter)
-StrikeField = FieldDataclass("strike", decimal_parser, decimal_formatter)
-PriceField = FieldDataclass("price", decimal_parser, decimal_formatter)
-BidField = FieldDataclass("bid", decimal_parser, decimal_formatter)
-AskField = FieldDataclass("ask", decimal_parser, decimal_formatter)
+TickerField = Field("ticker", str, str)
+DateField = Field("date", date_parser, date_formatter)
+ExpireField = Field("expire", date_parser, date_formatter)
+StrikeField = Field("strike", decimal_parser, decimal_formatter)
+PriceField = Field("price", decimal_parser, decimal_formatter)
+BidField = Field("bid", decimal_parser, decimal_formatter)
+AskField = Field("ask", decimal_parser, decimal_formatter)
 
 
 @dataclass(frozen=True, slots=True)
-class QueryFields:
+class Record:
     name: str
-    fields: tuple[FieldDataclass, ...]
+    fields: tuple[Field, ...]
     delimiter: str = "|"
 
     def __iter__(self): return iter([field.name for field in self.fields])
     def __str__(self): return str(self.name)
 
-    def create(self, values):
+    def __call__(self, values):
         if isinstance(values, str):
             strings = str(values).split(self.delimiter)
             if len(strings) > len(self.fields): raise FieldsExcessiveError()
@@ -165,49 +177,34 @@ class QueryFields:
         elif isinstance(values, dict):
             contents = {field.name: field.parse(values.get(field.name)) for field in self.fields}
         else: raise TypeError(type(values))
-        return QueryContents(self, contents)
+        return Query(self, contents)
 
 
 @dataclass(frozen=True, slots=True)
-class QueryContents:
-    key: QueryFields
-    contents: dict[str, Any]
+class Query:
+    record: Record
+    data: dict[str, Any]
 
-    def __iter__(self): return iter([(field, self.contents.get(field.name)) for field in self.key.fields])
+    def __iter__(self): return iter([(field, self.data.get(field.name)) for field in self.query.fields])
     def __str__(self):
         strings = [field.format(content) for field, content in iter(self)]
-        return self.key.delimiter.join(strings).rstrip(self.key.delimiter)
+        return self.query.delimiter.join(strings).rstrip(self.query.delimiter)
 
     def __getattr__(self, name):
-        try: return self.contents[name]
+        try: return self.data[name]
         except KeyError: raise AttributeError(name) from None
 
-    def items(self): return self.contents.items()
-    def values(self): return self.contents.values()
-    def keys(self): return self.contents.keys()
+    def items(self): return self.data.items()
+    def values(self): return self.data.values()
+    def keys(self): return self.data.keys()
 
 
-SymbolQuery = QueryFields("Symbol", fields=(TickerField,))
-TradeQuery = QueryFields("Trade", fields=(TickerField, PriceField))
-QuoteQuery = QueryFields("Quote", fields=(TickerField, BidField, AskField))
-HistoryQuery = QueryFields("History", fields=(TickerField, DateField))
-SettlementQuery = QueryFields("Settlement", fields=(TickerField, ExpireField))
-ContractQuery = QueryFields("Contract", fields=(TickerField, ExpireField, OptionField, StrikeField))
-
-
-class Registry(set):
-    def __getitem__(self, value):
-        if isinstance(value, ConceptDataclass): return self.bykey()[tuple(value)]
-        elif isinstance(value, str): return self.bystr()[str(value.lower())]
-        elif isinstance(value, tuple): return self.bykey()[tuple(value)]
-        else: raise TypeError(type(value))
-
-    def bystr(self): return {str(member): member for member in self}
-    def bykey(self): return {member.key: member for member in self}
-
-
-Securities = Registry([StockLongSecurity, StockShortSecurity, OptionPutLongSecurity, OptionPutShortSecurity, OptionCallLongSecurity, OptionCallShortSecurity])
-Strategies = Registry([VerticalPutStrategy, VerticalCallStrategy, CondorLongStrategy, CondorShortStrategy,])
+SymbolRecord = Record("Symbol", fields=(TickerField,))
+TradeRecord = Record("Trade", fields=(TickerField, PriceField))
+QuoteRecord = Record("Quote", fields=(TickerField, BidField, AskField))
+HistoryRecord = Record("History", fields=(TickerField, DateField))
+SettlementRecord = Record("Settlement", fields=(TickerField, ExpireField))
+ContractRecord = Record("Contract", fields=(TickerField, ExpireField, OptionField, StrikeField))
 
 
 class OSIError(Exception): pass
@@ -218,13 +215,12 @@ class OSICreateError(OSIError): pass
 class OSI:
     ticker: str; expire: Date; option: Enum; strike: Decimal
 
-    @classmethod
-    def create(cls, contents):
-        if isinstance(contents, QueryContents): contents = dict(contents.items())
+    def __call__(self, contents):
+        if isinstance(contents, Query): contents = dict(contents.items())
         if isinstance(contents, pd.Series): contents = contents.to_dict()
-        if isinstance(contents, dict): return cls(**{field.name: contents[field.name] for field in fields(cls)})
-        elif isinstance(contents, str): return cls(*cls.parse(contents))
-        elif isinstance(contents, (list, tuple)): return cls(*contents)
+        if isinstance(contents, dict): return self(**{field.name: contents[field.name] for field in fields(self)})
+        elif isinstance(contents, str): return self(*self.parse(contents))
+        elif isinstance(contents, (list, tuple)): return self(*contents)
         else: raise OSICreateError()
 
     def __str__(self):
@@ -239,8 +235,8 @@ class OSI:
     def values(self): return asdict(self).values()
     def keys(self): return asdict(self).keys()
 
-    @classmethod
-    def parse(cls, contents):
+    @staticmethod
+    def parse(contents):
         pattern = r"^(?P<ticker>[A-Z]+)(?P<expire>\d{6})(?P<option>[PC])(?P<strike>\d{8})$"
         match = re.search(pattern, contents)
         if not match: raise OSIParseError()
@@ -257,33 +253,33 @@ class Alerting(Logging):
     def alert(self, dataframe, *args, title, instrument, **kwargs): raise ValueError(instrument)
 
     @alert.register(Instrument.SPREAD)
-    def spread(self, collection, *args, title, instrument, **kwargs):
+    def spread(self, collection, *args, title, **kwargs):
         if not isinstance(collection, list): collection = [collection]
         tickers = "|".join(list({content.ticker for content in collection}))
         previous, post = kwargs.get("previous", None), kwargs.get("post", len(collection))
         sizes = f"{int(previous):.0f}|{int(post):.0f}" if previous is not None else f"{len(collection):.0f}"
-        self.console(str(title), f"{str(instrument).title()}[{str(tickers)}, {str(sizes)}]")
+        self.console(str(title), f"Spreads[{str(tickers)}, {str(sizes)}]")
 
     @alert.register(Instrument.STOCK)
-    def stock(self, dataframe, *args, title, instrument, **kwargs):
+    def stock(self, dataframe, *args, title, **kwargs):
         tickers = "|".join(list(dataframe["ticker"].unique()))
         previous, post = kwargs.get("previous", None), kwargs.get("post", len(dataframe))
         sizes = f"{int(previous):.0f}|{int(post):.0f}" if previous is not None else f"{len(dataframe):.0f}"
-        self.console(str(title), f"{str(instrument).title()}[{str(tickers)}, {str(sizes)}]")
+        self.console(str(title), f"Stocks[{str(tickers)}, {str(sizes)}]")
 
     @alert.register(Instrument.OPTION)
-    def option(self, dataframe, *args, title, instrument, **kwargs):
+    def option(self, dataframe, *args, title, **kwargs):
         tickers = "|".join(list(dataframe["ticker"].unique()))
         expires = DateRange.create(list(dataframe["expire"].unique()))
         expires = f"{expires.minimum.strftime('%Y%m%d')}->{expires.maximum.strftime('%Y%m%d')}"
         previous, post = kwargs.get("previous", None), kwargs.get("post", len(dataframe))
         sizes = f"{int(previous):.0f}|{int(post):.0f}" if previous is not None else f"{len(dataframe):.0f}"
-        self.console(str(title), f"{str(instrument).title()}[{str(tickers)}, {str(expires)}, {str(sizes)}]")
+        self.console(str(title), f"Options[{str(tickers)}, {str(expires)}, {str(sizes)}]")
 
 
-Querys = SimpleNamespace(Symbol=SymbolQuery, Trade=TradeQuery, Quote=QuoteQuery, History=HistoryQuery, Settlement=SettlementQuery, Contract=ContractQuery)
-Concepts = SimpleNamespace(Technical=Technical, Spread=Spread, Instrument=Instrument, Option=Option, Position=Position, Terms=Terms, Tenure=Tenure, Action=Action)
-Variables = SimpleNamespace(Securities=Securities, Strategies=Strategies)
+Querys = SimpleNamespace(Symbol=SymbolRecord, Trade=TradeRecord, Quote=QuoteRecord, History=HistoryRecord, Settlement=SettlementRecord, Contract=ContractRecord)
+Enumerations = SimpleNamespace(Technical=Technical, Spread=Spread, Instrument=Instrument, Option=Option, Position=Position, Terms=Terms, Tenure=Tenure, Action=Action)
+Specifications = SimpleNamespace(Securities=Securities, Strategies=Strategies)
 
 
 
