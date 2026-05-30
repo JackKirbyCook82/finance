@@ -151,6 +151,9 @@ class QueryFields:
     fields: tuple[FieldDataclass, ...]
     delimiter: str = "|"
 
+    def __iter__(self): return iter([field.name for field in self.fields])
+    def __str__(self): return str(self.name)
+
     def create(self, values):
         if isinstance(values, str):
             strings = str(values).split(self.delimiter)
@@ -168,20 +171,20 @@ class QueryFields:
 @dataclass(frozen=True, slots=True)
 class QueryContents:
     key: QueryFields
-    value: dict[str, Any]
+    contents: dict[str, Any]
 
-    def __iter__(self): return iter([(field, self.value.get(field.name)) for field in self.key.fields])
+    def __iter__(self): return iter([(field, self.contents.get(field.name)) for field in self.key.fields])
     def __str__(self):
         strings = [field.format(content) for field, content in iter(self)]
         return self.key.delimiter.join(strings).rstrip(self.key.delimiter)
 
     def __getattr__(self, name):
-        try: return self.value[name]
+        try: return self.contents[name]
         except KeyError: raise AttributeError(name) from None
 
-    def items(self): return self.value.items()
-    def values(self): return self.value.values()
-    def keys(self): return self.value.keys()
+    def items(self): return self.contents.items()
+    def values(self): return self.contents.values()
+    def keys(self): return self.contents.keys()
 
 
 SymbolQuery = QueryFields("Symbol", fields=(TickerField,))
