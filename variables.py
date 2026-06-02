@@ -30,7 +30,7 @@ __license__ = "MIT License"
 
 decimal_formatter = lambda value: f"{Decimal(str(value)):.2f}"
 decimal_parser = lambda value: Decimal(str(value))
-enum_parser = lambda concept: lambda value: concept.create(value)
+enum_parser = lambda concept: lambda value: concept(value)
 date_formatter = lambda value: value.strftime("%Y%m%d")
 
 
@@ -42,6 +42,7 @@ def date_parser(value):
 
 
 class Enumeration(IntEnum):
+    @classmethod
     def _missing_(cls, value):
         if isinstance(value, str):
             string = value.upper().replace(" ", "").replace("_", "")
@@ -107,12 +108,12 @@ CondorShortStrategy = Strategy(Spread.CONDOR, Option.EMPTY, Position.SHORT)
 class Registry(set):
     def __call__(self, value):
         if isinstance(value, Specification): return self.bykey()[tuple(value)]
-        elif isinstance(value, str): return self.bystr()[str(value.lower())]
-        elif isinstance(value, tuple): return self.bykey()[tuple(value)]
+        elif isinstance(value, str): return self.bystr()[value]
+        elif isinstance(value, tuple): return self.bykey()[value]
         else: raise TypeError(type(value))
 
-    def bystr(self): return {str(member): member for member in self}
-    def bykey(self): return {member.key: member for member in self}
+    def bystr(self): return {str(specification): specification for specification in self}
+    def bykey(self): return {tuple(specification.key): specification for specification in self}
 
 
 Securities = Registry([StockLongSecurity, StockShortSecurity, OptionPutLongSecurity, OptionPutShortSecurity, OptionCallLongSecurity, OptionCallShortSecurity])
@@ -210,30 +211,18 @@ ContractRecord = Record("Contract", fields=(TickerField, ExpireField, OptionFiel
 class OSIError(Exception): pass
 class OSIParseError(OSIError): pass
 class OSICreateError(OSIError): pass
+class OSIEmptyError(OSIError): pass
 
-@dataclass(frozen=True)
-class OSI:
-    ticker: str; expire: Date; option: Enum; strike: Decimal
-
-    def __call__(self, contents):
+class OSIMeta(type):
+    def __call__(cls, contents):
         if isinstance(contents, Query): contents = dict(contents.items())
         if isinstance(contents, pd.Series): contents = contents.to_dict()
-        if isinstance(contents, dict): return self(**{field.name: contents[field.name] for field in fields(self)})
-        elif isinstance(contents, str): return self(*self.parse(contents))
-        elif isinstance(contents, (list, tuple)): return self(*contents)
+        if isinstance(contents, dict): instance = super().__call__(**{field.name: contents[field.name] for field in fields(cls)})
+        elif isinstance(contents, str): instance = super().__call__(*cls.parse(contents))
+        elif isinstance(contents, (list, tuple)): instance =  super().__call__(*contents)
         else: raise OSICreateError()
-
-    def __str__(self):
-        ticker = self.ticker.upper()
-        expire = self.expire.strftime("%y%m%d")
-        option = str(self.option).upper()[0]
-        strike = int((self.strike * Decimal("1000")).to_integral_value())
-        strike = f"{strike:08d}"
-        return f"{ticker}{expire}{option}{strike}"
-
-    def items(self): return asdict(self).items()
-    def values(self): return asdict(self).values()
-    def keys(self): return asdict(self).keys()
+        if instance.option == Option.EMPTY: raise OSIEmptyError()
+        return instance
 
     @staticmethod
     def parse(contents):
@@ -246,6 +235,25 @@ class OSI:
         option = {"P": Option.PUT, "C": Option.CALL}[values["option"]]
         strike = Decimal(values["strike"]) / Decimal("1000")
         return [ticker, expire, option, strike]
+
+
+@dataclass(frozen=True)
+class OSI(metaclass=OSIMeta):
+    ticker: str; expire: Date; option: Enum; strike: Decimal
+
+    def __str__(self):
+        ticker = self.ticker.upper()
+        expire = self.expire.strftime("%y%m%d")
+        if self.option.name.upper() == "PUT": option = "P"
+        elif self.option.name.upper() == "CALL": option = "C"
+        else: raise ValueError(self.option)
+        strike = int((self.strike * Decimal("1000")).to_integral_value())
+        strike = f"{strike:08d}"
+        return f"{ticker}{expire}{option}{strike}"
+
+    def items(self): return asdict(self).items()
+    def values(self): return asdict(self).values()
+    def keys(self): return asdict(self).keys()
 
 
 class Alerting(Logging):
