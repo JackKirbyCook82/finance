@@ -8,8 +8,8 @@ Created on Weds May 27 2026
 
 import regex as re
 import pandas as pd
+from enum import Enum
 from decimal import Decimal
-from enum import Enum, IntEnum
 from abc import ABC, abstractmethod
 from typing import ClassVar, Callable, Any
 from types import SimpleNamespace
@@ -41,7 +41,7 @@ def date_parser(value):
     else: return Datetime.strptime(str(value), "%Y%m%d").date()
 
 
-class Enumeration(IntEnum):
+class Enumeration(Enum):
     @classmethod
     def _missing_(cls, value):
         if isinstance(value, str):
@@ -60,7 +60,7 @@ class Instrument(Enumeration): EMPTY, STOCK, OPTION, SPREAD = range(4)
 class Option(Enumeration): PUT, EMPTY, CALL = range(-1, 2)
 class Position(Enumeration): SHORT, EMPTY, LONG = range(-1, 2)
 class Terms(Enumeration): MARKET, LIMIT, STOP = range(3)
-class Tenure(Enumeration): DAY, GTC = range(2)
+class Tenure(Enumeration): DAY, GTC, FOK = range(3)
 class Action(Enumeration): BUY, SELL = range(2)
 
 
@@ -219,7 +219,7 @@ class OSIMeta(type):
         if isinstance(contents, pd.Series): contents = contents.to_dict()
         if isinstance(contents, dict): instance = super().__call__(**{field.name: contents[field.name] for field in fields(cls)})
         elif isinstance(contents, str): instance = super().__call__(*cls.parse(contents))
-        elif isinstance(contents, (list, tuple)): instance =  super().__call__(*contents)
+        elif isinstance(contents, (list, tuple)): instance = super().__call__(*contents)
         else: raise OSICreateError()
         if instance.option == Option.EMPTY: raise OSIEmptyError()
         return instance
@@ -233,7 +233,7 @@ class OSIMeta(type):
         ticker = values["ticker"].upper()
         expire = Datetime.strptime(values["expire"], "%y%m%d").date()
         option = {"P": Option.PUT, "C": Option.CALL}[values["option"]]
-        strike = Decimal(values["strike"]) / Decimal("1000")
+        strike = float(Decimal(values["strike"]) / Decimal("1000"))
         return [ticker, expire, option, strike]
 
 
@@ -244,10 +244,10 @@ class OSI(metaclass=OSIMeta):
     def __str__(self):
         ticker = self.ticker.upper()
         expire = self.expire.strftime("%y%m%d")
-        if self.option.name.upper() == "PUT": option = "P"
-        elif self.option.name.upper() == "CALL": option = "C"
+        if self.option == Option.PUT: option = "P"
+        elif self.option == Option.CALL: option = "C"
         else: raise ValueError(self.option)
-        strike = int((self.strike * Decimal("1000")).to_integral_value())
+        strike = int((Decimal(self.strike) * Decimal("1000")).to_integral_value())
         strike = f"{strike:08d}"
         return f"{ticker}{expire}{option}{strike}"
 
