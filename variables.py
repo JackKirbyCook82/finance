@@ -42,6 +42,9 @@ def date_parser(value):
 
 
 class Enumeration(Enum):
+    def __str__(self): return str(self.name).lower()
+    def __int__(self): return int(self.value)
+
     @classmethod
     def _missing_(cls, value):
         if isinstance(value, str):
@@ -239,7 +242,7 @@ class OSIMeta(type):
 
 @dataclass(frozen=True)
 class OSI(metaclass=OSIMeta):
-    ticker: str; expire: Date; option: Enum; strike: Decimal
+    ticker: str; expire: Date; option: Enum; strike: float
 
     def __str__(self):
         ticker = self.ticker.upper()
