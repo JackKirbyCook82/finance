@@ -1,13 +1,11 @@
 # -*- coding: utf-8 -*-
 """
 Created on Weds May 27 2026
-@name:   Finance Concept Objects
+@name:   Finance Variable Objects
 @author: Jack Kirby Cook
 
 """
 
-import regex as re
-import pandas as pd
 from enum import Enum
 from decimal import Decimal
 from abc import ABC, abstractmethod
@@ -17,13 +15,9 @@ from datetime import date as Date
 from datetime import datetime as Datetime
 from dataclasses import dataclass, asdict, fields
 
-from support.decorators import Dispatchers
-from support.custom import DateRange
-from support.mixins import Logging
-
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["Alerting", "OSI", "Querys", "Enumerations", "Specifications"]
+__all__ = ["Querys", "Enumerations", "Specifications"]
 __copyright__ = "Copyright 2026, Jack Kirby Cook"
 __license__ = "MIT License"
 
@@ -59,7 +53,7 @@ class Enumeration(Enum):
 
 class Technical(Enumeration): BARS, STATS, SMA, EMA, MACD, RSI, BB, ATR, MFI, CMF, OBV = range(11)
 class Spread(Enumeration): EMPTY, VERTICAL, COLLAR, FLY, CALENDAR, CONDOR = range(6)
-class Instrument(Enumeration): EMPTY, STOCK, OPTION, SPREAD = range(4)
+class Instrument(Enumeration): EMPTY, STOCK, OPTION, SPREAD, CONTRACT = range(5)
 class Option(Enumeration): PUT, EMPTY, CALL = range(-1, 2)
 class Position(Enumeration): SHORT, EMPTY, LONG = range(-1, 2)
 class Terms(Enumeration): MARKET, LIMIT, STOP = range(3)
@@ -209,83 +203,6 @@ QuoteRecord = Record("Quote", fields=(TickerField, BidField, AskField))
 HistoryRecord = Record("History", fields=(TickerField, DateField))
 SettlementRecord = Record("Settlement", fields=(TickerField, ExpireField))
 ContractRecord = Record("Contract", fields=(TickerField, ExpireField, OptionField, StrikeField))
-
-
-class OSIError(Exception): pass
-class OSIParseError(OSIError): pass
-class OSICreateError(OSIError): pass
-class OSIEmptyError(OSIError): pass
-
-class OSIMeta(type):
-    def __call__(cls, contents):
-        if isinstance(contents, Query): contents = dict(contents.items())
-        if isinstance(contents, pd.Series): contents = contents.to_dict()
-        if isinstance(contents, dict): instance = super().__call__(**{field.name: contents[field.name] for field in fields(cls)})
-        elif isinstance(contents, str): instance = super().__call__(*cls.parse(contents))
-        elif isinstance(contents, (list, tuple)): instance = super().__call__(*contents)
-        else: raise OSICreateError()
-        if instance.option == Option.EMPTY: raise OSIEmptyError()
-        return instance
-
-    @staticmethod
-    def parse(contents):
-        pattern = r"^(?P<ticker>[A-Z]+)(?P<expire>\d{6})(?P<option>[PC])(?P<strike>\d{8})$"
-        match = re.search(pattern, contents)
-        if not match: raise OSIParseError()
-        values = match.groupdict()
-        ticker = values["ticker"].upper()
-        expire = Datetime.strptime(values["expire"], "%y%m%d").date()
-        option = {"P": Option.PUT, "C": Option.CALL}[values["option"]]
-        strike = float(Decimal(values["strike"]) / Decimal("1000"))
-        return [ticker, expire, option, strike]
-
-
-@dataclass(frozen=True)
-class OSI(metaclass=OSIMeta):
-    ticker: str; expire: Date; option: Enum; strike: float
-
-    def __str__(self):
-        ticker = self.ticker.upper()
-        expire = self.expire.strftime("%y%m%d")
-        if self.option == Option.PUT: option = "P"
-        elif self.option == Option.CALL: option = "C"
-        else: raise ValueError(self.option)
-        strike = int((Decimal(self.strike) * Decimal("1000")).to_integral_value())
-        strike = f"{strike:08d}"
-        return f"{ticker}{expire}{option}{strike}"
-
-    def items(self): return asdict(self).items()
-    def values(self): return asdict(self).values()
-    def keys(self): return asdict(self).keys()
-
-
-class Alerting(Logging):
-    @Dispatchers.Value(locator="instrument")
-    def alert(self, dataframe, *args, title, instrument, **kwargs): raise ValueError(instrument)
-
-    @alert.register(Instrument.SPREAD)
-    def spread(self, collection, *args, title, **kwargs):
-        if not isinstance(collection, list): collection = [collection]
-        tickers = "|".join(list({content.ticker for content in collection}))
-        previous, post = kwargs.get("previous", None), kwargs.get("post", len(collection))
-        sizes = f"{int(previous):.0f}|{int(post):.0f}" if previous is not None else f"{len(collection):.0f}"
-        self.console(str(title), f"Spreads[{str(tickers)}, {str(sizes)}]")
-
-    @alert.register(Instrument.STOCK)
-    def stock(self, dataframe, *args, title, **kwargs):
-        tickers = "|".join(list(dataframe["ticker"].unique()))
-        previous, post = kwargs.get("previous", None), kwargs.get("post", len(dataframe))
-        sizes = f"{int(previous):.0f}|{int(post):.0f}" if previous is not None else f"{len(dataframe):.0f}"
-        self.console(str(title), f"Stocks[{str(tickers)}, {str(sizes)}]")
-
-    @alert.register(Instrument.OPTION)
-    def option(self, dataframe, *args, title, **kwargs):
-        tickers = "|".join(list(dataframe["ticker"].unique()))
-        expires = DateRange.create(list(dataframe["expire"].unique()))
-        expires = f"{expires.minimum.strftime('%Y%m%d')}->{expires.maximum.strftime('%Y%m%d')}"
-        previous, post = kwargs.get("previous", None), kwargs.get("post", len(dataframe))
-        sizes = f"{int(previous):.0f}|{int(post):.0f}" if previous is not None else f"{len(dataframe):.0f}"
-        self.console(str(title), f"Options[{str(tickers)}, {str(expires)}, {str(sizes)}]")
 
 
 Querys = SimpleNamespace(Symbol=SymbolRecord, Trade=TradeRecord, Quote=QuoteRecord, History=HistoryRecord, Settlement=SettlementRecord, Contract=ContractRecord)
