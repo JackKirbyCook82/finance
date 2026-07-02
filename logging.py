@@ -59,7 +59,7 @@ class Logging(Logging):
         expires = f"{expires.minimum.strftime('%Y%m%d')}->{expires.maximum.strftime('%Y%m%d')}"
         previous, post = kwargs.get("previous", None), kwargs.get("post", len(collection))
         sizes = f"{int(previous):.0f}|{int(post):.0f}, {post / previous * 100:.0f}%" if previous is not None else f"{len(collection):.0f}"
-        self.console(str(title), f"Spreads[{str(tickers)}, {str(expires)}, {str(sizes)}]")
+        self.console(str(title), f"Contracts[{str(tickers)}, {str(expires)}, {str(sizes)}]")
 
 
 
