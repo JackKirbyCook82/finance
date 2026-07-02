@@ -6,6 +6,9 @@ Created on Weds May 27 2026
 
 """
 
+from functools import reduce
+from operator import add
+
 from finance.variables import Enumerations
 from support.decorators import Dispatchers
 from support.custom import DateRange
@@ -42,17 +45,21 @@ class Logging(Logging):
     def spread(self, collection, *args, title, **kwargs):
         if not isinstance(collection, list): collection = [collection]
         tickers = "|".join(list({content.ticker for content in collection}))
+        expires = reduce(add, [content.expires for content in collection])
+        expires = f"{expires.minimum.strftime('%Y%m%d')}->{expires.maximum.strftime('%Y%m%d')}"
         previous, post = kwargs.get("previous", None), kwargs.get("post", len(collection))
         sizes = f"{int(previous):.0f}|{int(post):.0f}, {post / previous * 100:.0f}%" if previous is not None else f"{len(collection):.0f}"
-        self.console(str(title), f"Spreads[{str(tickers)}, {str(sizes)}]")
+        self.console(str(title), f"Spreads[{str(tickers)}, {str(expires)}, {str(sizes)}]")
 
     @results.register(Enumerations.Instrument.CONTRACT)
     def contracts(self, collection, *args, title, **kwargs):
         if not isinstance(collection, list): collection = [collection]
         tickers = "|".join(list({content.ticker for content in collection}))
+        expires = DateRange.create(list({content.expire for content in collection}))
+        expires = f"{expires.minimum.strftime('%Y%m%d')}->{expires.maximum.strftime('%Y%m%d')}"
         previous, post = kwargs.get("previous", None), kwargs.get("post", len(collection))
         sizes = f"{int(previous):.0f}|{int(post):.0f}, {post / previous * 100:.0f}%" if previous is not None else f"{len(collection):.0f}"
-        self.console(str(title), f"Spreads[{str(tickers)}, {str(sizes)}]")
+        self.console(str(title), f"Spreads[{str(tickers)}, {str(expires)}, {str(sizes)}]")
 
 
 
