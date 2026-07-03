@@ -45,7 +45,7 @@ class Logging(Logging):
     def spread(self, collection, *args, title, **kwargs):
         if not isinstance(collection, list): collection = [collection]
         tickers = "|".join(list({content.ticker for content in collection}))
-        expires = reduce(add, [content.expires for content in collection])
+        expires = reduce(add, [content.expires for content in collection[1:]], collection[0].expires)
         expires = f"{expires.minimum.strftime('%Y%m%d')}->{expires.maximum.strftime('%Y%m%d')}"
         previous, post = kwargs.get("previous", None), kwargs.get("post", len(collection))
         sizes = f"{int(previous):.0f}|{int(post):.0f}, {post / previous * 100:.0f}%" if previous is not None else f"{len(collection):.0f}"
