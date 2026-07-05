@@ -13,7 +13,7 @@ from typing import ClassVar, Callable, Any
 from types import SimpleNamespace
 from datetime import date as Date
 from datetime import datetime as Datetime
-from dataclasses import dataclass, asdict, fields
+from dataclasses import dataclass
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -21,6 +21,7 @@ __all__ = ["Querys", "Enumerations", "Specifications"]
 __copyright__ = "Copyright 2026, Jack Kirby Cook"
 __license__ = "MIT License"
 
+from numba.core.typing.enumdecl import EnumAttribute
 
 decimal_formatter = lambda value: f"{Decimal(str(value)):.2f}"
 decimal_parser = lambda value: Decimal(str(value))
@@ -54,10 +55,12 @@ class Enumeration(Enum):
 class Technical(Enumeration): BARS, STATS, SMA, EMA, MACD, RSI, BB, ATR, MFI, CMF, OBV = range(11)
 class Spread(Enumeration): EMPTY, VERTICAL, COLLAR, FLY, CALENDAR, CONDOR = range(6)
 class Instrument(Enumeration): EMPTY, STOCK, OPTION, SPREAD, CONTRACT = range(5)
+class Website(Enumeration): ETRADE, ALPACA, INTERACTIVE = range(3)
 class Option(Enumeration): PUT, EMPTY, CALL = range(-1, 2)
 class Position(Enumeration): SHORT, EMPTY, LONG = range(-1, 2)
 class Terms(Enumeration): MARKET, LIMIT, STOP = range(3)
 class Tenure(Enumeration): DAY, GTC, FOK = range(3)
+class Intent(Enumeration): OPEN, CLOSE = range(2)
 class Action(Enumeration): BUY, SELL = range(2)
 
 
@@ -205,8 +208,8 @@ SettlementRecord = Record("Settlement", fields=(TickerField, ExpireField))
 ContractRecord = Record("Contract", fields=(TickerField, ExpireField, OptionField, StrikeField))
 
 
+Enumerations = SimpleNamespace(Technical=Technical, Spread=Spread, Instrument=Instrument, Option=Option, Position=Position, Terms=Terms, Tenure=Tenure, Action=Action, Intent=Intent, Website=Website)
 Querys = SimpleNamespace(Symbol=SymbolRecord, Trade=TradeRecord, Quote=QuoteRecord, History=HistoryRecord, Settlement=SettlementRecord, Contract=ContractRecord)
-Enumerations = SimpleNamespace(Technical=Technical, Spread=Spread, Instrument=Instrument, Option=Option, Position=Position, Terms=Terms, Tenure=Tenure, Action=Action)
 Specifications = SimpleNamespace(Securities=Securities, Strategies=Strategies)
 
 
