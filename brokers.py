@@ -13,7 +13,7 @@ from attr.converters import to_bool
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["Brokerage", "Authenticator", "Account", "Asset"]
+__all__ = ["Brokerage", "Authenticator", "Account"]
 __copyright__ = "Copyright 2026, Jack Kirby Cook"
 __license__ = "MIT License"
 
@@ -27,17 +27,6 @@ class Loading(object):
         body = [str(line).split(" ") for line in lines[1:]]
         records = [dict(zip(header, line)) for line in body]
         return [SimpleNamespace(**record) for record in records]
-
-
-@dataclass(frozen=True)
-class Asset(Loading):
-    individual: str; collective: str
-
-    @classmethod
-    def load(cls, file, /, **kwargs):
-        records = super().load(file, **kwargs)
-        instances = [cls(record.individual, record.collective) for record in records]
-        return instances
 
 
 @dataclass(frozen=True)
