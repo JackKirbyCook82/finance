@@ -14,7 +14,7 @@ from datetime import date as Date
 from datetime import datetime as Datetime
 from dataclasses import dataclass, asdict, fields
 
-from finance.variables import Enumerations
+from finance.enumerations import Option
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -37,7 +37,7 @@ class OSIMeta(type):
         elif isinstance(contents, str): instance = super().__call__(*cls.parse(contents))
         elif isinstance(contents, (list, tuple)): instance = super().__call__(*contents)
         else: raise OSICreateError()
-        if instance.option == Enumerations.Option.EMPTY: raise OSIEmptyError()
+        if instance.option == Option.EMPTY: raise OSIEmptyError()
         return instance
 
     @staticmethod
@@ -48,7 +48,7 @@ class OSIMeta(type):
         values = match.groupdict()
         ticker = values["ticker"].upper()
         expire = Datetime.strptime(values["expire"], "%y%m%d").date()
-        option = {"P": Enumerations.Option.PUT, "C": Enumerations.Option.CALL}[values["option"]]
+        option = {"P": Option.PUT, "C": Option.CALL}[values["option"]]
         strike = float(Decimal(values["strike"]) / Decimal("1000"))
         return [ticker, expire, option, strike]
 
@@ -60,8 +60,8 @@ class OSI(metaclass=OSIMeta):
     def __str__(self):
         ticker = self.ticker.upper()
         expire = self.expire.strftime("%y%m%d")
-        if self.option == Enumerations.Option.PUT: option = "P"
-        elif self.option == Enumerations.Option.CALL: option = "C"
+        if self.option == Option.PUT: option = "P"
+        elif self.option == Option.CALL: option = "C"
         else: raise ValueError(self.option)
         strike = int((Decimal(self.strike) * Decimal("1000")).to_integral_value())
         strike = f"{strike:08d}"
