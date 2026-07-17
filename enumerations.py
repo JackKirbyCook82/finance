@@ -35,6 +35,7 @@ class Technical(Enumeration): BARS, STATS, SMA, EMA, MACD, RSI, BB, ATR, MFI, CM
 class Strategy(Enumeration): EMPTY, VERTICAL, COLLAR, FLY, CALENDAR, CONDOR = range(6)
 class Instrument(Enumeration): EMPTY, STOCK, OPTION, SPREAD, CONTRACT = range(5)
 class Status(Enumeration): NEW, PARTIAL, FILLED, CANCELED, EXPIRED = range(5)
+class Movement(Enumeration): GAIN, STAGNANT, LOSS = range(-1, 2)
 class Website(Enumeration): ETRADE, ALPACA, INTERACTIVE = range(3)
 class Option(Enumeration): PUT, EMPTY, CALL = range(-1, 2)
 class Position(Enumeration): SHORT, EMPTY, LONG = range(-1, 2)
