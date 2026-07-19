@@ -10,7 +10,7 @@ from enum import Enum
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["Technical", "Strategy", "Instrument", "Status", "Website", "Option", "Position", "Terms", "Tenure", "Intent", "Action"]
+__all__ = ["Technical", "Spread", "Instrument", "Status", "Website", "Option", "Position", "Terms", "Tenure", "Intent", "Action"]
 __copyright__ = "Copyright 2026, Jack Kirby Cook"
 __license__ = "MIT License"
 
@@ -32,7 +32,7 @@ class Enumeration(Enum):
 
 
 class Technical(Enumeration): BARS, STATS, SMA, EMA, MACD, RSI, BB, ATR, MFI, CMF, OBV = range(11)
-class Strategy(Enumeration): EMPTY, VERTICAL, COLLAR, FLY, CALENDAR, CONDOR = range(6)
+class Spread(Enumeration): EMPTY, VERTICAL, COLLAR, FLY, CALENDAR, CONDOR = range(6)
 class Instrument(Enumeration): EMPTY, STOCK, OPTION, SPREAD, CONTRACT = range(5)
 class Status(Enumeration): NEW, PARTIAL, FILLED, CANCELED, EXPIRED = range(5)
 class Movement(Enumeration): GAIN, STAGNANT, LOSS = range(-1, 2)
