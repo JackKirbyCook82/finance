@@ -35,7 +35,7 @@ class Logging(Logging):
     @results.register(Instrument.OPTION)
     def option(self, dataframe, *args, title, **kwargs):
         tickers = "|".join(list(dataframe["ticker"].unique()))
-        expires = DateRange.create(list(dataframe["expire"].unique()))
+        expires = DateRange(list(dataframe["expire"].unique()))
         expires = f"{expires.minimum.strftime('%Y%m%d')}->{expires.maximum.strftime('%Y%m%d')}"
         previous, post = kwargs.get("previous", None), kwargs.get("post", len(dataframe))
         sizes = f"{int(previous):.0f}|{int(post):.0f}, {post / previous * 100:.0f}%" if previous is not None else f"{len(dataframe):.0f}"
@@ -55,7 +55,7 @@ class Logging(Logging):
     def contracts(self, collection, *args, title, **kwargs):
         if not isinstance(collection, list): collection = [collection]
         tickers = "|".join(list({content.ticker for content in collection}))
-        expires = DateRange.create(list({content.expire for content in collection}))
+        expires = DateRange(list({content.expire for content in collection}))
         expires = f"{expires.minimum.strftime('%Y%m%d')}->{expires.maximum.strftime('%Y%m%d')}"
         previous, post = kwargs.get("previous", None), kwargs.get("post", len(collection))
         sizes = f"{int(previous):.0f}|{int(post):.0f}, {post / previous * 100:.0f}%" if previous is not None else f"{len(collection):.0f}"
