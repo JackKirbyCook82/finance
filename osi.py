@@ -30,9 +30,9 @@ class OSIEmptyError(OSIError): pass
 
 class OSIMeta(type):
     def __call__(cls, contents):
-        try: contents = dict(contents.items())
-        except AttributeError: pass
+        if isinstance(contents, cls): return contents
         if isinstance(contents, pd.Series): contents = contents.to_dict()
+        elif hasattr(contents, "items"): contents = dict(contents.items())
         if isinstance(contents, dict): instance = super().__call__(**{field.name: contents[field.name] for field in fields(cls)})
         elif isinstance(contents, str): instance = super().__call__(*cls.parse(contents))
         elif isinstance(contents, (list, tuple)): instance = super().__call__(*contents)
