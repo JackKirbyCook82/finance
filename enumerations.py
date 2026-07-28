@@ -41,8 +41,8 @@ class Option(Enumeration): PUT, EMPTY, CALL = range(-1, 2)
 class Position(Enumeration): SHORT, EMPTY, LONG = range(-1, 2)
 class Terms(Enumeration): MARKET, LIMIT, STOP = range(3)
 class Tenure(Enumeration): DAY, GTC, FOK = range(3)
-class Intent(Enumeration): OPEN, CLOSE = range(2)
-class Action(Enumeration): BUY, SELL = range(2)
+class Action(Enumeration): BUY, SELL = (-1, 1)
+class Intent(Enumeration): OPEN, CLOSE = (-1, 1)
 
 
 
