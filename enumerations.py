@@ -32,13 +32,13 @@ class Enumeration(Enum):
 
 
 class Technical(Enumeration): BARS, STATS, SMA, EMA, MACD, RSI, BB, ATR, MFI, CMF, OBV = range(11)
-class Spread(Enumeration): EMPTY, VERTICAL, COLLAR, FLY, CALENDAR, CONDOR = range(6)
 class Instrument(Enumeration): EMPTY, STOCK, OPTION, SPREAD, CONTRACT = range(5)
 class Status(Enumeration): NEW, PARTIAL, FILLED, CANCELED, EXPIRED = range(5)
-class Movement(Enumeration): GAIN, STAGNANT, LOSS = range(-1, 2)
 class Website(Enumeration): ETRADE, ALPACA, INTERACTIVE = range(3)
-class Option(Enumeration): PUT, EMPTY, CALL = range(-1, 2)
+class Movement(Enumeration): LOSS, STAGNANT, GAIN = range(-1, 2)
 class Position(Enumeration): SHORT, EMPTY, LONG = range(-1, 2)
+class Option(Enumeration): PUT, EMPTY, CALL = range(-1, 2)
+class Spread(Enumeration): EMPTY, FLY, CALENDAR = range(3)
 class Terms(Enumeration): MARKET, LIMIT, STOP = range(3)
 class Tenure(Enumeration): DAY, GTC, FOK = range(3)
 class Action(Enumeration): BUY, SELL = (-1, 1)
