@@ -22,12 +22,11 @@ class Enumeration(Enum):
     @classmethod
     def _missing_(cls, value):
         if isinstance(value, str):
-            string = value.upper().replace(" ", "").replace("_", "")
-            if str(string).lstrip("-").isdigit():
-                return cls(int(string))
+            normalized = (value.strip().upper().replace(" ", "").replace("_", ""))
+            if normalized.lstrip("-").isdigit(): return cls(int(normalized))
             for member in cls:
-                if member.name.replace("_", "") == string:
-                    return member
+                member_name = (member.name.upper().replace(" ", "").replace("_", ""))
+                if member_name == normalized: return member
         return None
 
 
