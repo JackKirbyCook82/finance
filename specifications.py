@@ -60,8 +60,8 @@ OptionCallShortSecurity = Security(Instrument.OPTION, Option.CALL, Position.SHOR
 
 VerticalPutStrategy = Strategy(Spread.VERTICAL, Option.PUT,Position.EMPTY)
 VerticalCallStrategy = Strategy(Spread.VERTICAL, Option.CALL, Position.EMPTY)
-CondorLongStrategy = Strategy(Spread.CONDOR, Option.EMPTY, Position.LONG)
-CondorShortStrategy = Strategy(Spread.CONDOR, Option.EMPTY, Position.SHORT)
+CollarLongStrategy = Strategy(Spread.COLLAR, Option.EMPTY, Position.LONG)
+CollarShortStrategy = Strategy(Spread.COLLAR, Option.EMPTY, Position.SHORT)
 
 
 class Registry(set):
@@ -76,6 +76,6 @@ class Registry(set):
 
 
 Securities = Registry([StockLongSecurity, StockShortSecurity, OptionPutLongSecurity, OptionPutShortSecurity, OptionCallLongSecurity, OptionCallShortSecurity])
-Strategies = Registry([VerticalPutStrategy, VerticalCallStrategy, CondorLongStrategy, CondorShortStrategy,])
+Strategies = Registry([VerticalPutStrategy, VerticalCallStrategy, CollarLongStrategy, CollarShortStrategy])
 
 
