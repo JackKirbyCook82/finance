@@ -6,8 +6,9 @@ Created on Weds May 27 2026
 
 """
 
-from functools import reduce
-from operator import add
+import pandas as pd
+from typing import Optional
+from dataclasses import dataclass
 
 from finance.enumerations import Instrument
 from support.decorators import Dispatchers
@@ -21,45 +22,62 @@ __copyright__ = "Copyright 2026, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
+@dataclass(frozen=True, slots=True)
+class Scope:
+    instrument: Instrument; tickers: list; expires: Optional[DateRange] = None
+
+    def __str__(self):
+        if self.expires is not None:
+            tickers = "|".join(self.tickers)
+            expires = f"{self.expires.minimum.strftime('%Y%m%d')}->{self.expires.maximum.strftime('%Y%m%d')}"
+            return ", ".join([tickers, expires])
+        else: return "|".join(self.tickers)
+
+
 class Logging(Logging):
     @Dispatchers.Value(locator="instrument")
-    def results(self, dataframe, *args, title, instrument, **kwargs): raise ValueError(instrument)
+    def scope(self, contents, *args, instrument, **kwargs): raise ValueError(instrument)
 
-    @results.register(Instrument.STOCK)
-    def stock(self, dataframe, *args, title, **kwargs):
-        tickers = "|".join(list(dataframe["ticker"].unique()))
-        previous, post = kwargs.get("previous", None), kwargs.get("post", len(dataframe))
-        sizes = f"{int(previous):.0f}|{int(post):.0f}, {post / previous * 100:.0f}%" if previous is not None else f"{len(dataframe):.0f}"
-        self.console(str(title), f"Stocks[{str(tickers)}, {str(sizes)}]")
+    @scope.register(Instrument.STOCK)
+    def stock(self, contents, *args, **kwargs):
+        if isinstance(contents, pd.DataFrame):
+            tickers = list(contents["ticker"].unique())
+        elif isinstance(contents, list):
+            tickers = list(set([symbol.ticker for symbol in contents]))
+        else: raise TypeError(type(contents))
+        return Scope(instrument=Instrument.STOCK, tickers=tickers)
 
-    @results.register(Instrument.OPTION)
-    def option(self, dataframe, *args, title, **kwargs):
-        tickers = "|".join(list(dataframe["ticker"].unique()))
-        expires = DateRange(list(dataframe["expire"].unique()))
-        expires = f"{expires.minimum.strftime('%Y%m%d')}->{expires.maximum.strftime('%Y%m%d')}"
-        previous, post = kwargs.get("previous", None), kwargs.get("post", len(dataframe))
-        sizes = f"{int(previous):.0f}|{int(post):.0f}, {post / previous * 100:.0f}%" if previous is not None else f"{len(dataframe):.0f}"
-        self.console(str(title), f"Options[{str(tickers)}, {str(expires)}, {str(sizes)}]")
+    @scope.register(Instrument.OPTION)
+    def option(self, contents, *args, **kwargs):
+        if isinstance(contents, pd.DataFrame):
+            tickers = list(contents["ticker"].unique())
+            expires = DateRange(list(contents["expire"].unique()))
+        elif isinstance(contents, list):
+            tickers = list(set([symbol.ticker for symbol in contents]))
+            expires = DateRange(list(set([contract.expire for contract in contents])))
+        else: raise TypeError(type(contents))
+        return Scope(instrument=Instrument.OPTION, tickers=tickers, expires=expires)
 
-    @results.register(Instrument.SPREAD)
-    def spread(self, collection, *args, title, **kwargs):
-        if not isinstance(collection, list): collection = [collection]
-        tickers = "|".join(list({content.ticker for content in collection}))
-        expires = reduce(add, [content.expires for content in collection[1:]], collection[0].expires)
-        expires = f"{expires.minimum.strftime('%Y%m%d')}->{expires.maximum.strftime('%Y%m%d')}"
-        previous, post = kwargs.get("previous", None), kwargs.get("post", len(collection))
-        sizes = f"{int(previous):.0f}|{int(post):.0f}, {post / previous * 100:.0f}%" if previous is not None else f"{len(collection):.0f}"
-        self.console(str(title), f"Spreads[{str(tickers)}, {str(expires)}, {str(sizes)}]")
+    @scope.register(Instrument.CONTRACT)
+    def contract(self, contents, *args, **kwargs):
+        if isinstance(contents, list):
+            tickers = list(set([symbol.ticker for symbol in contents]))
+            expires = DateRange(list(set([contract.expire for contract in contents])))
+        else: raise TypeError(type(contents))
+        return Scope(instrument=Instrument.CONTRACT, tickers=tickers, expires=expires)
 
-    @results.register(Instrument.CONTRACT)
-    def contracts(self, collection, *args, title, **kwargs):
-        if not isinstance(collection, list): collection = [collection]
-        tickers = "|".join(list({content.ticker for content in collection}))
-        expires = DateRange(list({content.expire for content in collection}))
-        expires = f"{expires.minimum.strftime('%Y%m%d')}->{expires.maximum.strftime('%Y%m%d')}"
-        previous, post = kwargs.get("previous", None), kwargs.get("post", len(collection))
-        sizes = f"{int(previous):.0f}|{int(post):.0f}, {post / previous * 100:.0f}%" if previous is not None else f"{len(collection):.0f}"
-        self.console(str(title), f"Contracts[{str(tickers)}, {str(expires)}, {str(sizes)}]")
+    def results(self, *args, scope, size, title, **kwargs):
+        assert isinstance(scope, Scope)
+        if isinstance(size, int): size = f"{size:.0f}"
+        elif isinstance(size, tuple):
+            assert len(size) == 2
+            previous, post = size
+            size = f"{int(previous):.0f}|{int(post):.0f}, {post / previous * 100:.0f}%"
+        instrument = str(scope.instrument).title()
+        self.console(str(title), f"{str(instrument)}[{str(scope)}, {str(size)}]")
+
+
+
 
 
 
