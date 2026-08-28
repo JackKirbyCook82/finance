@@ -3,6 +3,7 @@
 Created on Weds May 27 2026
 @name:   Finance Querys Objects
 @author: Jack Kirby Cook
+@file:   finance/querys.py
 
 """
 

@@ -3,6 +3,7 @@
 Created on Weds May 27 2026
 @name:   Finance Specifications Objects
 @author: Jack Kirby Cook
+@file:   finance/specifications.py
 
 """
 
