@@ -72,11 +72,13 @@ class Logging(Logging):
         if isinstance(size, int): size = f"{size:.0f}"
         elif isinstance(size, tuple):
             assert len(size) == 2
-            previous, post = size
-            size = f"{int(previous):.0f}|{int(post):.0f}, {post / previous * 100:.0f}%"
+            before, after = size
+            size = f"{int(before):.0f}|{int(after):.0f}, {after / before * 100:.0f}%"
         instrument = str(scope.instrument).title()
+        strings = kwargs.get("strings", [])
         self.console(str(title), f"{str(instrument)}[{str(scope)}, {str(size)}]")
-
+        for string in strings:
+            self.console(str(title), str(string))
 
 
 
