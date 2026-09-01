@@ -31,9 +31,9 @@ class Enumeration(Enum):
         return None
 
 
+class Status(Enumeration): ACCEPTED, PENDING, NEW, PARTIAL, CANCELING, ACCEPTED, FILLED, CANCELED, EXPIRED, REJECTED = range(10)
 class Technical(Enumeration): BARS, STATS, SMA, EMA, MACD, RSI, BB, ATR, MFI, CMF, OBV = range(11)
 class Instrument(Enumeration): EMPTY, STOCK, OPTION, SPREAD, CONTRACT = range(5)
-class Status(Enumeration): NEW, PARTIAL, FILLED, CANCELED, EXPIRED = range(5)
 class Spread(Enumeration): EMPTY, FLY, CALENDAR, VERTICAL, COLLAR = range(5)
 class Website(Enumeration): ETRADE, ALPACA, INTERACTIVE = range(3)
 class Movement(Enumeration): LOSS, STAGNANT, GAIN = range(-1, 2)
