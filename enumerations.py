@@ -30,8 +30,7 @@ class Enumeration(Enum):
                 if member_name == normalized: return member
         return None
 
-
-class Status(Enumeration): ACCEPTED, PENDING, NEW, PARTIAL, CANCELING, ACCEPTED, FILLED, CANCELED, EXPIRED, REJECTED = range(10)
+class Status(Enumeration): ACCEPTED, REJECTED, EXECUTING, PARTIAL, FILLED, CANCELED, EXPIRED = range(7)
 class Technical(Enumeration): BARS, STATS, SMA, EMA, MACD, RSI, BB, ATR, MFI, CMF, OBV = range(11)
 class Instrument(Enumeration): EMPTY, STOCK, OPTION, SPREAD, CONTRACT = range(5)
 class Spread(Enumeration): EMPTY, FLY, CALENDAR, VERTICAL, COLLAR = range(5)
