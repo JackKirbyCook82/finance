@@ -67,6 +67,14 @@ class Logging(Logging):
         else: raise TypeError(type(contents))
         return Scope(instrument=Instrument.CONTRACT, tickers=tickers, expires=expires)
 
+    @scope.register(Instrument.SPREAD)
+    def spread(self, contents, *args, **kwargs):
+        if isinstance(contents, list):
+            tickers = list(set([symbol.ticker for symbol in contents]))
+            expires = DateRange(list(set([contract.expire for contract in contents])))
+        else: raise TypeError(type(contents))
+        return Scope(instrument=Instrument.SPREAD, tickers=tickers, expires=expires)
+
     def results(self, *args, scope, size, title, **kwargs):
         assert isinstance(scope, Scope)
         if isinstance(size, int): size = f"{size:.0f}"
