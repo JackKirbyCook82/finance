@@ -62,19 +62,19 @@ class Results(ABC):
         return Scope(instrument=Instrument.OPTION, tickers=tickers, expires=expires)
 
     @scope.register(Instrument.CONTRACT)
-    def contract(self, contents, *args, **kwargs):
-        if isinstance(contents, list):
-            tickers = list(set([symbol.ticker for symbol in contents]))
-            expires = DateRange(list(set([contract.expire for contract in contents])))
-        else: raise TypeError(type(contents))
+    def contract(self, contracts, *args, **kwargs):
+        if isinstance(contracts, list):
+            tickers = list(set([contract.ticker for contract in contracts]))
+            expires = DateRange(list(set([contract.expire for contract in contracts])))
+        else: raise TypeError(type(contracts))
         return Scope(instrument=Instrument.CONTRACT, tickers=tickers, expires=expires)
 
     @scope.register(Instrument.SPREAD)
-    def spread(self, contents, *args, **kwargs):
-        if isinstance(contents, list):
-            tickers = list(set([symbol.ticker for symbol in contents]))
-            expires = DateRange(list(set([contract.expire for contract in contents])))
-        else: raise TypeError(type(contents))
+    def spread(self, prospects, *args, **kwargs):
+        if isinstance(prospects, list):
+            tickers = list(set([prospect.ticker for prospect in prospects]))
+            expires = DateRange(list(set([expire for prospect in prospects for expire in iter(prospect.expires)])))
+        else: raise TypeError(type(prospects))
         return Scope(instrument=Instrument.SPREAD, tickers=tickers, expires=expires)
 
     @staticmethod
@@ -90,13 +90,13 @@ class Results(ABC):
 
 
 class Analysis(ABC, metaclass=AttributeMeta):
+    @abstractmethod
     def analysis(self, contents): pass
+    @abstractmethod
     def survival(self, contents): pass
-
     @property
     @abstractmethod
     def metrics(self): pass
-
     @staticmethod
     @abstractmethod
     def boundary(contents): pass
