@@ -143,7 +143,7 @@ class Viability(Analysis, ABC, attribute="Viability"):
     def survival(self, options):
         moneyness = (options["moneyness"].abs() <= self.metrics.moneyness).sum() / len(options.index) * 100
         tightness = (options["tightness"] <= self.metrics.tightness).sum() / len(options.index) * 100
-        activity = (options["activity"] <= self.metrics.activity).sum() / len(options.index) * 100
+        activity = (options["activity"] >= self.metrics.activity).sum() / len(options.index) * 100
         return SimpleNamespace(moneyness=moneyness, tightness=tightness, activity=activity)
 
     @staticmethod

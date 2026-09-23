@@ -38,9 +38,9 @@ class Website(Enumeration): ETRADE, ALPACA, INTERACTIVE = range(3)
 class Terms(Enumeration): MARKET, LIMIT, STOP = range(3)
 class Tenure(Enumeration): DAY, GTC, FOK = range(3)
 class Movement(Enumeration): LOSS, STAGNANT, GAIN = (-1, 0, +1)
+class Option(Enumeration): PUT, EMPTY, CALL = (-1, 0, +1)
 class Position(Enumeration): SHORT, LONG = (-1, +1)
 class Intent(Enumeration): CLOSE, OPEN = (-1, +1)
-class Option(Enumeration): PUT, CALL = (-1, +1)
 class Action(Enumeration): SELL, BUY = (-1, +1)
 
 
