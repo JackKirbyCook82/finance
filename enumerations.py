@@ -11,7 +11,7 @@ from enum import Enum
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["Technical", "Spread", "Instrument", "Status", "Website", "Option", "Position", "Terms", "Tenure", "Intent", "Action", "Movement"]
+__all__ = ["Technical", "Spread", "Instrument", "Status", "Website", "Option", "Position", "Terms", "Tenure", "Intent", "Action", "Movement", "Frequency"]
 __copyright__ = "Copyright 2026, Jack Kirby Cook"
 __license__ = "MIT License"
 
@@ -32,6 +32,7 @@ class Enumeration(Enum):
 
 class Status(Enumeration): ACCEPTED, REJECTED, EXECUTING, PARTIAL, FILLED, CANCELED, EXPIRED = range(7)
 class Technical(Enumeration): BARS, STATS, SMA, EMA, MACD, RSI, BB, ATR, MFI, CMF, OBV = range(11)
+class Frequency(Enumeration): MINUTELY, HOURLY, DAILY, WEEKLY, MONTHLY, YEARLY = range(6)
 class Instrument(Enumeration): EMPTY, STOCK, OPTION, SPREAD, CONTRACT = range(5)
 class Spread(Enumeration): EMPTY, FLY, CALENDAR, VERTICAL, COLLAR = range(5)
 class Website(Enumeration): ETRADE, ALPACA, INTERACTIVE = range(3)
