@@ -68,7 +68,7 @@ PositionField = Field("position", enum_parser(Position), str)
 ByField = Field("by", enum_parser(Frequency), str)
 
 TickerField = Field("ticker", str, str)
-DurationField = Field("value", integer_parser, integer_formatter)
+DurationField = Field("duration", integer_parser, integer_formatter)
 DateField = Field("date", date_parser, date_formatter)
 ExpireField = Field("expire", date_parser, date_formatter)
 StrikeField = Field("strike", decimal_parser, decimal_formatter)
