@@ -35,7 +35,7 @@ class Technical(Enumeration): BARS, STATS, SMA, EMA, MACD, RSI, BB, ATR, MFI, CM
 class Frequency(Enumeration): MINUTELY, HOURLY, DAILY, WEEKLY, MONTHLY, YEARLY = range(6)
 class Instrument(Enumeration): EMPTY, STOCK, OPTION, SPREAD, CONTRACT = range(5)
 class Spread(Enumeration): EMPTY, FLY, CALENDAR, VERTICAL, COLLAR = range(5)
-class Website(Enumeration): ETRADE, ALPACA, INTERACTIVE = range(3)
+class Website(Enumeration): ETRADE, ALPACA, IKBR = range(3)
 class Terms(Enumeration): MARKET, LIMIT, STOP = range(3)
 class Tenure(Enumeration): DAY, GTC, FOK = range(3)
 class Movement(Enumeration): LOSS, STAGNANT, GAIN = (-1, 0, +1)
