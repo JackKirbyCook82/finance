@@ -97,16 +97,17 @@ class Record:
         elif isinstance(values, dict):
             contents = {field.name: field.parse(values.get(field.name)) for field in self.fields}
         else: raise TypeError(type(values))
-        return Query(self, contents)
+        return Query(self, contents, {})
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class Query:
     record: Record
-    data: dict[str, Any]
+    contents: dict[str, Any]
+    mapping: dict
 
-    def __iter__(self): return iter([(field, self.data.get(field.name)) for field in self.record.fields])
-    def __hash__(self): return hash((self.record, tuple(self.data.get(field.name) for field in self.record.fields)))
+    def __iter__(self): return iter([(field, self.contents.get(field.name)) for field in self.record.fields])
+    def __hash__(self): return hash((self.record, tuple(self.contents.get(field.name) for field in self.record.fields)))
 
     def __str__(self):
         strings = [field.format(content) for field, content in iter(self)]
@@ -114,15 +115,18 @@ class Query:
 
     def __eq__(self, other):
         assert isinstance(other, Query)
-        return self.record == other.record and all(self.data.get(field.name) == other.data.get(field.name) for field in self.record.fields)
+        return self.record == other.record and all(self.contents.get(field.name) == other.contents.get(field.name) for field in self.record.fields)
 
     def __getattr__(self, name):
-        try: return self.data[name]
+        try: return self.contents[name]
         except KeyError: raise AttributeError(name) from None
 
-    def items(self): return self.data.items()
-    def values(self): return self.data.values()
-    def keys(self): return self.data.keys()
+    def __setitem__(self, key, value): self.mapping[key] = value
+    def __getitem__(self, key): return self.mapping[key]
+
+    def items(self): return self.contents.items()
+    def values(self): return self.contents.values()
+    def keys(self): return self.contents.keys()
 
 
 Symbol = Record("Symbol", fields=(TickerField,))
