@@ -17,7 +17,7 @@ from finance.enumerations import Instrument, Right, Position, Frequency
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["Symbol", "Trade", "Quote", "History", "Settlement", "Contract", "Frequency", "Query"]
+__all__ = ["Symbol", "Trade", "Quote", "History", "Settlement", "Contract", "Frequency"]
 __copyright__ = "Copyright 2026, Jack Kirby Cook"
 __license__ = "MIT License"
 
@@ -123,6 +123,7 @@ class Query:
 
     def __setitem__(self, key, value): self.mapping[key] = value
     def __getitem__(self, key): return self.mapping[key]
+    def __contains__(self, key): return key in self.mapping
 
     def items(self): return self.contents.items()
     def values(self): return self.contents.values()
