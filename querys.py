@@ -17,7 +17,7 @@ from finance.enumerations import Instrument, Right, Position, Frequency
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["Symbol", "Trade", "Quote", "History", "Settlement", "Contract", "Frequency"]
+__all__ = ["Symbol", "Trade", "Quote", "History", "Settlement", "Contract", "Frequency", "Query"]
 __copyright__ = "Copyright 2026, Jack Kirby Cook"
 __license__ = "MIT License"
 

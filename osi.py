@@ -47,9 +47,9 @@ class OSIMeta(type):
         values = match.groupdict()
         ticker = values["ticker"].upper()
         expire = Datetime.strptime(values["expire"], "%y%m%d").date()
-        option = {str(right).upper()[0]: right for right in Right}[values["right"]]
+        right = {str(right).upper()[0]: right for right in Right}[values["right"]]
         strike = float(Decimal(values["strike"]) / Decimal("1000"))
-        return [ticker, expire, option, strike]
+        return [ticker, expire, right, strike]
 
 
 @dataclass(frozen=True)
