@@ -11,7 +11,7 @@ from enum import Enum
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["Technical", "Spread", "Instrument", "Status", "Website", "Option", "Position", "Terms", "Tenure", "Intent", "Action", "Movement", "Frequency", "Price", "Dataset"]
+__all__ = ["Technical", "Spread", "Instrument", "Status", "Website", "Right", "Position", "Terms", "Tenure", "Intent", "Action", "Movement", "Frequency", "Price", "Dataset"]
 __copyright__ = "Copyright 2026, Jack Kirby Cook"
 __license__ = "MIT License"
 
@@ -41,7 +41,7 @@ class Dataset(Enumeration): BARS, TICKS, SPOT = range(3)
 class Terms(Enumeration): MARKET, LIMIT, STOP = range(3)
 class Tenure(Enumeration): DAY, GTC, FOK = range(3)
 class Movement(Enumeration): LOSS, STAGNANT, GAIN = (-1, 0, +1)
-class Option(Enumeration): PUT, EMPTY, CALL = (-1, 0, +1)
+class Right(Enumeration): PUT, CALL = (-1, +1)
 class Position(Enumeration): SHORT, LONG = (-1, +1)
 class Intent(Enumeration): CLOSE, OPEN = (-1, +1)
 class Action(Enumeration): SELL, BUY = (-1, +1)

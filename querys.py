@@ -13,7 +13,7 @@ from datetime import date as Date
 from datetime import datetime as Datetime
 from dataclasses import dataclass
 
-from finance.enumerations import Instrument, Option, Position, Frequency
+from finance.enumerations import Instrument, Right, Position, Frequency
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -63,7 +63,7 @@ class Field:
 
 
 InstrumentField = Field("instrument", enum_parser(Instrument), str)
-OptionField = Field("option", enum_parser(Option), str)
+RightField = Field("right", enum_parser(Right), str)
 PositionField = Field("position", enum_parser(Position), str)
 ByField = Field("by", enum_parser(Frequency), str)
 
@@ -134,6 +134,6 @@ Trade = Record("Trade", fields=(TickerField, PriceField))
 Quote = Record("Quote", fields=(TickerField, BidField, AskField))
 History = Record("History", fields=(TickerField, DateField))
 Settlement = Record("Settlement", fields=(TickerField, ExpireField))
-Contract = Record("Contract", fields=(TickerField, ExpireField, OptionField, StrikeField))
+Contract = Record("Contract", fields=(TickerField, ExpireField, RightField, StrikeField))
 Frequency = Record("Frequency", fields=(ByField, SpanField))
 

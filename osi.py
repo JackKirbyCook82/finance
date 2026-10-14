@@ -9,13 +9,12 @@ Created on Weds May 27 2026
 
 import regex as re
 import pandas as pd
-from enum import Enum
 from decimal import Decimal
 from datetime import date as Date
 from datetime import datetime as Datetime
 from dataclasses import dataclass, asdict, fields
 
-from finance.enumerations import Option
+from finance.enumerations import Right
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -38,35 +37,32 @@ class OSIMeta(type):
         elif isinstance(contents, str): instance = super().__call__(*cls.parse(contents))
         elif isinstance(contents, (list, tuple)): instance = super().__call__(*contents)
         else: raise OSICreateError()
-        if instance.option == Option.EMPTY: raise OSIEmptyError()
         return instance
 
     @staticmethod
     def parse(contents):
-        pattern = r"^(?P<ticker>[A-Z]+)(?P<expire>\d{6})(?P<option>[PC])(?P<strike>\d{8})$"
+        pattern = r"^(?P<ticker>[A-Z]+)(?P<expire>\d{6})(?P<right>[PC])(?P<strike>\d{8})$"
         match = re.search(pattern, contents)
         if not match: raise OSIParseError()
         values = match.groupdict()
         ticker = values["ticker"].upper()
         expire = Datetime.strptime(values["expire"], "%y%m%d").date()
-        option = {"P": Option.PUT, "C": Option.CALL}[values["option"]]
+        option = {str(right).upper()[0]: right for right in Right}[values["right"]]
         strike = float(Decimal(values["strike"]) / Decimal("1000"))
         return [ticker, expire, option, strike]
 
 
 @dataclass(frozen=True)
 class OSI(metaclass=OSIMeta):
-    ticker: str; expire: Date; option: Enum; strike: float
+    ticker: str; expire: Date; right: Right; strike: float
 
     def __str__(self):
         ticker = self.ticker.upper()
         expire = self.expire.strftime("%y%m%d")
-        if self.option == Option.PUT: option = "P"
-        elif self.option == Option.CALL: option = "C"
-        else: raise ValueError(self.option)
+        right = {right: str(right).upper()[0] for right in Right}[self.right]
         strike = int((Decimal(self.strike) * Decimal("1000")).to_integral_value())
         strike = f"{strike:08d}"
-        return f"{ticker}{expire}{option}{strike}"
+        return f"{ticker}{expire}{right}{strike}"
 
     def items(self): return asdict(self).items()
     def values(self): return asdict(self).values()
