@@ -1,24 +1,27 @@
 # -*- coding: utf-8 -*-
 """
 Created on Weds May 27 2026
-@name:   Finance OSI Objects
+@name:   Finance Variable Objects
 @author: Jack Kirby Cook
 @file:   finance/osi.py
 
 """
 
 import regex as re
+import numpy as np
 import pandas as pd
 from decimal import Decimal
+from types import SimpleNamespace
 from datetime import date as Date
 from datetime import datetime as Datetime
 from dataclasses import dataclass, asdict, fields
 
 from finance.enumerations import Right
+from support.custom import NumberRange
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["OSI"]
+__all__ = ["OSI", "Settlement", "Settlements"]
 __copyright__ = "Copyright 2026, Jack Kirby Cook"
 __license__ = "MIT License"
 
@@ -67,3 +70,24 @@ class OSI(metaclass=OSIMeta):
     def items(self): return asdict(self).items()
     def values(self): return asdict(self).values()
     def keys(self): return asdict(self).keys()
+
+
+@dataclass(frozen=True, slots=True)
+class Settlement: expire: Date; strike: float
+class Settlements(list):
+
+
+    def create(self, expires, /, zscore, today, spot, volatility, interest, dividends):
+        assert isinstance(expires, list) and all([isinstance(expire, Date) for expire in expires])
+        tau = lambda expire: (expire - today).days / 252
+        forward = lambda expire: spot * np.exp(np.subtract(interest, dividends) * tau(expire))
+        strike = lambda z, expire: forward(expire) * np.exp(zscore * index * volatility * np.sqrt(tau(expire)))
+        expires = [SimpleNamespace(expire=expire, tau=tau(expire), forward=forward(forward)) for expire in expires]
+        strikes = [SimpleNamespace(expire=expires, ) for expire in expires]
+
+
+        strikes = NumberRange([forward * np.exp(zscore * index * volatility * np.sqrt(tau)) for index in (-1, +1)])
+
+
+
+

@@ -21,7 +21,7 @@ __copyright__ = "Copyright 2026, Jack Kirby Cook"
 __license__ = "MIT License"
 
 
-class Loading(object):
+class Broker(object):
     @classmethod
     def load(cls, file, /, delimiter=" ", **kwargs):
         assert isinstance(delimiter, str)
@@ -37,7 +37,7 @@ class Brokerage: website: Enum; live: bool
 
 
 @dataclass(frozen=True)
-class Authenticator(Loading):
+class Authenticator(Broker):
     identity: str; code: str
 
     @classmethod
@@ -48,7 +48,7 @@ class Authenticator(Loading):
 
 
 @dataclass(frozen=True)
-class Account(Loading):
+class Account(Broker):
     identity: str; username: str; password: str
 
     @classmethod
