@@ -89,5 +89,3 @@ class Settlements(list):
         strikes = NumberRange([forward * np.exp(zscore * index * volatility * np.sqrt(tau)) for index in (-1, +1)])
 
 
-
-
