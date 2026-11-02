@@ -72,20 +72,16 @@ class OSI(metaclass=OSIMeta):
     def keys(self): return asdict(self).keys()
 
 
-@dataclass(frozen=True, slots=True)
-class Settlement: expire: Date; strike: float
-class Settlements(list):
-
-
-    def create(self, expires, /, zscore, today, spot, volatility, interest, dividends):
-        assert isinstance(expires, list) and all([isinstance(expire, Date) for expire in expires])
-        tau = lambda expire: (expire - today).days / 252
-        forward = lambda expire: spot * np.exp(np.subtract(interest, dividends) * tau(expire))
-        strike = lambda z, expire: forward(expire) * np.exp(zscore * index * volatility * np.sqrt(tau(expire)))
-        expires = [SimpleNamespace(expire=expire, tau=tau(expire), forward=forward(forward)) for expire in expires]
-        strikes = [SimpleNamespace(expire=expires, ) for expire in expires]
-
-
-        strikes = NumberRange([forward * np.exp(zscore * index * volatility * np.sqrt(tau)) for index in (-1, +1)])
+# @dataclass(frozen=True, slots=True)
+# class Settlement: expire: Date; strike: float
+# class Settlements(list):
+#     def create(self, expires, /, zscore, today, spot, volatility, interest, dividends):
+#         assert isinstance(expires, list) and all([isinstance(expire, Date) for expire in expires])
+#         tau = lambda expire: (expire - today).days / 252
+#         forward = lambda expire: spot * np.exp(np.subtract(interest, dividends) * tau(expire))
+#         strike = lambda z, expire: forward(expire) * np.exp(zscore * index * volatility * np.sqrt(tau(expire)))
+#         expires = [SimpleNamespace(expire=expire, tau=tau(expire), forward=forward(forward)) for expire in expires]
+#         strikes = [SimpleNamespace(expire=expires, ) for expire in expires]
+#         strikes = NumberRange([forward * np.exp(zscore * index * volatility * np.sqrt(tau)) for index in (-1, +1)])
 
 
