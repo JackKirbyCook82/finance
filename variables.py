@@ -8,16 +8,13 @@ Created on Weds May 27 2026
 """
 
 import regex as re
-import numpy as np
 import pandas as pd
 from decimal import Decimal
-from types import SimpleNamespace
 from datetime import date as Date
 from datetime import datetime as Datetime
 from dataclasses import dataclass, asdict, fields
 
 from finance.enumerations import Right
-from support.custom import NumberRange
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
