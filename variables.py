@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Created on Weds May 27 2026
-@name:   Finance Option Objects
+@name:   Finance Variables Objects
 @author: Jack Kirby Cook
 @file:   finance/options.py
 
