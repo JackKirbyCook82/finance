@@ -27,14 +27,15 @@ __license__ = "MIT License"
 
 @dataclass(frozen=True, slots=True)
 class Scope:
-    instrument: Instrument; tickers: list; expires: Optional[DateRange] = None
+    instrument: Instrument
+    tickers: Optional[list] = None
+    expires: Optional[DateRange] = None
 
     def __str__(self):
-        if self.expires is not None:
-            tickers = "|".join(self.tickers)
-            expires = f"{self.expires.minimum.strftime('%Y%m%d')}->{self.expires.maximum.strftime('%Y%m%d')}"
-            return ", ".join([tickers, expires])
-        else: return "|".join(self.tickers)
+        strings = list()
+        if self.tickers is not None: strings.append("|".join(self.tickers))
+        if self.expires is not None: strings.append(f"{self.expires.minimum.strftime('%Y%m%d')}->{self.expires.maximum.strftime('%Y%m%d')}")
+        return ", ".join(strings)
 
 
 class Results(ABC):
@@ -68,6 +69,13 @@ class Results(ABC):
             expires = DateRange(list(set([contract.expire for contract in contracts])))
         else: raise TypeError(type(contracts))
         return Scope(instrument=Instrument.CONTRACT, tickers=tickers, expires=expires)
+
+    @scope.register(Instrument.SETTLEMENT)
+    def settlement(self, settlements, *args, **kwargs):
+        if isinstance(settlements, list):
+            expires = DateRange(list(set([expire for prospect in iter(settlements) for expire in iter(prospect.expires)])))
+        else: raise TypeError(type(settlements))
+        return Scope(instrument=Instrument.SETTLEMENT, expires=expires)
 
     @scope.register(Instrument.SPREAD)
     def spread(self, prospects, *args, **kwargs):
