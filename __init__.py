@@ -30,28 +30,40 @@ class Scope(ABC):
         strings = list()
         try:
             tickers = self.tickers(contents)
-            tickers = "|".join(list(tickers))
-            strings.append(tickers)
+            if bool(tickers):
+                tickers = list(tickers)
+                tickers = "|".join(list(tickers))
+                strings.append("|".join(list(tickers)))
         except AttributeError: pass
         try:
             expires = self.expires(contents)
-            expires = DateRange(expires)
-            expires = f"{expires.minimum.strftime('%Y%m%d')}->{expires.maximum.strftime('%Y%m%d')}"
-            strings.append(expires)
+            if bool(expires):
+                expires = DateRange(expires)
+                expires = f"{expires.minimum.strftime('%Y%m%d')}->{expires.maximum.strftime('%Y%m%d')}"
+                strings.append(expires)
         except AttributeError: pass
         return ", ".join(strings)
 
     @Dispatchers.Value(locator=0)
     def tickers(self, contents): raise TypeError(type(contents))
+
     @tickers.register(pd.DataFrame)
-    def _(self, dataframe): return set(dataframe["ticker"].unique())
+    def _(self, dataframe):
+        if "ticker" not in dataframe.columns: return set()
+        return set(dataframe["ticker"].dropna().unique())
+
     @tickers.register(list)
-    def _(self, contents): return set([content.ticker for content in contents])
+    def _(self, contents):
+        return set([content.ticker for content in contents])
 
     @Dispatchers.Value(locator=0)
     def expires(self, contents): raise TypeError(type(contents))
+
     @expires.register(pd.DataFrame)
-    def _(self, dataframe): return set(dataframe["expire"].unique())
+    def _(self, dataframe):
+        if "expire" not in dataframe.columns: return set()
+        return set(dataframe["expire"].dropna().unique())
+
     @expires.register(list)
     def _(self, contents):
         try: return set([content.expire for content in contents])
@@ -75,7 +87,7 @@ class Analysis(ABC):
         survival = self.survival(contents)
         reports = self.reports(boundary, survival)
         assert isinstance(reports, list)
-        assert all([isinstance(reports, str) for report in reports])
+        assert all([isinstance(report, str) for report in reports])
         return reports
 
     @staticmethod
