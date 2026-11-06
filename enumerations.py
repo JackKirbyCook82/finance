@@ -32,10 +32,10 @@ class Enumeration(Enum):
 
 class Status(Enumeration): ACCEPTED, REJECTED, EXECUTING, PARTIAL, FILLED, CANCELED, EXPIRED = range(7)
 class Technical(Enumeration): BARS, STATS, SMA, EMA, MACD, RSI, BB, ATR, MFI, CMF, OBV = range(11)
-class Instrument(Enumeration): EMPTY, STOCK, OPTION, SPREAD, CONTRACT, SETTLEMENT = range(6)
 class Frequency(Enumeration): MINUTELY, HOURLY, DAILY, WEEKLY, MONTHLY, YEARLY = range(6)
 class Spread(Enumeration): EMPTY, FLY, CALENDAR, VERTICAL, COLLAR = range(5)
 class Price(Enumeration): TRADE, QUOTE, MID, BID, ASK = range(5)
+class Instrument(Enumeration): EMPTY, STOCK, OPTION = range(3)
 class Website(Enumeration): ETRADE, ALPACA, IBKR = range(3)
 class Dataset(Enumeration): BARS, TICKS, SPOT = range(3)
 class Terms(Enumeration): MARKET, LIMIT, STOP = range(3)
