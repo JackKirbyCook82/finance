@@ -8,17 +8,21 @@ Created on Weds May 27 2026
 """
 
 import regex as re
+import numpy as np
 import pandas as pd
 from decimal import Decimal
+from numpy.typing import NDArray
 from datetime import date as Date
+from functools import cached_property
 from datetime import datetime as Datetime
 from dataclasses import dataclass, asdict, fields
 
 from finance.enumerations import Right
+from support.meta import RegistryMeta
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["OSI"]
+__all__ = ["OSI", "Tickers", "Expires", "Strikes", "Moneyness", "Tightness", "Activity", "ZSpread", "Multiple"]
 __copyright__ = "Copyright 2026, Jack Kirby Cook"
 __license__ = "MIT License"
 
@@ -27,6 +31,7 @@ class OSIError(Exception): pass
 class OSIParseError(OSIError): pass
 class OSICreateError(OSIError): pass
 class OSIEmptyError(OSIError): pass
+
 
 class OSIMeta(type):
     def __call__(cls, contents):
@@ -67,6 +72,77 @@ class OSI(metaclass=OSIMeta):
     def items(self): return asdict(self).items()
     def values(self): return asdict(self).values()
     def keys(self): return asdict(self).keys()
+
+
+class ConceptError(Exception, metaclass=RegistryMeta): pass
+class ConceptTickerError(ConceptError, register="tickers"): pass
+class ConceptExpireError(ConceptError, register="expires"): pass
+class ConceptStrikeError(ConceptError, register="strikes"): pass
+
+
+class Categorial(frozenset):
+    def __new__(cls, contents):
+        concept = str(cls.__name__.lower())
+        if isinstance(contents, pd.DataFrame): contents = set(contents[concept].unique())
+        elif isinstance(contents, pd.Series): contents = set(contents.unique())
+        elif isinstance(contents, list): contents = set([content.ticker for content in contents])
+        elif isinstance(contents, (Date, float, str)): contents = {contents}
+        else: raise ConceptError[concept]()
+        return super().__new__(cls, contents)
+
+
+class Tickers(Categorial):
+    def __str__(self): return f"{','.join(list(self))}"
+
+class Expires(Categorial):
+    def __str__(self):
+        if min(self) == max(self): return f"{min(self).strftime('%Y/%m/%d')}"
+        return f"{min(self).strftime('%Y/%m/%d')}->{max(self).strftime('%Y/%m/%d')}"
+
+class Strikes(Categorial):
+    def __str__(self):
+        if min(self) == max(self): return f"{min(self):.2}"
+        return f"{min(self):.2f}->{max(self):.2f}"
+
+
+@dataclass
+class Quantitative:
+    values: NDArray[np.float32] | list[object]; metric: float
+
+    def __init_subclass__(cls, /, upward, absolute=False, **kwargs):
+        assert isinstance(upward, bool) and isinstance(absolute, bool)
+        cls.upward = upward
+        cls.absolute = absolute
+
+    def __post_init__(self):
+        variable = str(self.__class__.__name__.lower())
+        if isinstance(self.values, list): self.values = np.array([getattr(value, variable) for value in self.values])
+        if not self.absolute: pass
+        else: self.values = np.abs(self.values)
+
+    def __str__(self):
+        name = str(self.__class__.__name__)
+        title = f"|{str(name)}|" if self.absolute else str(name)
+        sign = ">=" if self.upward else "<="
+        return f"{title} {sign} {self.metric:.2f} [{self.minimum:+.2f} -> {self.maximum:+.2f}, {self.percentage:.0f}%]"
+
+    @cached_property
+    def percentage(self):
+        if bool(self.upward): return (self.values >= self.metric).sum() / len(self.values) * 100
+        else: return (self.values <= self.metric).sum() / len(self.values) * 100
+
+    @property
+    def maximum(self): return self.values.max()
+    @property
+    def minimum(self): return self.values.min()
+
+
+class Moneyness(Quantitative, upward=False, absolute=True): pass
+class Tightness(Quantitative, upward=False): pass
+class Activity(Quantitative, upward=True): pass
+class ZSpread(Quantitative, upward=True): pass
+class Multiple(Quantitative, upward=True): pass
+class Ratio(Quantitative, upward=True): pass
 
 
 

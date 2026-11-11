@@ -30,6 +30,7 @@ class Enumeration(Enum):
                 if member_name == normalized: return member
         return None
 
+
 class Status(Enumeration): ACCEPTED, REJECTED, EXECUTING, PARTIAL, FILLED, CANCELED, EXPIRED = range(7)
 class Technical(Enumeration): BARS, STATS, SMA, EMA, MACD, RSI, BB, ATR, MFI, CMF, OBV = range(11)
 class Frequency(Enumeration): MINUTELY, HOURLY, DAILY, WEEKLY, MONTHLY, YEARLY = range(6)
