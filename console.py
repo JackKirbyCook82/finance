@@ -43,8 +43,10 @@ class LoggingMixin(Mixin):
 
 
 class LoggingDecorator(Decorator):
-    def __new__(cls, *args, title, categories=None, quantities=None, sizing=None, percentage=False, **kwargs):
-        pass
+    pass
+
+#    def __new__(cls, *args, title, categories=None, quantities=None, sizing=None, percentage=False, **kwargs):
+#        pass
 
 
 
