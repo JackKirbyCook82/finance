@@ -13,11 +13,11 @@ from datetime import date as Date
 from datetime import datetime as Datetime
 from dataclasses import dataclass
 
-from finance.enumerations import Instrument, Right, Position, Frequency
+from finance.enumerations import Enumerations
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["Symbol", "Trade", "Quote", "History", "Contract", "Frequency"]
+__all__ = ["Querys"]
 __copyright__ = "Copyright 2026, Jack Kirby Cook"
 __license__ = "MIT License"
 
@@ -62,10 +62,10 @@ class Field:
         return self.parser(string)
 
 
-InstrumentField = Field("instrument", enum_parser(Instrument), str)
-RightField = Field("right", enum_parser(Right), str)
-PositionField = Field("position", enum_parser(Position), str)
-ByField = Field("by", enum_parser(Frequency), str)
+InstrumentField = Field("instrument", enum_parser(Enumerations.Instrument), str)
+RightField = Field("right", enum_parser(Enumerations.Right), str)
+PositionField = Field("position", enum_parser(Enumerations.Position), str)
+ByField = Field("by", enum_parser(Enumerations.Frequency), str)
 
 TickerField = Field("ticker", str, str)
 SpanField = Field("span", integer_parser, integer_formatter)
@@ -136,4 +136,13 @@ Quote = Record("Quote", fields=(TickerField, BidField, AskField))
 History = Record("History", fields=(TickerField, DateField))
 Contract = Record("Contract", fields=(TickerField, ExpireField, RightField, StrikeField))
 Frequency = Record("Frequency", fields=(ByField, SpanField))
+
+
+class Querys:
+    Symbol = Symbol
+    Trade = Trade
+    Quote = Quote
+    History = History
+    Contract = Contract
+    Frequency = Frequency
 

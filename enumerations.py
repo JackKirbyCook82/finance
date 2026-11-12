@@ -11,7 +11,7 @@ from enum import Enum
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["Technical", "Spread", "Instrument", "Status", "Website", "Right", "Position", "Terms", "Tenure", "Intent", "Action", "Movement", "Frequency", "Price", "Dataset"]
+__all__ = ["Enumerations"]
 __copyright__ = "Copyright 2026, Jack Kirby Cook"
 __license__ = "MIT License"
 
@@ -48,4 +48,20 @@ class Intent(Enumeration): CLOSE, OPEN = (-1, +1)
 class Action(Enumeration): SELL, BUY = (-1, +1)
 
 
+class Enumerations:
+    Status = Status
+    Technical = Technical
+    Frequency = Frequency
+    Spread = Spread
+    Instrument = Instrument
+    Price = Price
+    Website = Website
+    Dataset = Dataset
+    Terms = Terms
+    Tenure = Tenure
+    Movement = Movement
+    Right = Right
+    Position = Position
+    Intent = Intent
+    Action = Action
 

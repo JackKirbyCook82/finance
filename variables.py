@@ -17,12 +17,12 @@ from functools import cached_property
 from datetime import datetime as Datetime
 from dataclasses import dataclass, asdict, fields
 
-from finance.enumerations import Right
+from finance.enumerations import Enumerations
 from support.meta import RegistryMeta
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["OSI", "Tickers", "Expires", "Strikes", "Moneyness", "Tightness", "Activity", "ZSpread", "Multiple"]
+__all__ = ["OSI", "Categories", "Quantities"]
 __copyright__ = "Copyright 2026, Jack Kirby Cook"
 __license__ = "MIT License"
 
@@ -52,19 +52,19 @@ class OSIMeta(type):
         values = match.groupdict()
         ticker = values["ticker"].upper()
         expire = Datetime.strptime(values["expire"], "%y%m%d").date()
-        right = {str(right).upper()[0]: right for right in Right}[values["right"]]
+        right = {str(right).upper()[0]: right for right in Enumerations.Right}[values["right"]]
         strike = float(Decimal(values["strike"]) / Decimal("1000"))
         return [ticker, expire, right, strike]
 
 
 @dataclass(frozen=True)
 class OSI(metaclass=OSIMeta):
-    ticker: str; expire: Date; right: Right; strike: float
+    ticker: str; expire: Date; right: Enumerations.Right; strike: float
 
     def __str__(self):
         ticker = self.ticker.upper()
         expire = self.expire.strftime("%y%m%d")
-        right = {right: str(right).upper()[0] for right in Right}[self.right]
+        right = {right: str(right).upper()[0] for right in Enumerations.Right}[self.right]
         strike = int((Decimal(self.strike) * Decimal("1000")).to_integral_value())
         strike = f"{strike:08d}"
         return f"{ticker}{expire}{right}{strike}"
@@ -74,39 +74,42 @@ class OSI(metaclass=OSIMeta):
     def keys(self): return asdict(self).keys()
 
 
-class ConceptError(Exception, metaclass=RegistryMeta): pass
-class ConceptTickerError(ConceptError, register="tickers"): pass
-class ConceptExpireError(ConceptError, register="expires"): pass
-class ConceptStrikeError(ConceptError, register="strikes"): pass
+class CategoryError(Exception, metaclass=RegistryMeta): pass
+class CategoryTickerError(CategoryError, register="ticker"): pass
+class CategoryExpireError(CategoryError, register="expire"): pass
+class CategoryStrikeError(CategoryError, register="strike"): pass
+class ConceptSettlementError(CategoryError, register="settlement"): pass
 
 
-class Categorial(frozenset):
+class Category(frozenset):
+    def __init_subclass__(cls, /, category, **kwargs): cls.category = category
     def __new__(cls, contents):
-        concept = str(cls.__name__.lower())
-        if isinstance(contents, pd.DataFrame): contents = set(contents[concept].unique())
+        if isinstance(contents, pd.DataFrame): contents = set(contents[cls.category].unique())
         elif isinstance(contents, pd.Series): contents = set(contents.unique())
-        elif isinstance(contents, list): contents = set([content.ticker for content in contents])
-        elif isinstance(contents, (Date, float, str)): contents = {contents}
-        else: raise ConceptError[concept]()
+        elif isinstance(contents, list): contents = set([getattr(content, cls.category) for content in contents])
+        else: raise CategoryError[cls.category]()
         return super().__new__(cls, contents)
 
 
-class Tickers(Categorial):
+class Ticker(Category):
     def __str__(self): return f"{','.join(list(self))}"
 
-class Expires(Categorial):
+class Settlement(Category):
+    def __str__(self): return f"{','.join(list(self))}"
+
+class Expire(Category):
     def __str__(self):
         if min(self) == max(self): return f"{min(self).strftime('%Y/%m/%d')}"
         return f"{min(self).strftime('%Y/%m/%d')}->{max(self).strftime('%Y/%m/%d')}"
 
-class Strikes(Categorial):
+class Strike(Category):
     def __str__(self):
         if min(self) == max(self): return f"{min(self):.2}"
         return f"{min(self):.2f}->{max(self):.2f}"
 
 
 @dataclass
-class Quantitative:
+class Quantity:
     values: NDArray[np.float32] | list[object]; metric: float
 
     def __init_subclass__(cls, /, upward, absolute=False, **kwargs):
@@ -137,12 +140,25 @@ class Quantitative:
     def minimum(self): return self.values.min()
 
 
-class Moneyness(Quantitative, upward=False, absolute=True): pass
-class Tightness(Quantitative, upward=False): pass
-class Activity(Quantitative, upward=True): pass
-class ZSpread(Quantitative, upward=True): pass
-class Multiple(Quantitative, upward=True): pass
-class Ratio(Quantitative, upward=True): pass
+class Moneyness(Quantity, upward=False, absolute=True): pass
+class Tightness(Quantity, upward=False): pass
+class Activity(Quantity, upward=True): pass
+class ZSpread(Quantity, upward=True): pass
+class Multiple(Quantity, upward=True): pass
+class Ratio(Quantity, upward=True): pass
 
 
+class Quantities:
+    Moneyness = Moneyness
+    Tightness = Tightness
+    Activity = Activity
+    ZSpread = ZSpread
+    Multiple = Multiple
+    Ratio = Ratio
+
+class Categories:
+    Ticker = Ticker
+    Expire = Expire
+    Strike = Strike
+    Settlement = Settlement
 
