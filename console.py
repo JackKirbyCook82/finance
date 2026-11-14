@@ -46,9 +46,9 @@ class LoggingMixin(Mixin):
 
 
 class LoggingDecorator(Decorator):
-    def __init__(self, *categories, title, sizing=None, percentage=False, **kwargs):
+    def __init__(self, *collections, title, sizing=None, percentage=False, **kwargs):
         super().__init__(**kwargs)
-        self.__categories = categories
+        self.__collections = collections
         self.__percentage = percentage
         self.__sizing = sizing
         self.__title = title
@@ -58,8 +58,8 @@ class LoggingDecorator(Decorator):
         size = lambda content: len(content) if content is not None else 0
         outlet = super().decorator(inlet, *args, **kwargs)
         strings = list()
-        for category in self.categories:
-            try: strings.append(str(category(outlet)))
+        for collection in self.collections:
+            try: strings.append(str(collection(outlet)))
             except (KeyError, AttributeError): pass
         try: name = str(self.instance.name)
         except AttributeError: name = str(self.instance.__class__.__name__)
@@ -74,7 +74,7 @@ class LoggingDecorator(Decorator):
         return outlet
 
     @property
-    def categories(self): return self.__categories
+    def collections(self): return self.__collections
     @property
     def percentage(self): return self.__percentage
     @property

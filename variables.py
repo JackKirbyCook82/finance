@@ -8,9 +8,13 @@ Created on Weds May 27 2026
 """
 
 import regex as re
+import numpy as np
 import pandas as pd
+from abc import ABC
 from decimal import Decimal
+from numpy.typing import NDArray
 from datetime import date as Date
+from functools import cached_property
 from datetime import datetime as Datetime
 from dataclasses import dataclass, asdict, fields
 
@@ -19,9 +23,166 @@ from support.meta import RegistryMeta
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["OSI", "Collections"]
+__all__ = ["Variables", "Collections", "Metrics", "OSI"]
 __copyright__ = "Copyright 2026, Jack Kirby Cook"
 __license__ = "MIT License"
+
+
+class VariableError(Exception, metaclass=RegistryMeta): pass
+class TickerError(VariableError, register="ticker"): pass
+class ExpireError(VariableError, register="expire"): pass
+class StrikeError(VariableError, register="strike"): pass
+class MoneynessError(VariableError, register="moneyness"): pass
+class TightnessError(VariableError, register="tightness"): pass
+class ActivityError(VariableError, register="activity"): pass
+class ZScoreError(VariableError, register="zscore"): pass
+class MultipleError(VariableError, register="multiple"): pass
+class RatioError(VariableError, register="ratio"): pass
+
+
+class Variable(ABC): pass
+class StrVariable(str, Variable):
+    def __str__(self): return self.upper()
+
+class NumVariable(float, Variable):
+    def __str__(self): return f"{self:.2f}"
+    def __float__(self): return float(self)
+
+class DateVariable(Date, Variable):
+    def __str__(self): return f"{self.strftime('%Y/%m/%d')}"
+
+
+class TickerVariable(StrVariable): pass
+class ExpireVariable(DateVariable): pass
+class StrikeVariable(NumVariable): pass
+class MoneynessVariable(NumVariable): pass
+class TightnessVariable(NumVariable): pass
+class ActivityVariable(NumVariable): pass
+class ZScoreVariable(NumVariable): pass
+class MultipleVariable(NumVariable): pass
+class RatioVariable(NumVariable): pass
+
+
+class Variables:
+    Ticker = TickerVariable
+    Expire = ExpireVariable
+    Strike = StrikeVariable
+    Moneyness = MoneynessVariable
+    Tightness = TightnessVariable
+    Activity = ActivityVariable
+    ZScore = ZScoreVariable
+    Multiple = MultipleVariable
+    Ratio = RatioVariable
+
+
+class Collection(frozenset, ABC):
+    def __init_subclass__(cls, /, **kwargs):
+        cls.variable = kwargs.get("variable", getattr(cls, "variable", None))
+
+    def __new__(cls, contents):
+        name = str(cls.variable.__name__).lower()
+        if isinstance(contents, pd.DataFrame): contents = set(contents[name].unique())
+        elif isinstance(contents, pd.Series): contents = set(contents.unique())
+        elif isinstance(contents, list): contents = set([getattr(content, name) for content in contents])
+        elif isinstance(contents, set):
+            if not all([isinstance(content, cls.variable) for content in contents]): raise VariableError[name]()
+            else: contents = set(contents)
+        else: raise VariableError[name]()
+        contents = {cls.variable(content) for content in contents}
+        return super().__new__(cls, contents)
+
+
+class ListCollection(Collection):
+    def __str__(self):
+        strings = list(map(str, self))
+        return f"{','.join(strings)}"
+
+class RangeCollection(Collection):
+    def __str__(self):
+        if min(self) == max(self): return str(min(self))
+        return f"{str(min(self))}->{str(max(self))}"
+
+
+class TickerCollection(ListCollection, variable=TickerVariable): pass
+class ExpireCollection(RangeCollection, variable=ExpireVariable): pass
+class StrikeCollection(RangeCollection, variable=StrikeVariable): pass
+
+
+class Collections:
+    Ticker = TickerCollection
+    Expire = ExpireCollection
+    Strike = StrikeCollection
+
+
+class Metric(float, ABC):
+    def __init_subclass__(cls, /, **kwargs):
+        cls.variable = kwargs.get("variable", getattr(cls, "variable", None))
+        cls.absolute = kwargs.get("absolute", getattr(cls, "absolute", False))
+        cls.upward = kwargs.get("upward", getattr(cls, "upward", None))
+        cls.name = kwargs.get("name", getattr(cls, "name", None))
+
+    def __str__(self): return f"{float(self)}:.2f"
+    def __float__(self): return float(self)
+
+    @property
+    def title(self): return f"|{str(self.name)}|" if self.absolute else str(self.name)
+    @property
+    def direction(self): return ">=" if self.upward else "<="
+
+
+class MoneynessMetric(Metric, name="Moneyness", variable=MoneynessVariable, upward=False, absolute=True): pass
+class TightnessMetric(Metric, name="Tightness", variable=TightnessVariable, upward=False): pass
+class ActivityMetric(Metric, name="Activity", variable=ActivityVariable, upward=True): pass
+class ZScoreMetric(Metric, name="ZScore", variable=ZScoreVariable, upward=True): pass
+class MultipleMetric(Metric, name="Multiple", variable=MultipleVariable, upward=True): pass
+class RatioMetric(Metric, name="Ratio", variable=RatioVariable, upward=True): pass
+
+
+class Metrics:
+    Moneyness = MoneynessMetric
+    Tightness = TightnessMetric
+    Activity = ActivityMetric
+    ZScore = ZScoreMetric
+    Multiple = MultipleMetric
+    Ratio = RatioMetric
+
+
+@dataclass
+class Measure:
+    contents: NDArray[np.float32] | pd.DataFrame | pd.Series | list[object]
+    metric: Metric
+
+    def __post_init__(self):
+        name = str(self.metric.variable.__name__).lower()
+        if isinstance(self.contents, pd.DataFrame): contents = self.contents[name].to_numpy()
+        elif isinstance(self.contents, pd.Series): contents = self.contents.to_numpy()
+        elif isinstance(self.contents, list): contents = np.array([getattr(content, name) for content in self.contents])
+        else: raise VariableError[name]()
+        if not self.metric.absolute: pass
+        else: contents = np.abs(contents)
+        self.contents = contents
+
+    def __str__(self):
+        metric, title, direction = str(self.metric), str(self.metric.title), str(self.metric.direction)
+        return f"{title} {direction} {metric} [{self.minimum:+.2f} -> {self.maximum:+.2f}, {self.percentage:.0f}%]"
+
+    @cached_property
+    def percentage(self):
+        if bool(self.metric.upward): return (self.contents >= float(self.metric)).sum() / len(self.contents) * 100
+        else: return (self.contents <= float(self.metric)).sum() / len(self.contents) * 100
+
+    @property
+    def maximum(self): return self.contents.max()
+    @property
+    def minimum(self): return self.contents.min()
+
+
+# @dataclass
+# class Metrics(ABC):
+#     def __call__(self, contents):
+#         metrics = [field for field in fields(self) if isinstance(field, Metric)]
+#         measures = [Measure(contents, metric) for metric in metrics]
+#         return Measures(measures)
 
 
 class OSIError(Exception): pass
@@ -69,97 +230,6 @@ class OSI(metaclass=OSIMeta):
     def items(self): return asdict(self).items()
     def values(self): return asdict(self).values()
     def keys(self): return asdict(self).keys()
-
-
-class ContentError(Exception, metaclass=RegistryMeta): pass
-class ContentTickerError(ContentError, register="ticker"): pass
-class ContentExpireError(ContentError, register="expire"): pass
-class ContentStrikeError(ContentError, register="strike"): pass
-class ContentSettlementError(ContentError, register="settlement"): pass
-
-
-class Collections(frozenset):
-    def __init_subclass__(cls, /, category, **kwargs): cls.category = category
-    def __new__(cls, contents):
-        if isinstance(contents, pd.DataFrame): contents = set(contents[cls.category].unique())
-        elif isinstance(contents, pd.Series): contents = set(contents.unique())
-        elif isinstance(contents, list): contents = set([getattr(content, cls.category) for content in contents])
-        else: raise ContentError[cls.category]()
-        return super().__new__(cls, contents)
-
-
-class Tickers(Collections, category="ticker"):
-    def __str__(self): return f"{','.join(list(self))}"
-
-class Expires(Collections, category="expire"):
-    def __str__(self):
-        if min(self) == max(self): return f"{min(self).strftime('%Y/%m/%d')}"
-        return f"{min(self).strftime('%Y/%m/%d')}->{max(self).strftime('%Y/%m/%d')}"
-
-class Strikes(Collections, category="strike"):
-    def __str__(self):
-        if min(self) == max(self): return f"{min(self):.2}"
-        return f"{min(self):.2f}->{max(self):.2f}"
-
-
-class Collections:
-    Tickers = Tickers
-    Expires = Expires
-    Strikes = Strikes
-
-
-
-
-# import numpy as np
-# from numpy.typing import NDArray
-# from datetime import date as Date
-# from functools import cached_property
-
-# @dataclass
-# class Quantity:
-#     contents: NDArray[np.float32] | pd.DataFrame | pd.Series | list[object]
-#     metrics: float
-#
-#     def __init_subclass__(cls, /, quantity, upward, absolute=False, **kwargs):
-#         assert isinstance(upward, bool) and isinstance(absolute, bool)
-#         cls.quantity = quantity
-#         cls.absolute = absolute
-#         cls.upward = upward
-#
-#     def __post_init__(self):
-#         if isinstance(self.contents, pd.DataFrame): contents = self.contents[self.quantity].to_numpy()
-#         elif isinstance(self.contents, pd.Series): contents = self.contents.to_numpy()
-#         elif isinstance(self.contents, list): contents = np.array([getattr(content, self.quantity) for content in self.contents])
-#         else: raise ContentError[self.quantity]()
-#         if not self.absolute: pass
-#         else: contents = np.abs(contents)
-#         metrics = getattr(self.metrics, self.quantity)
-#         self.contents = contents
-#         self.metrics = metrics
-#
-#     def __str__(self):
-#         name = str(self.__class__.__name__)
-#         title = f"|{str(name)}|" if self.absolute else str(name)
-#         direction = ">=" if self.upward else "<="
-#         return f"{title} {direction} {self.metrics:.2f} [{self.minimum:+.2f} -> {self.maximum:+.2f}, {self.percentage:.0f}%]"
-#
-#     @cached_property
-#     def percentage(self):
-#         if bool(self.upward): return (self.contents >= self.metrics).sum() / len(self.contents) * 100
-#         else: return (self.contents <= self.metrics).sum() / len(self.contents) * 100
-#
-#     @property
-#     def maximum(self): return self.contents.max()
-#     @property
-#     def minimum(self): return self.contents.min()
-#
-#
-# class Moneyness(Quantity, upward=False, absolute=True): pass
-# class Tightness(Quantity, upward=False): pass
-# class Activity(Quantity, upward=True): pass
-# class ZSpread(Quantity, upward=True): pass
-# class Multiple(Quantity, upward=True): pass
-# class Ratio(Quantity, upward=True): pass
 
 
 
