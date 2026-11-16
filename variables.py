@@ -75,114 +75,12 @@ class Variables:
     Ratio = RatioVariable
 
 
-class Collection(frozenset, ABC):
-    def __init_subclass__(cls, /, **kwargs):
-        cls.variable = kwargs.get("variable", getattr(cls, "variable", None))
-
-    def __new__(cls, contents):
-        name = str(cls.variable.__name__).lower()
-        if isinstance(contents, pd.DataFrame): contents = set(contents[name].unique())
-        elif isinstance(contents, pd.Series): contents = set(contents.unique())
-        elif isinstance(contents, list): contents = set([getattr(content, name) for content in contents])
-        elif isinstance(contents, set):
-            if not all([isinstance(content, cls.variable) for content in contents]): raise VariableError[name]()
-            else: contents = set(contents)
-        else: raise VariableError[name]()
-        contents = {cls.variable(content) for content in contents}
-        return super().__new__(cls, contents)
-
-
-class ListCollection(Collection):
-    def __str__(self):
-        strings = list(map(str, self))
-        return f"{','.join(strings)}"
-
-class RangeCollection(Collection):
-    def __str__(self):
-        if min(self) == max(self): return str(min(self))
-        return f"{str(min(self))}->{str(max(self))}"
-
-
-class TickerCollection(ListCollection, variable=TickerVariable): pass
-class ExpireCollection(RangeCollection, variable=ExpireVariable): pass
-class StrikeCollection(RangeCollection, variable=StrikeVariable): pass
-
-
 class Collections:
-    Ticker = TickerCollection
-    Expire = ExpireCollection
-    Strike = StrikeCollection
-
-
-class Metric(float, ABC):
-    def __init_subclass__(cls, /, **kwargs):
-        cls.variable = kwargs.get("variable", getattr(cls, "variable", None))
-        cls.absolute = kwargs.get("absolute", getattr(cls, "absolute", False))
-        cls.upward = kwargs.get("upward", getattr(cls, "upward", None))
-        cls.name = kwargs.get("name", getattr(cls, "name", None))
-
-    def __str__(self): return f"{float(self)}:.2f"
-    def __float__(self): return float(self)
-
-    @property
-    def title(self): return f"|{str(self.name)}|" if self.absolute else str(self.name)
-    @property
-    def direction(self): return ">=" if self.upward else "<="
-
-
-class MoneynessMetric(Metric, name="Moneyness", variable=MoneynessVariable, upward=False, absolute=True): pass
-class TightnessMetric(Metric, name="Tightness", variable=TightnessVariable, upward=False): pass
-class ActivityMetric(Metric, name="Activity", variable=ActivityVariable, upward=True): pass
-class ZScoreMetric(Metric, name="ZScore", variable=ZScoreVariable, upward=True): pass
-class MultipleMetric(Metric, name="Multiple", variable=MultipleVariable, upward=True): pass
-class RatioMetric(Metric, name="Ratio", variable=RatioVariable, upward=True): pass
+    pass
 
 
 class Metrics:
-    Moneyness = MoneynessMetric
-    Tightness = TightnessMetric
-    Activity = ActivityMetric
-    ZScore = ZScoreMetric
-    Multiple = MultipleMetric
-    Ratio = RatioMetric
-
-
-@dataclass
-class Measure:
-    contents: NDArray[np.float32] | pd.DataFrame | pd.Series | list[object]
-    metric: Metric
-
-    def __post_init__(self):
-        name = str(self.metric.variable.__name__).lower()
-        if isinstance(self.contents, pd.DataFrame): contents = self.contents[name].to_numpy()
-        elif isinstance(self.contents, pd.Series): contents = self.contents.to_numpy()
-        elif isinstance(self.contents, list): contents = np.array([getattr(content, name) for content in self.contents])
-        else: raise VariableError[name]()
-        if not self.metric.absolute: pass
-        else: contents = np.abs(contents)
-        self.contents = contents
-
-    def __str__(self):
-        metric, title, direction = str(self.metric), str(self.metric.title), str(self.metric.direction)
-        return f"{title} {direction} {metric} [{self.minimum:+.2f} -> {self.maximum:+.2f}, {self.percentage:.0f}%]"
-
-    @cached_property
-    def percentage(self):
-        if bool(self.metric.upward): return (self.contents >= float(self.metric)).sum() / len(self.contents) * 100
-        else: return (self.contents <= float(self.metric)).sum() / len(self.contents) * 100
-
-    @property
-    def maximum(self): return self.contents.max()
-    @property
-    def minimum(self): return self.contents.min()
-
-
-# @dataclass
-# class Metrics(ABC):
-#     def __call__(self, contents):
-#         metrics = [field for field in fields(self) if isinstance(field, Metric)]
-#         measures = [Measure(contents, metric) for metric in metrics]
-#         return Measures(measures)
+    pass
 
 
 class OSIError(Exception): pass
