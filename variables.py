@@ -128,19 +128,19 @@ class MetricMeta(RegistryMeta):
         variable = kwargs.get("variable", getattr(cls, "variable", None))
         absolute = kwargs.get("absolute", getattr(cls, "absolute", False))
         upward = kwargs.get("upward", getattr(cls, "upward", None))
-        title = kwargs.get("title", getattr(cls, "title", None))
+        label = kwargs.get("label", getattr(cls, "label", None))
         super().__init__(*args, register=variable, **kwargs)
         cls.variable = variable
         cls.absolute = absolute
         cls.upward = upward
-        cls.title = title
+        cls.label = label
 
 
 class Metric(float, ABC, metaclass=MetricMeta):
     def __str__(self): return f"{float(self):.2f}"
 
     @property
-    def title(self): return f"|{type(self).title}|" if type(self).absolute else type(self).title
+    def title(self): return f"|{type(self).label}|" if type(self).absolute else type(self).label
     @property
     def direction(self): return ">=" if type(self).upward else "<="
 
@@ -160,12 +160,12 @@ class Measure:
 
     def __str__(self):
         metric, title, direction, percentage = str(self.metric), str(self.metric.title), str(self.metric.direction), self.percentage
-        return f"{title} {direction} {metric} [{self.minimum:+.2f} -> {self.maximum:+.2f}, {percentage.total:.0f}%, {percentage.vaild:.0f.}%]"
+        return f"{title} {direction} {metric} [{self.minimum:+.2f} -> {self.maximum:+.2f}, {percentage.total:.0f}%, {percentage.vaild:.0f}%]"
 
     @cached_property
     def percentage(self):
         valid = self.population.passing / self.population.valid * 100 if self.population.valid else np.nan
-        total = self.population.passing + self.population.total * 100 if self.population.total else np.nan
+        total = self.population.passing / self.population.total * 100 if self.population.total else np.nan
         return SimpleNamespace(valid=valid, total=total)
 
     @cached_property
@@ -178,9 +178,14 @@ class Measure:
         return SimpleNamespace(passing=passing, valid=valid, total=total)
 
     @property
-    def maximum(self): return self.values.max()
+    def maximum(self):
+        values = self.values[np.isfinite(self.values)]
+        return values.max() if values.size else np.nan
+
     @property
-    def minimum(self): return self.values.min()
+    def minimum(self):
+        values = self.values[np.isfinite(self.values)]
+        return values.min() if values.size else np.nan
 
 
 class MetricsError(Exception): pass
@@ -197,7 +202,7 @@ class Metrics(tuple):
         metrics = [Metric[variables[key]](value) for key, value in mapping.items()]
         instance = super().__new__(cls, metrics)
         for metric in metrics:
-            attribute = str(metric.name).lower()
+            attribute = str(metric.variable.name).lower()
             setattr(instance, attribute, metric)
         return instance
 

@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 from attr.converters import to_bool
 
-from finance.enumerations import Website
+from finance.enumerations import Enumerations
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -43,7 +43,7 @@ class Authenticator(Broker):
     @classmethod
     def load(cls, file, /, **kwargs):
         records = super().load(file, **kwargs)
-        instances = {Brokerage(Website(record.website), to_bool(record.live)): cls(record.identity, record.code) for record in records}
+        instances = {Brokerage(Enumerations.Website(record.website), to_bool(record.live)): cls(record.identity, record.code) for record in records}
         return instances
 
 

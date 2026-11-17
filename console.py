@@ -12,11 +12,10 @@ from abc import ABC
 from enum import Enum, auto
 
 from support.decorators import Decorator
-from support.mixins import Mixin
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
-__all__ = ["LoggingMixin", "LoggingDecorators", "LoggingSizing"]
+__all__ = ["LoggingDecorators", "LoggingSizing"]
 __copyright__ = "Copyright 2026, Jack Kirby Cook"
 __license__ = "MIT License"
 __logger__ = logging.getLogger(__name__)
@@ -26,24 +25,6 @@ class LoggingSizing(Enum):
     INLET = auto()
     OUTLET = auto()
     BOTH = auto()
-
-
-class LoggingMixin(Mixin):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        name = self.__class__.__name__
-        self.__name = kwargs.get("name", name)
-        self.__logger = __logger__
-
-    def console(self, *strings, title, **kwargs):
-        string = ", ".join(strings)
-        string = f"{str(title)}: {str(self.name)}: {str(string)}"
-        self.logger.info(string)
-
-    @property
-    def logger(self): return self.__logger
-    @property
-    def name(self): return self.__name
 
 
 class LoggingDecorator(Decorator, ABC):
@@ -93,7 +74,7 @@ class LoggingDecorator(Decorator, ABC):
 class LoggingDecoratorFunction(LoggingDecorator):
     def decorator(self, instance, inlet, *args, **kwargs):
         outlet = self.function(instance, inlet, *args, **kwargs)
-        if bool(inlet) and inlet is not None:
+        if inlet is not None and len(inlet) > 0:
             string = self.heading(inlet)
             if bool(self.sizing): string += (" " + self.size(inlet, outlet, sizing=self.sizing))
             if bool(self.percentage): string += (" " + self.percent(inlet, outlet))
@@ -104,7 +85,7 @@ class LoggingDecoratorFunction(LoggingDecorator):
 class LoggingDecoratorGenerator(LoggingDecorator):
     def decorator(self, instance, inlet, *args, **kwargs):
         generator = self.function(instance, inlet, *args, **kwargs)
-        if bool(inlet) and inlet is not None:
+        if inlet is not None and len(inlet) > 0:
             heading = self.heading(inlet)
             for outlet in generator:
                 string = str(heading)
