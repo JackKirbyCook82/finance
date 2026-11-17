@@ -54,24 +54,29 @@ class LoggingDecorator(Decorator):
         self.__title = title
         self.__logger = __logger__
 
-    def decorator(self, inlet, *args, **kwargs):
-        size = lambda content: len(content) if content is not None else 0
-        outlet = super().decorator(inlet, *args, **kwargs)
+    def decorator(self, instance, inlet, *args, **kwargs):
+        outlet = super().decorator(instance, inlet, *args, **kwargs)
+        if bool(inlet) and inlet is not None:
+            string = self.string(inlet, outlet)
+            self.logger.info(string)
+        return outlet
+
+    def string(self, inlet, outlet):
         strings = list()
         for collection in self.collections:
-            try: strings.append(str(collection(outlet)))
+            try: strings.append(str(collection(inlet)))
             except (KeyError, AttributeError): pass
         try: name = str(self.instance.name)
         except AttributeError: name = str(self.instance.__class__.__name__)
         string = f"{str(self.title)}: {str(name)}: {', '.join(strings)}"
+        size = lambda content: len(content) if content is not None else 0
         if self.sizing is None: pass
         elif self.sizing == LoggingSizing.BOTH: string += f" {size(inlet):.0f}->{size(outlet):.0f}"
         elif self.sizing == LoggingSizing.INLET: string += f" {size(inlet):.0f}"
         elif self.sizing == LoggingSizing.OUTLET: string += f" {size(outlet):.0f}"
         else: raise ValueError(self.sizing)
-        if self.percentage and inlet is not None: string += f" {(size(inlet) / size(outlet)) * 100:.0f}%"
-        self.logger.info(string)
-        return outlet
+        if self.percentage and inlet is not None: string += f" {(size(outlet) / size(inlet)) * 100:.0f}%"
+        return string
 
     @property
     def collections(self): return self.__collections

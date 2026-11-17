@@ -14,6 +14,7 @@ from abc import ABC
 from decimal import Decimal
 from numpy.typing import NDArray
 from datetime import date as Date
+from types import SimpleNamespace
 from functools import cached_property
 from datetime import datetime as Datetime
 from dataclasses import dataclass, asdict, fields
@@ -40,27 +41,36 @@ class MultipleError(VariableError, register="multiple"): pass
 class RatioError(VariableError, register="ratio"): pass
 
 
-class Variable(ABC): pass
+class Variable(ABC):
+    def __init_subclass__(cls, **kwargs):
+        cls.name = kwargs.get("name", getattr(cls, "name", None))
+
 class StrVariable(str, Variable):
     def __str__(self): return self.upper()
 
 class NumVariable(float, Variable):
     def __str__(self): return f"{self:.2f}"
-    def __float__(self): return float(self)
 
 class DateVariable(Date, Variable):
     def __str__(self): return f"{self.strftime('%Y/%m/%d')}"
 
+    def __new__(cls, *args, **kwargs):
+        try: attributes = SimpleNamespace(year=args[0].year, month=args[0].month, day=args[0].day)
+        except (IndexError, AttributeError):
+            try: attributes = SimpleNamespace(year=kwargs["year"], month=kwargs["month"], day=kwargs["day"])
+            except KeyError: raise ExpireError()
+        return super().__new__(cls, year=attributes.year, month=attributes.month, day=attributes.day)
 
-class TickerVariable(StrVariable): pass
-class ExpireVariable(DateVariable): pass
-class StrikeVariable(NumVariable): pass
-class MoneynessVariable(NumVariable): pass
-class TightnessVariable(NumVariable): pass
-class ActivityVariable(NumVariable): pass
-class ZScoreVariable(NumVariable): pass
-class MultipleVariable(NumVariable): pass
-class RatioVariable(NumVariable): pass
+
+class TickerVariable(StrVariable, name="ticker"): pass
+class ExpireVariable(DateVariable, name="expire"): pass
+class StrikeVariable(NumVariable, name="strike"): pass
+class MoneynessVariable(NumVariable, name="moneyness"): pass
+class TightnessVariable(NumVariable, name="tightness"): pass
+class ActivityVariable(NumVariable, name="activity"): pass
+class ZScoreVariable(NumVariable, name="zscore"): pass
+class MultipleVariable(NumVariable, name="multiple"): pass
+class RatioVariable(NumVariable, name="ratio"): pass
 
 
 class Variables:
@@ -78,11 +88,11 @@ class Variables:
 class CollectionMeta(RegistryMeta):
     def __init__(cls, *args, **kwargs):
         variable = kwargs.get("variable", getattr(cls, "variable", None))
-        super().__init__(*args, register=variable, variable=variable, **kwargs)
+        super().__init__(*args, register=variable, **kwargs)
         cls.variable = variable
 
     def __call__(cls, contents):
-        name = str(cls.variable.__name__).lower()
+        name = str(cls.variable.name).lower()
         if isinstance(contents, pd.DataFrame): contents = set(contents[name].unique())
         elif isinstance(contents, pd.Series): contents = set(contents.unique())
         elif isinstance(contents, list): contents = set([getattr(content, name) for content in contents])
@@ -91,17 +101,19 @@ class CollectionMeta(RegistryMeta):
             else: contents = set(contents)
         else: raise VariableError[name]()
         contents = {cls.variable(content) for content in contents}
-        return super().__new__(cls, contents)
+        return super().__call__(contents)
 
 
 class Collection(frozenset, metaclass=CollectionMeta): pass
 class ListCollection(Collection):
     def __str__(self):
+        if not bool(self): return ""
         strings = list(map(str, self))
         return f"{','.join(strings)}"
 
 class RangeCollection(Collection):
     def __str__(self):
+        if not bool(self): return ""
         if min(self) == max(self): return str(min(self))
         return f"{str(min(self))}->{str(max(self))}"
 
@@ -116,50 +128,59 @@ class MetricMeta(RegistryMeta):
         variable = kwargs.get("variable", getattr(cls, "variable", None))
         absolute = kwargs.get("absolute", getattr(cls, "absolute", False))
         upward = kwargs.get("upward", getattr(cls, "upward", None))
-        name = kwargs.get("name", getattr(cls, "name", None))
-        super().__init__(*args, register=variable, variable=variable, **kwargs)
+        title = kwargs.get("title", getattr(cls, "title", None))
+        super().__init__(*args, register=variable, **kwargs)
         cls.variable = variable
         cls.absolute = absolute
         cls.upward = upward
-        cls.name = name
+        cls.title = title
 
 
 class Metric(float, ABC, metaclass=MetricMeta):
     def __str__(self): return f"{float(self):.2f}"
-    def __float__(self): return float(self)
 
     @property
-    def title(self): return f"|{type(self).name}|" if type(self).absolute else type(self).name
+    def title(self): return f"|{type(self).title}|" if type(self).absolute else type(self).title
     @property
     def direction(self): return ">=" if type(self).upward else "<="
 
 
-class MoneynessMetric(Metric, name="Moneyness", variable=MoneynessVariable, upward=False, absolute=True): pass
-class TightnessMetric(Metric, name="Tightness", variable=TightnessVariable, upward=False): pass
-class ActivityMetric(Metric, name="Activity", variable=ActivityVariable, upward=True): pass
-class ZScoreMetric(Metric, name="ZScore", variable=ZScoreVariable, upward=True): pass
-class MultipleMetric(Metric, name="Multiple", variable=MultipleVariable, upward=True): pass
-class RatioMetric(Metric, name="Ratio", variable=RatioVariable, upward=True): pass
+class MoneynessMetric(Metric, title="Moneyness", variable=MoneynessVariable, upward=False, absolute=True): pass
+class TightnessMetric(Metric, title="Tightness", variable=TightnessVariable, upward=False): pass
+class ActivityMetric(Metric, title="Activity", variable=ActivityVariable, upward=True): pass
+class ZScoreMetric(Metric, title="ZScore", variable=ZScoreVariable, upward=True): pass
+class MultipleMetric(Metric, title="Multiple", variable=MultipleVariable, upward=True): pass
+class RatioMetric(Metric, title="Ratio", variable=RatioVariable, upward=True): pass
 
 
 @dataclass
 class Measure:
-    contents: NDArray[np.float32]
+    values: NDArray[np.float32]
     metric: Metric
 
     def __str__(self):
-        metric, title, direction = str(self.metric), str(self.metric.title), str(self.metric.direction)
-        return f"{title} {direction} {metric} [{self.minimum:+.2f} -> {self.maximum:+.2f}, {self.percentage:.0f}%]"
+        metric, title, direction, percentage = str(self.metric), str(self.metric.title), str(self.metric.direction), self.percentage
+        return f"{title} {direction} {metric} [{self.minimum:+.2f} -> {self.maximum:+.2f}, {percentage.total:.0f}%, {percentage.vaild:.0f.}%]"
 
     @cached_property
     def percentage(self):
-        if bool(self.metric.upward): return (self.contents >= float(self.metric)).sum() / len(self.contents) * 100
-        else: return (self.contents <= float(self.metric)).sum() / len(self.contents) * 100
+        valid = self.population.passing / self.population.valid * 100 if self.population.valid else np.nan
+        total = self.population.passing + self.population.total * 100 if self.population.total else np.nan
+        return SimpleNamespace(valid=valid, total=total)
+
+    @cached_property
+    def population(self):
+        if self.metric.upward: passing = self.values >= float(self.metric)
+        else: passing = self.values <= float(self.metric)
+        passing = np.count_nonzero(passing & np.isfinite(self.values))
+        valid = np.isfinite(self.values).sum()
+        total = len(self.values)
+        return SimpleNamespace(passing=passing, valid=valid, total=total)
 
     @property
-    def maximum(self): return self.contents.max()
+    def maximum(self): return self.values.max()
     @property
-    def minimum(self): return self.contents.min()
+    def minimum(self): return self.values.min()
 
 
 class MetricsError(Exception): pass
@@ -174,7 +195,7 @@ class Metrics(tuple):
             try: mapping[key] = kwargs[key]
             except KeyError: raise MetricsError()
         metrics = [Metric[variables[key]](value) for key, value in mapping.items()]
-        instance = super().__new__(cls, *metrics)
+        instance = super().__new__(cls, metrics)
         for metric in metrics:
             attribute = str(metric.name).lower()
             setattr(instance, attribute, metric)
@@ -182,14 +203,14 @@ class Metrics(tuple):
 
     def __call__(self, contents):
         for metric in self:
-            name = str(metric.variable.__name__).lower()
-            if isinstance(contents, pd.DataFrame): contents = contents[name].to_numpy()
-            elif isinstance(contents, pd.Series): contents = contents.to_numpy()
-            elif isinstance(contents, list): contents = np.array([getattr(content, name) for content in contents])
+            name = str(metric.variable.name).lower()
+            if isinstance(contents, pd.DataFrame): values = contents[name].to_numpy()
+            elif isinstance(contents, pd.Series): values = contents.to_numpy()
+            elif isinstance(contents, list): values = np.array([getattr(content, name) for content in contents])
             else: raise VariableError[name]()
             if not metric.absolute: pass
-            else: contents = np.abs(contents)
-            yield Measure(contents, metric)
+            else: values = np.abs(values)
+            yield Measure(values, metric)
 
 
 class OSIError(Exception): pass
