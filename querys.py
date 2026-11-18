@@ -38,8 +38,8 @@ def date_parser(value):
 
 
 class FieldsError(Exception): pass
-class FieldsMissingError(FieldsError): pass
-class FieldsExcessiveError(FieldsError): pass
+class MissingError(FieldsError): pass
+class ExcessiveError(FieldsError): pass
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,13 +51,13 @@ class Field:
 
     def format(self, value):
         missing = value is None or value == ""
-        if missing and not self.optional: raise FieldsMissingError(self.name)
+        if missing and not self.optional: raise MissingError(self.name)
         if missing and self.optional: return ""
         return self.formatter(value)
 
     def parse(self, string):
         missing = string is None or string == ""
-        if missing and not self.optional: raise FieldsMissingError(self.name)
+        if missing and not self.optional: raise MissingError(self.name)
         if missing and self.optional: return None
         return self.parser(string)
 
@@ -89,10 +89,10 @@ class Record:
     def __call__(self, values):
         if isinstance(values, str):
             strings = str(values).split(self.delimiter)
-            if len(strings) > len(self.fields): raise FieldsExcessiveError()
+            if len(strings) > len(self.fields): raise ExcessiveError()
             contents = {field.name: field.parse(value)for field, value in zip(self.fields, strings)}
         elif isinstance(values, (list, tuple)):
-            if len(values) > len(self.fields): raise FieldsExcessiveError()
+            if len(values) > len(self.fields): raise ExcessiveError()
             contents = {field.name: field.parse(value) for field, value in zip(self.fields, values)}
         elif isinstance(values, dict):
             contents = {field.name: field.parse(values.get(field.name)) for field in self.fields}

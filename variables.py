@@ -222,9 +222,9 @@ class Metrics(tuple):
 
 
 class OSIError(Exception): pass
-class OSIParseError(OSIError): pass
-class OSICreateError(OSIError): pass
-class OSIEmptyError(OSIError): pass
+class ParseError(OSIError): pass
+class CreateError(OSIError): pass
+class EmptyError(OSIError): pass
 
 
 class OSIMeta(type):
@@ -235,14 +235,14 @@ class OSIMeta(type):
         if isinstance(contents, dict): instance = super().__call__(**{field.name: contents[field.name] for field in fields(cls)})
         elif isinstance(contents, str): instance = super().__call__(*cls.parse(contents))
         elif isinstance(contents, (list, tuple)): instance = super().__call__(*contents)
-        else: raise OSICreateError()
+        else: raise CreateError()
         return instance
 
     @staticmethod
     def parse(contents):
         pattern = r"^(?P<ticker>[A-Z]+)(?P<expire>\d{6})(?P<right>[PC])(?P<strike>\d{8})$"
         match = re.search(pattern, contents)
-        if not match: raise OSIParseError()
+        if not match: raise ParseError()
         values = match.groupdict()
         ticker = values["ticker"].upper()
         expire = Datetime.strptime(values["expire"], "%y%m%d").date()

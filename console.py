@@ -73,7 +73,7 @@ class LoggingDecorator(Decorator, ABC):
 
 class LoggingDecoratorFunction(LoggingDecorator):
     def decorator(self, instance, inlet, *args, **kwargs):
-        outlet = self.function(instance, inlet, *args, **kwargs)
+        outlet = self.invoke(instance, inlet, *args, **kwargs)
         if inlet is not None and len(inlet) > 0:
             string = self.heading(inlet)
             if bool(self.sizing): string += (" " + self.size(inlet, outlet, sizing=self.sizing))
@@ -84,16 +84,15 @@ class LoggingDecoratorFunction(LoggingDecorator):
 
 class LoggingDecoratorGenerator(LoggingDecorator):
     def decorator(self, instance, inlet, *args, **kwargs):
-        generator = self.function(instance, inlet, *args, **kwargs)
-        if inlet is not None and len(inlet) > 0:
-            heading = self.heading(inlet)
-            for outlet in generator:
-                string = str(heading)
+        generator = self.invoke(instance, inlet, *args, **kwargs)
+        for outlet in generator:
+            if inlet is not None and len(inlet) > 0:
+                string = self.heading(inlet)
                 if bool(self.sizing): string += (" " + self.size(inlet, outlet, sizing=self.sizing))
                 if bool(self.percentage): string += (" " + self.percent(inlet, outlet))
                 self.logger.info(string)
                 yield outlet
-        else: yield from generator
+            else: yield outlet
 
 
 class LoggingDecorators:
