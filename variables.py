@@ -104,7 +104,9 @@ class CollectionMeta(RegistryMeta):
         return super().__call__(contents)
 
 
-class Collection(frozenset, metaclass=CollectionMeta): pass
+class Collection(frozenset, metaclass=CollectionMeta):
+    def __init_subclass__(cls, **kwargs): pass
+
 class ListCollection(Collection):
     def __str__(self):
         if not bool(self): return ""
@@ -137,6 +139,7 @@ class MetricMeta(RegistryMeta):
 
 
 class Metric(float, ABC, metaclass=MetricMeta):
+    def __init_subclass__(cls, **kwargs): pass
     def __str__(self): return f"{float(self):.2f}"
 
     @property
@@ -190,7 +193,7 @@ class Measure:
 
 class MetricsError(Exception): pass
 class Metrics(tuple):
-    def __init_subclass__(cls, /, **kwargs):
+    def __init_subclass__(cls, **kwargs):
         cls.variables = kwargs.get("variables", getattr(cls, "variables", None))
 
     def __new__(cls, /, **kwargs):
