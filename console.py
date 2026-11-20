@@ -36,7 +36,12 @@ class LoggingDecorator(Decorator, ABC):
         self.__title = title
         self.__logger = __logger__
 
-    def heading(self, inlet):
+    def identity(self, dataset):
+        for collection in self.collections:
+            try: yield str(collection(dataset))
+            except (KeyError, AttributeError): pass
+
+    def string(self, inlet):
         strings = list()
         for collection in self.collections:
             try: strings.append(str(collection(inlet)))
@@ -75,7 +80,7 @@ class LoggingDecoratorFunction(LoggingDecorator):
     def decorator(self, instance, inlet, *args, **kwargs):
         outlet = self.invoke(instance, inlet, *args, **kwargs)
         if inlet is not None and len(inlet) > 0:
-            string = self.heading(inlet)
+            string = self.string(inlet)
             if bool(self.sizing): string += (" " + self.size(inlet, outlet, sizing=self.sizing))
             if bool(self.percentage): string += (" " + self.percent(inlet, outlet))
             self.logger.info(string)
@@ -87,7 +92,7 @@ class LoggingDecoratorGenerator(LoggingDecorator):
         generator = self.invoke(instance, inlet, *args, **kwargs)
         for outlet in generator:
             if inlet is not None and len(inlet) > 0:
-                string = self.heading(inlet)
+                string = self.string(inlet)
                 if bool(self.sizing): string += (" " + self.size(inlet, outlet, sizing=self.sizing))
                 if bool(self.percentage): string += (" " + self.percent(inlet, outlet))
                 self.logger.info(string)
