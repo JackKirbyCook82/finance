@@ -33,6 +33,7 @@ class VariableError(Exception, metaclass=RegistryMeta): pass
 class TickerError(VariableError, register="ticker"): pass
 class ExpireError(VariableError, register="expire"): pass
 class StrikeError(VariableError, register="strike"): pass
+class SigmaError(VariableError, register="sigma"): pass
 class MoneynessError(VariableError, register="moneyness"): pass
 class TightnessError(VariableError, register="tightness"): pass
 class ActivityError(VariableError, register="activity"): pass
@@ -65,6 +66,7 @@ class DateVariable(Date, Variable):
 class TickerVariable(StrVariable, name="ticker"): pass
 class ExpireVariable(DateVariable, name="expire"): pass
 class StrikeVariable(NumVariable, name="strike"): pass
+class SigmaVariable(NumVariable, name="sigma"): pass
 class MoneynessVariable(NumVariable, name="moneyness"): pass
 class TightnessVariable(NumVariable, name="tightness"): pass
 class ActivityVariable(NumVariable, name="activity"): pass
@@ -77,6 +79,7 @@ class Variables:
     Ticker = TickerVariable
     Expire = ExpireVariable
     Strike = StrikeVariable
+    Sigma = SigmaVariable
     Moneyness = MoneynessVariable
     Tightness = TightnessVariable
     Activity = ActivityVariable
@@ -148,12 +151,13 @@ class Metric(float, ABC, metaclass=MetricMeta):
     def direction(self): return ">=" if type(self).upward else "<="
 
 
-class MoneynessMetric(Metric, title="Moneyness", variable=MoneynessVariable, upward=False, absolute=True): pass
-class TightnessMetric(Metric, title="Tightness", variable=TightnessVariable, upward=False): pass
-class ActivityMetric(Metric, title="Activity", variable=ActivityVariable, upward=True): pass
-class ZScoreMetric(Metric, title="ZScore", variable=ZScoreVariable, upward=True): pass
-class MultipleMetric(Metric, title="Multiple", variable=MultipleVariable, upward=True): pass
-class RatioMetric(Metric, title="Ratio", variable=RatioVariable, upward=True): pass
+class SigmaMetric(Metric, label="Sigma", variable=SigmaVariable, upward=False, absolute=False): pass
+class MoneynessMetric(Metric, label="Moneyness", variable=MoneynessVariable, upward=False, absolute=True): pass
+class TightnessMetric(Metric, label="Tightness", variable=TightnessVariable, upward=False): pass
+class ActivityMetric(Metric, label="Activity", variable=ActivityVariable, upward=True): pass
+class ZScoreMetric(Metric, label="ZScore", variable=ZScoreVariable, upward=True): pass
+class MultipleMetric(Metric, label="Multiple", variable=MultipleVariable, upward=True): pass
+class RatioMetric(Metric, label="Ratio", variable=RatioVariable, upward=True): pass
 
 
 @dataclass
