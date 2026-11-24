@@ -33,7 +33,7 @@ class VariableError(Exception, metaclass=RegistryMeta): pass
 class TickerError(VariableError, register="ticker"): pass
 class ExpireError(VariableError, register="expire"): pass
 class StrikeError(VariableError, register="strike"): pass
-class SigmaError(VariableError, register="sigma"): pass
+class StdMoneyError(VariableError, register="stdmoney"): pass
 class MoneynessError(VariableError, register="moneyness"): pass
 class TightnessError(VariableError, register="tightness"): pass
 class ActivityError(VariableError, register="activity"): pass
@@ -66,7 +66,7 @@ class DateVariable(Date, Variable):
 class TickerVariable(StrVariable, name="ticker"): pass
 class ExpireVariable(DateVariable, name="expire"): pass
 class StrikeVariable(NumVariable, name="strike"): pass
-class SigmaVariable(NumVariable, name="sigma"): pass
+class StdMoneyVariable(NumVariable, name="stdmoney"): pass
 class MoneynessVariable(NumVariable, name="moneyness"): pass
 class TightnessVariable(NumVariable, name="tightness"): pass
 class ActivityVariable(NumVariable, name="activity"): pass
@@ -79,7 +79,7 @@ class Variables:
     Ticker = TickerVariable
     Expire = ExpireVariable
     Strike = StrikeVariable
-    Sigma = SigmaVariable
+    StdMoney = StdMoneyVariable
     Moneyness = MoneynessVariable
     Tightness = TightnessVariable
     Activity = ActivityVariable
@@ -151,11 +151,9 @@ class Metric(float, ABC, metaclass=MetricMeta):
     def direction(self): return ">=" if type(self).upward else "<="
 
 
-class SigmaMetric(Metric, label="Sigma", variable=SigmaVariable, upward=False, absolute=False): pass
 class MoneynessMetric(Metric, label="Moneyness", variable=MoneynessVariable, upward=False, absolute=True): pass
 class TightnessMetric(Metric, label="Tightness", variable=TightnessVariable, upward=False): pass
 class ActivityMetric(Metric, label="Activity", variable=ActivityVariable, upward=True): pass
-class ZScoreMetric(Metric, label="ZScore", variable=ZScoreVariable, upward=True): pass
 class MultipleMetric(Metric, label="Multiple", variable=MultipleVariable, upward=True): pass
 class RatioMetric(Metric, label="Ratio", variable=RatioVariable, upward=True): pass
 
