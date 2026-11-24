@@ -9,12 +9,10 @@ Created on Tues Nov 24 2026
 
 import numpy as np
 import pandas_market_calendars as calenders
-from enum import Enum
+from enum import IntEnum
 from dataclasses import dataclass
 from datetime import date as Date
 from datetime import timedelta as Timedelta
-
-from support.dispatchers import ValueDispatcher
 
 __version__ = "1.0.0"
 __author__ = "Jack Kirby Cook"
@@ -26,34 +24,31 @@ __license__ = "MIT License"
 nyse = calenders.get_calendar("NYSE")
 
 
-class Count(Enum):
+class Count(IntEnum):
     TRADING = 252
     CALENDER = 365
 
 
 @dataclass(frozen=True, slots=True)
 class Rate:
-    date: Date; value: float
-
-    @ValueDispatcher(locator=1)
-    def days(self, today, count): raise ValueError(count)
-    def tau(self, today, count): return self.days(today, count) / int(count)
-
-    @days.register(Count.TRADING)
-    def _(self, today, count): return len(nyse.valid_days(start_date=today + Timedelta(days=1), end_date=self.date))
-    @days.register(Count.CALENDER)
-    def _(self, today, count): return int((self.date - today).days)
-
-
-class Rates:
-    rates: list[Rate]; today: Date; count: Count = Count.TRADING
+    today: Date; date: Date; value: float; count: Count = Count.TRADING
 
     @property
-    def days(self): return np.array([rate.days(self.today, self.count) for rate in self.rates], dtype=np.int32)
+    def tau(self): return int(self.days) / int(self.count)
     @property
-    def tau(self): return np.array([rate.tau(self.today, self.count) for rate in self.rates], dtype=np.float32)
+    def days(self):
+        if self.count == Count.TRADING: return len(nyse.valid_days(start_date=self.today + Timedelta(days=1), end_date=self.date))
+        elif self.count == Count.CALENDER: return int((self.date - self.today).days)
+        else: raise ValueError(self.count)
+
+
+class Rates(list[Rate]):
     @property
-    def rate(self): return np.array([rate.value for rate in self.rates], dtype=np.float32)
+    def days(self): return np.array([rate.days for rate in self], dtype=np.int32)
+    @property
+    def tau(self): return np.array([rate.tau for rate in self], dtype=np.float32)
+    @property
+    def values(self): return np.array(self, dtype=np.float32)
 
 
 class Interest(Rates):
