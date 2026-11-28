@@ -229,8 +229,24 @@ class CreateError(OSIError): pass
 class EmptyError(OSIError): pass
 
 
-class OSIMeta(type):
-    def __call__(cls, contents):
+@dataclass(frozen=True)
+class OSI:
+    ticker: str; expire: Date; right: Enumerations.Right; strike: float
+
+    def __str__(self):
+        ticker = self.ticker.upper()
+        expire = self.expire.strftime("%y%m%d")
+        right = {right: str(right).upper()[0] for right in Enumerations.Right}[self.right]
+        strike = int((Decimal(self.strike) * Decimal("1000")).to_integral_value())
+        strike = f"{strike:08d}"
+        return f"{ticker}{expire}{right}{strike}"
+
+    def items(self): return asdict(self).items()
+    def values(self): return asdict(self).values()
+    def keys(self): return asdict(self).keys()
+
+    @classmethod
+    def create(cls, contents):
         if isinstance(contents, cls): return contents
         if isinstance(contents, pd.Series): contents = contents.to_dict()
         elif hasattr(contents, "items"): contents = dict(contents.items())
@@ -251,24 +267,5 @@ class OSIMeta(type):
         right = {str(right).upper()[0]: right for right in Enumerations.Right}[values["right"]]
         strike = float(Decimal(values["strike"]) / Decimal("1000"))
         return [ticker, expire, right, strike]
-
-
-@dataclass(frozen=True)
-class OSI(metaclass=OSIMeta):
-    ticker: str; expire: Date; right: Enumerations.Right; strike: float
-
-    def __str__(self):
-        ticker = self.ticker.upper()
-        expire = self.expire.strftime("%y%m%d")
-        right = {right: str(right).upper()[0] for right in Enumerations.Right}[self.right]
-        strike = int((Decimal(self.strike) * Decimal("1000")).to_integral_value())
-        strike = f"{strike:08d}"
-        return f"{ticker}{expire}{right}{strike}"
-
-    def items(self): return asdict(self).items()
-    def values(self): return asdict(self).values()
-    def keys(self): return asdict(self).keys()
-
-
 
 
